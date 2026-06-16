@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/types"
 
 	"github.com/samber/lo"
 	"gorm.io/gorm"
@@ -103,7 +104,7 @@ func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
 	return channelQuery, nil
 }
 
-func GetChannel(group string, model string, retry int) (*Channel, error) {
+func GetChannel(group string, model string, retry int, relayFormat types.RelayFormat) (*Channel, error) {
 	var abilities []Ability
 
 	var err error = nil
@@ -118,6 +119,28 @@ func GetChannel(group string, model string, retry int) (*Channel, error) {
 	}
 	if err != nil {
 		return nil, err
+	}
+	// 协议优先过滤（与 channel_cache.go 一致，避免跨协议转换 Issue #4755）
+	if relayFormat != "" && len(abilities) > 1 {
+		channelIds := make([]int, 0, len(abilities))
+		for _, a := range abilities {
+			channelIds = append(channelIds, a.ChannelId)
+		}
+		var typeChannels []Channel
+		DB.Select("id, type").Where("id IN ?", channelIds).Find(&typeChannels)
+		typeMap := make(map[int]int)
+		for _, ch := range typeChannels {
+			typeMap[ch.Id] = ch.Type
+		}
+		preferred := make([]Ability, 0)
+		for _, a := range abilities {
+			if common.IsChannelPreferredForFormat(typeMap[a.ChannelId], relayFormat) {
+				preferred = append(preferred, a)
+			}
+		}
+		if len(preferred) > 0 {
+			abilities = preferred
+		}
 	}
 	channel := Channel{}
 	if len(abilities) > 0 {

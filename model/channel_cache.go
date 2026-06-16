@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/types"
 )
 
 var group2model2channels map[string]map[string][]int // enabled channel
@@ -94,10 +95,10 @@ func SyncChannelCache(frequency int) {
 	}
 }
 
-func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel, error) {
+func GetRandomSatisfiedChannel(group string, model string, retry int, relayFormat types.RelayFormat) (*Channel, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
-		return GetChannel(group, model, retry)
+		return GetChannel(group, model, retry, relayFormat)
 	}
 
 	channelSyncLock.RLock()
@@ -158,6 +159,25 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 
 	if len(targetChannels) == 0 {
 		return nil, errors.New(fmt.Sprintf("no channel found, group: %s, model: %s, priority: %d", group, model, targetPriority))
+	}
+
+	// 协议优先过滤：若存在与请求协议匹配的渠道（如 Claude 请求→type=14，OpenAI 请求→type=1），优先在这些渠道里选，
+	// 避免命中类型不匹配的渠道触发协议转换（New API Issue #4755，tools 转换会翻车）。
+	// 若没有匹配的则保持原候选集（fallback，保证可用性）。
+	if relayFormat != "" && len(targetChannels) > 1 {
+		var preferred []*Channel
+		for _, ch := range targetChannels {
+			if common.IsChannelPreferredForFormat(int(ch.Type), relayFormat) {
+				preferred = append(preferred, ch)
+			}
+		}
+		if len(preferred) > 0 {
+			targetChannels = preferred
+			sumWeight = 0
+			for _, ch := range targetChannels {
+				sumWeight += ch.GetWeight()
+			}
+		}
 	}
 
 	// smoothing factor and adjustment
