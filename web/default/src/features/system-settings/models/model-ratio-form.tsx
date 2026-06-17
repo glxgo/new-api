@@ -45,6 +45,7 @@ import {
 type ModelFormValues = {
   ModelPrice: string
   ModelRatio: string
+  ModelCost: string
   CacheRatio: string
   CreateCacheRatio: string
   CompletionRatio: string
@@ -68,6 +69,7 @@ type ModelRatioFormProps = {
 type ModelJsonFieldName =
   | 'ModelPrice'
   | 'ModelRatio'
+  | 'ModelCost'
   | 'CacheRatio'
   | 'CreateCacheRatio'
   | 'CompletionRatio'
@@ -90,6 +92,12 @@ const modelJsonFields: Array<{
     name: 'ModelRatio',
     labelKey: 'Model ratio',
     descriptionKey: 'JSON map of model → multiplier applied to quota billing.',
+  },
+  {
+    name: 'ModelCost',
+    labelKey: 'Model cost',
+    descriptionKey:
+      'JSON map of model → { input_cost_per_m, output_cost_per_m, cache_cost_per_m } in USD per 1M tokens. Platform buy price from upstream (e.g. krill). Super admin only; used for profit / dividend calculation, independent from sale price.',
   },
   {
     name: 'CacheRatio',
