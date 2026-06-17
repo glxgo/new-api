@@ -15,13 +15,14 @@ import (
 
 // UserBase struct remains the same as it represents the cached data structure
 type UserBase struct {
-	Id       int    `json:"id"`
-	Group    string `json:"group"`
-	Email    string `json:"email"`
-	Quota    int    `json:"quota"`
-	Status   int    `json:"status"`
-	Username string `json:"username"`
-	Setting  string `json:"setting"`
+	Id        int    `json:"id"`
+	Group     string `json:"group"`
+	Email     string `json:"email"`
+	Quota     int    `json:"quota"`
+	GiftQuota int    `json:"gift_quota"`
+	Status    int    `json:"status"`
+	Username  string    `json:"username"`
+	Setting   string `json:"setting"`
 }
 
 func (user *UserBase) WriteContext(c *gin.Context) {
@@ -106,13 +107,14 @@ func GetUserCache(userId int) (userCache *UserBase, err error) {
 
 	// Create cache object from user data
 	userCache = &UserBase{
-		Id:       user.Id,
-		Group:    user.Group,
-		Quota:    user.Quota,
-		Status:   user.Status,
-		Username: user.Username,
-		Setting:  user.Setting,
-		Email:    user.Email,
+		Id:        user.Id,
+		Group:     user.Group,
+		Quota:     user.Quota,
+		GiftQuota: user.GiftQuota,
+		Status:    user.Status,
+		Username:  user.Username,
+		Setting:   user.Setting,
+		Email:     user.Email,
 	}
 
 	return userCache, nil
@@ -141,6 +143,19 @@ func cacheIncrUserQuota(userId int, delta int64) error {
 
 func cacheDecrUserQuota(userId int, delta int64) error {
 	return cacheIncrUserQuota(userId, -delta)
+}
+
+// 赠金池(GiftQuota)的原子增减。Redis hash field 用结构体字段名 "GiftQuota"
+// (与 RedisHSetObj 反射规则一致, 见 common/redis.go:119)
+func cacheIncrUserGiftQuota(userId int, delta int64) error {
+	if !common.RedisEnabled {
+		return nil
+	}
+	return common.RedisHIncrBy(getUserCacheKey(userId), "GiftQuota", delta)
+}
+
+func cacheDecrUserGiftQuota(userId int, delta int64) error {
+	return cacheIncrUserGiftQuota(userId, -delta)
 }
 
 // Helper functions to get individual fields if needed

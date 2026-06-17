@@ -38,7 +38,14 @@ type User struct {
 	VerificationCode string         `json:"verification_code" gorm:"-:all"`                         // this field is only for Email verification, don't save it to database!
 	AccessToken      *string        `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
 	Quota            int            `json:"quota" gorm:"type:int;default:0"`
-	UsedQuota        int            `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
+	UsedQuota        int            `json:"used_quota" gorm:"type:int;default:0;column:used_quota"`          // used quota
+	GiftQuota        int            `json:"gift_quota" gorm:"type:int;default:0;column:gift_quota"`          // 赠金池余额(不可提现,不产利润)
+	UsedGiftQuota    int            `json:"used_gift_quota" gorm:"type:int;default:0;column:used_gift_quota"` // 赠金历史消耗
+	DividendBalance  int            `json:"dividend_balance" gorm:"type:int;default:0;column:dividend_balance"` // 分红可提余额(管理员/超管)
+	DividendTotal    int            `json:"dividend_total" gorm:"type:int;default:0;column:dividend_total"`    // 累计分红(只增不减)
+	FrozenQuota      int            `json:"frozen_quota" gorm:"type:int;default:0;column:frozen_quota"`        // 提现冻结的本金
+	FrozenDividend   int            `json:"frozen_dividend" gorm:"type:int;default:0;column:frozen_dividend"`  // 提现冻结的分红
+	DividendRate     float64        `json:"dividend_rate" gorm:"column:dividend_rate;default:0"`               // 仅管理员:超管设的分红比例 0~0.75
 	RequestCount     int            `json:"request_count" gorm:"type:int;default:0;"`               // request number
 	Group            string         `json:"group" gorm:"type:varchar(64);default:'default'"`
 	AffCode          string         `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
@@ -46,6 +53,7 @@ type User struct {
 	AffQuota         int            `json:"aff_quota" gorm:"type:int;default:0;column:aff_quota"`           // 邀请剩余额度
 	AffHistoryQuota  int            `json:"aff_history_quota" gorm:"type:int;default:0;column:aff_history"` // 邀请历史额度
 	InviterId        int            `json:"inviter_id" gorm:"type:int;column:inviter_id;index"`
+	AffAdminId       int            `json:"aff_admin_id" gorm:"type:int;column:aff_admin_id;index"` // 注册时固化的树顶管理员(管理员分红用)
 	DeletedAt        gorm.DeletedAt `gorm:"index"`
 	LinuxDOId        string         `json:"linux_do_id" gorm:"column:linux_do_id;index"`
 	Setting          string         `json:"setting" gorm:"type:text;column:setting"`
@@ -57,13 +65,14 @@ type User struct {
 
 func (user *User) ToBaseUser() *UserBase {
 	cache := &UserBase{
-		Id:       user.Id,
-		Group:    user.Group,
-		Quota:    user.Quota,
-		Status:   user.Status,
-		Username: user.Username,
-		Setting:  user.Setting,
-		Email:    user.Email,
+		Id:        user.Id,
+		Group:     user.Group,
+		Quota:     user.Quota,
+		GiftQuota: user.GiftQuota,
+		Status:    user.Status,
+		Username:  user.Username,
+		Setting:   user.Setting,
+		Email:     user.Email,
 	}
 	return cache
 }
@@ -399,6 +408,7 @@ func (user *User) Insert(inviterId int) error {
 		user.SetSetting(defaultSetting)
 	}
 
+	user.AffAdminId = calcAffAdminId(inviterId)
 	result := DB.Create(user)
 	if result.Error != nil {
 		return result.Error
@@ -456,6 +466,7 @@ func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
 		user.SetSetting(defaultSetting)
 	}
 
+	user.AffAdminId = calcAffAdminId(inviterId)
 	result := tx.Create(user)
 	if result.Error != nil {
 		return result.Error
@@ -493,6 +504,24 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 			_ = inviteUser(inviterId)
 		}
 	}
+}
+
+// calcAffAdminId 根据邀请人计算新用户的「树顶管理员」(用于管理员分红):
+//   - 邀请人是管理员 -> 该管理员 id
+//   - 邀请人是普通用户 -> 继承其 AffAdminId(沿邀请链向上)
+//   - 无邀请人 / 查询失败 -> 0(无主用户)
+func calcAffAdminId(inviterId int) int {
+	if inviterId == 0 {
+		return 0
+	}
+	inviter, err := GetUserById(inviterId, false)
+	if err != nil || inviter == nil {
+		return 0
+	}
+	if inviter.Role >= common.RoleAdminUser {
+		return inviter.Id
+	}
+	return inviter.AffAdminId
 }
 
 func (user *User) Update(updatePassword bool) error {
@@ -931,6 +960,44 @@ func decreaseUserQuota(id int, quota int) (err error) {
 	if err != nil {
 		return err
 	}
+	return err
+}
+
+// IncreaseUserGiftQuota 增加赠金池余额。赠金不走批量更新(BatchUpdateType 只动 quota 字段),
+// 总是立即落库 + 更新 Redis 缓存。db 参数保留以与 IncreaseUserQuota 签名一致(实际忽略)。
+func IncreaseUserGiftQuota(id int, quota int, db bool) (err error) {
+	if quota < 0 {
+		return errors.New("quota 不能为负数！")
+	}
+	gopool.Go(func() {
+		err := cacheIncrUserGiftQuota(id, int64(quota))
+		if err != nil {
+			common.SysLog("failed to increase user gift quota: " + err.Error())
+		}
+	})
+	return increaseUserGiftQuota(id, quota)
+}
+
+func increaseUserGiftQuota(id int, quota int) (err error) {
+	err = DB.Model(&User{}).Where("id = ?", id).Update("gift_quota", gorm.Expr("gift_quota + ?", quota)).Error
+	return err
+}
+
+func DecreaseUserGiftQuota(id int, quota int, db bool) (err error) {
+	if quota < 0 {
+		return errors.New("quota 不能为负数！")
+	}
+	gopool.Go(func() {
+		err := cacheDecrUserGiftQuota(id, int64(quota))
+		if err != nil {
+			common.SysLog("failed to decrease user gift quota: " + err.Error())
+		}
+	})
+	return decreaseUserGiftQuota(id, quota)
+}
+
+func decreaseUserGiftQuota(id int, quota int) (err error) {
+	err = DB.Model(&User{}).Where("id = ?", id).Update("gift_quota", gorm.Expr("gift_quota - ?", quota)).Error
 	return err
 }
 

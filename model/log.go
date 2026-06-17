@@ -53,6 +53,15 @@ type Log struct {
 	RequestId         string `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
 	UpstreamRequestId string `json:"upstream_request_id,omitempty" gorm:"type:varchar(128);index:idx_logs_upstream_request_id;default:''"`
 	Other             string `json:"other"`
+	// 分润系统字段(T+1结算用)
+	Cost              int    `json:"cost" gorm:"default:0"`                                            // 该请求成本(quota单位,平台付上游)
+	PaidQuota         int    `json:"paid_quota" gorm:"default:0;column:paid_quota"`                    // 本金分摊
+	PaidGiftQuota     int    `json:"paid_gift_quota" gorm:"default:0;column:paid_gift_quota"`           // 赠金分摊
+	AffAdminIdSnap    int    `json:"aff_admin_id_snap" gorm:"default:0;column:aff_admin_id_snap;index:idx_logs_settle"`
+	InviterIdSnap     int    `json:"inviter_id_snap" gorm:"default:0;column:inviter_id_snap"`
+	Inviter2IdSnap    int    `json:"inviter2_id_snap" gorm:"default:0;column:inviter2_id_snap"`
+	Settled           bool   `json:"settled" gorm:"default:false;column:settled;index:idx_logs_settle"`
+	SettleBatchId     string `json:"settle_batch_id" gorm:"type:varchar(40);column:settle_batch_id;index:idx_logs_settle"`
 }
 
 // don't use iota, avoid change log type value

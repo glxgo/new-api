@@ -144,6 +144,20 @@ var TelegramBotName = ""
 var QuotaForNewUser = 0
 var QuotaForInviter = 0
 var QuotaForInvitee = 0
+// 分润系统比例(超管后台「运营设置」可配,见 plan mellow-growing-waterfall.md)
+var AffiliateDirectRate = 0.10   // 拉新返利:直接上级占毛利比例
+var AffiliateIndirectRate = 0.05 // 拉新返利:间接(上上级)占毛利比例
+var RootDividendRate = 0.10      // 超管分红:占所有用户毛利比例
+
+// MaxDividendRate 管理员分红比例硬上限 = 1 - 超管率 - 直接率 - 间接率。
+// 保证任何场景(含两层拉新)毛利分出之和 ≤ 100%, 平台不倒贴。下限 0。
+func MaxDividendRate() float64 {
+	max := 1.0 - RootDividendRate - AffiliateDirectRate - AffiliateIndirectRate
+	if max < 0 {
+		return 0
+	}
+	return max
+}
 var ChannelDisableThreshold = 5.0
 var AutomaticDisableChannelEnabled = false
 var AutomaticEnableChannelEnabled = false
