@@ -837,6 +837,66 @@ func GetUserQuota(id int, fromDB bool) (quota int, err error) {
 	return quota, nil
 }
 
+// GetUserGiftQuota 读赠金池余额, Redis 优先, miss 回 DB 并异步回写。镜像 GetUserQuota。
+func GetUserGiftQuota(id int, fromDB bool) (quota int, err error) {
+	defer func() {
+		if shouldUpdateRedis(fromDB, err) {
+			gopool.Go(func() {
+				if err := updateUserGiftQuotaCache(id, quota); err != nil {
+					common.SysLog("failed to update user gift quota cache: " + err.Error())
+				}
+			})
+		}
+	}()
+	if !fromDB && common.RedisEnabled {
+		quota, err := getUserGiftQuotaCache(id)
+		if err == nil {
+			return quota, nil
+		}
+	}
+	fromDB = true
+	err = DB.Model(&User{}).Where("id = ?", id).Select("gift_quota").Find(&quota).Error
+	if err != nil {
+		return 0, err
+	}
+	return quota, nil
+}
+
+// DecreaseUserGiftQuotaGuarded 带守卫的赠金扣减: WHERE gift_quota >= amount。
+// 成功(且本次赠金消耗计入 used_gift_quota)返回 (true, nil); 余额被并发抢占返回 (false, nil)。
+// 仅供 service.DecreaseUserQuotaDual 在拆分后调用, 不做"先gift后principal"编排。
+func DecreaseUserGiftQuotaGuarded(id int, amount int) (bool, error) {
+	if amount <= 0 {
+		return true, nil
+	}
+	// 同语句扣 gift_quota 并累加 used_gift_quota(原子)。
+	result := DB.Model(&User{}).
+		Where("id = ? AND gift_quota >= ?", id, amount).
+		Updates(map[string]interface{}{
+			"gift_quota":     gorm.Expr("gift_quota - ?", amount),
+			"used_gift_quota": gorm.Expr("used_gift_quota + ?", amount),
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+// DecreaseUserQuotaGuarded 带守卫的本金扣减: WHERE quota >= amount。
+// 成功返回 (true, nil); 余额被并发抢占返回 (false, nil)。
+func DecreaseUserQuotaGuarded(id int, amount int) (bool, error) {
+	if amount <= 0 {
+		return true, nil
+	}
+	result := DB.Model(&User{}).
+		Where("id = ? AND quota >= ?", id, amount).
+		Update("quota", gorm.Expr("quota - ?", amount))
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
 func GetUserUsedQuota(id int) (quota int, err error) {
 	err = DB.Model(&User{}).Where("id = ?", id).Select("used_quota").Find(&quota).Error
 	return quota, err

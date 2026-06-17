@@ -158,6 +158,16 @@ func cacheDecrUserGiftQuota(userId int, delta int64) error {
 	return cacheIncrUserGiftQuota(userId, -delta)
 }
 
+// CacheDecrUserQuota / CacheDecrUserGiftQuota 导出版, 供 service.DecreaseUserQuotaDual
+// 在 Guarded DB 扣减成功后同步缓存(绕过 BatchUpdate 的内存累加路径)。
+func CacheDecrUserQuota(userId int, delta int64) error {
+	return cacheDecrUserQuota(userId, delta)
+}
+
+func CacheDecrUserGiftQuota(userId int, delta int64) error {
+	return cacheDecrUserGiftQuota(userId, delta)
+}
+
 // Helper functions to get individual fields if needed
 func getUserGroupCache(userId int) (string, error) {
 	cache, err := GetUserCache(userId)
@@ -173,6 +183,15 @@ func getUserQuotaCache(userId int) (int, error) {
 		return 0, err
 	}
 	return cache.Quota, nil
+}
+
+// getUserGiftQuotaCache 读赠金池缓存(走整 user hash 取 GiftQuota field)。
+func getUserGiftQuotaCache(userId int) (int, error) {
+	cache, err := GetUserCache(userId)
+	if err != nil {
+		return 0, err
+	}
+	return cache.GiftQuota, nil
 }
 
 func getUserStatusCache(userId int) (int, error) {
@@ -216,6 +235,14 @@ func updateUserQuotaCache(userId int, quota int) error {
 		return nil
 	}
 	return common.RedisHSetField(getUserCacheKey(userId), "Quota", fmt.Sprintf("%d", quota))
+}
+
+// updateUserGiftQuotaCache 单 field 回写赠金余额(仅 GetUserGiftQuota 读 miss 后异步调用)。
+func updateUserGiftQuotaCache(userId int, quota int) error {
+	if !common.RedisEnabled {
+		return nil
+	}
+	return common.RedisHSetField(getUserCacheKey(userId), "GiftQuota", fmt.Sprintf("%d", quota))
 }
 
 func updateUserGroupCache(userId int, group string) error {

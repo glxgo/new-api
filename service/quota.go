@@ -241,6 +241,8 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	}
 	costQuota, _ := CalcModelCostQuota(modelName, usage.InputTokens, usage.OutputTokens)
 	affAdminIdSnap, inviterIdSnap, inviter2IdSnap := GetAffiliateSnapshot(relayInfo.UserId)
+	// 双池记账(阶段2b): 按实际扣减拆分填, 无 BillingSession 时回退全本金。
+	paidGift, paidPrincipal := paidSplitForLog(relayInfo, quota)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     usage.InputTokens,
@@ -249,8 +251,8 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 		TokenName:        tokenName,
 		Quota:            quota,
 		Cost:             costQuota,
-		PaidQuota:        quota,
-		PaidGiftQuota:    0,
+		PaidQuota:        paidPrincipal,
+		PaidGiftQuota:    paidGift,
 		AffAdminIdSnap:   affAdminIdSnap,
 		InviterIdSnap:    inviterIdSnap,
 		Inviter2IdSnap:   inviter2IdSnap,
@@ -370,6 +372,8 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	}
 	costQuota, _ := CalcModelCostQuota(relayInfo.OriginModelName, usage.PromptTokens, usage.CompletionTokens)
 	affAdminIdSnap, inviterIdSnap, inviter2IdSnap := GetAffiliateSnapshot(relayInfo.UserId)
+	// 双池记账(阶段2b): 按实际扣减拆分填, 无 BillingSession 时回退全本金。
+	paidGift, paidPrincipal := paidSplitForLog(relayInfo, quota)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     usage.PromptTokens,
@@ -378,8 +382,8 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		TokenName:        tokenName,
 		Quota:            quota,
 		Cost:             costQuota,
-		PaidQuota:        quota,
-		PaidGiftQuota:    0,
+		PaidQuota:        paidPrincipal,
+		PaidGiftQuota:    paidGift,
 		AffAdminIdSnap:   affAdminIdSnap,
 		InviterIdSnap:    inviterIdSnap,
 		Inviter2IdSnap:   inviter2IdSnap,
@@ -434,14 +438,26 @@ func PostConsumeQuota(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQu
 			relayInfo.SubscriptionPostDelta += delta
 		}
 	} else {
-		// Wallet
+		// Wallet (双池, 阶段2b): 旧路径无 BillingSession, 拿不到预扣拆分记录,
+		// 扣减时直接走 DecreaseUserQuotaDual(优先赠金不足本金); 退还时按当前余额 SplitPayment 容错退。
 		if quota > 0 {
-			err = model.DecreaseUserQuota(relayInfo.UserId, quota, false)
-		} else {
-			err = model.IncreaseUserQuota(relayInfo.UserId, -quota, false)
-		}
-		if err != nil {
-			return err
+			_, _, err = DecreaseUserQuotaDual(relayInfo.UserId, quota)
+			if err != nil {
+				return err
+			}
+		} else if quota < 0 {
+			refund := -quota
+			giftBalance, _ := model.GetUserGiftQuota(relayInfo.UserId, true)
+			prinBalance, _ := model.GetUserQuota(relayInfo.UserId, true)
+			refundGift, refundPrincipal := SplitPayment(refund, giftBalance, prinBalance)
+			// SplitPayment 在余额不足时会截断, 旧路径退还容错: 不足部分也尝试退本金补齐。
+			if refundGift+refundPrincipal < refund {
+				refundPrincipal += refund - refundGift - refundPrincipal
+			}
+			err = RefundDualToPools(relayInfo.UserId, refundGift, refundPrincipal)
+			if err != nil {
+				return err
+			}
 		}
 	}
 

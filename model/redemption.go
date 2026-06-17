@@ -137,7 +137,8 @@ func Redeem(key string, userId int) (quota int, err error) {
 		if redemption.ExpiredTime != 0 && redemption.ExpiredTime < common.GetTimestamp() {
 			return errors.New("该兑换码已过期")
 		}
-		err = tx.Model(&User{}).Where("id = ?", userId).Update("quota", gorm.Expr("quota + ?", redemption.Quota)).Error
+		// 阶段2b: 兑换码额度进赠金池(不可提现、不产利润), 而非本金池。
+		err = tx.Model(&User{}).Where("id = ?", userId).Update("gift_quota", gorm.Expr("gift_quota + ?", redemption.Quota)).Error
 		if err != nil {
 			return err
 		}
@@ -151,7 +152,11 @@ func Redeem(key string, userId int) (quota int, err error) {
 		common.SysError("redemption failed: " + err.Error())
 		return 0, ErrRedeemFailed
 	}
-	RecordLog(userId, LogTypeTopup, fmt.Sprintf("通过兑换码充值 %s，兑换码ID %d", logger.LogQuota(redemption.Quota), redemption.Id))
+	// 事务内直接改了 gift_quota, 事务外同步 Redis 缓存(赠金 +N)。
+	if cacheErr := cacheIncrUserGiftQuota(userId, int64(redemption.Quota)); cacheErr != nil {
+		common.SysLog(fmt.Sprintf("redemption: failed to incr gift cache (userId=%d): %s", userId, cacheErr.Error()))
+	}
+	RecordLog(userId, LogTypeTopup, fmt.Sprintf("通过兑换码兑换赠金 %s，兑换码ID %d", logger.LogQuota(redemption.Quota), redemption.Id))
 	return redemption.Quota, nil
 }
 

@@ -19,6 +19,10 @@ type BillingSettler interface {
 	// GetPreConsumedQuota 返回实际预扣的额度值（信任用户可能为 0）。
 	GetPreConsumedQuota() int
 
+	// GetPaidSplit 返回本会话实际扣减的 (赠金, 本金)，供记账填 Log.PaidQuota/PaidGiftQuota(阶段2b)。
+	// 必须在 Settle 之后调用。订阅资金来源不分池，返回 (0, 实际消费本金)。
+	GetPaidSplit() (gift, principal int)
+
 	// Reserve 将预扣额度补到目标值；若目标值不高于当前预扣额度则不做任何事。
 	Reserve(targetQuota int) error
 }

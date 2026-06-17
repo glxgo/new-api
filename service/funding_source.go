@@ -27,8 +27,20 @@ type FundingSource interface {
 // ---------------------------------------------------------------------------
 
 type WalletFunding struct {
-	userId   int
-	consumed int // 实际预扣的用户额度
+	userId            int
+	consumedGift      int // 实际扣减的赠金额度(退款需原样退回赠金池)
+	consumedPrincipal int // 实际扣减的本金额度(退款需原样退回本金池)
+}
+
+// GetPaidSplit 返回本资金来源在本计费会话中实际扣减的 (赠金, 本金)。
+// 供记账处填 Log.PaidQuota/PaidGiftQuota(阶段2b)。
+func (w *WalletFunding) GetPaidSplit() (gift, principal int) {
+	return w.consumedGift, w.consumedPrincipal
+}
+
+// consumed 返回两池合计(兼容判断, 如 needsRefund)。
+func (w *WalletFunding) consumed() int {
+	return w.consumedGift + w.consumedPrincipal
 }
 
 func (w *WalletFunding) Source() string { return BillingSourceWallet }
@@ -37,10 +49,13 @@ func (w *WalletFunding) PreConsume(amount int) error {
 	if amount <= 0 {
 		return nil
 	}
-	if err := model.DecreaseUserQuota(w.userId, amount, false); err != nil {
+	paidGift, paidPrincipal, err := DecreaseUserQuotaDual(w.userId, amount)
+	if err != nil {
 		return err
 	}
-	w.consumed = amount
+	// PreConsume 是覆盖写(本会话首次预扣), 覆盖之前为零值。
+	w.consumedGift = paidGift
+	w.consumedPrincipal = paidPrincipal
 	return nil
 }
 
@@ -49,18 +64,52 @@ func (w *WalletFunding) Settle(delta int) error {
 		return nil
 	}
 	if delta > 0 {
-		return model.DecreaseUserQuota(w.userId, delta, false)
+		// 补扣: 双池拆分累加。
+		paidGift, paidPrincipal, err := DecreaseUserQuotaDual(w.userId, delta)
+		if err != nil {
+			return err
+		}
+		w.consumedGift += paidGift
+		w.consumedPrincipal += paidPrincipal
+		return nil
 	}
-	return model.IncreaseUserQuota(w.userId, -delta, false)
+	// delta < 0: 退还多预扣的部分。按本次会话净消费的 gift:principal 比例退,
+	// 保证退款拆分与消费日志 PaidGift/PaidPrincipal 比例一致(T+1 对账才平)。
+	refund := -delta
+	net := w.consumedGift + w.consumedPrincipal
+	if net <= 0 {
+		// 没有可退记录(如 trusted 旁路且未补扣): 容错退本金。
+		if err := model.IncreaseUserQuota(w.userId, refund, false); err != nil {
+			return err
+		}
+		return nil
+	}
+	// refundGift 向下取整, 余数给 principal, 且不超过已扣赠金(防 consumedGift 成负)。
+	refundGift := refund * w.consumedGift / net
+	if refundGift > w.consumedGift {
+		refundGift = w.consumedGift
+	}
+	refundPrincipal := refund - refundGift
+	if refundPrincipal > w.consumedPrincipal {
+		refundPrincipal = w.consumedPrincipal
+	}
+	if err := RefundDualToPools(w.userId, refundGift, refundPrincipal); err != nil {
+		return err
+	}
+	w.consumedGift -= refundGift
+	w.consumedPrincipal -= refundPrincipal
+	return nil
 }
 
 func (w *WalletFunding) Refund() error {
-	if w.consumed <= 0 {
+	if w.consumed() <= 0 {
 		return nil
 	}
-	// IncreaseUserQuota 是 quota += N 的非幂等操作，不能重试，否则会多退额度。
-	// 订阅的 RefundSubscriptionPreConsume 有 requestId 幂等保护所以可以重试。
-	return model.IncreaseUserQuota(w.userId, w.consumed, false)
+	// 各退全量。非幂等(依赖 billing_session.go 的 refunded 标志保证只调一次)。
+	gift, principal := w.consumedGift, w.consumedPrincipal
+	w.consumedGift = 0
+	w.consumedPrincipal = 0
+	return RefundDualToPools(w.userId, gift, principal)
 }
 
 // ---------------------------------------------------------------------------

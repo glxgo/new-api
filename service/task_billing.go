@@ -51,6 +51,8 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 		other["upstream_model_name"] = info.UpstreamModelName
 	}
 	affAdminIdSnap, inviterIdSnap, inviter2IdSnap := GetAffiliateSnapshot(info.UserId)
+	// 双池记账(阶段2b): 从 BillingSession 取实际拆分, 无则回退全本金。
+	paidGift, paidPrincipal := paidSplitForLog(info, info.PriceData.Quota)
 	model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
 		ChannelId: info.ChannelId,
 		ModelName: info.OriginModelName,
@@ -59,8 +61,8 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 		// 异步任务(图片/视频)通常按次计费, ModelCost($/1M tokens) 不适用, 成本暂记 0。
 		// 后续可扩展按次成本(ModelCost 增加 per-call 字段); 快照仍填写供 T+1 分润用。
 		Cost:           0,
-		PaidQuota:      info.PriceData.Quota,
-		PaidGiftQuota:  0,
+		PaidQuota:      paidPrincipal,
+		PaidGiftQuota:  paidGift,
 		AffAdminIdSnap: affAdminIdSnap,
 		InviterIdSnap:  inviterIdSnap,
 		Inviter2IdSnap: inviter2IdSnap,
@@ -94,14 +96,38 @@ func taskIsSubscription(task *model.Task) bool {
 }
 
 // taskAdjustFunding 调整任务的资金来源（钱包或订阅），delta > 0 表示扣费，delta < 0 表示退还。
-func taskAdjustFunding(task *model.Task, delta int) error {
+// 返回本次实际扣减的 (赠金, 本金), 供日志填写 PaidQuota/PaidGiftQuota。
+//   - 钱包扣费(delta>0): 走 DecreaseUserQuotaDual 优先赠金不足本金, 返回真实拆分。
+//   - 钱包退还(delta<0): TaskPrivateData 无预扣拆分快照, 采用 FIFO 退 gift 近似
+//     (赠金不可提, 退赠金对平台成本最低; 总量=预扣量保证账平)。注释标注, 阶段3 再精确化。
+//   - 订阅: 不分池, 全记本金 (0, delta)。
+func taskAdjustFunding(task *model.Task, delta int) (paidGift, paidPrincipal int, err error) {
 	if taskIsSubscription(task) {
-		return model.PostConsumeUserSubscriptionDelta(task.PrivateData.SubscriptionId, int64(delta))
+		err = model.PostConsumeUserSubscriptionDelta(task.PrivateData.SubscriptionId, int64(delta))
+		if delta > 0 {
+			return 0, delta, err
+		}
+		return 0, -delta, err
 	}
 	if delta > 0 {
-		return model.DecreaseUserQuota(task.UserId, delta, false)
+		return DecreaseUserQuotaDual(task.UserId, delta)
 	}
-	return model.IncreaseUserQuota(task.UserId, -delta, false)
+	if delta < 0 {
+		// FIFO 退赠金近似: 优先把赠金补回(上限当前赠金余额), 不足部分退本金。
+		refund := -delta
+		giftBalance, _ := model.GetUserGiftQuota(task.UserId, true)
+		refundGift := refund
+		if refundGift > giftBalance {
+			refundGift = giftBalance
+		}
+		if refundGift < 0 {
+			refundGift = 0
+		}
+		refundPrincipal := refund - refundGift
+		err = RefundDualToPools(task.UserId, refundGift, refundPrincipal)
+		return refundGift, refundPrincipal, err
+	}
+	return 0, 0, nil
 }
 
 // taskAdjustTokenQuota 调整任务的令牌额度，delta > 0 表示扣费，delta < 0 表示退还。
@@ -165,7 +191,8 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) {
 	}
 
 	// 1. 退还资金来源（钱包或订阅）
-	if err := taskAdjustFunding(task, -quota); err != nil {
+	paidGift, paidPrincipal, err := taskAdjustFunding(task, -quota)
+	if err != nil {
 		logger.LogWarn(ctx, fmt.Sprintf("退还资金来源失败 task %s: %s", task.TaskID, err.Error()))
 		return
 	}
@@ -173,20 +200,27 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) {
 	// 2. 退还令牌额度
 	taskAdjustTokenQuota(ctx, task, -quota)
 
-	// 3. 记录日志
+	// 3. 记录日志（补阶段2a 漏填的 snapshot 字段，阶段2b）
+	affAdminIdSnap, inviterIdSnap, inviter2IdSnap := GetAffiliateSnapshot(task.UserId)
 	other := taskBillingOther(task)
 	other["task_id"] = task.TaskID
 	other["reason"] = reason
 	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
-		UserId:    task.UserId,
-		LogType:   model.LogTypeRefund,
-		Content:   "",
-		ChannelId: task.ChannelId,
-		ModelName: taskModelName(task),
-		Quota:     quota,
-		TokenId:   task.PrivateData.TokenId,
-		Group:     task.Group,
-		Other:     other,
+		UserId:          task.UserId,
+		LogType:         model.LogTypeRefund,
+		Content:         "",
+		ChannelId:       task.ChannelId,
+		ModelName:       taskModelName(task),
+		Quota:           quota,
+		Cost:            0,
+		PaidQuota:       paidPrincipal,
+		PaidGiftQuota:   paidGift,
+		AffAdminIdSnap:  affAdminIdSnap,
+		InviterIdSnap:   inviterIdSnap,
+		Inviter2IdSnap:  inviter2IdSnap,
+		TokenId:         task.PrivateData.TokenId,
+		Group:           task.Group,
+		Other:           other,
 	})
 }
 
@@ -215,7 +249,8 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	))
 
 	// 调整资金来源
-	if err := taskAdjustFunding(task, quotaDelta); err != nil {
+	paidGift, paidPrincipal, err := taskAdjustFunding(task, quotaDelta)
+	if err != nil {
 		logger.LogError(ctx, fmt.Sprintf("差额结算资金调整失败 task %s: %s", task.TaskID, err.Error()))
 		return
 	}
@@ -236,20 +271,27 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 		logType = model.LogTypeRefund
 		logQuota = -quotaDelta
 	}
+	affAdminIdSnap, inviterIdSnap, inviter2IdSnap := GetAffiliateSnapshot(task.UserId)
 	other := taskBillingOther(task)
 	other["task_id"] = task.TaskID
 	other["pre_consumed_quota"] = preConsumedQuota
 	other["actual_quota"] = actualQuota
 	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
-		UserId:    task.UserId,
-		LogType:   logType,
-		Content:   reason,
-		ChannelId: task.ChannelId,
-		ModelName: taskModelName(task),
-		Quota:     logQuota,
-		TokenId:   task.PrivateData.TokenId,
-		Group:     task.Group,
-		Other:     other,
+		UserId:          task.UserId,
+		LogType:         logType,
+		Content:         reason,
+		ChannelId:       task.ChannelId,
+		ModelName:       taskModelName(task),
+		Quota:           logQuota,
+		Cost:            0,
+		PaidQuota:       paidPrincipal,
+		PaidGiftQuota:   paidGift,
+		AffAdminIdSnap:  affAdminIdSnap,
+		InviterIdSnap:   inviterIdSnap,
+		Inviter2IdSnap:  inviter2IdSnap,
+		TokenId:         task.PrivateData.TokenId,
+		Group:           task.Group,
+		Other:           other,
 	})
 }
 

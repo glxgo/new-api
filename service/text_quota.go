@@ -467,6 +467,8 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 
 	// 分润快照: 注册时固化的邀请关系, 消费时直接读(不回溯)。
 	affAdminIdSnap, inviterIdSnap, inviter2IdSnap := GetAffiliateSnapshot(relayInfo.UserId)
+	// 双池记账(阶段2b): 从 BillingSession 取实际扣减拆分, 无则回退全本金。
+	paidGift, paidPrincipal := paidSplitForLog(relayInfo, summary.Quota)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:     relayInfo.ChannelId,
 		PromptTokens:  summary.PromptTokens,
@@ -475,10 +477,8 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		TokenName:     summary.TokenName,
 		Quota:         summary.Quota,
 		Cost:          summary.Cost,
-		// 双池记账: 现阶段赠金池无来源恒为 0, 全部记为本金。
-		// 待双池扣费(阶段2b)实现后改用 SplitPayment 按余额拆分。
-		PaidQuota:      summary.Quota,
-		PaidGiftQuota:  0,
+		PaidQuota:      paidPrincipal,
+		PaidGiftQuota:  paidGift,
 		AffAdminIdSnap: affAdminIdSnap,
 		InviterIdSnap:  inviterIdSnap,
 		Inviter2IdSnap: inviter2IdSnap,

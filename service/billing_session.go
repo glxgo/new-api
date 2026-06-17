@@ -32,7 +32,14 @@ type BillingSession struct {
 	fundingSettled   bool // funding.Settle 已成功，资金来源已提交
 	settled          bool // Settle 全部完成（资金 + 令牌）
 	refunded         bool // Refund 已调用
+	reserves         []reserveSplit // 钱包路径每次 reserve 实际扣减的 (gift,principal)，栈式精确回滚(阶段2b)
 	mu               sync.Mutex
+}
+
+// reserveSplit 记录单次 reserveFunding 实际扣减的双池拆分，供 rollback 精确原样退回。
+type reserveSplit struct {
+	gift      int
+	principal int
 }
 
 // Settle 根据实际消耗额度进行结算。
@@ -149,6 +156,19 @@ func (s *BillingSession) GetPreConsumedQuota() int {
 	return s.preConsumedQuota
 }
 
+// GetPaidSplit 返回本会话实际扣减的 (赠金, 本金)，委托给资金来源。
+// 钱包: 返 WalletFunding 实际拆分；订阅: 不分池返 (0, 预扣本金)。
+func (s *BillingSession) GetPaidSplit() (gift, principal int) {
+	if f, ok := s.funding.(*WalletFunding); ok {
+		return f.GetPaidSplit()
+	}
+	// 订阅等其他资金来源不分池，全部记为本金。
+	if sub, ok := s.funding.(*SubscriptionFunding); ok {
+		return 0, int(sub.preConsumed)
+	}
+	return 0, s.preConsumedQuota
+}
+
 func (s *BillingSession) Reserve(targetQuota int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -232,10 +252,20 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 func (s *BillingSession) reserveFunding(delta int) error {
 	switch funding := s.funding.(type) {
 	case *WalletFunding:
-		if err := model.DecreaseUserQuota(funding.userId, delta, false); err != nil {
+		// 双池补扣(阶段2b): 优先赠金不足本金。返回实际拆分并栈式记录, 供 rollback 精确退回。
+		paidGift, paidPrincipal, err := DecreaseUserQuotaDual(funding.userId, delta)
+		if err != nil {
+			if IsDualInsufficientQuotaError(err) {
+				return types.NewErrorWithStatusCode(
+					fmt.Errorf("用户额度不足: %s", err.Error()),
+					types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
+					types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+			}
 			return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
 		}
-		funding.consumed += delta
+		funding.consumedGift += paidGift
+		funding.consumedPrincipal += paidPrincipal
+		s.reserves = append(s.reserves, reserveSplit{gift: paidGift, principal: paidPrincipal})
 		return nil
 	case *SubscriptionFunding:
 		if err := model.PostConsumeUserSubscriptionDelta(funding.subscriptionId, int64(delta)); err != nil {
@@ -256,10 +286,21 @@ func (s *BillingSession) reserveFunding(delta int) error {
 func (s *BillingSession) rollbackFundingReserve(delta int) {
 	switch funding := s.funding.(type) {
 	case *WalletFunding:
-		if err := model.IncreaseUserQuota(funding.userId, delta, false); err != nil {
+		// 栈式精确回滚(阶段2b): pop 本次 reserve 实际扣的 (gift,principal), 原样退回各自池子。
+		// 不按当前余额或 delta 比例退, 避免与消费拆分不一致导致账目漂移。
+		var sp reserveSplit
+		if n := len(s.reserves); n > 0 {
+			sp = s.reserves[n-1]
+			s.reserves = s.reserves[:n-1]
+		} else {
+			// 兜底: 无栈记录时退全 delta 到本金(不应发生)。
+			sp = reserveSplit{gift: 0, principal: delta}
+		}
+		if err := RefundDualToPools(funding.userId, sp.gift, sp.principal); err != nil {
 			common.SysLog("error rolling back wallet funding reserve: " + err.Error())
 		} else {
-			funding.consumed -= delta
+			funding.consumedGift -= sp.gift
+			funding.consumedPrincipal -= sp.principal
 		}
 	case *SubscriptionFunding:
 		if err := model.PostConsumeUserSubscriptionDelta(funding.subscriptionId, -int64(delta)); err != nil {
@@ -348,10 +389,18 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 
 	// 钱包路径需要先检查用户额度
 	tryWallet := func() (*BillingSession, *types.NewAPIError) {
-		userQuota, err := model.GetUserQuota(relayInfo.UserId, false)
+		// 双池(阶段2b): 余额检查看 gift+principal 合计。一次 GetUserCache 同时取两池。
+		userCache, err := model.GetUserCache(relayInfo.UserId)
 		if err != nil {
 			return nil, types.NewError(err, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
 		}
+		giftQuota := 0
+		principalQuota := 0
+		if userCache != nil {
+			giftQuota = userCache.GiftQuota
+			principalQuota = userCache.Quota
+		}
+		userQuota := giftQuota + principalQuota // 两池合计用于余额判断与信任旁路
 		if userQuota <= 0 {
 			return nil, types.NewErrorWithStatusCode(
 				fmt.Errorf("用户额度不足, 剩余额度: %s", logger.FormatQuota(userQuota)),
