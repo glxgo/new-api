@@ -657,3 +657,22 @@ func DeleteOldLog(ctx context.Context, targetTimestamp int64, limit int) (int64,
 
 	return total, nil
 }
+
+// GetUnsettledConsumeLogs 扫描指定时间区间内未结算的消费日志(分批, 按 id 升序翻页)。
+// 用于 T+1 分润结算。走 LOG_DB(日志库)。
+func GetUnsettledConsumeLogs(dayStart, dayEnd int64, afterLogId, limit int) ([]*Log, error) {
+	var logs []*Log
+	err := LOG_DB.Where("settled = ? AND type = ? AND created_at >= ? AND created_at < ? AND id > ? AND quota > 0",
+		false, LogTypeConsume, dayStart, dayEnd, afterLogId).
+		Order("id asc").Limit(limit).Find(&logs).Error
+	return logs, err
+}
+
+// MarkLogsSettled 批量标记日志已结算(原子 WHERE settled=false 防重跑重复算)。走 LOG_DB。
+func MarkLogsSettled(ids []int, batchId string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return LOG_DB.Model(&Log{}).Where("id IN ? AND settled = ?", ids, false).
+		Updates(map[string]interface{}{"settled": true, "settle_batch_id": batchId}).Error
+}

@@ -1061,6 +1061,22 @@ func decreaseUserGiftQuota(id int, quota int) (err error) {
 	return err
 }
 
+// IncreaseUserDividend 增加用户分红余额(可提) + 累计分红(只增)。管理员/超管 T+1 结算发放用。
+// 不更新 Redis 缓存(dividend_balance 非消费热路径, 预扣不读它)。立即落库。
+func IncreaseUserDividend(id int, amount int) (err error) {
+	if amount < 0 {
+		return errors.New("amount 不能为负数！")
+	}
+	if amount == 0 {
+		return nil
+	}
+	return DB.Model(&User{}).Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"dividend_balance": gorm.Expr("dividend_balance + ?", amount),
+			"dividend_total":   gorm.Expr("dividend_total + ?", amount),
+		}).Error
+}
+
 func DeltaUpdateUserQuota(id int, delta int) (err error) {
 	if delta == 0 {
 		return nil
