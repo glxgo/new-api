@@ -211,6 +211,14 @@ func SetApiRouter(router *gin.Engine) {
 			withdrawRoute.POST("/reject", controller.RejectWithdraw)
 		}
 
+		// Profit dashboard + dividend audit (root only)
+		profitRoute := apiRouter.Group("/profit")
+		profitRoute.Use(middleware.RootAuth())
+		{
+			profitRoute.GET("/summary", controller.GetProfitSummary)
+			profitRoute.GET("/dividend_records", controller.GetDividendRecords)
+		}
+
 		// Custom OAuth provider management (root only)
 		customOAuthRoute := apiRouter.Group("/custom-oauth-provider")
 		customOAuthRoute.Use(middleware.RootAuth())
