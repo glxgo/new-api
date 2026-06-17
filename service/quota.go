@@ -239,6 +239,8 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	if tieredResult != nil {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
+	costQuota, _ := CalcModelCostQuota(modelName, usage.InputTokens, usage.OutputTokens)
+	affAdminIdSnap, inviterIdSnap, inviter2IdSnap := GetAffiliateSnapshot(relayInfo.UserId)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     usage.InputTokens,
@@ -246,6 +248,12 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 		ModelName:        logModel,
 		TokenName:        tokenName,
 		Quota:            quota,
+		Cost:             costQuota,
+		PaidQuota:        quota,
+		PaidGiftQuota:    0,
+		AffAdminIdSnap:   affAdminIdSnap,
+		InviterIdSnap:    inviterIdSnap,
+		Inviter2IdSnap:   inviter2IdSnap,
 		Content:          logContent,
 		TokenId:          relayInfo.TokenId,
 		UseTimeSeconds:   int(useTimeSeconds),
@@ -360,6 +368,8 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	if tieredResult != nil {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
+	costQuota, _ := CalcModelCostQuota(relayInfo.OriginModelName, usage.PromptTokens, usage.CompletionTokens)
+	affAdminIdSnap, inviterIdSnap, inviter2IdSnap := GetAffiliateSnapshot(relayInfo.UserId)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     usage.PromptTokens,
@@ -367,6 +377,12 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		ModelName:        logModel,
 		TokenName:        tokenName,
 		Quota:            quota,
+		Cost:             costQuota,
+		PaidQuota:        quota,
+		PaidGiftQuota:    0,
+		AffAdminIdSnap:   affAdminIdSnap,
+		InviterIdSnap:    inviterIdSnap,
+		Inviter2IdSnap:   inviter2IdSnap,
 		Content:          logContent,
 		TokenId:          relayInfo.TokenId,
 		UseTimeSeconds:   int(useTimeSeconds),

@@ -50,15 +50,24 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 		other["is_model_mapped"] = true
 		other["upstream_model_name"] = info.UpstreamModelName
 	}
+	affAdminIdSnap, inviterIdSnap, inviter2IdSnap := GetAffiliateSnapshot(info.UserId)
 	model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
 		ChannelId: info.ChannelId,
 		ModelName: info.OriginModelName,
 		TokenName: tokenName,
 		Quota:     info.PriceData.Quota,
-		Content:   logContent,
-		TokenId:   info.TokenId,
-		Group:     info.UsingGroup,
-		Other:     other,
+		// 异步任务(图片/视频)通常按次计费, ModelCost($/1M tokens) 不适用, 成本暂记 0。
+		// 后续可扩展按次成本(ModelCost 增加 per-call 字段); 快照仍填写供 T+1 分润用。
+		Cost:           0,
+		PaidQuota:      info.PriceData.Quota,
+		PaidGiftQuota:  0,
+		AffAdminIdSnap: affAdminIdSnap,
+		InviterIdSnap:  inviterIdSnap,
+		Inviter2IdSnap: inviter2IdSnap,
+		Content:        logContent,
+		TokenId:        info.TokenId,
+		Group:          info.UsingGroup,
+		Other:          other,
 	})
 	model.UpdateUserUsedQuotaAndRequestCount(info.UserId, info.PriceData.Quota)
 	model.UpdateChannelUsedQuota(info.ChannelId, info.PriceData.Quota)

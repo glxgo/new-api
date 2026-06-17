@@ -285,18 +285,24 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 }
 
 type RecordConsumeLogParams struct {
-	ChannelId        int                    `json:"channel_id"`
-	PromptTokens     int                    `json:"prompt_tokens"`
-	CompletionTokens int                    `json:"completion_tokens"`
-	ModelName        string                 `json:"model_name"`
-	TokenName        string                 `json:"token_name"`
-	Quota            int                    `json:"quota"`
-	Content          string                 `json:"content"`
-	TokenId          int                    `json:"token_id"`
-	UseTimeSeconds   int                    `json:"use_time_seconds"`
-	IsStream         bool                   `json:"is_stream"`
-	Group            string                 `json:"group"`
-	Other            map[string]interface{} `json:"other"`
+	ChannelId      int                    `json:"channel_id"`
+	PromptTokens   int                    `json:"prompt_tokens"`
+	CompletionTokens int                  `json:"completion_tokens"`
+	ModelName      string                 `json:"model_name"`
+	TokenName      string                 `json:"token_name"`
+	Quota          int                    `json:"quota"`
+	Cost           int                    `json:"cost"`             // 平台成本(quota 单位, T+1 毛利计算用)
+	PaidQuota      int                    `json:"paid_quota"`       // 本金分摊
+	PaidGiftQuota  int                    `json:"paid_gift_quota"`  // 赠金分摊
+	AffAdminIdSnap int                    `json:"aff_admin_id_snap"` // 树顶管理员快照
+	InviterIdSnap  int                    `json:"inviter_id_snap"`  // 直接上级快照
+	Inviter2IdSnap int                    `json:"inviter2_id_snap"` // 间接上级快照
+	Content        string                 `json:"content"`
+	TokenId        int                    `json:"token_id"`
+	UseTimeSeconds int                    `json:"use_time_seconds"`
+	IsStream       bool                   `json:"is_stream"`
+	Group          string                 `json:"group"`
+	Other          map[string]interface{} `json:"other"`
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
@@ -326,6 +332,12 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		TokenName:        params.TokenName,
 		ModelName:        params.ModelName,
 		Quota:            params.Quota,
+		Cost:             params.Cost,
+		PaidQuota:        params.PaidQuota,
+		PaidGiftQuota:    params.PaidGiftQuota,
+		AffAdminIdSnap:   params.AffAdminIdSnap,
+		InviterIdSnap:    params.InviterIdSnap,
+		Inviter2IdSnap:   params.Inviter2IdSnap,
 		ChannelId:        params.ChannelId,
 		TokenId:          params.TokenId,
 		UseTime:          params.UseTimeSeconds,
@@ -359,6 +371,12 @@ type RecordTaskBillingLogParams struct {
 	ChannelId int
 	ModelName string
 	Quota     int
+	Cost           int // 平台成本(quota 单位)
+	PaidQuota      int // 本金分摊
+	PaidGiftQuota  int // 赠金分摊
+	AffAdminIdSnap int // 树顶管理员快照
+	InviterIdSnap  int // 直接上级快照
+	Inviter2IdSnap int // 间接上级快照
 	TokenId   int
 	Group     string
 	Other     map[string]interface{}
@@ -384,6 +402,12 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 		TokenName: tokenName,
 		ModelName: params.ModelName,
 		Quota:     params.Quota,
+		Cost:           params.Cost,
+		PaidQuota:      params.PaidQuota,
+		PaidGiftQuota:  params.PaidGiftQuota,
+		AffAdminIdSnap: params.AffAdminIdSnap,
+		InviterIdSnap:  params.InviterIdSnap,
+		Inviter2IdSnap: params.Inviter2IdSnap,
 		ChannelId: params.ChannelId,
 		TokenId:   params.TokenId,
 		Group:     params.Group,

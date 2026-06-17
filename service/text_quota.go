@@ -44,6 +44,7 @@ type textQuotaSummary struct {
 	CacheCreationRatio5m     float64
 	CacheCreationRatio1h     float64
 	Quota                    int
+	Cost                     int // 平台成本(quota 单位, 见 service/cost.go CalcModelCostQuota)
 	IsClaudeUsageSemantic    bool
 	UsageSemantic            string
 	WebSearchPrice           float64
@@ -306,6 +307,11 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		summary.Quota = 1
 	}
 
+	// 平台成本(平台付上游买入价): 用 ModelCost($/1M) × tokens 换算, 不乘分组倍率。
+	// 未配置该模型成本时 ok=false、cost=0(利润按 0 成本计算); TotalTokens=0 时成本自然为 0。
+	costQuota, _ := CalcModelCostQuota(summary.ModelName, summary.PromptTokens, summary.CompletionTokens)
+	summary.Cost = costQuota
+
 	return summary
 }
 
@@ -459,19 +465,29 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
 
+	// 分润快照: 注册时固化的邀请关系, 消费时直接读(不回溯)。
+	affAdminIdSnap, inviterIdSnap, inviter2IdSnap := GetAffiliateSnapshot(relayInfo.UserId)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
-		ChannelId:        relayInfo.ChannelId,
-		PromptTokens:     summary.PromptTokens,
+		ChannelId:     relayInfo.ChannelId,
+		PromptTokens:  summary.PromptTokens,
 		CompletionTokens: summary.CompletionTokens,
-		ModelName:        logModel,
-		TokenName:        summary.TokenName,
-		Quota:            summary.Quota,
-		Content:          logContent,
-		TokenId:          relayInfo.TokenId,
-		UseTimeSeconds:   int(summary.UseTimeSeconds),
-		IsStream:         relayInfo.IsStream,
-		Group:            relayInfo.UsingGroup,
-		Other:            other,
+		ModelName:     logModel,
+		TokenName:     summary.TokenName,
+		Quota:         summary.Quota,
+		Cost:          summary.Cost,
+		// 双池记账: 现阶段赠金池无来源恒为 0, 全部记为本金。
+		// 待双池扣费(阶段2b)实现后改用 SplitPayment 按余额拆分。
+		PaidQuota:      summary.Quota,
+		PaidGiftQuota:  0,
+		AffAdminIdSnap: affAdminIdSnap,
+		InviterIdSnap:  inviterIdSnap,
+		Inviter2IdSnap: inviter2IdSnap,
+		Content:        logContent,
+		TokenId:        relayInfo.TokenId,
+		UseTimeSeconds: int(summary.UseTimeSeconds),
+		IsStream:       relayInfo.IsStream,
+		Group:          relayInfo.UsingGroup,
+		Other:          other,
 	})
 	gopool.Go(func() {
 		perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens))
