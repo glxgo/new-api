@@ -14,6 +14,8 @@ import (
 
 func SetRouter(router *gin.Engine, assets ThemeAssets) {
 	SetApiRouter(router)
+	// 教程配图等上传文件静态服务(/data/uploads 持久 volume)。须在 NoRoute(前端 SPA 兜底)前注册。
+	router.Static("/uploads", "/data/uploads")
 	SetDashboardRouter(router)
 	SetRelayRouter(router)
 	SetVideoRouter(router)
