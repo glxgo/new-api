@@ -15,8 +15,10 @@ type ModelPricingSource struct {
 	OfficialInput      float64 `json:"official_input"`       // 官方价 输入 $/1M
 	OfficialOutput     float64 `json:"official_output"`      // 官方价 输出 $/1M
 	OfficialCacheRead  float64 `json:"official_cache_read"`  // 官方价 缓存读 $/1M
-	OfficialCacheWrite float64 `json:"official_cache_write"` // 官方价 缓存写 $/1M
-	SaleMultiplier     float64 `json:"sale_multiplier"`      // 销售倍率(统一乘各项官方价 = 售价)
+	OfficialCacheWrite   float64 `json:"official_cache_write"`   // 官方价 缓存写 $/1M
+	OfficialRequestPrice float64 `json:"official_request_price"` // per-request 官方价 $/request
+	OfficialExpr         string  `json:"official_expr"`          // tiered_expr 官方分段表达式(售价侧)
+	SaleMultiplier       float64 `json:"sale_multiplier"`        // 销售倍率(统一乘各项官方价 = 售价)
 	CostMultiplier     float64 `json:"cost_multiplier"`      // 成本倍率(统一乘各项官方价 = 成本)
 }
 

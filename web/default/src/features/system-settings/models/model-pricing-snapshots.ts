@@ -52,11 +52,15 @@ export type ModelPricingSnapshot = {
   costInput?: string
   costOutput?: string
   costCache?: string
-  // 倍率定价（multiplier 模式）专用：官方价 + 倍率（从 ModelPricingSource 铺平）。
+  // 融入式倍率：官方价 + 倍率（从 ModelPricingSource/ModelCost 铺平, 各模式）。
   officialInput?: string
   officialOutput?: string
   officialCacheRead?: string
   officialCacheWrite?: string
+  officialRequestPrice?: string
+  officialExpr?: string
+  costPerRequest?: string
+  costExpr?: string
   saleMultiplier?: string
   costMultiplier?: string
   pricingSource?: 'multiplier'
@@ -268,9 +272,14 @@ export const buildModelSnapshots = ({
     const officialOutput = source?.official_output?.toString() || ''
     const officialCacheRead = source?.official_cache_read?.toString() || ''
     const officialCacheWrite = source?.official_cache_write?.toString() || ''
+    const officialRequestPrice =
+      source?.official_request_price?.toString() || ''
+    const officialExpr = source?.official_expr || ''
     const saleMultiplier = source?.sale_multiplier?.toString() || ''
     const costMultiplier = source?.cost_multiplier?.toString() || ''
     const pricingSource = source ? 'multiplier' : undefined
+    const costPerRequest = cost?.cost_per_request?.toString() || ''
+    const costExpr = cost?.cost_expr || ''
 
     const modeForModel = billingModeMap[name]
     if (modeForModel === 'tiered_expr') {
@@ -297,6 +306,10 @@ export const buildModelSnapshots = ({
         officialOutput,
         officialCacheRead,
         officialCacheWrite,
+        officialRequestPrice,
+        officialExpr,
+        costPerRequest,
+        costExpr,
         saleMultiplier,
         costMultiplier,
         pricingSource,

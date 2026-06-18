@@ -2493,6 +2493,8 @@
     "Multimodal": "多模态",
     "Multiplier": "倍率",
     "Multipliers": "倍率",
+    "Multipliers (apply to all modes)": "倍率（应用于所有模式）",
+    "Sale = official × sale multiplier; Cost = official × cost multiplier. Fill official prices in the tab below.": "售价 = 官方价 × 销售倍率；成本 = 官方价 × 成本倍率。在下方标签页填官方价。",
     "Official cache read": "官方缓存读",
     "Official cache write": "官方缓存写",
     "Official input price": "官方输入价",

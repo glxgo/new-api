@@ -160,7 +160,7 @@ export const BILLING_CACHE_VAR_MAP = BILLING_EXTRA_VARS.map((v) => ({
   exprVar: v.key,
 }))
 
-const BILLING_VAR_REGEX = new RegExp(
+export const BILLING_VAR_REGEX = new RegExp(
   `\\b(${BILLING_PRICING_VARS.map((v) => v.key).join('|')})\\s*\\*\\s*([\\d.eE+-]+)`,
   'g'
 )

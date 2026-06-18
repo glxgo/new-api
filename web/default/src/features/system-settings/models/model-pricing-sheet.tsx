@@ -65,7 +65,6 @@ import {
   EMPTY_LANE_ENABLED,
   EMPTY_LANE_PRICES,
   buildPreviewRows,
-  convertMultiplierToRatioData,
   createInitialLaneState,
   createInitialMultiplierState,
   createModelPricingSchema,
@@ -73,6 +72,7 @@ import {
   laneConfigs,
   numericDraftRegex,
   ratioFieldByLane,
+  scaleBillingExprCoeffs,
   toNumberOrNull,
   type LaneKey,
   type ModelPricingFormValues,
@@ -185,7 +185,7 @@ export const ModelPricingEditorPanel = forwardRef<
     if (editData) {
       form.reset({
         name: editData.name,
-        price: editData.price || '',
+        price: editData.officialRequestPrice || editData.price || '',
         ratio: editData.ratio || '',
         cacheRatio: editData.cacheRatio || '',
         createCacheRatio: editData.createCacheRatio || '',
@@ -204,7 +204,7 @@ export const ModelPricingEditorPanel = forwardRef<
             ? 'per-request'
             : 'per-token'
       )
-      setBillingExpr(editData.billingExpr || '')
+      setBillingExpr(editData.officialExpr || editData.billingExpr || '')
       setRequestRuleExpr(editData.requestRuleExpr || '')
     } else {
       form.reset({
@@ -237,25 +237,6 @@ export const ModelPricingEditorPanel = forwardRef<
       shouldDirty: true,
       shouldValidate: true,
     })
-  }
-
-  const handleCostChange = (
-    field: 'costInput' | 'costOutput' | 'costCache',
-    value: string
-  ) => {
-    if (!numericDraftRegex.test(value)) return
-    setFormValue(field, value)
-  }
-
-  const handleOfficialPriceChange = (
-    field: 'input' | 'output' | 'cacheRead' | 'cacheWrite',
-    value: string
-  ) => {
-    if (!numericDraftRegex.test(value)) return
-    setMulState((prev) => ({
-      ...prev,
-      officialPrices: { ...prev.officialPrices, [field]: value },
-    }))
   }
 
   const handleMultiplierChange = (
@@ -442,16 +423,6 @@ export const ModelPricingEditorPanel = forwardRef<
     }
 
     if (
-      pricingMode === 'multiplier' &&
-      (toNumberOrNull(mulState.officialPrices.input) === null ||
-        (toNumberOrNull(mulState.officialPrices.input) ?? 0) <= 0)
-    ) {
-      nextWarnings.push(
-        t('Official input price is required for multiplier pricing.')
-      )
-    }
-
-    if (
       pricingMode === 'per-token' &&
       laneEnabled.audioOutput &&
       !hasValue(lanePrices.audioInput)
@@ -463,12 +434,6 @@ export const ModelPricingEditorPanel = forwardRef<
   }, [editData, laneEnabled, lanePrices, mulState, pricingMode, promptPrice, t])
 
   const validatePricingValues = useCallback(() => {
-    if (pricingMode === 'multiplier') {
-      const officialInput = toNumberOrNull(mulState.officialPrices.input)
-      if (officialInput === null || officialInput <= 0) {
-        return false
-      }
-    }
     if (
       pricingMode === 'per-token' &&
       toNumberOrNull(promptPrice) === null &&
@@ -498,44 +463,74 @@ export const ModelPricingEditorPanel = forwardRef<
 
   const buildSubmitData = useCallback(
     (values: ModelPricingFormValues) => {
-      if (pricingMode === 'multiplier') {
-        const mulData: ModelRatioData = {
-          name: values.name.trim(),
-          billingMode: 'per-token',
-          officialInput: mulState.officialPrices.input,
-          officialOutput: mulState.officialPrices.output,
-          officialCacheRead: mulState.officialPrices.cacheRead,
-          officialCacheWrite: mulState.officialPrices.cacheWrite,
-          saleMultiplier: mulState.saleMultiplier,
-          costMultiplier: mulState.costMultiplier,
-        }
-        Object.assign(mulData, convertMultiplierToRatioData(mulData))
-        return mulData
-      }
+      const saleMul = toNumberOrNull(mulState.saleMultiplier) ?? 1
+      const costMul = toNumberOrNull(mulState.costMultiplier)
       const data: ModelRatioData = {
         name: values.name.trim(),
         billingMode: pricingMode,
-        price: values.price || '',
-        ratio: values.ratio || '',
-        cacheRatio: values.cacheRatio || '',
-        createCacheRatio: values.createCacheRatio || '',
-        completionRatio: values.completionRatio || '',
-        imageRatio: values.imageRatio || '',
-        audioRatio: values.audioRatio || '',
-        audioCompletionRatio: values.audioCompletionRatio || '',
-        costInput: values.costInput || '',
-        costOutput: values.costOutput || '',
-        costCache: values.costCache || '',
+        saleMultiplier: mulState.saleMultiplier,
+        costMultiplier: mulState.costMultiplier,
+        pricingSourceMode: pricingMode,
       }
 
-      if (pricingMode === 'tiered_expr') {
-        data.billingExpr = billingExpr
+      if (pricingMode === 'per-token') {
+        // 官方价从 sheet state (promptPrice + lanePrices)，售价 = 官方×saleMul
+        const oInput = toNumberOrNull(promptPrice)
+        const oOutput = laneEnabled.completion
+          ? toNumberOrNull(lanePrices.completion)
+          : null
+        const oCacheR = laneEnabled.cache
+          ? toNumberOrNull(lanePrices.cache)
+          : null
+        const oCacheW = laneEnabled.createCache
+          ? toNumberOrNull(lanePrices.createCache)
+          : null
+        data.imageRatio = values.imageRatio || ''
+        data.audioRatio = values.audioRatio || ''
+        data.audioCompletionRatio = values.audioCompletionRatio || ''
+        if (oInput !== null && oInput > 0) {
+          data.ratio = formatPricingNumber((oInput * saleMul) / 2)
+          data.officialInput = String(oInput)
+          if (oOutput !== null) {
+            data.completionRatio = formatPricingNumber(oOutput / oInput)
+            data.officialOutput = String(oOutput)
+          }
+          if (oCacheR !== null) {
+            data.cacheRatio = formatPricingNumber(oCacheR / oInput)
+            data.officialCacheRead = String(oCacheR)
+          }
+          if (oCacheW !== null) {
+            data.createCacheRatio = formatPricingNumber(oCacheW / oInput)
+            data.officialCacheWrite = String(oCacheW)
+          }
+          if (costMul !== null) {
+            data.costInput = formatPricingNumber(oInput * costMul)
+            if (oOutput !== null)
+              data.costOutput = formatPricingNumber(oOutput * costMul)
+            if (oCacheR !== null)
+              data.costCache = formatPricingNumber(oCacheR * costMul)
+          }
+        }
+      } else if (pricingMode === 'per-request') {
+        const oPrice = toNumberOrNull(values.price)
+        if (oPrice !== null) {
+          data.price = formatPricingNumber(oPrice * saleMul)
+          data.officialRequestPrice = String(oPrice)
+          if (costMul !== null)
+            data.costPerRequest = formatPricingNumber(oPrice * costMul)
+        }
+      } else {
+        // tiered_expr: 售价表达式 = 官方表达式系数×saleMul
+        data.billingExpr = scaleBillingExprCoeffs(billingExpr, saleMul)
         data.requestRuleExpr = requestRuleExpr
+        data.officialExpr = billingExpr
+        if (costMul !== null)
+          data.costExpr = scaleBillingExprCoeffs(billingExpr, costMul)
       }
 
       return data
     },
-    [billingExpr, mulState, pricingMode, requestRuleExpr]
+    [billingExpr, laneEnabled, lanePrices, mulState, pricingMode, promptPrice, requestRuleExpr]
   )
 
   useImperativeHandle(
@@ -614,63 +609,69 @@ export const ModelPricingEditorPanel = forwardRef<
                   )}
                 />
 
-                {pricingMode !== 'multiplier' && (
                 <FieldGroup>
                   <Field>
-                    <FieldLabel>{t('Model cost')}</FieldLabel>
+                    <FieldLabel>
+                      {t('Multipliers (apply to all modes)')}
+                    </FieldLabel>
                     <FieldDescription>
                       {t(
-                        'Platform buy price from upstream, independent from sale price. Used for profit / dividend calculation.'
+                        'Sale = official × sale multiplier; Cost = official × cost multiplier. Fill official prices in the tab below.'
                       )}
                     </FieldDescription>
-                    <div className='grid gap-3 sm:grid-cols-3'>
+                    <div className='grid gap-3 sm:grid-cols-2'>
                       <div className='flex flex-col gap-1'>
-                        <PriceInput
-                          value={watchedValues.costInput ?? ''}
-                          placeholder='1.5'
-                          onChange={(value) =>
-                            handleCostChange('costInput', value)
-                          }
-                        />
+                        <InputGroup>
+                          <InputGroupAddon>×</InputGroupAddon>
+                          <InputGroupInput
+                            inputMode='decimal'
+                            placeholder='0.35'
+                            value={mulState.saleMultiplier}
+                            onChange={(e) =>
+                              handleMultiplierChange('sale', e.target.value)
+                            }
+                          />
+                        </InputGroup>
                         <span className='text-muted-foreground text-xs'>
-                          {t('Input cost per 1M tokens')}
+                          {t('Sale multiplier')}
                         </span>
                       </div>
                       <div className='flex flex-col gap-1'>
-                        <PriceInput
-                          value={watchedValues.costOutput ?? ''}
-                          placeholder='6'
-                          onChange={(value) =>
-                            handleCostChange('costOutput', value)
-                          }
-                        />
+                        <InputGroup>
+                          <InputGroupAddon>×</InputGroupAddon>
+                          <InputGroupInput
+                            inputMode='decimal'
+                            placeholder='0.18'
+                            value={mulState.costMultiplier}
+                            onChange={(e) =>
+                              handleMultiplierChange('cost', e.target.value)
+                            }
+                          />
+                        </InputGroup>
                         <span className='text-muted-foreground text-xs'>
-                          {t('Output cost per 1M tokens')}
-                        </span>
-                      </div>
-                      <div className='flex flex-col gap-1'>
-                        <PriceInput
-                          value={watchedValues.costCache ?? ''}
-                          placeholder='0.15'
-                          onChange={(value) =>
-                            handleCostChange('costCache', value)
-                          }
-                        />
-                        <span className='text-muted-foreground text-xs'>
-                          {t('Cache cost per 1M tokens')}
+                          {t('Cost multiplier')}
                         </span>
                       </div>
                     </div>
                   </Field>
+                  {mulState.isApproximate && (
+                    <Alert>
+                      <AlertTriangle data-icon='inline-start' />
+                      <AlertDescription>
+                        {t(
+                          'Approximate — official price inferred from existing ratio. Save to lock in multipliers.'
+                        )}
+                      </AlertDescription>
+                    </Alert>
+                  )}
                 </FieldGroup>
-                )}
 
                 <Tabs
                   value={pricingMode}
                   onValueChange={handleModeChange}
                   className='gap-4'
                 >
-                  <TabsList className='grid w-full grid-cols-4'>
+                  <TabsList className='grid w-full grid-cols-3'>
                     <TabsTrigger value='per-token'>
                       {t('Per-token')}
                     </TabsTrigger>
@@ -680,129 +681,7 @@ export const ModelPricingEditorPanel = forwardRef<
                     <TabsTrigger value='tiered_expr'>
                       {t('Expression')}
                     </TabsTrigger>
-                    <TabsTrigger value='multiplier'>
-                      {t('Multiplier')}
-                    </TabsTrigger>
                   </TabsList>
-
-                  <TabsContent value='multiplier' className='pt-0'>
-                    <FieldGroup className='gap-5'>
-                      <Field>
-                        <FieldLabel>
-                          {t('Official price (from provider)')}
-                        </FieldLabel>
-                        <FieldDescription>
-                          {t(
-                            'Set official $/1M prices once, then sale/cost multipliers auto-compute everything.'
-                          )}
-                        </FieldDescription>
-                        <div className='grid gap-3 sm:grid-cols-2'>
-                          <div className='flex flex-col gap-1'>
-                            <PriceInput
-                              value={mulState.officialPrices.input}
-                              placeholder='5'
-                              onChange={(v) =>
-                                handleOfficialPriceChange('input', v)
-                              }
-                            />
-                            <span className='text-muted-foreground text-xs'>
-                              {t('Official input price')}
-                            </span>
-                          </div>
-                          <div className='flex flex-col gap-1'>
-                            <PriceInput
-                              value={mulState.officialPrices.output}
-                              placeholder='15'
-                              onChange={(v) =>
-                                handleOfficialPriceChange('output', v)
-                              }
-                            />
-                            <span className='text-muted-foreground text-xs'>
-                              {t('Official output price')}
-                            </span>
-                          </div>
-                          <div className='flex flex-col gap-1'>
-                            <PriceInput
-                              value={mulState.officialPrices.cacheRead}
-                              placeholder='0.5'
-                              onChange={(v) =>
-                                handleOfficialPriceChange('cacheRead', v)
-                              }
-                            />
-                            <span className='text-muted-foreground text-xs'>
-                              {t('Official cache read')}
-                            </span>
-                          </div>
-                          <div className='flex flex-col gap-1'>
-                            <PriceInput
-                              value={mulState.officialPrices.cacheWrite}
-                              placeholder='3.75'
-                              onChange={(v) =>
-                                handleOfficialPriceChange('cacheWrite', v)
-                              }
-                            />
-                            <span className='text-muted-foreground text-xs'>
-                              {t('Official cache write')}
-                            </span>
-                          </div>
-                        </div>
-                      </Field>
-
-                      <Field>
-                        <FieldLabel>{t('Multipliers')}</FieldLabel>
-                        <div className='grid gap-3 sm:grid-cols-2'>
-                          <div className='flex flex-col gap-1'>
-                            <InputGroup>
-                              <InputGroupAddon>×</InputGroupAddon>
-                              <InputGroupInput
-                                inputMode='decimal'
-                                placeholder='0.35'
-                                value={mulState.saleMultiplier}
-                                onChange={(e) =>
-                                  handleMultiplierChange('sale', e.target.value)
-                                }
-                              />
-                            </InputGroup>
-                            <span className='text-muted-foreground text-xs'>
-                              {t('Sale multiplier')} ({t('sale = official × multiplier')})
-                            </span>
-                          </div>
-                          <div className='flex flex-col gap-1'>
-                            <InputGroup>
-                              <InputGroupAddon>×</InputGroupAddon>
-                              <InputGroupInput
-                                inputMode='decimal'
-                                placeholder='0.18'
-                                value={mulState.costMultiplier}
-                                onChange={(e) =>
-                                  handleMultiplierChange('cost', e.target.value)
-                                }
-                              />
-                            </InputGroup>
-                            <span className='text-muted-foreground text-xs'>
-                              {t('Cost multiplier')} ({t('cost = official × multiplier')})
-                            </span>
-                          </div>
-                        </div>
-                        <FieldDescription>
-                          {t(
-                            'e.g. official input $5 × sale 0.35 = sale $1.75/1M; × cost 0.18 = cost $0.9/1M.'
-                          )}
-                        </FieldDescription>
-                      </Field>
-
-                      {mulState.isApproximate && (
-                        <Alert>
-                          <AlertTriangle data-icon='inline-start' />
-                          <AlertDescription>
-                            {t(
-                              'Approximate — official price inferred from existing ratio. Save to lock in multipliers.'
-                            )}
-                          </AlertDescription>
-                        </Alert>
-                      )}
-                    </FieldGroup>
-                  </TabsContent>
 
                   <TabsContent value='per-token' className='pt-0'>
                     <FieldGroup className='gap-5'>

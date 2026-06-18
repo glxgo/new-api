@@ -3,6 +3,8 @@ package service
 import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
+	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/shopspring/decimal"
@@ -13,11 +15,13 @@ import (
 // 详见 plan: mellow-growing-waterfall.md 业务规则②③
 // ---------------------------------------------------------------------------
 
-// CalcModelCostQuota 计算单次请求的平台成本(quota 单位)。
-// 成本 = 平台付给上游(如 krill)的买入价, 由 ModelCost($/1M tokens) × tokens 换算。
-// 关键: 成本【不乘分组倍率 groupRatio】——成本是平台固定承担的, 与用户所在分组无关
-// (分组倍率只影响面向用户的售价)。
-// 第二返回值 ok=false 表示该模型未配置成本, 此时利润无法精确计算, 该笔成本按 0 处理。
+// CalcModelCostQuota 计算单次请求的平台成本(quota 单位), 按 billing_mode 分支:
+//   - tiered_expr + CostExpr != "": 跑 CostExpr($/1M 输出) / 1e6 × QuotaPerUnit (复用 billingexpr 引擎)
+//   - CostPerRequest > 0 (per-request 模式): CostPerRequest × QuotaPerUnit (按次, 不乘 token)
+//   - 其余 (per-token): (InputCostPerM×prompt + OutputCostPerM×completion) / 1e6 × QuotaPerUnit
+//
+// 成本【不乘分组倍率 groupRatio】——成本是平台固定承担的, 与用户分组无关。
+// ok=false 表示该模型未配置成本(毛利=收入)。
 func CalcModelCostQuota(modelName string, promptTokens, completionTokens int) (int, bool) {
 	cost, ok := ratio_setting.GetModelCost(modelName)
 	if !ok {
@@ -29,12 +33,40 @@ func CalcModelCostQuota(modelName string, promptTokens, completionTokens int) (i
 	if completionTokens < 0 {
 		completionTokens = 0
 	}
-	// 成本 = (InputCostPerM × prompt + OutputCostPerM × completion) / 1e6 × QuotaPerUnit
+	dUnit := decimal.NewFromFloat(common.QuotaPerUnit)
+
+	// tiered_expr 模式: 跑分段成本表达式 (与售价表达式同引擎, v1 系数是 $/1M)
+	if billing_setting.GetBillingMode(modelName) == billing_setting.BillingModeTieredExpr {
+		if cost.CostExpr == "" {
+			return 0, false // tiered_expr 模式未配 CostExpr → 无成本
+		}
+		params := billingexpr.TokenParams{
+			P:   float64(promptTokens),
+			C:   float64(completionTokens),
+			Len: float64(promptTokens + completionTokens),
+		}
+		result, _, err := billingexpr.RunExprWithRequest(
+			cost.CostExpr, params, billingexpr.RequestInput{},
+		)
+		if err != nil || result < 0 {
+			return 0, false
+		}
+		costDecimal := decimal.NewFromFloat(result).
+			Div(decimal.NewFromInt(1000000)).Mul(dUnit)
+		return int(costDecimal.Round(0).IntPart()), true
+	}
+
+	// per-request 模式: 按次成本 (不乘 token)
+	if cost.CostPerRequest > 0 {
+		costDecimal := decimal.NewFromFloat(cost.CostPerRequest).Mul(dUnit)
+		return int(costDecimal.Round(0).IntPart()), true
+	}
+
+	// per-token 模式: (InputCostPerM × prompt + OutputCostPerM × completion) / 1e6 × QuotaPerUnit
 	dInput := decimal.NewFromFloat(cost.InputCostPerM)
 	dOutput := decimal.NewFromFloat(cost.OutputCostPerM)
 	dPrompt := decimal.NewFromInt(int64(promptTokens))
 	dCompletion := decimal.NewFromInt(int64(completionTokens))
-	dUnit := decimal.NewFromFloat(common.QuotaPerUnit)
 	costDecimal := dInput.Mul(dPrompt).Add(dOutput.Mul(dCompletion)).
 		Div(decimal.NewFromInt(1000000)).Mul(dUnit)
 	return int(costDecimal.Round(0).IntPart()), true

@@ -318,6 +318,10 @@ const ModelRatioVisualEditorComponent = forwardRef<
         officialOutput: editableModel.officialOutput,
         officialCacheRead: editableModel.officialCacheRead,
         officialCacheWrite: editableModel.officialCacheWrite,
+        officialRequestPrice: editableModel.officialRequestPrice,
+        officialExpr: editableModel.officialExpr,
+        costPerRequest: editableModel.costPerRequest,
+        costExpr: editableModel.costExpr,
         saleMultiplier: editableModel.saleMultiplier,
         costMultiplier: editableModel.costMultiplier,
       })
@@ -593,14 +597,17 @@ const ModelRatioVisualEditorComponent = forwardRef<
           setIfPresent(audioCompletionMap, name, data.audioCompletionRatio)
         }
 
-        // 成本与计费模式无关，只要任一字段有值就写整个对象（input/output 必填，cache 可选）。
+        // 成本按模式: per-token 用 input/output/cache; per-request 用 cost_per_request; tiered_expr 用 cost_expr。
         const costInputNum = parseFloat(data.costInput || '')
         const costOutputNum = parseFloat(data.costOutput || '')
         const costCacheNum = parseFloat(data.costCache || '')
+        const costPerRequestNum = parseFloat(data.costPerRequest || '')
         if (
           Number.isFinite(costInputNum) ||
           Number.isFinite(costOutputNum) ||
-          Number.isFinite(costCacheNum)
+          Number.isFinite(costCacheNum) ||
+          Number.isFinite(costPerRequestNum) ||
+          data.costExpr
         ) {
           costMap[name] = {
             input_cost_per_m: Number.isFinite(costInputNum)
@@ -612,19 +619,43 @@ const ModelRatioVisualEditorComponent = forwardRef<
             ...(Number.isFinite(costCacheNum)
               ? { cache_cost_per_m: costCacheNum }
               : {}),
+            ...(Number.isFinite(costPerRequestNum)
+              ? { cost_per_request: costPerRequestNum }
+              : {}),
+            ...(data.costExpr ? { cost_expr: data.costExpr } : {}),
           }
         }
 
-        // multiplier 模式：写官方价+倍率到 pricingSourceMap（UI 还原用，不计费）。
+        // 写官方价+倍率到 pricingSourceMap（UI 还原用, 不计费）。per-token 用 official_input 等,
+        // per-request 用 official_request_price, tiered_expr 用 official_expr。
         const officialInputNum = parseFloat(data.officialInput || '')
-        if (Number.isFinite(officialInputNum) && officialInputNum > 0) {
+        const officialRequestNum = parseFloat(
+          data.officialRequestPrice || ''
+        )
+        if (
+          (Number.isFinite(officialInputNum) && officialInputNum > 0) ||
+          (Number.isFinite(officialRequestNum) &&
+            officialRequestNum > 0) ||
+          data.officialExpr ||
+          data.saleMultiplier ||
+          data.costMultiplier
+        ) {
           pricingSourceMap[name] = {
-            official_input: officialInputNum,
+            official_input: Number.isFinite(officialInputNum)
+              ? officialInputNum
+              : 0,
             official_output: parseFloat(data.officialOutput || '') || 0,
             official_cache_read:
               parseFloat(data.officialCacheRead || '') || 0,
             official_cache_write:
               parseFloat(data.officialCacheWrite || '') || 0,
+            ...(Number.isFinite(officialRequestNum) &&
+            officialRequestNum > 0
+              ? { official_request_price: officialRequestNum }
+              : {}),
+            ...(data.officialExpr
+              ? { official_expr: data.officialExpr }
+              : {}),
             sale_multiplier: parseFloat(data.saleMultiplier || '') || 0,
             cost_multiplier: parseFloat(data.costMultiplier || '') || 0,
           }
