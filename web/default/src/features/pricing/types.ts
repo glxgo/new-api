@@ -70,6 +70,14 @@ export type PricingModel = {
   input_modalities?: Modality[]
   output_modalities?: Modality[]
   capabilities?: ModelCapability[]
+  // 官方价 + 销售倍率（从 model_pricing_source join, 模型广场展示用）
+  official_input?: number
+  official_output?: number
+  official_cache_read?: number
+  official_cache_write?: number
+  official_request_price?: number
+  official_expr?: string
+  sale_multiplier?: number
 }
 
 /** Input/output modalities supported by a model. */
@@ -90,6 +98,17 @@ export type ModelCapability =
   | 'caching'
   | 'embeddings'
 
+/** 对外公开的官方价+销售倍率（后端 PublicPricingSource, 无 cost_multiplier）。*/
+export type PublicPricingSource = {
+  official_input: number
+  official_output: number
+  official_cache_read: number
+  official_cache_write: number
+  official_request_price: number
+  official_expr: string
+  sale_multiplier: number
+}
+
 export type PricingData = {
   success: boolean
   message?: string
@@ -99,6 +118,7 @@ export type PricingData = {
   usable_group: Record<string, { desc: string; ratio: number }>
   supported_endpoint: Record<string, string>
   auto_groups: string[]
+  model_pricing_source?: Record<string, PublicPricingSource>
 }
 
 export type TokenUnit = 'M' | 'K'

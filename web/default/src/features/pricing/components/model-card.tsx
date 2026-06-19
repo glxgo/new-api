@@ -30,7 +30,11 @@ import {
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
 import { isTokenBasedModel } from '../lib/model-helpers'
-import { formatPrice, formatRequestPrice } from '../lib/price'
+import {
+  formatOfficialPrice,
+  formatPrice,
+  formatRequestPrice,
+} from '../lib/price'
 import type { PricingModel, TokenUnit } from '../types'
 import { ModelPerfBadge, type ModelPerfBadgeData } from './model-perf-badge'
 
@@ -139,8 +143,20 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
                 )
               ) : isTokenBased ? (
                 <>
-                  <span className='text-muted-foreground whitespace-nowrap'>
+                  <span className='text-muted-foreground inline-flex items-center gap-1 whitespace-nowrap'>
                     {t('Input')}{' '}
+                    {props.model.official_input !== undefined && (
+                      <span className='text-muted-foreground/50 font-mono text-[11px] line-through'>
+                        {formatOfficialPrice(
+                          props.model,
+                          'input',
+                          tokenUnit,
+                          showRechargePrice,
+                          priceRate,
+                          usdExchangeRate
+                        )}
+                      </span>
+                    )}
                     <span className='text-foreground font-mono font-semibold'>
                       {formatPrice(
                         props.model,
@@ -152,9 +168,30 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
                       )}
                     </span>
                     /{tokenUnitLabel}
+                    {props.model.sale_multiplier !== undefined &&
+                      props.model.sale_multiplier > 0 && (
+                        <StatusBadge
+                          variant='success'
+                          size='sm'
+                          label={`×${props.model.sale_multiplier}`}
+                          copyable={false}
+                        />
+                      )}
                   </span>
-                  <span className='text-muted-foreground whitespace-nowrap'>
+                  <span className='text-muted-foreground inline-flex items-center gap-1 whitespace-nowrap'>
                     {t('Output')}{' '}
+                    {props.model.official_output !== undefined && (
+                      <span className='text-muted-foreground/50 font-mono text-[11px] line-through'>
+                        {formatOfficialPrice(
+                          props.model,
+                          'output',
+                          tokenUnit,
+                          showRechargePrice,
+                          priceRate,
+                          usdExchangeRate
+                        )}
+                      </span>
+                    )}
                     <span className='text-foreground font-mono font-semibold'>
                       {formatPrice(
                         props.model,

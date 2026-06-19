@@ -316,6 +316,8 @@ export function buildPreviewRows(
   promptPrice: string,
   lanePrices: Record<LaneKey, string>,
   laneEnabled: Record<LaneKey, boolean>,
+  saleMultiplier: string,
+  costMultiplier: string,
   t: (key: string) => string
 ): PreviewRow[] {
   // 成本与计费模式无关，所有模式都在预览末尾展示。
@@ -339,14 +341,45 @@ export function buildPreviewRows(
 
   if (mode === 'tiered_expr') {
     const effectiveExpr = combineBillingExpr(billingExpr, requestRuleExpr)
+    const saleMul = toNumberOrNull(saleMultiplier)
+    const costMul = toNumberOrNull(costMultiplier)
+    const saleExpr =
+      saleMul !== null
+        ? combineBillingExpr(
+            scaleBillingExprCoeffs(billingExpr, saleMul),
+            requestRuleExpr
+          )
+        : ''
+    const costExpr =
+      costMul !== null ? scaleBillingExprCoeffs(billingExpr, costMul) : ''
     return [
       { key: 'mode', label: 'BillingMode', value: 'tiered_expr' },
       {
         key: 'expr',
-        label: t('Expression'),
+        label: t('Official expression'),
         value: effectiveExpr || t('Empty'),
         multiline: true,
       },
+      ...(saleExpr
+        ? [
+            {
+              key: 'saleExpr',
+              label: t('Sale expression'),
+              value: saleExpr,
+              multiline: true,
+            },
+          ]
+        : []),
+      ...(costExpr
+        ? [
+            {
+              key: 'costExpr',
+              label: t('Cost expression'),
+              value: costExpr,
+              multiline: true,
+            },
+          ]
+        : []),
       ...costRows,
     ]
   }

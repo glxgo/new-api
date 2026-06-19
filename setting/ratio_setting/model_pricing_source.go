@@ -29,6 +29,36 @@ func GetModelPricingSourceMap() map[string]ModelPricingSource {
 	return pricingSourceMap.ReadAll()
 }
 
+// PublicPricingSource 是对外公开的视图结构(模型广场 /api/pricing), 绝不含 CostMultiplier。
+// 权限红线: 成本倍率是利润核心, 泄露即暴露成本结构, 此结构是唯一安全闸门。
+type PublicPricingSource struct {
+	OfficialInput        float64 `json:"official_input"`
+	OfficialOutput       float64 `json:"official_output"`
+	OfficialCacheRead    float64 `json:"official_cache_read"`
+	OfficialCacheWrite   float64 `json:"official_cache_write"`
+	OfficialRequestPrice float64 `json:"official_request_price"`
+	OfficialExpr         string  `json:"official_expr"`
+	SaleMultiplier       float64 `json:"sale_multiplier"`
+}
+
+// GetPublicModelPricingSourceMap 返回对外公开的视图(白名单, 显式 omit cost_multiplier)。
+func GetPublicModelPricingSourceMap() map[string]PublicPricingSource {
+	all := pricingSourceMap.ReadAll()
+	public := make(map[string]PublicPricingSource, len(all))
+	for name, src := range all {
+		public[name] = PublicPricingSource{
+			OfficialInput:        src.OfficialInput,
+			OfficialOutput:       src.OfficialOutput,
+			OfficialCacheRead:    src.OfficialCacheRead,
+			OfficialCacheWrite:   src.OfficialCacheWrite,
+			OfficialRequestPrice: src.OfficialRequestPrice,
+			OfficialExpr:         src.OfficialExpr,
+			SaleMultiplier:       src.SaleMultiplier,
+		}
+	}
+	return public
+}
+
 func ModelPricingSource2JSONString() string {
 	return pricingSourceMap.MarshalJSONString()
 }

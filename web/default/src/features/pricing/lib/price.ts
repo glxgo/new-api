@@ -195,6 +195,36 @@ export function formatPrice(
 }
 
 /**
+ * Format official price (from provider, $/1M) for display — 划线展示用。
+ * 直接用 model.official_input/output（不 ×2、不 ×model_ratio、不 ×groupRatio）。
+ * 无官方价返回 ''（不显示划线）。
+ */
+export function formatOfficialPrice(
+  model: PricingModel,
+  type: 'input' | 'output',
+  tokenUnit: TokenUnit,
+  showWithRecharge = false,
+  priceRate = 1,
+  usdExchangeRate = 1
+): string {
+  const officialUSD =
+    type === 'input' ? model.official_input : model.official_output
+  if (officialUSD === undefined || !Number.isFinite(officialUSD)) return ''
+  const priceInUSD = applyRechargeRate(
+    officialUSD,
+    showWithRecharge,
+    priceRate,
+    usdExchangeRate
+  )
+  const price = priceInUSD / TOKEN_UNIT_DIVISORS[tokenUnit]
+  return formatCurrencyFromUSD(price, {
+    digitsLarge: 4,
+    digitsSmall: 6,
+    abbreviate: false,
+  })
+}
+
+/**
  * Format price for a specific group (token-based)
  */
 export function formatGroupPrice(

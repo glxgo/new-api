@@ -226,9 +226,29 @@ export const ModelPricingEditorPanel = forwardRef<
       setRequestRuleExpr('')
     }
 
-    setPromptPrice(nextLaneState.promptPrice)
-    setLanePrices(nextLaneState.prices)
-    setLaneEnabled(nextLaneState.enabled)
+    // 融入式: per-token 官方价优先从 ModelPricingSource 还原(officialInput 等),
+    // 老数据无 source 时退回 nextLaneState(从 ratio×2 反推售价, saleMul=1 时=官方价, 标 Approximate)。
+    // 避免保存后重新打开时官方价位置显示售价。
+    const officialLanePrices: Record<LaneKey, string> = {
+      ...nextLaneState.prices,
+      completion: editData?.officialOutput || nextLaneState.prices.completion,
+      cache: editData?.officialCacheRead || nextLaneState.prices.cache,
+      createCache:
+        editData?.officialCacheWrite || nextLaneState.prices.createCache,
+    }
+    const officialLaneEnabled: Record<LaneKey, boolean> = {
+      ...nextLaneState.enabled,
+      completion:
+        hasValue(editData?.officialOutput) || nextLaneState.enabled.completion,
+      cache:
+        hasValue(editData?.officialCacheRead) || nextLaneState.enabled.cache,
+      createCache:
+        hasValue(editData?.officialCacheWrite) ||
+        nextLaneState.enabled.createCache,
+    }
+    setPromptPrice(editData?.officialInput || nextLaneState.promptPrice)
+    setLanePrices(officialLanePrices)
+    setLaneEnabled(officialLaneEnabled)
     setMulState(createInitialMultiplierState(editData))
   }, [editData, form])
 
@@ -374,12 +394,15 @@ export const ModelPricingEditorPanel = forwardRef<
         promptPrice,
         lanePrices,
         laneEnabled,
+        mulState.saleMultiplier,
+        mulState.costMultiplier,
         t
       ),
     [
       billingExpr,
       laneEnabled,
       lanePrices,
+      mulState,
       pricingMode,
       promptPrice,
       requestRuleExpr,

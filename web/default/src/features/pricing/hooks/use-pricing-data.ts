@@ -44,11 +44,13 @@ export function usePricingData() {
     if (!data?.data || !data?.vendors) return []
 
     const vendorMap = new Map(data.vendors.map((v) => [v.id, v]))
+    const sourceMap = data.model_pricing_source ?? {}
 
     return data.data.map((model) => {
       const vendor = model.vendor_id
         ? vendorMap.get(model.vendor_id)
         : undefined
+      const source = sourceMap[model.model_name]
       return {
         ...model,
         key: model.model_name,
@@ -56,6 +58,13 @@ export function usePricingData() {
         vendor_icon: vendor?.icon,
         vendor_description: vendor?.description,
         group_ratio: data.group_ratio,
+        official_input: source?.official_input,
+        official_output: source?.official_output,
+        official_cache_read: source?.official_cache_read,
+        official_cache_write: source?.official_cache_write,
+        official_request_price: source?.official_request_price,
+        official_expr: source?.official_expr,
+        sale_multiplier: source?.sale_multiplier,
       }
     })
   }, [data])
