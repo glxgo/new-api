@@ -32,3 +32,31 @@ func BatchInsertDividendRecords(records []*DividendRecord) error {
 	}
 	return DB.CreateInBatches(records, 500).Error
 }
+
+// GetDividendRecordsByRecipient 用户收到的返利明细(仅 type=1,2 拉新返利), 分页倒序。
+func GetDividendRecordsByRecipient(userId int, page, pageSize int) ([]*DividendRecord, int64, error) {
+	var records []*DividendRecord
+	var total int64
+	tx := DB.Model(&DividendRecord{}).Where("user_id = ? AND type IN ?", userId, []int{DividendTypeDirect, DividendTypeIndirect})
+	tx.Count(&total)
+	err := tx.Order("id desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&records).Error
+	return records, total, err
+}
+
+// SumDividendByRecipient 用户累计收到的返利(quota)。
+func SumDividendByRecipient(userId int) (int64, error) {
+	var sum int64
+	err := DB.Model(&DividendRecord{}).
+		Where("user_id = ? AND type IN ?", userId, []int{DividendTypeDirect, DividendTypeIndirect}).
+		Select("COALESCE(SUM(amount),0)").Scan(&sum).Error
+	return sum, err
+}
+
+// SumDividendBySource 某下级(sourceUserId)为某上级(recipientId)产生的返利总额(quota)。
+func SumDividendBySource(recipientId, sourceUserId int) (int64, error) {
+	var sum int64
+	err := DB.Model(&DividendRecord{}).
+		Where("user_id = ? AND source_user_id = ? AND type IN ?", recipientId, sourceUserId, []int{DividendTypeDirect, DividendTypeIndirect}).
+		Select("COALESCE(SUM(amount),0)").Scan(&sum).Error
+	return sum, err
+}

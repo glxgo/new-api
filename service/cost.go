@@ -22,8 +22,8 @@ import (
 //
 // 成本【不乘分组倍率 groupRatio】——成本是平台固定承担的, 与用户分组无关。
 // ok=false 表示该模型未配置成本(毛利=收入)。
-func CalcModelCostQuota(modelName string, promptTokens, completionTokens int) (int, bool) {
-	cost, ok := ratio_setting.GetModelCost(modelName)
+func CalcModelCostQuota(modelName, group string, promptTokens, completionTokens int) (int, bool) {
+	cost, ok := ratio_setting.GetModelCostForGroup(modelName, group)
 	if !ok {
 		return 0, false
 	}

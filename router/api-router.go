@@ -127,6 +127,10 @@ func SetApiRouter(router *gin.Engine) {
 				// Withdraw (rebate/dividend system): user apply + list own
 				selfRoute.POST("/withdraw", middleware.CriticalRateLimit(), controller.RequestWithdraw)
 				selfRoute.GET("/withdraw/self", controller.GetUserWithdraws)
+				// Affiliate (邀新计划): summary + downline + rebates
+				selfRoute.GET("/affiliate/summary", controller.GetAffiliateSummary)
+				selfRoute.GET("/affiliate/downline", controller.GetAffiliateDownline)
+				selfRoute.GET("/affiliate/rebates", controller.GetAffiliateRebates)
 			}
 
 			adminRoute := userRoute.Group("/")

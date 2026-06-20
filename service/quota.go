@@ -239,7 +239,7 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	if tieredResult != nil {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
-	costQuota, _ := CalcModelCostQuota(modelName, usage.InputTokens, usage.OutputTokens)
+	costQuota, _ := CalcModelCostQuota(modelName, relayInfo.UsingGroup, usage.InputTokens, usage.OutputTokens)
 	affAdminIdSnap, inviterIdSnap, inviter2IdSnap := GetAffiliateSnapshot(relayInfo.UserId)
 	// 双池记账(阶段2b): 按实际扣减拆分填, 无 BillingSession 时回退全本金。
 	paidGift, paidPrincipal := paidSplitForLog(relayInfo, quota)
@@ -370,7 +370,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	if tieredResult != nil {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
-	costQuota, _ := CalcModelCostQuota(relayInfo.OriginModelName, usage.PromptTokens, usage.CompletionTokens)
+	costQuota, _ := CalcModelCostQuota(relayInfo.OriginModelName, relayInfo.UsingGroup, usage.PromptTokens, usage.CompletionTokens)
 	affAdminIdSnap, inviterIdSnap, inviter2IdSnap := GetAffiliateSnapshot(relayInfo.UserId)
 	// 双池记账(阶段2b): 按实际扣减拆分填, 无 BillingSession 时回退全本金。
 	paidGift, paidPrincipal := paidSplitForLog(relayInfo, quota)

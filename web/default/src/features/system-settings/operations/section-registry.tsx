@@ -25,6 +25,7 @@ import { PerformanceSection } from '../maintenance/performance-section'
 import { UpdateCheckerSection } from '../maintenance/update-checker-section'
 import { TutorialSection } from './tutorial-section'
 import { TopNavOrderSection } from './top-nav-order-section'
+import { GroupModelPricingSection } from './group-model-pricing-section'
 import type { OperationsSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
 
@@ -168,6 +169,19 @@ const OPERATIONS_SECTIONS = [
     build: (settings: OperationsSettings) => (
       <TopNavOrderSection
         defaultValues={{ topNavOrder: settings.TopNavOrder ?? '' }}
+      />
+    ),
+  },
+  {
+    id: 'group-model-pricing',
+    titleKey: 'Group Model Pricing',
+    build: (settings: OperationsSettings) => (
+      <GroupModelPricingSection
+        defaultValues={{
+          ratio: settings.GroupModelRatio ?? '{}',
+          price: settings.GroupModelPrice ?? '{}',
+          cost: settings.GroupModelCost ?? '{}',
+        }}
       />
     ),
   },

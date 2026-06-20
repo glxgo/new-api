@@ -316,6 +316,33 @@ func GetUserById(id int, selectAll bool) (*User, error) {
 	return &user, err
 }
 
+// GetDirectDownlineIds 返回用户直接邀请的下级 id 列表(layer 1)。
+func GetDirectDownlineIds(inviterId int) ([]int, error) {
+	var ids []int
+	err := DB.Model(&User{}).Where("inviter_id = ?", inviterId).Pluck("id", &ids).Error
+	return ids, err
+}
+
+// CountDownline 统计 inviter_id IN inviterIds 的用户数(用于间接下级计数)。
+func CountDownline(inviterIds []int) (int64, error) {
+	if len(inviterIds) == 0 {
+		return 0, nil
+	}
+	var total int64
+	err := DB.Model(&User{}).Where("inviter_id IN ?", inviterIds).Count(&total).Error
+	return total, err
+}
+
+// GetDownlineUsers 分页查 inviter_id IN inviterIds 的下级用户(脱敏由调用方处理)。
+func GetDownlineUsers(inviterIds []int, page, pageSize int) ([]*User, int64, error) {
+	var users []*User
+	var total int64
+	tx := DB.Model(&User{}).Omit("password").Where("inviter_id IN ?", inviterIds)
+	tx.Count(&total)
+	err := tx.Order("id desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&users).Error
+	return users, total, err
+}
+
 func GetUserIdByAffCode(affCode string) (int, error) {
 	if affCode == "" {
 		return 0, errors.New("affCode 为空！")

@@ -309,7 +309,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 
 	// 平台成本(平台付上游买入价): 用 ModelCost($/1M) × tokens 换算, 不乘分组倍率。
 	// 未配置该模型成本时 ok=false、cost=0(利润按 0 成本计算); TotalTokens=0 时成本自然为 0。
-	costQuota, _ := CalcModelCostQuota(summary.ModelName, summary.PromptTokens, summary.CompletionTokens)
+	costQuota, _ := CalcModelCostQuota(summary.ModelName, relayInfo.UsingGroup, summary.PromptTokens, summary.CompletionTokens)
 	summary.Cost = costQuota
 
 	return summary

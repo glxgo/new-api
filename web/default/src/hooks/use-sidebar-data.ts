@@ -24,6 +24,7 @@ import {
   Crown,
   FileText,
   FlaskConical,
+  Gift,
   HandCoins,
   Key,
   LayoutDashboard,
@@ -59,6 +60,11 @@ export function useSidebarData(): SidebarData {
       title: t('Wallet'),
       url: '/wallet',
       icon: Wallet,
+    },
+    {
+      title: t('Affiliate Program'),
+      url: '/affiliate',
+      icon: Gift,
     },
     {
       title: t('Profile'),

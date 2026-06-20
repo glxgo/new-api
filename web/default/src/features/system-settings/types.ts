@@ -319,6 +319,10 @@ export type OperationsSettings = {
   'tutorial_setting.content': string
   // 顶部导航排序(JSON 数组 of navKey, 超管后台可配)
   TopNavOrder: string
+  // 分组独立模型定价(渠道分组维度, 需求2): miss 回退全局, 废 GroupRatio 倍率
+  GroupModelRatio: string
+  GroupModelPrice: string
+  GroupModelCost: string
 }
 
 export type SecuritySettings = {

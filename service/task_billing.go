@@ -17,8 +17,8 @@ import (
 // calcTaskCost 异步任务(图片/视频,按次计费)的平台成本。
 // 调 CalcModelCostQuota(tokens=0,0) → per-request 模式走 CostPerRequest 分支;
 // 未配成本返回 0(毛利=收入)。
-func calcTaskCost(modelName string) int {
-	c, _ := CalcModelCostQuota(modelName, 0, 0)
+func calcTaskCost(modelName, group string) int {
+	c, _ := CalcModelCostQuota(modelName, group, 0, 0)
 	return c
 }
 
@@ -68,7 +68,7 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 		Quota:     info.PriceData.Quota,
 		// 异步任务(图片/视频)通常按次计费, ModelCost($/1M tokens) 不适用, 成本暂记 0。
 		// 后续可扩展按次成本(ModelCost 增加 per-call 字段); 快照仍填写供 T+1 分润用。
-		Cost: calcTaskCost(info.OriginModelName),
+		Cost: calcTaskCost(info.OriginModelName, info.UsingGroup),
 		PaidQuota:      paidPrincipal,
 		PaidGiftQuota:  paidGift,
 		AffAdminIdSnap: affAdminIdSnap,
@@ -220,7 +220,7 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) {
 		ChannelId:       task.ChannelId,
 		ModelName:       taskModelName(task),
 		Quota:           quota,
-		Cost: calcTaskCost(taskModelName(task)),
+		Cost: calcTaskCost(taskModelName(task), ""),
 		PaidQuota:       paidPrincipal,
 		PaidGiftQuota:   paidGift,
 		AffAdminIdSnap:  affAdminIdSnap,
@@ -291,7 +291,7 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 		ChannelId:       task.ChannelId,
 		ModelName:       taskModelName(task),
 		Quota:           logQuota,
-		Cost: calcTaskCost(taskModelName(task)),
+		Cost: calcTaskCost(taskModelName(task), ""),
 		PaidQuota:       paidPrincipal,
 		PaidGiftQuota:   paidGift,
 		AffAdminIdSnap:  affAdminIdSnap,

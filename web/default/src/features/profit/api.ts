@@ -29,8 +29,8 @@ export async function getProfitSummary(
   end?: number
 ): Promise<ApiResponse<ProfitSummary>> {
   const params = new URLSearchParams()
-  if (start) params.set('start', String(start))
-  if (end) params.set('end', String(end))
+  if (start !== undefined) params.set('start', String(start))
+  if (end !== undefined) params.set('end', String(end))
   const query = params.toString()
   const res = await api.get(`/api/profit/summary${query ? `?${query}` : ''}`)
   return res.data

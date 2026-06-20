@@ -75,7 +75,7 @@ func TestCalcModelCostQuota(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, ok := CalcModelCostQuota("test-cost-model", c.prompt, c.completion)
+			got, ok := CalcModelCostQuota("test-cost-model", "", c.prompt, c.completion)
 			if !ok {
 				t.Fatalf("expected model cost configured, got ok=false")
 			}
@@ -86,7 +86,7 @@ func TestCalcModelCostQuota(t *testing.T) {
 		})
 	}
 	// 未配置模型应返回 ok=false
-	if _, ok := CalcModelCostQuota("test-cost-unconfigured", 1000, 1000); ok {
+	if _, ok := CalcModelCostQuota("test-cost-unconfigured", "", 1000, 1000); ok {
 		t.Error("expected ok=false for unconfigured model")
 	}
 }
