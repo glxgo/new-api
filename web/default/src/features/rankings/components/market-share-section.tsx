@@ -26,34 +26,48 @@ import { formatShare, formatTokens } from '../lib/format'
 import type { RankingPeriod, VendorRanking, VendorShareSeries } from '../types'
 import { VendorLink } from './entity-links'
 
-const PERIOD_DESCRIPTIONS: Record<RankingPeriod, string> = {
-  today: 'Token share by model author across the last 24 hours',
-  week: 'Token share by model author across the past few weeks',
-  month: 'Token share by model author across the past month',
-  year: 'Token share by model author across the past year',
-  all: 'Token share by model author since launch',
-}
-
 /** Stable colour palette for vendors, used in both the share chart and the
  * legend dots. Falls back to a neutral palette for unknown vendors so that
  * future additions still render. */
 const VENDOR_COLOURS: Record<string, string> = {
   OpenAI: '#10a37f',
+  openai: '#10a37f',
   Anthropic: '#d97757',
+  anthropic: '#d97757',
   Google: '#4285f4',
+  google: '#4285f4',
   DeepSeek: '#7c5cff',
+  deepseek: '#7c5cff',
   Alibaba: '#ff9900',
+  Qwen: '#ff9900',
+  qwen: '#ff9900',
   xAI: '#1f2937',
+  'x-ai': '#1f2937',
   Meta: '#1877f2',
+  'meta-llama': '#1877f2',
   Moonshot: '#ec4899',
+  moonshotai: '#ec4899',
   Zhipu: '#06b6d4',
+  'Z.ai': '#06b6d4',
+  'z-ai': '#06b6d4',
   Mistral: '#ff7000',
+  mistralai: '#ff7000',
   ByteDance: '#3b82f6',
   Tencent: '#22c55e',
+  tencent: '#22c55e',
   MiniMax: '#a855f7',
+  minimax: '#a855f7',
   Cohere: '#fb923c',
+  cohere: '#fb923c',
   Baidu: '#ef4444',
+  OpenRouter: '#2563eb',
+  openrouter: '#2563eb',
+  NVIDIA: '#76b900',
+  nvidia: '#76b900',
+  Xiaomi: '#ff6900',
+  xiaomi: '#ff6900',
   Others: '#94a3b8',
+  others: '#94a3b8',
 }
 
 const FALLBACK_PALETTE = [
@@ -86,6 +100,12 @@ function buildVendorColourMap(names: string[]): Record<string, string> {
   return result
 }
 
+function compactNames(names: Array<string | undefined>): string[] {
+  return names.filter(
+    (name): name is string => typeof name === 'string' && name.trim() !== ''
+  )
+}
+
 const MAX_VENDORS_IN_LIST = 12
 
 type MarketShareSectionProps = {
@@ -112,8 +132,14 @@ export function MarketShareSection(props: MarketShareSectionProps) {
       : 'rgba(15, 23, 42, 0.12)'
 
   const colourMap = useMemo(
-    () => buildVendorColourMap(props.history.vendors.map((v) => v.name)),
-    [props.history]
+    () =>
+      buildVendorColourMap(
+        compactNames([
+          ...props.history.vendors.flatMap((v) => [v.name, v.display_name]),
+          ...props.rows.flatMap((v) => [v.vendor, v.display_name]),
+        ])
+      ),
+    [props.history, props.rows]
   )
 
   const orderedPoints = useMemo(() => {
@@ -137,6 +163,7 @@ export function MarketShareSection(props: MarketShareSectionProps) {
       seriesField: 'vendor',
       stack: true,
       paddingInner: 0.12,
+      barMaxWidth: props.history.buckets <= 1 ? 96 : 40,
       legends: { visible: false },
       color: { specified: colourMap },
       axes: [
@@ -169,7 +196,7 @@ export function MarketShareSection(props: MarketShareSectionProps) {
           content: [
             {
               key: (datum: Record<string, unknown>) =>
-                String(datum?.vendor ?? ''),
+                String(datum?.display_name || datum?.vendor || ''),
               value: (datum: Record<string, unknown>) =>
                 `${(Number(datum?.share) * 100).toFixed(1)}% · ${formatTokens(Number(datum?.tokens) || 0)}`,
             },
@@ -183,7 +210,7 @@ export function MarketShareSection(props: MarketShareSectionProps) {
           content: [
             {
               key: (datum: Record<string, unknown>) =>
-                String(datum?.vendor ?? ''),
+                String(datum?.display_name || datum?.vendor || ''),
               value: (datum: Record<string, unknown>) =>
                 Number(datum?.share) || 0,
             },
@@ -203,7 +230,13 @@ export function MarketShareSection(props: MarketShareSectionProps) {
       },
       animationAppear: { duration: 500 },
     }
-  }, [chartGridColor, chartTextColor, colourMap, orderedPoints])
+  }, [
+    chartGridColor,
+    chartTextColor,
+    colourMap,
+    orderedPoints,
+    props.history.buckets,
+  ])
 
   const visible = props.rows.slice(0, MAX_VENDORS_IN_LIST)
   const half = Math.ceil(visible.length / 2)
@@ -219,7 +252,7 @@ export function MarketShareSection(props: MarketShareSectionProps) {
           {t('Market Share')}
         </h2>
         <p className='text-muted-foreground mt-1 text-sm'>
-          {t(PERIOD_DESCRIPTIONS[props.period])}
+          {t('Vendor share in the selected period')}
         </p>
       </header>
 
@@ -236,7 +269,7 @@ export function MarketShareSection(props: MarketShareSectionProps) {
               option={VCHART_OPTION}
             />
           ) : (
-            <div className='text-muted-foreground/80 flex h-full items-center justify-center text-xs'>
+            <div className='text-muted-foreground/80 flex h-full w-full items-center justify-center text-xs'>
               {t('No history data available')}
             </div>
           )}
@@ -285,14 +318,17 @@ function VendorList(props: {
             aria-hidden
             className='size-2.5 shrink-0 rounded-full'
             style={{
-              backgroundColor: props.colourMap[vendor.vendor] ?? '#94a3b8',
+              backgroundColor:
+                props.colourMap[vendor.vendor] ??
+                props.colourMap[vendor.display_name ?? ''] ??
+                '#94a3b8',
             }}
           />
           <VendorLink
             vendor={vendor.vendor}
             className='text-foreground min-w-0 flex-1 truncate text-sm font-medium'
           >
-            {vendor.vendor}
+            {vendor.display_name || vendor.vendor}
           </VendorLink>
           <div className='shrink-0 text-right'>
             <div className='text-foreground font-mono text-sm font-semibold tabular-nums'>

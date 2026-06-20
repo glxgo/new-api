@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils'
 type EntityLinkBaseProps = {
   className?: string
   children?: React.ReactNode
+  title?: string
 }
 
 type ModelLinkProps = EntityLinkBaseProps & {
@@ -43,6 +44,7 @@ export function ModelLink(props: ModelLinkProps) {
     <Link
       to='/pricing/$modelId'
       params={{ modelId: props.modelName }}
+      title={props.title}
       className={cn(
         'decoration-foreground/30 hover:decoration-foreground underline decoration-1 underline-offset-4 transition-colors',
         props.className
@@ -70,6 +72,7 @@ export function VendorLink(props: VendorLinkProps) {
     <Link
       to='/pricing'
       search={{ vendor: props.vendor }}
+      title={props.title}
       className={cn(
         'hover:text-foreground underline decoration-current/40 decoration-1 underline-offset-2 transition-colors hover:decoration-current',
         props.className

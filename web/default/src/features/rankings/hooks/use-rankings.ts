@@ -20,10 +20,14 @@ import { useQuery } from '@tanstack/react-query'
 import { getRankings } from '../api'
 import type { RankingPeriod } from '../types'
 
+const RANKINGS_REFRESH_INTERVAL_MS = 60 * 60 * 1000
+const RANKINGS_QUERY_VERSION = 4
+
 export function useRankings(period: RankingPeriod) {
   return useQuery({
-    queryKey: ['rankings', period],
+    queryKey: ['rankings', RANKINGS_QUERY_VERSION, period],
     queryFn: () => getRankings(period),
-    staleTime: 5 * 60 * 1000,
+    staleTime: RANKINGS_REFRESH_INTERVAL_MS,
+    refetchInterval: RANKINGS_REFRESH_INTERVAL_MS,
   })
 }

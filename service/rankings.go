@@ -4,35 +4,43 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 )
 
 const (
-	rankingCacheTTL         = 5 * time.Minute
-	rankingLeaderboardLimit = 20
-	rankingHistoryLimit     = 10
-	rankingVendorLimit      = 5
-	rankingMoverLimit       = 6
-	rankingOthersLabel      = "Others"
-	rankingUnknownVendor    = "Unknown"
+	rankingCacheTTL             = time.Hour
+	rankingLeaderboardLimit     = 20
+	rankingHistoryLimit         = 10
+	rankingVendorLimit          = 5
+	rankingMoverLimit           = 6
+	rankingOthersLabel          = "Others"
+	rankingUnknownVendor        = "Unknown"
+	RankingDataSourceLocal      = "local"
+	RankingDataSourceOpenRouter = "openrouter"
 )
 
 type RankingsResponse struct {
-	Models             []RankedModel      `json:"models"`
-	Vendors            []RankedVendor     `json:"vendors"`
-	TopMovers          []RankingMover     `json:"top_movers"`
-	TopDroppers        []RankingMover     `json:"top_droppers"`
-	ModelsHistory      ModelHistorySeries `json:"models_history"`
-	VendorShareHistory VendorShareSeries  `json:"vendor_share_history"`
+	Source             string               `json:"source"`
+	Models             []RankedModel        `json:"models"`
+	Vendors            []RankedVendor       `json:"vendors"`
+	TopMovers          []RankingMover       `json:"top_movers"`
+	TopDroppers        []RankingMover       `json:"top_droppers"`
+	ModelsHistory      ModelHistorySeries   `json:"models_history"`
+	VendorShareHistory VendorShareSeries    `json:"vendor_share_history"`
+	Benchmarks         []RankingBenchmark   `json:"benchmarks,omitempty"`
+	Performance        []RankingPerformance `json:"performance,omitempty"`
 }
 
 type RankedModel struct {
 	Rank         int     `json:"rank"`
 	PreviousRank *int    `json:"previous_rank,omitempty"`
 	ModelName    string  `json:"model_name"`
+	DisplayName  string  `json:"display_name,omitempty"`
 	Vendor       string  `json:"vendor"`
 	VendorIcon   string  `json:"vendor_icon,omitempty"`
 	Category     string  `json:"category"`
@@ -44,6 +52,7 @@ type RankedModel struct {
 type RankedVendor struct {
 	Rank        int     `json:"rank"`
 	Vendor      string  `json:"vendor"`
+	DisplayName string  `json:"display_name,omitempty"`
 	VendorIcon  string  `json:"vendor_icon,omitempty"`
 	TotalTokens int64   `json:"total_tokens"`
 	Share       float64 `json:"share"`
@@ -54,6 +63,7 @@ type RankedVendor struct {
 
 type RankingMover struct {
 	ModelName   string  `json:"model_name"`
+	DisplayName string  `json:"display_name,omitempty"`
 	Vendor      string  `json:"vendor"`
 	VendorIcon  string  `json:"vendor_icon,omitempty"`
 	RankDelta   int     `json:"rank_delta"`
@@ -62,17 +72,19 @@ type RankingMover struct {
 }
 
 type ModelHistoryPoint struct {
-	Ts     string `json:"ts"`
-	Label  string `json:"label"`
-	Model  string `json:"model"`
-	Vendor string `json:"vendor"`
-	Tokens int64  `json:"tokens"`
+	Ts          string `json:"ts"`
+	Label       string `json:"label"`
+	Model       string `json:"model"`
+	DisplayName string `json:"display_name,omitempty"`
+	Vendor      string `json:"vendor"`
+	Tokens      int64  `json:"tokens"`
 }
 
 type ModelHistoryModel struct {
-	Name   string `json:"name"`
-	Vendor string `json:"vendor"`
-	Total  int64  `json:"total"`
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name,omitempty"`
+	Vendor      string `json:"vendor"`
+	Total       int64  `json:"total"`
 }
 
 type ModelHistorySeries struct {
@@ -82,23 +94,45 @@ type ModelHistorySeries struct {
 }
 
 type VendorSharePoint struct {
-	Ts     string  `json:"ts"`
-	Label  string  `json:"label"`
-	Vendor string  `json:"vendor"`
-	Share  float64 `json:"share"`
-	Tokens int64   `json:"tokens"`
+	Ts          string  `json:"ts"`
+	Label       string  `json:"label"`
+	Vendor      string  `json:"vendor"`
+	DisplayName string  `json:"display_name,omitempty"`
+	Share       float64 `json:"share"`
+	Tokens      int64   `json:"tokens"`
 }
 
 type VendorShareVendor struct {
-	Name  string  `json:"name"`
-	Total int64   `json:"total"`
-	Share float64 `json:"share"`
+	Name        string  `json:"name"`
+	DisplayName string  `json:"display_name,omitempty"`
+	Total       int64   `json:"total"`
+	Share       float64 `json:"share"`
 }
 
 type VendorShareSeries struct {
 	Points  []VendorSharePoint  `json:"points"`
 	Vendors []VendorShareVendor `json:"vendors"`
 	Buckets int                 `json:"buckets"`
+}
+
+type RankingBenchmark struct {
+	Category    string  `json:"category"`
+	Rank        int     `json:"rank"`
+	ModelName   string  `json:"model_name"`
+	DisplayName string  `json:"display_name,omitempty"`
+	Vendor      string  `json:"vendor"`
+	Score       float64 `json:"score"`
+}
+
+type RankingPerformance struct {
+	Rank          int     `json:"rank"`
+	ModelName     string  `json:"model_name"`
+	DisplayName   string  `json:"display_name,omitempty"`
+	Vendor        string  `json:"vendor"`
+	RequestCount  int64   `json:"request_count"`
+	P50Latency    float64 `json:"p50_latency"`
+	P50Throughput float64 `json:"p50_throughput"`
+	ProviderCount int     `json:"provider_count"`
 }
 
 type rankingPeriodConfig struct {
@@ -115,8 +149,9 @@ type rankingCacheItem struct {
 }
 
 type rankingModelMeta struct {
-	vendor     string
-	vendorIcon string
+	vendor      string
+	vendorIcon  string
+	displayName string
 }
 
 type vendorAggregate struct {
@@ -135,32 +170,63 @@ var (
 )
 
 func GetRankingsSnapshot(period string) (*RankingsResponse, error) {
-	config, err := rankingConfig(period)
+	requestedConfig, err := rankingConfig(period)
 	if err != nil {
 		return nil, err
 	}
 
+	source := currentRankingsDataSource()
+	config := requestedConfig
+	if source == RankingDataSourceOpenRouter && requestedConfig.id == "all" {
+		config, err = rankingConfig("year")
+		if err != nil {
+			return nil, err
+		}
+	}
+	cacheKey := config.id + ":" + source
 	now := time.Now()
 	rankingCacheMu.Lock()
-	if item, ok := rankingCache[config.id]; ok && now.Before(item.expiresAt) {
+	if item, ok := rankingCache[cacheKey]; ok && now.Before(item.expiresAt) {
 		rankingCacheMu.Unlock()
 		return item.data, nil
 	}
 	rankingCacheMu.Unlock()
 
-	data, err := buildRankingsSnapshot(config, now)
+	var data *RankingsResponse
+	if source == RankingDataSourceOpenRouter {
+		data, err = buildOpenRouterRankingsSnapshot(config, now)
+		if err != nil {
+			data, err = buildRankingsSnapshot(requestedConfig, now)
+			if err == nil {
+				data.Source = RankingDataSourceLocal
+				cacheKey = requestedConfig.id + ":" + RankingDataSourceLocal
+			}
+		}
+	} else {
+		data, err = buildRankingsSnapshot(config, now)
+	}
 	if err != nil {
 		return nil, err
 	}
 
 	rankingCacheMu.Lock()
-	rankingCache[config.id] = rankingCacheItem{
+	rankingCache[cacheKey] = rankingCacheItem{
 		expiresAt: now.Add(rankingCacheTTL),
 		data:      data,
 	}
 	rankingCacheMu.Unlock()
 
 	return data, nil
+}
+
+func currentRankingsDataSource() string {
+	common.OptionMapRWMutex.RLock()
+	source := strings.TrimSpace(strings.ToLower(common.OptionMap["RankingsDataSource"]))
+	common.OptionMapRWMutex.RUnlock()
+	if source == RankingDataSourceOpenRouter {
+		return RankingDataSourceOpenRouter
+	}
+	return RankingDataSourceLocal
 }
 
 func rankingConfig(period string) (rankingPeriodConfig, error) {
@@ -212,6 +278,7 @@ func buildRankingsSnapshot(config rankingPeriodConfig, now time.Time) (*Rankings
 	movers, droppers := buildRankingMovers(rankedModels)
 
 	return &RankingsResponse{
+		Source:             RankingDataSourceLocal,
 		Models:             limitRankedModels(rankedModels, rankingLeaderboardLimit),
 		Vendors:            vendors,
 		TopMovers:          movers,
@@ -226,13 +293,50 @@ func rankingTimeRange(config rankingPeriodConfig, now time.Time) (int64, int64) 
 	if config.duration <= 0 {
 		return 0, endTime
 	}
-	return now.Add(-config.duration).Unix(), endTime
+	switch config.id {
+	case "today":
+		return beginningOfDay(now).Unix(), endTime
+	case "week":
+		return beginningOfWeek(now).Unix(), endTime
+	case "month":
+		return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).Unix(), endTime
+	case "year":
+		return time.Date(now.Year(), time.January, 1, 0, 0, 0, 0, now.Location()).Unix(), endTime
+	default:
+		return now.Add(-config.duration).Unix(), endTime
+	}
 }
 
 func previousRankingTimeRange(config rankingPeriodConfig, currentStart int64) (int64, int64) {
+	currentStartTime := time.Unix(currentStart, 0)
 	previousEnd := currentStart - 1
-	previousStart := time.Unix(currentStart, 0).Add(-config.duration).Unix()
-	return previousStart, previousEnd
+	var previousStart time.Time
+	switch config.id {
+	case "today":
+		previousStart = currentStartTime.AddDate(0, 0, -1)
+	case "week":
+		previousStart = currentStartTime.AddDate(0, 0, -7)
+	case "month":
+		previousStart = currentStartTime.AddDate(0, -1, 0)
+	case "year":
+		previousStart = currentStartTime.AddDate(-1, 0, 0)
+	default:
+		previousStart = currentStartTime.Add(-config.duration)
+	}
+	return previousStart.Unix(), previousEnd
+}
+
+func beginningOfDay(value time.Time) time.Time {
+	return time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, value.Location())
+}
+
+func beginningOfWeek(value time.Time) time.Time {
+	dayStart := beginningOfDay(value)
+	weekday := int(dayStart.Weekday())
+	if weekday == 0 {
+		weekday = 7
+	}
+	return dayStart.AddDate(0, 0, -(weekday - 1))
 }
 
 func buildRankingModelMeta() map[string]rankingModelMeta {
@@ -257,9 +361,109 @@ func buildRankingModelMeta() map[string]rankingModelMeta {
 
 func modelMeta(modelName string, meta map[string]rankingModelMeta) rankingModelMeta {
 	if item, ok := meta[modelName]; ok && item.vendor != "" {
+		fallbackVendorSlug := rankingFallbackVendorSlug(item.vendor, modelName)
+		if item.vendor == rankingUnknownVendor && fallbackVendorSlug != "" {
+			item.vendor = openRouterVendorDisplayName(fallbackVendorSlug)
+		}
+		if item.vendorIcon == "" {
+			item.vendorIcon = openRouterVendorIcon(fallbackVendorSlug)
+		}
+		if item.displayName == "" {
+			item.displayName = rankingFallbackModelDisplayName(modelName)
+		}
 		return item
 	}
-	return rankingModelMeta{vendor: rankingUnknownVendor}
+	vendorSlug := rankingFallbackVendorSlug("", modelName)
+	return rankingModelMeta{
+		vendor:      openRouterVendorDisplayName(vendorSlug),
+		vendorIcon:  openRouterVendorIcon(vendorSlug),
+		displayName: rankingFallbackModelDisplayName(modelName),
+	}
+}
+
+func rankingFallbackVendorIcon(vendorName string, modelName string) string {
+	return openRouterVendorIcon(rankingFallbackVendorSlug(vendorName, modelName))
+}
+
+func rankingFallbackVendorSlug(vendorName string, modelName string) string {
+	normalizedVendor := strings.ToLower(strings.TrimSpace(vendorName))
+	normalizedVendor = strings.ReplaceAll(normalizedVendor, " ", "")
+	switch normalizedVendor {
+	case "anthropic", "claude":
+		return "anthropic"
+	case "openai":
+		return "openai"
+	case "google", "gemini":
+		return "google"
+	case "deepseek":
+		return "deepseek"
+	case "xai", "grok", "x-ai":
+		return "x-ai"
+	case "cohere":
+		return "cohere"
+	case "meta", "metallama", "llama":
+		return "meta-llama"
+	case "mistral", "mistralai":
+		return "mistralai"
+	case "qwen", "alibaba":
+		return "qwen"
+	case "moonshot", "moonshotai":
+		return "moonshotai"
+	case "minimax":
+		return "minimax"
+	case "zai", "z.ai", "zhipu", "z-ai":
+		return "z-ai"
+	case "tencent", "hunyuan":
+		return "tencent"
+	case "xiaomi":
+		return "xiaomi"
+	case "stepfun":
+		return "stepfun"
+	case "openrouter":
+		return "openrouter"
+	case "nvidia":
+		return "nvidia"
+	case "microsoft":
+		return "microsoft"
+	}
+
+	modelSlug := strings.ToLower(strings.TrimSpace(modelName))
+	if strings.Contains(modelSlug, "/") {
+		return openRouterVendorSlug(modelSlug)
+	}
+	switch {
+	case strings.HasPrefix(modelSlug, "claude"):
+		return "anthropic"
+	case strings.HasPrefix(modelSlug, "gpt-"), strings.HasPrefix(modelSlug, "o1"), strings.HasPrefix(modelSlug, "o3"), strings.HasPrefix(modelSlug, "o4"):
+		return "openai"
+	case strings.HasPrefix(modelSlug, "gemini"):
+		return "google"
+	case strings.HasPrefix(modelSlug, "deepseek"):
+		return "deepseek"
+	case strings.HasPrefix(modelSlug, "grok"):
+		return "x-ai"
+	case strings.HasPrefix(modelSlug, "llama"):
+		return "meta-llama"
+	case strings.HasPrefix(modelSlug, "mistral"), strings.HasPrefix(modelSlug, "mixtral"), strings.HasPrefix(modelSlug, "codestral"):
+		return "mistralai"
+	case strings.HasPrefix(modelSlug, "qwen"):
+		return "qwen"
+	case strings.HasPrefix(modelSlug, "moonshot"), strings.HasPrefix(modelSlug, "kimi"):
+		return "moonshotai"
+	case strings.HasPrefix(modelSlug, "command-"):
+		return "cohere"
+	}
+	return ""
+}
+
+func rankingFallbackModelDisplayName(modelName string) string {
+	if strings.TrimSpace(modelName) == "" {
+		return ""
+	}
+	if strings.Contains(modelName, "/") {
+		return openRouterModelDisplayName(modelName)
+	}
+	return modelName
 }
 
 func buildRankedModels(totals []model.RankingQuotaTotal, totalTokens int64, previousRanks map[string]int, previousTokens map[string]int64, meta map[string]rankingModelMeta, showGrowth bool) []RankedModel {
@@ -279,6 +483,7 @@ func buildRankedModels(totals []model.RankingQuotaTotal, totalTokens int64, prev
 			Rank:         idx + 1,
 			PreviousRank: previousRank,
 			ModelName:    item.ModelName,
+			DisplayName:  modelMeta.displayName,
 			Vendor:       modelMeta.vendor,
 			VendorIcon:   modelMeta.vendorIcon,
 			Category:     "all",
@@ -319,6 +524,7 @@ func buildRankedVendors(currentTotals []model.RankingQuotaTotal, previousTotals 
 		}
 		rows = append(rows, RankedVendor{
 			Vendor:      agg.name,
+			DisplayName: agg.name,
 			VendorIcon:  agg.icon,
 			TotalTokens: agg.totalTokens,
 			Share:       rankingShare(agg.totalTokens, totalTokens),
@@ -367,13 +573,13 @@ func buildModelHistory(buckets []model.RankingQuotaBucket, totals []model.Rankin
 		if idx < rankingHistoryLimit {
 			topModels[item.ModelName] = struct{}{}
 			modelMeta := modelMeta(item.ModelName, meta)
-			models = append(models, ModelHistoryModel{Name: item.ModelName, Vendor: modelMeta.vendor, Total: item.TotalTokens})
+			models = append(models, ModelHistoryModel{Name: item.ModelName, DisplayName: modelMeta.displayName, Vendor: modelMeta.vendor, Total: item.TotalTokens})
 			continue
 		}
 		otherTotal += item.TotalTokens
 	}
 	if otherTotal > 0 {
-		models = append(models, ModelHistoryModel{Name: rankingOthersLabel, Vendor: "Various", Total: otherTotal})
+		models = append(models, ModelHistoryModel{Name: rankingOthersLabel, DisplayName: rankingOthersLabel, Vendor: "Various", Total: otherTotal})
 	}
 
 	bucketSet := make(map[int64]struct{})
@@ -399,11 +605,12 @@ func buildModelHistory(buckets []model.RankingQuotaBucket, totals []model.Rankin
 				continue
 			}
 			points = append(points, ModelHistoryPoint{
-				Ts:     rankingBucketTs(bucket),
-				Label:  rankingBucketLabel(bucket, config),
-				Model:  historyModel.Name,
-				Vendor: historyModel.Vendor,
-				Tokens: tokens,
+				Ts:          rankingBucketTs(bucket),
+				Label:       rankingBucketLabel(bucket, config),
+				Model:       historyModel.Name,
+				DisplayName: historyModel.DisplayName,
+				Vendor:      historyModel.Vendor,
+				Tokens:      tokens,
 			})
 		}
 	}
@@ -422,13 +629,13 @@ func buildVendorShareHistory(buckets []model.RankingQuotaBucket, vendors []Ranke
 	for idx, vendor := range vendors {
 		if idx < rankingVendorLimit {
 			topVendors[vendor.Vendor] = struct{}{}
-			vendorRows = append(vendorRows, VendorShareVendor{Name: vendor.Vendor, Total: vendor.TotalTokens, Share: vendor.Share})
+			vendorRows = append(vendorRows, VendorShareVendor{Name: vendor.Vendor, DisplayName: vendor.Vendor, Total: vendor.TotalTokens, Share: vendor.Share})
 			continue
 		}
 		otherTotal += vendor.TotalTokens
 	}
 	if otherTotal > 0 {
-		vendorRows = append(vendorRows, VendorShareVendor{Name: rankingOthersLabel, Total: otherTotal, Share: rankingShare(otherTotal, totalTokens)})
+		vendorRows = append(vendorRows, VendorShareVendor{Name: rankingOthersLabel, DisplayName: rankingOthersLabel, Total: otherTotal, Share: rankingShare(otherTotal, totalTokens)})
 	}
 
 	bucketSet := make(map[int64]struct{})
@@ -457,11 +664,12 @@ func buildVendorShareHistory(buckets []model.RankingQuotaBucket, vendors []Ranke
 				continue
 			}
 			points = append(points, VendorSharePoint{
-				Ts:     rankingBucketTs(bucket),
-				Label:  rankingBucketLabel(bucket, config),
-				Vendor: vendor.Name,
-				Share:  rankingShare(tokens, totalsByBucket[bucket]),
-				Tokens: tokens,
+				Ts:          rankingBucketTs(bucket),
+				Label:       rankingBucketLabel(bucket, config),
+				Vendor:      vendor.Name,
+				DisplayName: vendor.DisplayName,
+				Share:       rankingShare(tokens, totalsByBucket[bucket]),
+				Tokens:      tokens,
 			})
 		}
 	}
@@ -486,6 +694,7 @@ func buildRankingMovers(models []RankedModel) ([]RankingMover, []RankingMover) {
 		}
 		row := RankingMover{
 			ModelName:   item.ModelName,
+			DisplayName: item.DisplayName,
 			Vendor:      item.Vendor,
 			VendorIcon:  item.VendorIcon,
 			RankDelta:   delta,
@@ -510,7 +719,57 @@ func buildRankingMovers(models []RankedModel) ([]RankingMover, []RankingMover) {
 		}
 		return droppers[i].RankDelta < droppers[j].RankDelta
 	})
+	if len(movers) == 0 || len(droppers) == 0 {
+		growthMovers, growthDroppers := buildGrowthRankingMovers(models)
+		if len(movers) == 0 {
+			movers = growthMovers
+		}
+		if len(droppers) == 0 {
+			droppers = growthDroppers
+		}
+	}
 	return limitRankingMovers(movers, rankingMoverLimit), limitRankingMovers(droppers, rankingMoverLimit)
+}
+
+func buildGrowthRankingMovers(models []RankedModel) ([]RankingMover, []RankingMover) {
+	movers := make([]RankingMover, 0)
+	droppers := make([]RankingMover, 0)
+	for _, item := range models {
+		if !isMeaningfulRankingGrowth(item.GrowthPct) {
+			continue
+		}
+		row := RankingMover{
+			ModelName:   item.ModelName,
+			DisplayName: item.DisplayName,
+			Vendor:      item.Vendor,
+			VendorIcon:  item.VendorIcon,
+			RankDelta:   0,
+			CurrentRank: item.Rank,
+			GrowthPct:   item.GrowthPct,
+		}
+		if item.GrowthPct > 0 {
+			movers = append(movers, row)
+		} else {
+			droppers = append(droppers, row)
+		}
+	}
+	sort.Slice(movers, func(i, j int) bool {
+		if movers[i].GrowthPct == movers[j].GrowthPct {
+			return movers[i].CurrentRank < movers[j].CurrentRank
+		}
+		return movers[i].GrowthPct > movers[j].GrowthPct
+	})
+	sort.Slice(droppers, func(i, j int) bool {
+		if droppers[i].GrowthPct == droppers[j].GrowthPct {
+			return droppers[i].CurrentRank < droppers[j].CurrentRank
+		}
+		return droppers[i].GrowthPct < droppers[j].GrowthPct
+	})
+	return movers, droppers
+}
+
+func isMeaningfulRankingGrowth(value float64) bool {
+	return value >= 0.05 || value <= -0.05
 }
 
 func sortedRankingBuckets(bucketSet map[int64]struct{}) []int64 {
