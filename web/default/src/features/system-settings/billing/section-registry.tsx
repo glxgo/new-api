@@ -211,6 +211,7 @@ const BILLING_SECTIONS = [
           directRate: settings.AffiliateDirectRate,
           indirectRate: settings.AffiliateIndirectRate,
           rootDividendRate: settings.RootDividendRate,
+          adminIndirectRate: settings.AffiliateAdminIndirectRate,
           settleEnabled: settings['affiliate_settle_setting.enabled'],
           settleHour: settings['affiliate_settle_setting.settle_hour'],
         }}

@@ -48,6 +48,7 @@ func RunDailySettle(batchId string, dayStart, dayEnd int64) error {
 	dIndirect := decimal.NewFromFloat(common.AffiliateIndirectRate)
 	dRoot := decimal.NewFromFloat(common.RootDividendRate)
 	dMaxDiv := decimal.NewFromFloat(common.MaxDividendRate())
+	dAdminIndirect := decimal.NewFromFloat(common.AffiliateAdminIndirectRate) // 管理员间接/三层+拉新分红
 	root := model.GetRootUser()
 
 	accumGift := map[int]int{}     // userId -> 赠金累加(拉新返利)
@@ -94,11 +95,18 @@ func RunDailySettle(batchId string, dayStart, dayEnd int64) error {
 				records = append(records, &model.DividendRecord{BatchId: batchId, UserId: inv2.Id, SourceUserId: log.UserId, LogId: log.Id, Type: model.DividendTypeIndirect, GrossProfit: gross, Amount: amt, CreatedAt: common.GetTimestamp()})
 			}
 		}
-		// 管理员分红(树顶管理员, 比例上限 MaxDividendRate)
+		// 管理员分红(树顶管理员, 按层级距离):
+		//   - 直接上级是管理员(InviterIdSnap==admin): 用管理员个人 DividendRate(上限 MaxDividendRate)
+		//   - 间接/三层+(树顶但非直接上级): 用全局 AffiliateAdminIndirectRate(默认 22%)
 		if admin := getUser(log.AffAdminIdSnap); admin != nil && admin.Role >= common.RoleAdminUser {
-			rate := decimal.NewFromFloat(admin.DividendRate)
-			if rate.GreaterThan(dMaxDiv) {
-				rate = dMaxDiv
+			var rate decimal.Decimal
+			if log.InviterIdSnap == admin.Id {
+				rate = decimal.NewFromFloat(admin.DividendRate)
+				if rate.GreaterThan(dMaxDiv) {
+					rate = dMaxDiv
+				}
+			} else {
+				rate = dAdminIndirect
 			}
 			if rate.GreaterThan(decimal.Zero) {
 				if amt := int(dGross.Mul(rate).Round(0).IntPart()); amt > 0 {

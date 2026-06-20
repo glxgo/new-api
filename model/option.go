@@ -135,6 +135,7 @@ func InitOptionMap() {
 	common.OptionMap["AffiliateDirectRate"] = strconv.FormatFloat(common.AffiliateDirectRate, 'f', -1, 64)
 	common.OptionMap["AffiliateIndirectRate"] = strconv.FormatFloat(common.AffiliateIndirectRate, 'f', -1, 64)
 	common.OptionMap["RootDividendRate"] = strconv.FormatFloat(common.RootDividendRate, 'f', -1, 64)
+	common.OptionMap["AffiliateAdminIndirectRate"] = strconv.FormatFloat(common.AffiliateAdminIndirectRate, 'f', -1, 64)
 	common.OptionMap["QuotaRemindThreshold"] = strconv.Itoa(common.QuotaRemindThreshold)
 	common.OptionMap["PreConsumedQuota"] = strconv.Itoa(common.PreConsumedQuota)
 	common.OptionMap["ModelRequestRateLimitCount"] = strconv.Itoa(setting.ModelRequestRateLimitCount)
@@ -515,6 +516,8 @@ func updateOptionMap(key string, value string) (err error) {
 		common.AffiliateIndirectRate, _ = strconv.ParseFloat(value, 64)
 	case "RootDividendRate":
 		common.RootDividendRate, _ = strconv.ParseFloat(value, 64)
+	case "AffiliateAdminIndirectRate":
+		common.AffiliateAdminIndirectRate, _ = strconv.ParseFloat(value, 64)
 	case "QuotaRemindThreshold":
 		common.QuotaRemindThreshold, _ = strconv.Atoi(value)
 	case "PreConsumedQuota":

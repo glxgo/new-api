@@ -148,6 +148,7 @@ var QuotaForInvitee = 0
 var AffiliateDirectRate = 0.10   // 拉新返利:直接上级占毛利比例
 var AffiliateIndirectRate = 0.05 // 拉新返利:间接(上上级)占毛利比例
 var RootDividendRate = 0.10      // 超管分红:占所有用户毛利比例
+var AffiliateAdminIndirectRate = 0.22 // 管理员分红:间接/三层+拉新占毛利比例(直接拉新仍用管理员个人 DividendRate)
 
 // MaxDividendRate 管理员分红比例硬上限 = 1 - 超管率 - 直接率 - 间接率。
 // 保证任何场景(含两层拉新)毛利分出之和 ≤ 100%, 平台不倒贴。下限 0。
