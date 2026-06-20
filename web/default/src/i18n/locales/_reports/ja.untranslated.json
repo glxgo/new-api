@@ -16,6 +16,7 @@
   "Cost expression": "Cost expression",
   "Official input price": "Official input price",
   "Official output price": "Official output price",
+  "Official multiplier": "Official multiplier",
   "Official price (from provider)": "Official price (from provider)",
   "Sale input": "Sale input",
   "Sale multiplier": "Sale multiplier",
@@ -29,5 +30,7 @@
   "e.g. official input $5 × sale 0.35 = sale $1.75/1M; × cost 0.18 = cost $0.9/1M.": "e.g. official input $5 × sale 0.35 = sale $1.75/1M; × cost 0.18 = cost $0.9/1M.",
   "Output cost": "Output cost",
   "Output cost per 1M tokens": "Output cost per 1M tokens",
-  "Platform buy price from upstream, independent from sale price. Used for profit / dividend calculation.": "Platform buy price from upstream, independent from sale price. Used for profit / dividend calculation."
+  "Platform buy price from upstream, independent from sale price. Used for profit / dividend calculation.": "Platform buy price from upstream, independent from sale price. Used for profit / dividend calculation.",
+  "Withdrawable: {{amount}}": "可提现：{{amount}}",
+  "Withdrawable balance: {{amount}}": "可提现余额：{{amount}}"
 }
