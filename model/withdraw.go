@@ -19,7 +19,7 @@ type Withdraw struct {
 	HandlerName   string `json:"handler_name" gorm:"type:varchar(64)"`
 	AlipayName    string `json:"alipay_name" gorm:"type:varchar(64)"`     // 普通用户本金提现必填
 	AlipayAccount string `json:"alipay_account" gorm:"type:varchar(128)"` // 普通用户本金提现必填
-	WechatQrcode  string `json:"wechat_qrcode" gorm:"type:text"`         // base64, 备用收款码
+	WechatQrcode  string `json:"wechat_qrcode" gorm:"type:longtext"`      // base64, 备用收款码(longtext 容纳压缩后图片)
 	Remark        string `json:"remark" gorm:"type:varchar(255)"`        // 审核备注
 	CreatedAt     int64  `json:"created_at" gorm:"bigint;index"`
 	HandledAt     int64  `json:"handled_at" gorm:"bigint"`

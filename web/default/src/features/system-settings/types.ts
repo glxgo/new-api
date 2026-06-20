@@ -317,6 +317,8 @@ export type OperationsSettings = {
   'perf_metrics_setting.bucket_time': 'hour' | 'minute' | '5min'
   'perf_metrics_setting.retention_days': number
   'tutorial_setting.content': string
+  // 顶部导航排序(JSON 数组 of navKey, 超管后台可配)
+  TopNavOrder: string
 }
 
 export type SecuritySettings = {

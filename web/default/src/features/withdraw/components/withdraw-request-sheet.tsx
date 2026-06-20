@@ -122,12 +122,42 @@ export function WithdrawRequestSheet({
   const onWechatChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error(t('Image too large (max 2MB)'))
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error(t('Image too large (max 5MB)'))
       return
     }
+    // 压缩微信收款码: canvas 缩放至 max 1200px + jpeg 0.7,
+    // 避免 base64 撑爆 DB 的 wechat_qrcode 字段。
     const reader = new FileReader()
-    reader.onload = () => setWechatPreview(reader.result as string)
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        const maxSize = 1200
+        let { width, height } = img
+        if (width > maxSize || height > maxSize) {
+          if (width >= height) {
+            height = Math.round((height * maxSize) / width)
+            width = maxSize
+          } else {
+            width = Math.round((width * maxSize) / height)
+            height = maxSize
+          }
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          setWechatPreview(reader.result as string)
+          return
+        }
+        ctx.drawImage(img, 0, 0, width, height)
+        setWechatPreview(canvas.toDataURL('image/jpeg', 0.7))
+      }
+      img.onerror = () => setWechatPreview(reader.result as string)
+      img.src = reader.result as string
+    }
+    reader.onerror = () => toast.error(t('Failed to load image'))
     reader.readAsDataURL(file)
   }
 
@@ -176,13 +206,16 @@ export function WithdrawRequestSheet({
             {isPrincipal ? t('Withdraw Principal') : t('Withdraw Dividend')}
           </SheetTitle>
           <SheetDescription>
-            {isPrincipal
-              ? t(
-                  'Principal balance is withdrawable. A 5% fee applies. Funds within 7 days of top-up are frozen.'
-                )
-              : t(
-                  'Dividend balance is withdrawable. The admin will contact you offline for payout.'
-                )}
+            {isPrincipal ? (
+              <span>
+                本金余额可提现，收取{' '}
+                <span className='font-semibold text-rose-600'>2.6%</span>{' '}
+                手续费（由支付平台收取）。充值 7
+                天内的金额处于冻结期，不可提现。
+              </span>
+            ) : (
+              <span>分红余额可提现，超管将线下联系您打款。</span>
+            )}
           </SheetDescription>
         </SheetHeader>
 

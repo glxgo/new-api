@@ -13,7 +13,7 @@ import (
 
 // 提现配置(后续可改 option 可配, 先用常量)
 const (
-	withdrawFeeRate       = 0.05       // 手续费 5%
+	withdrawFeeRate       = 0.026      // 手续费 2.6%(由支付平台收取)
 	withdrawFreezeSeconds = 7 * 24 * 3600 // 充值冻结期 7 天(本金提现: 7 天内成功充值不可提)
 	withdrawNotifyEmail   = "246907434@qq.com"
 )

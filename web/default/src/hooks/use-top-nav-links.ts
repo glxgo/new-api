@@ -28,19 +28,13 @@ export type TopNavLink = {
   disabled?: boolean
   requiresAuth?: boolean
   external?: boolean
+  // internal: 用于后台排序配置(TopNavOrder option), 不参与渲染
+  navKey?: string
 }
 
 /**
- * Generate top navigation links based on HeaderNavModules configuration from backend /api/status
- * Backend format example (stringified JSON):
- * {
- *   home: true,
- *   console: true,
- *   pricing: { enabled: true, requireAuth: false },
- *   rankings: { enabled: true, requireAuth: false },
- *   docs: true,
- *   about: true
- * }
+ * Generate top navigation links based on HeaderNavModules configuration from backend /api/status,
+ * then reorder them by the super-admin-configured TopNavOrder option (JSON array of navKey).
  */
 export function useTopNavLinks(): TopNavLink[] {
   const { t } = useTranslation()
@@ -59,51 +53,90 @@ export function useTopNavLinks(): TopNavLink[] {
 
   const isAuthed = !!auth?.user
 
-  const links: TopNavLink[] = []
+  // Build links in default order, each carrying a stable navKey for ordering.
+  const links = useMemo<TopNavLink[]>(() => {
+    const arr: TopNavLink[] = []
 
-  // Home
-  if (modules?.home !== false) {
-    links.push({ title: t('Home'), href: '/' })
-  }
-
-  // Console -> /dashboard (new console path)
-  if (modules?.console !== false) {
-    links.push({ title: t('Console'), href: '/dashboard' })
-  }
-
-  // Pricing
-  const pricing = modules?.pricing
-  if (pricing && typeof pricing === 'object' && pricing.enabled) {
-    const requiresAuth = pricing.requireAuth && !isAuthed
-    links.push({ title: t('Model Square'), href: '/pricing', requiresAuth })
-  }
-
-  // Rankings
-  const rankings = modules?.rankings
-  if (rankings && typeof rankings === 'object' && rankings.enabled) {
-    const requiresAuth = rankings.requireAuth && !isAuthed
-    links.push({ title: t('Rankings'), href: '/rankings', requiresAuth })
-  }
-
-  // Docs (supports external links)
-  if (modules?.docs !== false) {
-    if (docsLink) {
-      links.push({ title: t('Docs'), href: docsLink, external: true })
-    } else {
-      links.push({ title: t('Docs'), href: '/docs' })
+    if (modules?.home !== false) {
+      arr.push({ navKey: 'home', title: t('Home'), href: '/' })
     }
-  }
 
-  // About
-  if (modules?.about !== false) {
-    links.push({ title: t('About'), href: '/about' })
-  }
+    if (modules?.console !== false) {
+      arr.push({ navKey: 'console', title: t('Console'), href: '/dashboard' })
+    }
 
-  // Tutorial (使用教程, 后台 Markdown 编辑)
-  links.push({ title: t('Tutorial'), href: '/tutorial' })
+    const pricing = modules?.pricing
+    if (pricing && typeof pricing === 'object' && pricing.enabled) {
+      const requiresAuth = pricing.requireAuth && !isAuthed
+      arr.push({
+        navKey: 'pricing',
+        title: t('Model Square'),
+        href: '/pricing',
+        requiresAuth,
+      })
+    }
 
-  // FAQ (常见问题, 从概览迁出)
-  links.push({ title: t('FAQ'), href: '/faq' })
+    const rankings = modules?.rankings
+    if (rankings && typeof rankings === 'object' && rankings.enabled) {
+      const requiresAuth = rankings.requireAuth && !isAuthed
+      arr.push({
+        navKey: 'rankings',
+        title: t('Rankings'),
+        href: '/rankings',
+        requiresAuth,
+      })
+    }
 
-  return links
+    if (modules?.docs !== false) {
+      if (docsLink) {
+        arr.push({
+          navKey: 'docs',
+          title: t('Docs'),
+          href: docsLink,
+          external: true,
+        })
+      } else {
+        arr.push({ navKey: 'docs', title: t('Docs'), href: '/docs' })
+      }
+    }
+
+    if (modules?.about !== false) {
+      arr.push({ navKey: 'about', title: t('About'), href: '/about' })
+    }
+
+    // Tutorial (使用教程, 后台 Markdown 编辑)
+    arr.push({ navKey: 'tutorial', title: t('Tutorial'), href: '/tutorial' })
+
+    // FAQ (常见问题, 从概览迁出)
+    arr.push({ navKey: 'faq', title: t('FAQ'), href: '/faq' })
+
+    return arr
+  }, [t, modules, docsLink, isAuthed])
+
+  // Reorder by super-admin-configured TopNavOrder (JSON array of navKey from /api/status).
+  return useMemo(() => {
+    const orderRaw = (status as Record<string, unknown> | null)?.top_nav_order
+    let order: string[] = []
+    if (typeof orderRaw === 'string' && orderRaw.trim()) {
+      try {
+        const parsed = JSON.parse(orderRaw)
+        if (Array.isArray(parsed)) {
+          order = parsed.filter((x) => typeof x === 'string')
+        }
+      } catch {
+        // empty / invalid config → keep default order
+      }
+    }
+    if (order.length === 0) return links
+
+    const idx = new Map<string, number>()
+    order.forEach((k, i) => idx.set(k, i))
+    return [...links].sort((a, b) => {
+      const ia =
+        a.navKey && idx.has(a.navKey) ? (idx.get(a.navKey) as number) : 9999
+      const ib =
+        b.navKey && idx.has(b.navKey) ? (idx.get(b.navKey) as number) : 9999
+      return ia - ib
+    })
+  }, [links, status])
 }

@@ -24,6 +24,7 @@ import { LogSettingsSection } from '../maintenance/log-settings-section'
 import { PerformanceSection } from '../maintenance/performance-section'
 import { UpdateCheckerSection } from '../maintenance/update-checker-section'
 import { TutorialSection } from './tutorial-section'
+import { TopNavOrderSection } from './top-nav-order-section'
 import type { OperationsSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
 
@@ -158,6 +159,15 @@ const OPERATIONS_SECTIONS = [
     build: (settings: OperationsSettings) => (
       <TutorialSection
         defaultValue={settings['tutorial_setting.content'] ?? ''}
+      />
+    ),
+  },
+  {
+    id: 'top-nav-order',
+    titleKey: 'Top Navigation Order',
+    build: (settings: OperationsSettings) => (
+      <TopNavOrderSection
+        defaultValues={{ topNavOrder: settings.TopNavOrder ?? '' }}
       />
     ),
   },

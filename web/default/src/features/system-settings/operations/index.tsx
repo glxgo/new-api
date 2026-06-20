@@ -41,6 +41,7 @@ const defaultOperationsSettings: OperationsSettings = {
   'monitor_setting.auto_test_channel_enabled': false,
   'monitor_setting.auto_test_channel_minutes': 10,
   'tutorial_setting.content': '',
+  TopNavOrder: '',
   SMTPServer: '',
   SMTPPort: '',
   SMTPAccount: '',

@@ -105,6 +105,8 @@ func GetStatus(c *gin.Context) {
 		// 模块管理配置
 		"HeaderNavModules":    common.OptionMap["HeaderNavModules"],
 		"SidebarModulesAdmin": common.OptionMap["SidebarModulesAdmin"],
+		// 顶部导航排序(JSON 数组 of navKey, 超管后台可配; 空则用默认顺序)
+		"top_nav_order": common.OptionMap["TopNavOrder"],
 
 		"oidc_enabled":                system_setting.GetOIDCSettings().Enabled,
 		"oidc_client_id":              system_setting.GetOIDCSettings().ClientId,
