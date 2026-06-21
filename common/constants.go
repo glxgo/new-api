@@ -147,8 +147,9 @@ var QuotaForInvitee = 0
 // 分润系统比例(超管后台「运营设置」可配,见 plan mellow-growing-waterfall.md)
 var AffiliateDirectRate = 0.10   // 拉新返利:直接上级占毛利比例
 var AffiliateIndirectRate = 0.05 // 拉新返利:间接(上上级)占毛利比例
-var RootDividendRate = 0.10      // 超管分红:占所有用户毛利比例
-var AffiliateAdminIndirectRate = 0.22 // 管理员分红:间接/三层+拉新占毛利比例(直接拉新仍用管理员个人 DividendRate)
+var RootDividendRate = 0.10           // 超管分红:占所有用户毛利比例
+var AffiliateAdminDirectRate = 0.75    // 管理员分红:直接拉新占毛利比例
+var AffiliateAdminIndirectRate = 0.22  // 管理员分红:间接/三层+拉新占毛利比例
 
 // MaxDividendRate 管理员分红比例硬上限 = 1 - 超管率 - 直接率 - 间接率。
 // 保证任何场景(含两层拉新)毛利分出之和 ≤ 100%, 平台不倒贴。下限 0。

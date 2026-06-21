@@ -275,6 +275,7 @@ export type BillingSettings = {
   AffiliateDirectRate: number
   AffiliateIndirectRate: number
   RootDividendRate: number
+  AffiliateAdminDirectRate: number
   AffiliateAdminIndirectRate: number
   'affiliate_settle_setting.enabled': boolean
   'affiliate_settle_setting.settle_hour': number

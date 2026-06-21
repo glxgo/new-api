@@ -110,6 +110,7 @@ const defaultBillingSettings: BillingSettings = {
   AffiliateDirectRate: 0.1,
   AffiliateIndirectRate: 0.05,
   RootDividendRate: 0.1,
+  AffiliateAdminDirectRate: 0.75,
   AffiliateAdminIndirectRate: 0.22,
   'affiliate_settle_setting.enabled': false,
   'affiliate_settle_setting.settle_hour': 2,

@@ -18,13 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { parseCurrencyDisplayType } from '@/lib/currency'
 import { CheckinSettingsSection } from '../general/checkin-settings-section'
-import { DividendSettingsSection } from './dividend-settings-section'
 import { PricingSection } from '../general/pricing-section'
 import { QuotaSettingsSection } from '../general/quota-settings-section'
 import { PaymentSettingsSection } from '../integrations/payment-settings-section'
 import { RatioSettingsCard } from '../models/ratio-settings-card'
 import type { BillingSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { DividendSettingsSection } from './dividend-settings-section'
 
 const getModelDefaults = (settings: BillingSettings) => ({
   ModelPrice: settings.ModelPrice,
@@ -211,6 +211,7 @@ const BILLING_SECTIONS = [
           directRate: settings.AffiliateDirectRate,
           indirectRate: settings.AffiliateIndirectRate,
           rootDividendRate: settings.RootDividendRate,
+          adminDirectRate: settings.AffiliateAdminDirectRate,
           adminIndirectRate: settings.AffiliateAdminIndirectRate,
           settleEnabled: settings['affiliate_settle_setting.enabled'],
           settleHour: settings['affiliate_settle_setting.settle_hour'],

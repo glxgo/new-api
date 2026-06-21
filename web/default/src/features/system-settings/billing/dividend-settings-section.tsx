@@ -46,6 +46,7 @@ const schema = z.object({
   directRate: z.coerce.number().min(0).max(1),
   indirectRate: z.coerce.number().min(0).max(1),
   rootDividendRate: z.coerce.number().min(0).max(1),
+  adminDirectRate: z.coerce.number().min(0).max(1),
   adminIndirectRate: z.coerce.number().min(0).max(1),
   settleEnabled: z.boolean(),
   settleHour: z.coerce.number().int().min(0).max(23),
@@ -56,6 +57,7 @@ interface DividendSettingsDefaultValues {
   directRate: number
   indirectRate: number
   rootDividendRate: number
+  adminDirectRate: number
   adminIndirectRate: number
   settleEnabled: boolean
   settleHour: number
@@ -92,6 +94,11 @@ export function DividendSettingsSection({
       updates.push({
         key: 'RootDividendRate',
         value: String(values.rootDividendRate),
+      })
+    if (values.adminDirectRate !== defaultValues.adminDirectRate)
+      updates.push({
+        key: 'AffiliateAdminDirectRate',
+        value: String(values.adminDirectRate),
       })
     if (values.adminIndirectRate !== defaultValues.adminIndirectRate)
       updates.push({
@@ -130,7 +137,7 @@ export function DividendSettingsSection({
             saveLabel='Save dividend settings'
           />
 
-          <div className='grid gap-6 sm:grid-cols-2 lg:grid-cols-4'>
+          <div className='grid gap-6 sm:grid-cols-2 lg:grid-cols-5'>
             <FormField
               control={form.control}
               name='directRate'
@@ -200,6 +207,31 @@ export function DividendSettingsSection({
                   <FormDescription>
                     {t(
                       'Share of all gross profit to the super admin (0.10 = 10%)'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name='adminDirectRate'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Admin Direct Rate')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type='number'
+                      step='0.01'
+                      min={0}
+                      max={1}
+                      placeholder='0.75'
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'Admin dividend for directly invited users (0.75 = 75%); capped by max dividend rate'
                     )}
                   </FormDescription>
                   <FormMessage />
