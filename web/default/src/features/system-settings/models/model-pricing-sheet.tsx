@@ -77,7 +77,6 @@ import {
   type LaneKey,
   type ModelPricingFormValues,
   type ModelRatioData,
-  type MultiplierLaneState,
   type PricingMode,
 } from './model-pricing-core'
 import { PriceInput, PriceLane } from './model-pricing-inputs'
@@ -156,9 +155,7 @@ export const ModelPricingEditorPanel = forwardRef<
   })
   const [billingExpr, setBillingExpr] = useState('')
   const [requestRuleExpr, setRequestRuleExpr] = useState('')
-  const [mulState, setMulState] = useState<MultiplierLaneState>(
-    createInitialMultiplierState(null)
-  )
+  const mulState = createInitialMultiplierState(null)
   const isEditMode = !!editData
 
   const form = useForm<ModelPricingFormValues>({
@@ -249,7 +246,6 @@ export const ModelPricingEditorPanel = forwardRef<
     setPromptPrice(editData?.officialInput || nextLaneState.promptPrice)
     setLanePrices(officialLanePrices)
     setLaneEnabled(officialLaneEnabled)
-    setMulState(createInitialMultiplierState(editData))
   }, [editData, form])
 
   const setFormValue = (field: keyof ModelPricingFormValues, value: string) => {
@@ -257,17 +253,6 @@ export const ModelPricingEditorPanel = forwardRef<
       shouldDirty: true,
       shouldValidate: true,
     })
-  }
-
-  const handleMultiplierChange = (
-    kind: 'sale' | 'cost',
-    value: string
-  ) => {
-    if (!numericDraftRegex.test(value)) return
-    setMulState((prev) => ({
-      ...prev,
-      [kind === 'sale' ? 'saleMultiplier' : 'costMultiplier']: value,
-    }))
   }
 
   const deriveLaneRatio = (
@@ -491,8 +476,6 @@ export const ModelPricingEditorPanel = forwardRef<
       const data: ModelRatioData = {
         name: values.name.trim(),
         billingMode: pricingMode,
-        saleMultiplier: mulState.saleMultiplier,
-        costMultiplier: mulState.costMultiplier,
         pricingSourceMode: pricingMode,
       }
 
@@ -631,63 +614,6 @@ export const ModelPricingEditorPanel = forwardRef<
                     </FormItem>
                   )}
                 />
-
-                <FieldGroup>
-                  <Field>
-                    <FieldLabel>
-                      {t('Multipliers (apply to all modes)')}
-                    </FieldLabel>
-                    <FieldDescription>
-                      {t(
-                        'Sale = official × sale multiplier; Cost = official × cost multiplier. Fill official prices in the tab below.'
-                      )}
-                    </FieldDescription>
-                    <div className='grid gap-3 sm:grid-cols-2'>
-                      <div className='flex flex-col gap-1'>
-                        <InputGroup>
-                          <InputGroupAddon>×</InputGroupAddon>
-                          <InputGroupInput
-                            inputMode='decimal'
-                            placeholder='0.35'
-                            value={mulState.saleMultiplier}
-                            onChange={(e) =>
-                              handleMultiplierChange('sale', e.target.value)
-                            }
-                          />
-                        </InputGroup>
-                        <span className='text-muted-foreground text-xs'>
-                          {t('Sale multiplier')}
-                        </span>
-                      </div>
-                      <div className='flex flex-col gap-1'>
-                        <InputGroup>
-                          <InputGroupAddon>×</InputGroupAddon>
-                          <InputGroupInput
-                            inputMode='decimal'
-                            placeholder='0.18'
-                            value={mulState.costMultiplier}
-                            onChange={(e) =>
-                              handleMultiplierChange('cost', e.target.value)
-                            }
-                          />
-                        </InputGroup>
-                        <span className='text-muted-foreground text-xs'>
-                          {t('Cost multiplier')}
-                        </span>
-                      </div>
-                    </div>
-                  </Field>
-                  {mulState.isApproximate && (
-                    <Alert>
-                      <AlertTriangle data-icon='inline-start' />
-                      <AlertDescription>
-                        {t(
-                          'Approximate — official price inferred from existing ratio. Save to lock in multipliers.'
-                        )}
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                </FieldGroup>
 
                 <Tabs
                   value={pricingMode}
