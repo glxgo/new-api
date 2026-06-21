@@ -479,8 +479,8 @@ For commercial licensing, please contact support@quantumnous.com
 @media (prefers-reduced-motion: no-preference) {
   [data-slot='card']:not([data-card-hover='false']) {
     transition:
-      transform 150ms ease,
-      box-shadow 150ms ease;
+      transform 240ms var(--ease-smooth),
+      box-shadow 240ms var(--ease-smooth);
   }
 
   @media (min-width: 641px) {
@@ -500,7 +500,7 @@ For commercial licensing, please contact support@quantumnous.com
   }
 
   [data-slot='table'] tr {
-    transition: background-color 120ms ease;
+    transition: background-color 160ms var(--ease-smooth);
   }
 
   /* Table row stagger-in animation */
@@ -604,4 +604,65 @@ For commercial licensing, please contact support@quantumnous.com
   .terminal-demo-pulse {
     animation: none !important;
   }
+}
+
+/* ── Star API · 动效地基 + 克制点缀（保留原版配色，只升级质感）──
+ * (1) 统一全站过渡曲线为 smooth（ColorOS 级）：覆盖 Tailwind 默认 ease。
+ * (2) 提供克制招牌工具类 .star-glow（CTA/高亮卡悬停描边光带，中性光）。
+ * 不改任何颜色变量；全部尊重 prefers-reduced-motion。 */
+:root {
+  --ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+  /* 覆盖 Tailwind 默认过渡曲线：所有 transition-* 工具类自动用上 smooth */
+  --default-transition-timing-function: var(--ease-smooth);
+}
+
+/* CTA / 高亮卡悬停描边光带（reactbits BorderGlow 风格，中性、克制、不旋转） */
+.star-glow {
+  position: relative;
+  isolation: isolate;
+}
+.star-glow::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  z-index: -1;
+  border-radius: inherit;
+  background: color-mix(in oklch, var(--ring) 72%, transparent);
+  opacity: 0;
+  filter: blur(6px);
+  transition: opacity 360ms var(--ease-smooth);
+}
+.star-glow:hover::after {
+  opacity: 0.85;
+}
+@media (prefers-reduced-motion: reduce) {
+  .star-glow::after {
+    transition: none;
+  }
+}
+
+/* ② 弹层(dialog/sheet/drawer/alert/popover/tooltip)开合曲线统一 smooth
+ *    覆盖 tw-animate-css 默认 ease，让所有弹窗开合更跟手；只改曲线，不改内容。 */
+[data-slot='dialog-content'],
+[data-slot='sheet-content'],
+[data-slot='drawer-content'],
+[data-slot='alert-dialog-content'],
+[data-slot='popover-content'],
+[data-slot='tooltip-content'] {
+  --tw-ease: var(--ease-smooth);
+}
+
+/* 主题切换：圆形扩散（View Transitions API，借鉴 kourichat）
+ * 配合 theme-switch.tsx 的 startViewTransition + clip-path 动画 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) {
+  z-index: 1;
+}
+::view-transition-new(root) {
+  z-index: 2;
 }

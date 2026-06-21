@@ -30,7 +30,9 @@ const STORAGE_KEY = 'home_page_content'
  */
 export function useHomePageContent(): HomePageContentResult {
   const [content, setContent] = useState<string>('')
-  const [isLoaded, setIsLoaded] = useState(false)
+  // 预览友好：默认首页立即渲染，不阻塞在可能挂起的后端请求上；
+  // 若后端返回了自定义首页内容，加载完成后再替换。
+  const [isLoaded, setIsLoaded] = useState(true)
 
   useEffect(() => {
     let mounted = true
