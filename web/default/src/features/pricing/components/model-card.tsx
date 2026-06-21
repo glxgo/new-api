@@ -111,12 +111,6 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
               <h3 className='text-foreground truncate font-mono text-[15px] leading-tight font-bold'>
                 {props.model.model_name}
               </h3>
-              {props.model.sale_multiplier !== undefined &&
-                props.model.sale_multiplier > 0 && (
-                  <span className='inline-flex shrink-0 items-center rounded-full bg-green-500/15 px-2 py-0.5 text-[11px] font-medium text-green-600 dark:bg-green-500/20 dark:text-green-400'>
-                    {t('Official multiplier')}={props.model.sale_multiplier}
-                  </span>
-                )}
             </div>
             <div className='mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs sm:mt-1 sm:gap-x-3'>
               {dynamicSummary ? (

@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // GetProfitSummary 超管利润看板: 汇总指定时间区间的消费/成本/已结算毛利/各项分润/净利。
@@ -26,10 +27,14 @@ func GetProfitSummary(c *gin.Context) {
 		TotalQuota int64
 		TotalCost  int64
 	}
-	model.LOG_DB.Table("logs").
+	// 1. 全站消费/成本(logs 全量, 排除超管自身消费 —— 超管不计入任何利润)
+	logQuery := model.LOG_DB.Table("logs").
 		Select("COALESCE(SUM(quota),0) AS total_quota, COALESCE(SUM(cost),0) AS total_cost").
-		Where("type = ? AND created_at >= ? AND created_at < ?", model.LogTypeConsume, start, end).
-		Scan(&consume)
+		Where("type = ? AND created_at >= ? AND created_at < ?", model.LogTypeConsume, start, end)
+	if rootUser := model.GetRootUser(); rootUser != nil {
+		logQuery = logQuery.Where("user_id != ?", rootUser.Id)
+	}
+	logQuery.Scan(&consume)
 
 	// 2. 已结算总毛利(affiliate_settles 已完成批次)
 	var settledGross int64
@@ -93,7 +98,8 @@ func parseProfitTimeRange(c *gin.Context) (start, end int64) {
 	return start, end
 }
 
-// GetDividendRecords 超管/管理员查看分润明细(审计)。支持按 user_id/source_user_id/type 过滤。
+// GetDividendRecords 超管/管理员查看分润明细(审计)。按「消费用户 + 批次(天)」聚合,
+// 同一消费用户同一批次(一天)的所有分润合成一条(支持 source_user_id/type 过滤后再聚合)。
 func GetDividendRecords(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
@@ -103,25 +109,34 @@ func GetDividendRecords(c *gin.Context) {
 	if pageSize < 1 || pageSize > 100 {
 		pageSize = 20
 	}
-	tx := model.DB.Table("dividend_records")
-	if v := c.Query("user_id"); v != "" {
-		if uid, err := strconv.Atoi(v); err == nil {
-			tx = tx.Where("user_id = ?", uid)
+	applyFilters := func() *gorm.DB {
+		tx := model.DB.Table("dividend_records")
+		if v := c.Query("source_user_id"); v != "" {
+			if uid, err := strconv.Atoi(v); err == nil {
+				tx = tx.Where("source_user_id = ?", uid)
+			}
 		}
-	}
-	if v := c.Query("source_user_id"); v != "" {
-		if uid, err := strconv.Atoi(v); err == nil {
-			tx = tx.Where("source_user_id = ?", uid)
+		if v := c.Query("type"); v != "" {
+			if t, err := strconv.Atoi(v); err == nil {
+				tx = tx.Where("type = ?", t)
+			}
 		}
+		return tx
 	}
-	if v := c.Query("type"); v != "" {
-		if t, err := strconv.Atoi(v); err == nil {
-			tx = tx.Where("type = ?", t)
-		}
-	}
+	const aggSelect = "source_user_id, batch_id, SUM(gross_profit) AS gross_profit, SUM(amount) AS amount, COUNT(*) AS record_count, MIN(created_at) AS created_at"
 	var total int64
-	tx.Count(&total)
-	var records []model.DividendRecord
-	tx.Order("id desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&records)
+	applyFilters().Select(aggSelect).Group("source_user_id, batch_id").Count(&total)
+	var records []dividendRecordAggregate
+	applyFilters().Select(aggSelect).Group("source_user_id, batch_id").Order("MIN(created_at) desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&records)
 	common.ApiSuccess(c, gin.H{"data": records, "total": total})
+}
+
+// dividendRecordAggregate 分润明细按「消费用户 + 批次(天)」聚合后的行。
+type dividendRecordAggregate struct {
+	SourceUserId int    `json:"source_user_id"`
+	BatchId      string `json:"batch_id"`
+	GrossProfit  int64  `json:"gross_profit"`
+	Amount       int64  `json:"amount"`
+	RecordCount  int    `json:"record_count"`
+	CreatedAt    int64  `json:"created_at"`
 }

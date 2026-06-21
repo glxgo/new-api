@@ -74,6 +74,10 @@ func RunDailySettle(batchId string, dayStart, dayEnd int64) error {
 	}
 
 	processLog := func(log *model.Log) {
+		// 超管自己的消费不计入分润/利润(超管使用站内 API 不产生任何分润; log 仍会被批量标记 settled)
+		if u := getUser(log.UserId); u != nil && u.Role >= common.RoleRootUser {
+			return
+		}
 		gross := CalcGrossProfit(log.PaidQuota, log.PaidGiftQuota, log.Cost)
 		if gross <= 0 {
 			return

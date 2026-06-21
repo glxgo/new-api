@@ -4783,6 +4783,10 @@
     "Loss": "亏损",
     "Verify each model actual sale price and cost under the selected group (official price × group ratio).": "核对所选分组下每个模型的实际售价和成本（官方价 × 分组倍率）。",
     "JSON map of group → cost ratio (platform cost = official price × cost ratio). Leave a group out to inherit its sale ratio.": "分组 → 成本倍率的 JSON 映射（平台成本 = 官方价 × 成本倍率）。不填某分组则继承其售价倍率。",
-    "auto is an automatic group; select a concrete group to view final prices.": "auto 是自动分组，会在请求时解析为具体分组；请选择具体分组查看最终售价。"
+    "auto is an automatic group; select a concrete group to view final prices.": "auto 是自动分组，会在请求时解析为具体分组；请选择具体分组查看最终售价。",
+    "Usage Tutorial": "使用教程",
+    "Follow these steps to get started": "按照以下步骤开始使用",
+    "Dividend Amount": "分润金额",
+    "Records": "笔数"
   }
 }

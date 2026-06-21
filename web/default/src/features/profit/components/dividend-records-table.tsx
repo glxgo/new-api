@@ -21,9 +21,7 @@ import { useQuery } from '@tanstack/react-query'
 import { type ColumnDef } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import dayjs from '@/lib/dayjs'
 import { formatQuota } from '@/lib/format'
-import { Badge } from '@/components/ui/badge'
 import {
   Select,
   SelectContent,
@@ -33,16 +31,9 @@ import {
 } from '@/components/ui/select'
 import { DataTablePage, useDataTable } from '@/components/data-table'
 import { getDividendRecords } from '../api'
-import { type DividendRecord, type DividendRecordType } from '../types'
+import { type DividendRecord } from '../types'
 
 const PAGE_SIZE = 20
-
-const TYPE_LABEL: Record<DividendRecordType, string> = {
-  1: 'Direct Rebate',
-  2: 'Indirect Rebate',
-  3: 'Admin Dividend',
-  4: 'Root Dividend',
-}
 
 export function DividendRecordsTable() {
   const { t } = useTranslation()
@@ -71,23 +62,12 @@ export function DividendRecordsTable() {
 
   const columns = useMemo<ColumnDef<DividendRecord>[]>(
     () => [
-      { accessorKey: 'batch_id', header: t('Batch'), size: 110 },
-      {
-        accessorKey: 'type',
-        header: t('Type'),
-        size: 130,
-        cell: ({ row }) => (
-          <Badge variant='secondary' className='text-xs'>
-            {t(TYPE_LABEL[row.original.type] ?? '-')}
-          </Badge>
-        ),
-      },
-      { accessorKey: 'user_id', header: t('Recipient'), size: 90 },
-      { accessorKey: 'source_user_id', header: t('Source User'), size: 100 },
+      { accessorKey: 'batch_id', header: t('Date'), size: 120 },
+      { accessorKey: 'source_user_id', header: t('Source User'), size: 110 },
       {
         accessorKey: 'gross_profit',
         header: t('Gross Profit'),
-        size: 110,
+        size: 120,
         cell: ({ row }) => (
           <span className='text-muted-foreground font-mono text-sm'>
             {formatQuota(row.original.gross_profit)}
@@ -96,8 +76,8 @@ export function DividendRecordsTable() {
       },
       {
         accessorKey: 'amount',
-        header: t('Amount'),
-        size: 110,
+        header: t('Dividend Amount'),
+        size: 120,
         cell: ({ row }) => (
           <span className='font-mono font-semibold'>
             {formatQuota(row.original.amount)}
@@ -105,12 +85,12 @@ export function DividendRecordsTable() {
         ),
       },
       {
-        accessorKey: 'created_at',
-        header: t('Time'),
-        size: 150,
+        accessorKey: 'record_count',
+        header: t('Records'),
+        size: 90,
         cell: ({ row }) => (
           <span className='text-muted-foreground text-xs'>
-            {dayjs(row.original.created_at * 1000).format('YYYY-MM-DD HH:mm')}
+            {row.original.record_count}
           </span>
         ),
       },

@@ -49,15 +49,14 @@ export const DIVIDEND_TYPE = {
 export type DividendRecordType =
   (typeof DIVIDEND_TYPE)[keyof typeof DIVIDEND_TYPE]
 
+// Dividend record aggregated by source_user + batch(day): same consuming user in the
+// same batch (one T+1 day) merged into one row. type filter is applied before aggregation.
 export interface DividendRecord {
-  id: number
-  batch_id: string // e.g. "2026-06-16"
-  user_id: number // recipient of the dividend
   source_user_id: number // user whose consumption generated the profit
-  log_id: number
-  type: DividendRecordType
-  gross_profit: number // gross profit of the source log (quota)
-  amount: number // dividend amount received (quota)
+  batch_id: string // e.g. "2026-06-16"
+  gross_profit: number // sum of gross profit (quota)
+  amount: number // sum of dividend amount (quota)
+  record_count: number // how many dividend records merged into this row
   created_at: number
 }
 
