@@ -43,6 +43,17 @@ export function FAQ() {
           </p>
         </div>
 
+        <div className='bg-card mb-6 flex flex-col items-center gap-3 rounded-xl border p-5'>
+          <img
+            src='/uploads/after-sales-qrcode.jpg'
+            alt={t('After-sales group QR code')}
+            className='h-48 w-48 rounded-lg object-contain'
+          />
+          <p className='text-muted-foreground text-sm'>
+            {t('Scan to join the after-sales group')}
+          </p>
+        </div>
+
         <div className='relative mb-6'>
           <Search className='text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2' />
           <Input
