@@ -223,6 +223,22 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "RankingsDataSource":
+		if option.Value != "local" && option.Value != "openrouter" {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "无效的排行榜数据源，可选值：local（本站数据）、openrouter（OpenRouter 数据）",
+			})
+			return
+		}
+	case "RankingsSourceBadgeEnabled":
+		if _, err = strconv.ParseBool(option.Value.(string)); err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "无效的排行榜来源标识开关，可选值：true 或 false",
+			})
+			return
+		}
 	case "GroupRatio":
 		err = ratio_setting.CheckGroupRatio(option.Value.(string))
 		if err != nil {

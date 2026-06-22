@@ -26,6 +26,8 @@ import type { UpdateOptionRequest } from '../types'
 const STATUS_RELATED_KEYS = [
   'theme.frontend',
   'HeaderNavModules',
+  'RankingsDataSource',
+  'RankingsSourceBadgeEnabled',
   'SidebarModulesAdmin',
   'Notice',
   'LogConsumeEnabled',
@@ -57,6 +59,13 @@ export function useUpdateOption() {
           } catch {
             /* empty */
           }
+        }
+
+        if (
+          variables.key === 'RankingsDataSource' ||
+          variables.key === 'RankingsSourceBadgeEnabled'
+        ) {
+          queryClient.invalidateQueries({ queryKey: ['rankings'] })
         }
 
         toast.success(i18next.t('Setting updated successfully'))

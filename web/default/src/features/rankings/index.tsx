@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useEffect } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
+import { useStatus } from '@/hooks/use-status'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PublicLayout } from '@/components/layout'
 import { PageTransition } from '@/components/page-transition'
@@ -38,6 +39,7 @@ export function Rankings() {
   const { t } = useTranslation()
   const search = useSearch({ from: '/rankings/' })
   const navigate = useNavigate()
+  const { status } = useStatus()
 
   const period: RankingPeriod = VALID_PERIODS.includes(
     search.period as RankingPeriod
@@ -47,6 +49,7 @@ export function Rankings() {
 
   const rankingsQuery = useRankings(period)
   const snapshot = rankingsQuery.data?.data
+  const showSourceBadge = status?.rankings_source_badge_enabled !== false
   const isOpenRouter = snapshot?.source === 'openrouter'
   const displayPeriod: RankingPeriod =
     isOpenRouter && period === 'all' ? 'year' : period
@@ -93,6 +96,7 @@ export function Rankings() {
           <RankingsHero
             period={displayPeriod}
             source={snapshot?.source}
+            showSourceBadge={showSourceBadge}
             onPeriodChange={handlePeriodChange}
           />
 

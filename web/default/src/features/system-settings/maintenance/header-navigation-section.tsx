@@ -30,6 +30,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Switch } from '@/components/ui/switch'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import {
   SettingsControlChildren,
   SettingsForm,
@@ -53,18 +54,35 @@ const headerNavSchema = z.object({
   pricingRequireAuth: z.boolean(),
   rankingsEnabled: z.boolean(),
   rankingsRequireAuth: z.boolean(),
+  rankingsDataSource: z.enum(['local', 'openrouter']),
+  rankingsSourceBadgeEnabled: z.boolean(),
   docs: z.boolean(),
   about: z.boolean(),
 })
 
 type HeaderNavFormValues = z.infer<typeof headerNavSchema>
 
+type HeaderNavBooleanField = Exclude<
+  keyof HeaderNavFormValues,
+  'rankingsDataSource'
+>
+type HeaderNavAccessEnabledField = 'pricingEnabled' | 'rankingsEnabled'
+type HeaderNavAccessRequireAuthField =
+  | 'pricingRequireAuth'
+  | 'rankingsRequireAuth'
+
 type HeaderNavigationSectionProps = {
   config: HeaderNavModulesConfig
   initialSerialized: string
+  rankingsDataSource: 'local' | 'openrouter'
+  rankingsSourceBadgeEnabled: boolean
 }
 
-const toFormValues = (config: HeaderNavModulesConfig): HeaderNavFormValues => ({
+const toFormValues = (
+  config: HeaderNavModulesConfig,
+  rankingsDataSource: 'local' | 'openrouter',
+  rankingsSourceBadgeEnabled: boolean
+): HeaderNavFormValues => ({
   home:
     config.home === undefined ? HEADER_NAV_DEFAULT.home : Boolean(config.home),
   console:
@@ -87,6 +105,8 @@ const toFormValues = (config: HeaderNavModulesConfig): HeaderNavFormValues => ({
     config.rankings?.requireAuth === undefined
       ? HEADER_NAV_DEFAULT.rankings.requireAuth
       : Boolean(config.rankings.requireAuth),
+  rankingsDataSource,
+  rankingsSourceBadgeEnabled,
   docs:
     config.docs === undefined ? HEADER_NAV_DEFAULT.docs : Boolean(config.docs),
   about:
@@ -98,10 +118,15 @@ const toFormValues = (config: HeaderNavModulesConfig): HeaderNavFormValues => ({
 export function HeaderNavigationSection({
   config,
   initialSerialized,
+  rankingsDataSource,
+  rankingsSourceBadgeEnabled,
 }: HeaderNavigationSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
-  const formDefaults = useMemo(() => toFormValues(config), [config])
+  const formDefaults = useMemo(
+    () => toFormValues(config, rankingsDataSource, rankingsSourceBadgeEnabled),
+    [config, rankingsDataSource, rankingsSourceBadgeEnabled]
+  )
 
   const form = useForm<HeaderNavFormValues>({
     resolver: zodResolver(headerNavSchema),
@@ -132,22 +157,40 @@ export function HeaderNavigationSection({
     }
 
     const serialized = serializeHeaderNavModules(payload)
-    if (serialized === initialSerialized) {
-      return
+    const updates: Array<Promise<unknown>> = []
+    if (serialized !== initialSerialized) {
+      updates.push(
+        updateOption.mutateAsync({
+          key: 'HeaderNavModules',
+          value: serialized,
+        })
+      )
     }
-
-    await updateOption.mutateAsync({
-      key: 'HeaderNavModules',
-      value: serialized,
-    })
+    if (values.rankingsDataSource !== rankingsDataSource) {
+      updates.push(
+        updateOption.mutateAsync({
+          key: 'RankingsDataSource',
+          value: values.rankingsDataSource,
+        })
+      )
+    }
+    if (values.rankingsSourceBadgeEnabled !== rankingsSourceBadgeEnabled) {
+      updates.push(
+        updateOption.mutateAsync({
+          key: 'RankingsSourceBadgeEnabled',
+          value: values.rankingsSourceBadgeEnabled,
+        })
+      )
+    }
+    await Promise.all(updates)
   }
 
   const resetToDefault = () => {
-    form.reset(toFormValues(HEADER_NAV_DEFAULT))
+    form.reset(toFormValues(HEADER_NAV_DEFAULT, 'local', true))
   }
 
   const simpleModules: Array<{
-    key: keyof HeaderNavFormValues
+    key: HeaderNavBooleanField
     title: string
     description: string
   }> = [
@@ -174,9 +217,9 @@ export function HeaderNavigationSection({
   ]
 
   const accessModules: Array<{
-    enabledKey: keyof HeaderNavFormValues
-    requireAuthKey: keyof HeaderNavFormValues
-    requireAuthDependsOn: 'pricingEnabled' | 'rankingsEnabled'
+    enabledKey: HeaderNavAccessEnabledField
+    requireAuthKey: HeaderNavAccessRequireAuthField
+    requireAuthDependsOn: HeaderNavAccessEnabledField
     title: string
     description: string
     requireAuthTitle: string
@@ -292,6 +335,76 @@ export function HeaderNavigationSection({
               </SettingsControlGroup>
             ))}
           </div>
+
+          <FormField
+            control={form.control}
+            name='rankingsDataSource'
+            render={({ field }) => (
+              <SettingsControlGroup>
+                <SettingsSwitchItem className='border-b-0 py-2'>
+                  <SettingsSwitchContent>
+                    <FormLabel>{t('Rankings data source')}</FormLabel>
+                    <FormDescription>
+                      {t(
+                        'Choose which dataset powers the public rankings page.'
+                      )}
+                    </FormDescription>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <ToggleGroup
+                      value={[field.value]}
+                      onValueChange={(value) => {
+                        const next = value.find((item) => item !== field.value)
+                        if (next === 'local' || next === 'openrouter') {
+                          field.onChange(next)
+                        }
+                      }}
+                      aria-label={t('Rankings data source')}
+                      variant='outline'
+                      size='sm'
+                      spacing={1}
+                    >
+                      <ToggleGroupItem value='local'>
+                        {t('This site')}
+                      </ToggleGroupItem>
+                      <ToggleGroupItem value='openrouter'>
+                        OpenRouter
+                      </ToggleGroupItem>
+                    </ToggleGroup>
+                  </FormControl>
+                  <FormMessage />
+                </SettingsSwitchItem>
+              </SettingsControlGroup>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name='rankingsSourceBadgeEnabled'
+            render={({ field }) => (
+              <SettingsControlGroup>
+                <SettingsSwitchItem className='border-b-0 py-2'>
+                  <SettingsSwitchContent>
+                    <FormLabel>
+                      {t('Show rankings data source badge')}
+                    </FormLabel>
+                    <FormDescription>
+                      {t(
+                        'Display a small badge next to the rankings title showing whether the page uses this site data or OpenRouter data.'
+                      )}
+                    </FormDescription>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </SettingsSwitchItem>
+              </SettingsControlGroup>
+            )}
+          />
         </SettingsForm>
       </Form>
     </SettingsSection>

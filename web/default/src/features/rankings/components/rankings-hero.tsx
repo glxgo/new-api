@@ -32,6 +32,7 @@ const PERIODS: { id: RankingPeriod; labelKey: string }[] = [
 type RankingsHeroProps = {
   period: RankingPeriod
   source?: string
+  showSourceBadge?: boolean
   onPeriodChange: (period: RankingPeriod) => void
 }
 
@@ -42,6 +43,7 @@ type RankingsHeroProps = {
 export function RankingsHero(props: RankingsHeroProps) {
   const { t } = useTranslation()
   const isOpenRouter = props.source === 'openrouter'
+  const showSourceBadge = props.showSourceBadge ?? true
   const periods = isOpenRouter
     ? PERIODS.filter((period) => period.id !== 'all')
     : PERIODS
@@ -53,9 +55,11 @@ export function RankingsHero(props: RankingsHeroProps) {
           <h1 className='text-[clamp(1.75rem,4vw,2.5rem)] leading-[1.15] font-bold tracking-tight'>
             {t('Rankings')}
           </h1>
-          <Badge variant='secondary'>
-            {isOpenRouter ? t('OpenRouter data') : t('This site data')}
-          </Badge>
+          {showSourceBadge && (
+            <Badge variant='secondary'>
+              {isOpenRouter ? t('OpenRouter data') : t('This site data')}
+            </Badge>
+          )}
         </div>
         <p className='text-muted-foreground/80 max-w-2xl text-sm'>
           {isOpenRouter

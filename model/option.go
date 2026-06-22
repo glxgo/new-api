@@ -68,6 +68,8 @@ func InitOptionMap() {
 	common.OptionMap["About"] = ""
 	common.OptionMap["HomePageContent"] = ""
 	common.OptionMap["tutorial_setting.content"] = ""
+	common.OptionMap["RankingsDataSource"] = "local"
+	common.OptionMap["RankingsSourceBadgeEnabled"] = "true"
 	common.OptionMap["Footer"] = common.Footer
 	common.OptionMap["SystemName"] = common.SystemName
 	common.OptionMap["Logo"] = common.Logo
