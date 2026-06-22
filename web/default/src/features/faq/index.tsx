@@ -32,7 +32,7 @@ export function FAQ() {
 
   return (
     <PublicLayout>
-      <div className='mx-auto max-w-3xl px-4 py-10'>
+      <div className='mx-auto max-w-5xl px-4 py-10'>
         <div className='mb-8 text-center'>
           <div className='mb-3 flex justify-center'>
             <HelpCircle className='text-primary h-12 w-12' />
@@ -43,17 +43,21 @@ export function FAQ() {
           </p>
         </div>
 
-        <div className='bg-card mb-6 flex flex-col items-center gap-3 rounded-xl border p-5'>
-          <img
-            src='/uploads/after-sales-qrcode.jpg'
-            alt={t('After-sales group QR code')}
-            className='h-48 w-48 rounded-lg object-contain'
-          />
-          <p className='text-muted-foreground text-sm'>
-            {t('Scan to join the after-sales group')}
-          </p>
-        </div>
+        <div className='grid gap-6 md:grid-cols-[280px_1fr]'>
+          <div className='md:sticky md:top-6 md:self-start'>
+            <div className='bg-card flex flex-col items-center gap-3 rounded-xl border p-5'>
+              <img
+                src='/uploads/after-sales-qrcode.jpg'
+                alt={t('After-sales group QR code')}
+                className='w-full max-w-[240px] rounded-lg object-contain'
+              />
+              <p className='text-muted-foreground text-center text-sm'>
+                {t('Scan to join the after-sales group')}
+              </p>
+            </div>
+          </div>
 
+          <div className='min-w-0'>
         <div className='relative mb-6'>
           <Search className='text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2' />
           <Input
@@ -101,6 +105,8 @@ export function FAQ() {
             ))}
           </Accordion>
         )}
+          </div>
+        </div>
       </div>
     </PublicLayout>
   )
