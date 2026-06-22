@@ -162,3 +162,22 @@ export function getLobeIcon(
 
   return <IconComponent {...props} />
 }
+
+/**
+ * getLobeIconWithFallback 按候选图标名顺序, 返回第一个真实存在于 LobeIcons 的图标;
+ * 全部缺失时退回 getLobeIcon 的首字母占位。供排行榜等多候选场景使用。
+ */
+export function getLobeIconWithFallback(
+  iconNames: (string | undefined | null)[],
+  size: number = 20
+): React.ReactNode {
+  for (const name of iconNames) {
+    if (!name || !name.trim()) continue
+    const baseKey = name.trim().split('.')[0]
+    if ((LobeIcons as Record<string, unknown>)[baseKey]) {
+      return getLobeIcon(name, size)
+    }
+  }
+  const firstNonEmpty = iconNames.find((n) => n && n.trim())
+  return getLobeIcon(firstNonEmpty ?? null, size)
+}
