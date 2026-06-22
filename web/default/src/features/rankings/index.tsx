@@ -16,14 +16,17 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useEffect } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
+import { useStatus } from '@/hooks/use-status'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PublicLayout } from '@/components/layout'
 import { PageTransition } from '@/components/page-transition'
 import {
   MarketShareSection,
   ModelsSection,
+  OpenRouterInsightsSection,
   PulseSection,
   RankingsHero,
 } from './components'
@@ -36,6 +39,7 @@ export function Rankings() {
   const { t } = useTranslation()
   const search = useSearch({ from: '/rankings/' })
   const navigate = useNavigate()
+  const { status } = useStatus()
 
   const period: RankingPeriod = VALID_PERIODS.includes(
     search.period as RankingPeriod
@@ -45,6 +49,23 @@ export function Rankings() {
 
   const rankingsQuery = useRankings(period)
   const snapshot = rankingsQuery.data?.data
+  const showSourceBadge = status?.rankings_source_badge_enabled !== false
+  const isOpenRouter = snapshot?.source === 'openrouter'
+  const displayPeriod: RankingPeriod =
+    isOpenRouter && period === 'all' ? 'year' : period
+  const modelsHistoryPeriod: RankingPeriod = isOpenRouter
+    ? 'year'
+    : displayPeriod
+
+  useEffect(() => {
+    if (isOpenRouter && period === 'all') {
+      navigate({
+        to: '/rankings',
+        search: (prev) => ({ ...prev, period: 'year' }),
+        replace: true,
+      })
+    }
+  }, [isOpenRouter, navigate, period])
 
   const handlePeriodChange = (next: RankingPeriod) => {
     navigate({
@@ -72,7 +93,12 @@ export function Rankings() {
           }}
         />
         <PageTransition className='relative mx-auto w-full max-w-[1280px] space-y-8 px-3 pt-16 pb-10 sm:px-6 sm:pt-20 sm:pb-12 xl:px-8'>
-          <RankingsHero period={period} onPeriodChange={handlePeriodChange} />
+          <RankingsHero
+            period={displayPeriod}
+            source={snapshot?.source}
+            showSourceBadge={showSourceBadge}
+            onPeriodChange={handlePeriodChange}
+          />
 
           {rankingsQuery.isLoading ? (
             <RankingsLoading />
@@ -89,19 +115,26 @@ export function Rankings() {
               <ModelsSection
                 history={snapshot.models_history}
                 rows={snapshot.models}
-                period={period}
+                historyPeriod={modelsHistoryPeriod}
               />
 
               <MarketShareSection
                 history={snapshot.vendor_share_history}
                 rows={snapshot.vendors}
-                period={period}
+                period={displayPeriod}
               />
 
               <PulseSection
                 movers={snapshot.top_movers}
                 droppers={snapshot.top_droppers}
               />
+
+              {snapshot.source === 'openrouter' && (
+                <OpenRouterInsightsSection
+                  benchmarks={snapshot.benchmarks ?? []}
+                  performance={snapshot.performance ?? []}
+                />
+              )}
             </>
           )}
         </PageTransition>

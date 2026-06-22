@@ -70,6 +70,12 @@ const SITE_SECTIONS = [
         <HeaderNavigationSection
           config={headerNavConfig}
           initialSerialized={headerNavSerialized}
+          rankingsDataSource={
+            settings.RankingsDataSource === 'openrouter'
+              ? 'openrouter'
+              : 'local'
+          }
+          rankingsSourceBadgeEnabled={settings.RankingsSourceBadgeEnabled}
         />
       )
     },

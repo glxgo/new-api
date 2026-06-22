@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -47,6 +48,13 @@ func GetStatus(c *gin.Context) {
 
 	passkeySetting := system_setting.GetPasskeySettings()
 	legalSetting := system_setting.GetLegalSettings()
+
+	rankingsSourceBadgeEnabled, err := strconv.ParseBool(
+		common.OptionMap["RankingsSourceBadgeEnabled"],
+	)
+	if err != nil {
+		rankingsSourceBadgeEnabled = true
+	}
 
 	data := gin.H{
 		"version":                     common.Version,
@@ -103,8 +111,9 @@ func GetStatus(c *gin.Context) {
 		"faq_enabled":           cs.FAQEnabled,
 
 		// 模块管理配置
-		"HeaderNavModules":    common.OptionMap["HeaderNavModules"],
-		"SidebarModulesAdmin": common.OptionMap["SidebarModulesAdmin"],
+		"HeaderNavModules":              common.OptionMap["HeaderNavModules"],
+		"SidebarModulesAdmin":           common.OptionMap["SidebarModulesAdmin"],
+		"rankings_source_badge_enabled": rankingsSourceBadgeEnabled,
 		// 顶部导航排序(JSON 数组 of navKey, 超管后台可配; 空则用默认顺序)
 		"top_nav_order": common.OptionMap["TopNavOrder"],
 

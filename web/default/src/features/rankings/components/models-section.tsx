@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useMemo } from 'react'
 import { VChart } from '@visactor/react-vchart'
-import { BarChart3, Trophy } from 'lucide-react'
+import { BarChart3, ListOrdered } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useChartTheme } from '@/lib/use-chart-theme'
 import { VCHART_OPTION } from '@/lib/vchart'
@@ -26,20 +26,12 @@ import { formatTokens } from '../lib/format'
 import type { ModelHistorySeries, ModelRanking, RankingPeriod } from '../types'
 import { ModelLeaderboard } from './model-leaderboard'
 
-const PERIOD_DESCRIPTIONS: Record<RankingPeriod, string> = {
-  today: 'Hourly token usage by model across the last 24 hours',
-  week: 'Weekly token usage by model across the past few weeks',
-  month: 'Daily token usage by model across the past month',
-  year: 'Weekly token usage by model across the past year',
-  all: 'Token usage by model since launch',
-}
-
 const TOOLTIP_MAX_ROWS = 10
 
 type ModelsSectionProps = {
   history: ModelHistorySeries
   rows: ModelRanking[]
-  period: RankingPeriod
+  historyPeriod: RankingPeriod
 }
 
 /**
@@ -72,8 +64,8 @@ export function ModelsSection(props: ModelsSectionProps) {
   }, [props.history])
 
   const totalTokens = useMemo(
-    () => props.rows.reduce((s, r) => s + r.total_tokens, 0),
-    [props.rows]
+    () => props.history.models.reduce((s, r) => s + r.total, 0),
+    [props.history.models]
   )
 
   const spec = useMemo(() => {
@@ -85,6 +77,7 @@ export function ModelsSection(props: ModelsSectionProps) {
       yField: 'tokens',
       seriesField: 'model',
       stack: true,
+      barMaxWidth: props.history.buckets <= 1 ? 96 : 40,
       legends: { visible: false },
       axes: [
         {
@@ -113,7 +106,7 @@ export function ModelsSection(props: ModelsSectionProps) {
           content: [
             {
               key: (datum: Record<string, unknown>) =>
-                String(datum?.model ?? ''),
+                String(datum?.display_name || datum?.model || ''),
               value: (datum: Record<string, unknown>) =>
                 formatTokens(Number(datum?.tokens) || 0),
             },
@@ -127,7 +120,7 @@ export function ModelsSection(props: ModelsSectionProps) {
           content: [
             {
               key: (datum: Record<string, unknown>) =>
-                String(datum?.model ?? ''),
+                String(datum?.display_name || datum?.model || ''),
               value: (datum: Record<string, unknown>) =>
                 Number(datum?.tokens) || 0,
             },
@@ -140,7 +133,7 @@ export function ModelsSection(props: ModelsSectionProps) {
             const visible = array.slice(0, TOOLTIP_MAX_ROWS)
             const overflow = array.slice(TOOLTIP_MAX_ROWS)
             const result = visible.map((item) => ({
-              key: item.key,
+              key: String(item.key),
               value: formatTokens(Number(item.value) || 0),
             }))
             if (overflow.length > 0) {
@@ -160,7 +153,7 @@ export function ModelsSection(props: ModelsSectionProps) {
       },
       animationAppear: { duration: 500 },
     }
-  }, [chartGridColor, chartTextColor, orderedPoints, t])
+  }, [chartGridColor, chartTextColor, orderedPoints, props.history.buckets, t])
 
   return (
     <section className='bg-card overflow-hidden rounded-lg border'>
@@ -172,7 +165,9 @@ export function ModelsSection(props: ModelsSectionProps) {
             {t('Top Models')}
           </h2>
           <p className='text-muted-foreground mt-1 text-sm'>
-            {t(PERIOD_DESCRIPTIONS[props.period])}
+            {props.historyPeriod === 'year'
+              ? t('This year')
+              : t('Ranked by routed token volume in the selected period')}
           </p>
         </div>
         <div className='shrink-0 text-right'>
@@ -189,7 +184,7 @@ export function ModelsSection(props: ModelsSectionProps) {
         <div className='h-60 sm:h-72'>
           {themeReady && spec ? (
             <VChart
-              key={`models-history-${resolvedTheme}-${props.period}`}
+              key={`models-history-${resolvedTheme}-${props.historyPeriod}`}
               spec={{
                 ...spec,
                 theme: resolvedTheme === 'dark' ? 'dark' : 'light',
@@ -198,7 +193,7 @@ export function ModelsSection(props: ModelsSectionProps) {
               option={VCHART_OPTION}
             />
           ) : (
-            <div className='text-muted-foreground/80 flex h-full items-center justify-center text-xs'>
+            <div className='text-muted-foreground/80 flex h-full w-full items-center justify-center text-xs'>
               {t('No history data available')}
             </div>
           )}
@@ -209,11 +204,11 @@ export function ModelsSection(props: ModelsSectionProps) {
       <div className='border-t'>
         <header className='px-5 pt-4 pb-2'>
           <h3 className='text-foreground inline-flex items-center gap-2 text-sm font-semibold'>
-            <Trophy className='size-3.5 text-amber-500' />
+            <ListOrdered className='size-3.5 text-amber-500' />
             {t('LLM Leaderboard')}
           </h3>
           <p className='text-muted-foreground/80 mt-0.5 text-xs'>
-            {t('Compare the most popular models on the platform')}
+            {t('Ranked by routed token volume in the selected period')}
           </p>
         </header>
         {props.rows.length === 0 ? (

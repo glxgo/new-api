@@ -36,6 +36,8 @@ const defaultSiteSettings: SiteSettings = {
   'legal.user_agreement': '',
   'legal.privacy_policy': '',
   HeaderNavModules: '',
+  RankingsDataSource: 'local',
+  RankingsSourceBadgeEnabled: true,
   SidebarModulesAdmin: '',
 }
 

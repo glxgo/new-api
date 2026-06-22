@@ -43,6 +43,7 @@ export type ModelRanking = {
   /** Previous rank in the same period; undefined means "new". */
   previous_rank?: number
   model_name: string
+  display_name?: string
   vendor: string
   vendor_icon?: string
   category: RankingCategoryId
@@ -57,6 +58,7 @@ export type ModelRanking = {
 export type VendorRanking = {
   rank: number
   vendor: string
+  display_name?: string
   vendor_icon?: string
   total_tokens: number
   share: number
@@ -69,6 +71,7 @@ export type VendorRanking = {
 
 export type RankingMover = {
   model_name: string
+  display_name?: string
   vendor: string
   vendor_icon?: string
   /** Positive = climbed, negative = dropped. */
@@ -88,6 +91,7 @@ export type ModelHistoryPoint = {
   label: string
   /** Model display name shown in tooltip / legend. */
   model: string
+  display_name?: string
   vendor: string
   /** Token count routed through the model in this bucket. */
   tokens: number
@@ -97,7 +101,12 @@ export type ModelHistorySeries = {
   /** Flat points ready for VChart, ordered oldest → newest. */
   points: ModelHistoryPoint[]
   /** Models that appear in the series, sorted by total tokens desc. */
-  models: Array<{ name: string; vendor: string; total: number }>
+  models: Array<{
+    name: string
+    display_name?: string
+    vendor: string
+    total: number
+  }>
   /** Bucket count (used for sizing axis ticks). */
   buckets: number
 }
@@ -111,6 +120,7 @@ export type VendorSharePoint = {
   ts: string
   label: string
   vendor: string
+  display_name?: string
   share: number
   tokens: number
 }
@@ -119,11 +129,17 @@ export type VendorShareSeries = {
   /** Flat points ready for VChart, ordered oldest → newest. */
   points: VendorSharePoint[]
   /** Vendors that appear in the series, sorted by aggregate tokens desc. */
-  vendors: Array<{ name: string; total: number; share: number }>
+  vendors: Array<{
+    name: string
+    display_name?: string
+    total: number
+    share: number
+  }>
   buckets: number
 }
 
 export type RankingsSnapshot = {
+  source?: 'local' | 'openrouter' | string
   // Overall (all categories) ------------------------------------------------
   models: ModelRanking[]
   vendors: VendorRanking[]
@@ -135,4 +151,26 @@ export type RankingsSnapshot = {
   models_history: ModelHistorySeries
   /** 100%-stacked area history of token share by vendor over the period. */
   vendor_share_history: VendorShareSeries
+  benchmarks?: RankingBenchmark[]
+  performance?: RankingPerformance[]
+}
+
+export type RankingBenchmark = {
+  category: string
+  rank: number
+  model_name: string
+  display_name?: string
+  vendor: string
+  score: number
+}
+
+export type RankingPerformance = {
+  rank: number
+  model_name: string
+  display_name?: string
+  vendor: string
+  request_count: number
+  p50_latency: number
+  p50_throughput: number
+  provider_count: number
 }

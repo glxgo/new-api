@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
-import { getLobeIcon } from '@/lib/lobe-icon'
+import { getLobeIconWithFallback } from '@/lib/lobe-icon'
 import { formatTokens } from '../lib/format'
 import type { ModelRanking } from '../types'
 import { ModelLink, VendorLink } from './entity-links'
@@ -81,18 +81,22 @@ function ModelList(props: {
             {row.rank}.
           </span>
           <span className='shrink-0'>
-            {getLobeIcon(row.vendor_icon, compact ? 20 : 22)}
+            {getLobeIconWithFallback(
+              [row.vendor_icon, `${row.vendor}.Color`, row.vendor],
+              compact ? 20 : 22
+            )}
           </span>
           <div className='min-w-0 flex-1'>
             <ModelLink
               modelName={row.model_name}
+              title={row.model_name}
               className={
                 compact
                   ? 'text-foreground block truncate font-mono text-xs font-medium'
                   : 'text-foreground block truncate font-mono text-sm font-medium'
               }
             >
-              {row.model_name}
+              {row.display_name || row.model_name}
             </ModelLink>
             <p
               className={

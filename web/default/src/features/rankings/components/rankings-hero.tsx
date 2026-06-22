@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
+import { Badge } from '@/components/ui/badge'
 import type { RankingPeriod } from '../types'
 
 const PERIODS: { id: RankingPeriod; labelKey: string }[] = [
@@ -30,26 +31,44 @@ const PERIODS: { id: RankingPeriod; labelKey: string }[] = [
 
 type RankingsHeroProps = {
   period: RankingPeriod
+  source?: string
+  showSourceBadge?: boolean
   onPeriodChange: (period: RankingPeriod) => void
 }
 
 /**
- * Hero strip for the rankings page. Intentionally minimal — title +
+ * Hero strip for the rankings page. Intentionally minimal, title +
  * subtitle + period tabs only.
  */
 export function RankingsHero(props: RankingsHeroProps) {
   const { t } = useTranslation()
+  const isOpenRouter = props.source === 'openrouter'
+  const showSourceBadge = props.showSourceBadge ?? true
+  const periods = isOpenRouter
+    ? PERIODS.filter((period) => period.id !== 'all')
+    : PERIODS
 
   return (
     <section className='space-y-5'>
       <div className='space-y-2'>
-        <h1 className='text-[clamp(1.75rem,4vw,2.5rem)] leading-[1.15] font-bold tracking-tight'>
-          {t('Rankings')}
-        </h1>
-        <p className='text-muted-foreground/80 max-w-2xl text-sm'>
-          {t(
-            'Discover the most-used models and rising vendors on the platform, updated from live usage data.'
+        <div className='flex flex-wrap items-center gap-2'>
+          <h1 className='text-[clamp(1.75rem,4vw,2.5rem)] leading-[1.15] font-bold tracking-tight'>
+            {t('Rankings')}
+          </h1>
+          {showSourceBadge && (
+            <Badge variant='secondary'>
+              {isOpenRouter ? t('OpenRouter data') : t('This site data')}
+            </Badge>
           )}
+        </div>
+        <p className='text-muted-foreground/80 max-w-2xl text-sm'>
+          {isOpenRouter
+            ? t(
+                'Discover model demand across OpenRouter, updated from public rankings data.'
+              )
+            : t(
+                'Discover the most-used models and rising vendors on the platform, updated from live usage data.'
+              )}
         </p>
       </div>
 
@@ -59,7 +78,7 @@ export function RankingsHero(props: RankingsHeroProps) {
         aria-label={t('Period')}
         className='border-border/60 flex items-center border-b'
       >
-        {PERIODS.map((p) => {
+        {periods.map((p) => {
           const isActive = props.period === p.id
           return (
             <button
