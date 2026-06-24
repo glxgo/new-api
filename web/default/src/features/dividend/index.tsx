@@ -20,6 +20,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Crown, HandCoins, TrendingUp } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import type { AuthUser } from '@/stores/auth-store'
 import { getSelf } from '@/lib/api'
 import dayjs from '@/lib/dayjs'
@@ -92,8 +93,14 @@ export function Dividend() {
 
           <div className='flex justify-end'>
             <Button
-              onClick={() => setSheetOpen(true)}
-              disabled={loading || balance <= 0}
+              onClick={() => {
+                if (balance <= 0) {
+                  toast.error('暂无可提现的分红余额')
+                  return
+                }
+                setSheetOpen(true)
+              }}
+              disabled={loading}
             >
               <HandCoins className='size-4' /> {t('Withdraw Dividend')}
             </Button>

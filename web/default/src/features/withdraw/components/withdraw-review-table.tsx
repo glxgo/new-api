@@ -157,6 +157,21 @@ export function WithdrawReviewTable() {
               <div className='text-muted-foreground'>
                 {row.original.alipay_account}
               </div>
+              {row.original.wechat_qrcode && (
+                <a
+                  href={row.original.wechat_qrcode}
+                  target='_blank'
+                  rel='noreferrer'
+                  className='mt-2 inline-block'
+                  title='点击查看大图'
+                >
+                  <img
+                    src={row.original.wechat_qrcode}
+                    alt='微信收款码'
+                    className='h-20 w-20 rounded border object-contain transition hover:scale-105'
+                  />
+                </a>
+              )}
             </div>
           ) : (
             <span className='text-muted-foreground text-xs'>-</span>
