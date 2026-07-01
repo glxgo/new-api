@@ -63,7 +63,7 @@ function getServerAddress() {
   return window.location.origin;
 }
 
-function buildCCSwitchURL(app, name, models, apiKey) {
+function buildCCSwitchURL(app, name, models, apiKey, accessToken, userId) {
   const serverAddress = getServerAddress();
   const endpoint = app === 'codex' ? serverAddress + '/v1' : serverAddress;
   const params = new URLSearchParams();
@@ -77,10 +77,11 @@ function buildCCSwitchURL(app, name, models, apiKey) {
   }
   params.set('homepage', serverAddress);
   params.set('enabled', 'true');
-  // 余额用量查询：复用 New API 的 /v1/dashboard/billing/* 接口，用同一个 sk- token
+  // 余额用量查询：CC Switch 用 New API 模板（访问令牌 + 用户 ID，令牌在个人安全设置生成）
   params.set('usageEnabled', 'true');
-  params.set('usageBaseUrl', app === 'codex' ? serverAddress + '/v1' : serverAddress);
-  params.set('usageApiKey', apiKey);
+  params.set('usageBaseUrl', serverAddress);
+  if (accessToken) params.set('usageAccessToken', accessToken);
+  if (userId) params.set('usageUserId', String(userId));
   return `ccswitch://v1/import?${params.toString()}`;
 }
 
@@ -120,7 +121,7 @@ export default function CCSwitchModal({
       Toast.warning(t('请选择主模型'));
       return;
     }
-    const url = buildCCSwitchURL(app, name, models, 'sk-' + tokenKey);
+    const url = buildCCSwitchURL(app, name, models, 'sk-' + tokenKey, '', 0);
     window.open(url, '_blank');
     onClose();
   };

@@ -83,7 +83,7 @@ export function Hero(props: HeroProps) {
       {/* reactbits Aurora 动态极光背景 */}
       <div
         aria-hidden
-        className='pointer-events-none absolute inset-0 -z-10 overflow-hidden opacity-30 dark:opacity-20'
+        className='pointer-events-none absolute inset-0 -z-10 overflow-hidden opacity-60 dark:opacity-40'
       >
         <Aurora
           colorStops={['#3A67FF', '#5CE1E6', '#A855F7']}

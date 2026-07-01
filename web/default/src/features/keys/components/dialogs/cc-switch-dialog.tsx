@@ -20,7 +20,8 @@ import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { getUserModels } from '@/lib/api'
+import { getUserModels, api } from '@/lib/api'
+import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { ComboboxInput } from '@/components/ui/combobox-input'
 import { Label } from '@/components/ui/label'
@@ -69,7 +70,9 @@ function buildCCSwitchURL(
   app: string,
   name: string,
   models: Record<string, string>,
-  apiKey: string
+  apiKey: string,
+  accessToken: string,
+  userId: number
 ): string {
   const serverAddress = getServerAddress()
   const endpoint = app === 'codex' ? serverAddress + '/v1' : serverAddress
@@ -84,13 +87,11 @@ function buildCCSwitchURL(
   }
   params.set('homepage', serverAddress)
   params.set('enabled', 'true')
-  // 余额用量查询：复用 New API 的 /v1/dashboard/billing/* 接口，用同一个 sk- token
+  // 余额用量查询：CC Switch 用 New API 模板（访问令牌 + 用户 ID，令牌在个人安全设置生成）
   params.set('usageEnabled', 'true')
-  params.set(
-    'usageBaseUrl',
-    app === 'codex' ? serverAddress + '/v1' : serverAddress
-  )
-  params.set('usageApiKey', apiKey)
+  params.set('usageBaseUrl', serverAddress)
+  if (accessToken) params.set('usageAccessToken', accessToken)
+  if (userId) params.set('usageUserId', String(userId))
   return `ccswitch://v1/import?${params.toString()}`
 }
 
@@ -138,7 +139,7 @@ export function CCSwitchDialog(props: Props) {
     setModels({})
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!models.model) {
       toast.warning(t('Please select a primary model'))
       return
@@ -146,7 +147,18 @@ export function CCSwitchDialog(props: Props) {
     const key = props.tokenKey.startsWith('sk-')
       ? props.tokenKey
       : `sk-${props.tokenKey}`
-    const url = buildCCSwitchURL(app, name, models, key)
+    // 获取访问令牌 + 用户 ID（CC Switch 的 New API 模板余额查询需要）
+    let accessToken = ''
+    let userId = 0
+    try {
+      const { auth } = useAuthStore.getState()
+      userId = auth.user?.id ?? 0
+      const res = await api.get('/api/user/token')
+      accessToken = (res.data as { data?: string })?.data ?? ''
+    } catch {
+      // 获取失败时静默，用户可在 CC Switch 里手动配置访问令牌
+    }
+    const url = buildCCSwitchURL(app, name, models, key, accessToken, userId)
     window.open(url, '_blank')
     props.onOpenChange(false)
   }
