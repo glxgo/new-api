@@ -16,11 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { memo } from 'react'
+import { memo, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Activity, AlertCircle, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { PricingModel } from '@/features/pricing/types'
+import { getPerfMetrics } from '@/features/performance-metrics/api'
+import type { PerformanceGroup } from '@/features/performance-metrics/types'
+import { UptimeSparkline } from '@/features/pricing/components/model-details-uptime-sparkline'
+import type { UptimeDayPoint } from '@/features/pricing/lib/mock-stats'
 
 type Summary = {
   success_rate: number
@@ -35,18 +40,32 @@ type Props = {
   onClick: () => void
 }
 
+// 聚合多分组的逐桶 success_rate → 时序点（卡片展示整体分时绿柱）
+function aggregateGroupSeries(groups: PerformanceGroup[]): UptimeDayPoint[] {
+  const byTs = new Map<number, { sum: number; count: number; incidents: number }>()
+  for (const g of groups) {
+    for (const p of g.series) {
+      const cur = byTs.get(p.ts) ?? { sum: 0, count: 0, incidents: 0 }
+      cur.sum += p.success_rate
+      cur.count += 1
+      if (p.success_rate < 100) cur.incidents += 1
+      byTs.set(p.ts, cur)
+    }
+  }
+  return Array.from(byTs.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([ts, v]) => ({
+      date: new Date(ts * 1000).toISOString(),
+      uptime_pct: v.count > 0 ? Math.round((v.sum / v.count) * 100) / 100 : 0,
+      incidents: v.incidents,
+      outage_minutes: 0,
+    }))
+}
+
 function statusText(rate: number): string {
-  if (rate >= 99.5) return 'text-emerald-600 dark:text-emerald-400'
   if (rate >= 95) return 'text-emerald-600 dark:text-emerald-400'
   if (rate >= 90) return 'text-amber-600 dark:text-amber-400'
   return 'text-rose-600 dark:text-rose-400'
-}
-
-function barColor(rate: number): string {
-  if (rate >= 99) return 'bg-emerald-500'
-  if (rate >= 95) return 'bg-emerald-400'
-  if (rate >= 90) return 'bg-amber-500'
-  return 'bg-rose-500'
 }
 
 export const ModelStatusCard = memo(function ModelStatusCard({
@@ -58,6 +77,17 @@ export const ModelStatusCard = memo(function ModelStatusCard({
   const rate = summary?.success_rate
   const hasData = typeof rate === 'number' && rate >= 0
   const groupCount = model.enable_groups?.length ?? 0
+
+  // 拉该模型 24h 逐分组时序（queryKey 与抽屉一致，缓存复用，打开抽屉不重复请求）
+  const metricsQuery = useQuery({
+    queryKey: ['perf-metrics', model.model_name],
+    queryFn: () => getPerfMetrics(model.model_name, 24),
+    staleTime: 5 * 60 * 1000,
+  })
+  const series = useMemo(
+    () => aggregateGroupSeries(metricsQuery.data?.data?.groups ?? []),
+    [metricsQuery.data]
+  )
 
   return (
     <div
@@ -93,19 +123,16 @@ export const ModelStatusCard = memo(function ModelStatusCard({
         )}
       </div>
 
-      {hasData ? (
-        <div className='flex h-2 gap-px overflow-hidden rounded-full'>
-          {Array.from({ length: 24 }).map((_, i) => (
-            <div
-              key={i}
-              className={cn('flex-1 rounded-sm', barColor(rate as number))}
-              style={{ opacity: 0.35 + (i / 23) * 0.65 }}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className='bg-muted h-2 rounded-full' />
-      )}
+      {/* 真实分时绿柱（24h 逐桶，聚合所有分组），替代之前的纯色条 */}
+      <UptimeSparkline
+        series={series}
+        size='sm'
+        showOverall={false}
+        className='w-full'
+        emptyLabel={
+          metricsQuery.isLoading ? t('Loading...') : t('No data')
+        }
+      />
 
       <div className='text-muted-foreground flex items-center justify-between text-xs'>
         <span className='inline-flex items-center gap-1'>
@@ -114,9 +141,7 @@ export const ModelStatusCard = memo(function ModelStatusCard({
           ) : (
             <Activity className='size-3 text-emerald-500' />
           )}
-          {summary?.avg_latency_ms
-            ? `${summary.avg_latency_ms}ms`
-            : t('No data')}
+          {summary?.avg_latency_ms ? `${summary.avg_latency_ms}ms` : t('No data')}
         </span>
         <span className='group-hover:text-primary inline-flex items-center gap-0.5'>
           {t('Details')}
