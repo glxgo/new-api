@@ -10,6 +10,7 @@ import (
 type MonitorSetting struct {
 	AutoTestChannelEnabled bool    `json:"auto_test_channel_enabled"`
 	AutoTestChannelMinutes float64 `json:"auto_test_channel_minutes"`
+	AutoTestChannelIds     []int   `json:"auto_test_channel_ids"`
 }
 
 // 默认配置

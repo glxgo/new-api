@@ -299,6 +299,7 @@ export type OperationsSettings = {
   AutomaticRetryStatusCodes: string
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
+  'monitor_setting.auto_test_channel_ids': string
   SMTPServer: string
   SMTPPort: string
   SMTPAccount: string
@@ -320,7 +321,7 @@ export type OperationsSettings = {
   'performance_setting.monitor_disk_threshold': number
   'perf_metrics_setting.enabled': boolean
   'perf_metrics_setting.flush_interval': number
-  'perf_metrics_setting.bucket_time': 'hour' | 'minute' | '5min'
+  'perf_metrics_setting.bucket_time': 'hour' | 'minute' | '5min' | '15min'
   'perf_metrics_setting.retention_days': number
   'tutorial_setting.content': string
   // 顶部导航排序(JSON 数组 of navKey, 超管后台可配)

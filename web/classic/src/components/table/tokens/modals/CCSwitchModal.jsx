@@ -77,6 +77,10 @@ function buildCCSwitchURL(app, name, models, apiKey) {
   }
   params.set('homepage', serverAddress);
   params.set('enabled', 'true');
+  // 余额用量查询：复用 New API 的 /v1/dashboard/billing/* 接口，用同一个 sk- token
+  params.set('usageEnabled', 'true');
+  params.set('usageBaseUrl', app === 'codex' ? serverAddress + '/v1' : serverAddress);
+  params.set('usageApiKey', apiKey);
   return `ccswitch://v1/import?${params.toString()}`;
 }
 

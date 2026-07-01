@@ -926,6 +926,10 @@ func testAllChannels(notify bool) error {
 			if channel.Status == common.ChannelStatusManuallyDisabled {
 				continue
 			}
+			// 只探测选中的渠道（AutoTestChannelIds 为空时探测所有渠道，兼容现状）
+			if testIds := operation_setting.GetMonitorSetting().AutoTestChannelIds; len(testIds) > 0 && !lo.Contains(testIds, channel.Id) {
+				continue
+			}
 			isChannelEnabled := channel.Status == common.ChannelStatusEnabled
 			tik := time.Now()
 			result := testChannel(channel, testUserID, "", "", shouldUseStreamForAutomaticChannelTest(channel))

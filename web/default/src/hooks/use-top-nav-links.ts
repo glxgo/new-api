@@ -74,6 +74,13 @@ export function useTopNavLinks(): TopNavLink[] {
         href: '/pricing',
         requiresAuth,
       })
+      // 模型状态页：复用 pricing 模块开关（pricing 开启时一并显示）
+      arr.push({
+        navKey: 'model-status',
+        title: t('Model Status'),
+        href: '/model-status',
+        requiresAuth,
+      })
     }
 
     const rankings = modules?.rankings

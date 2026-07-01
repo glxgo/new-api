@@ -17,12 +17,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useMemo, useRef } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import * as z from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { parseHttpStatusCodeRules } from '@/lib/http-status-code-rules'
+import { getChannels } from '@/features/channels/api'
 import {
   Form,
   FormControl,
@@ -45,6 +47,7 @@ import { SettingsSection } from '../components/settings-section'
 import { useResetForm } from '../hooks/use-reset-form'
 import { useUpdateOption } from '../hooks/use-update-option'
 import { safeNumberFieldProps } from '../utils/numeric-field'
+import { ChannelMultiSelect } from './channel-multi-select'
 
 const numericString = z.string().refine((value) => {
   const trimmed = value.trim()
@@ -67,6 +70,7 @@ const monitoringSchema = z
         .number()
         .int()
         .min(1, 'Interval must be at least 1 minute'),
+      auto_test_channel_ids: z.array(z.number()),
     }),
   })
   .superRefine((values, ctx) => {
@@ -111,11 +115,31 @@ type MonitoringSettingsSectionProps = {
     AutomaticRetryStatusCodes: string
     'monitor_setting.auto_test_channel_enabled': boolean
     'monitor_setting.auto_test_channel_minutes': number
+    'monitor_setting.auto_test_channel_ids': string
   }
 }
 
 function normalizeLineEndings(value: string) {
   return value.replace(/\r\n/g, '\n')
+}
+
+// 后端 option.Value 对数组走 fmt.Sprintf("%v") 会破坏 JSON，所以 auto_test_channel_ids
+// 在 DB/传输层用 JSON 字符串表示（"[1,3,7]"），表单内部用 number[]。
+function parseIdsArray(raw: string | undefined): number[] {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((x): x is number => typeof x === 'number')
+      .sort((a, b) => a - b)
+  } catch {
+    return []
+  }
+}
+
+function stringifyIdsArray(ids: number[] | undefined): string {
+  return JSON.stringify([...(ids ?? [])].sort((a, b) => a - b))
 }
 
 type NormalizedMonitoringValues = {
@@ -128,6 +152,7 @@ type NormalizedMonitoringValues = {
   AutomaticRetryStatusCodes: string
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
+  'monitor_setting.auto_test_channel_ids': string
 }
 
 const buildFormDefaults = (
@@ -147,6 +172,9 @@ const buildFormDefaults = (
       defaults['monitor_setting.auto_test_channel_enabled'],
     auto_test_channel_minutes:
       defaults['monitor_setting.auto_test_channel_minutes'],
+    auto_test_channel_ids: parseIdsArray(
+      defaults['monitor_setting.auto_test_channel_ids']
+    ),
   },
 })
 
@@ -170,6 +198,9 @@ const normalizeDefaults = (
     defaults['monitor_setting.auto_test_channel_enabled'],
   'monitor_setting.auto_test_channel_minutes':
     defaults['monitor_setting.auto_test_channel_minutes'],
+  'monitor_setting.auto_test_channel_ids': stringifyIdsArray(
+    parseIdsArray(defaults['monitor_setting.auto_test_channel_ids'])
+  ),
 })
 
 const normalizeFormValues = (
@@ -192,6 +223,9 @@ const normalizeFormValues = (
     values.monitor_setting.auto_test_channel_enabled,
   'monitor_setting.auto_test_channel_minutes':
     values.monitor_setting.auto_test_channel_minutes,
+  'monitor_setting.auto_test_channel_ids': stringifyIdsArray(
+    values.monitor_setting.auto_test_channel_ids
+  ),
 })
 
 export function MonitoringSettingsSection({
@@ -201,6 +235,20 @@ export function MonitoringSettingsSection({
   const updateOption = useUpdateOption()
   const baselineRef = useRef<NormalizedMonitoringValues>(
     normalizeDefaults(defaultValues)
+  )
+
+  const { data: channelsData } = useQuery({
+    queryKey: ['monitoring-channels-list'],
+    queryFn: () => getChannels({ page_size: 1000 }),
+    staleTime: 5 * 60 * 1000,
+  })
+  const channelOptions = useMemo(
+    () =>
+      (channelsData?.data?.items ?? []).map((c) => ({
+        id: c.id,
+        name: c.name,
+      })),
+    [channelsData]
   )
 
   const formDefaults = useMemo(
@@ -301,6 +349,27 @@ export function MonitoringSettingsSection({
               )}
             />
           </div>
+
+          <FormField
+            control={form.control}
+            name='monitor_setting.auto_test_channel_ids'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Probe channels')}</FormLabel>
+                <ChannelMultiSelect
+                  channels={channelOptions}
+                  selectedIds={field.value ?? []}
+                  onChange={field.onChange}
+                />
+                <FormDescription>
+                  {t(
+                    'Select channels to automatically probe. Leave empty to probe all channels.'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
           <div className='grid gap-6 md:grid-cols-2'>
             <FormField

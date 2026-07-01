@@ -30,6 +30,8 @@ func GetBucketSeconds() int64 {
 		return 60
 	case "5min":
 		return 300
+	case "15min":
+		return 900
 	case "hour":
 		return 3600
 	default:

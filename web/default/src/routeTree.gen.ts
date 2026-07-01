@@ -18,6 +18,7 @@ import { Route as TutorialIndexRouteImport } from './routes/tutorial/index'
 import { Route as SetupIndexRouteImport } from './routes/setup/index'
 import { Route as RankingsIndexRouteImport } from './routes/rankings/index'
 import { Route as PricingIndexRouteImport } from './routes/pricing/index'
+import { Route as ModelStatusIndexRouteImport } from './routes/model-status/index'
 import { Route as FaqIndexRouteImport } from './routes/faq/index'
 import { Route as AboutIndexRouteImport } from './routes/about/index'
 import { Route as OauthProviderRouteImport } from './routes/oauth/$provider'
@@ -116,6 +117,11 @@ const RankingsIndexRoute = RankingsIndexRouteImport.update({
 const PricingIndexRoute = PricingIndexRouteImport.update({
   id: '/pricing/',
   path: '/pricing/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ModelStatusIndexRoute = ModelStatusIndexRouteImport.update({
+  id: '/model-status/',
+  path: '/model-status/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FaqIndexRoute = FaqIndexRouteImport.update({
@@ -455,6 +461,7 @@ export interface FileRoutesByFullPath {
   '/oauth/$provider': typeof OauthProviderRoute
   '/about/': typeof AboutIndexRoute
   '/faq/': typeof FaqIndexRoute
+  '/model-status/': typeof ModelStatusIndexRoute
   '/pricing/': typeof PricingIndexRoute
   '/rankings/': typeof RankingsIndexRoute
   '/setup/': typeof SetupIndexRoute
@@ -519,6 +526,7 @@ export interface FileRoutesByTo {
   '/oauth/$provider': typeof OauthProviderRoute
   '/about': typeof AboutIndexRoute
   '/faq': typeof FaqIndexRoute
+  '/model-status': typeof ModelStatusIndexRoute
   '/pricing': typeof PricingIndexRoute
   '/rankings': typeof RankingsIndexRoute
   '/setup': typeof SetupIndexRoute
@@ -587,6 +595,7 @@ export interface FileRoutesById {
   '/oauth/$provider': typeof OauthProviderRoute
   '/about/': typeof AboutIndexRoute
   '/faq/': typeof FaqIndexRoute
+  '/model-status/': typeof ModelStatusIndexRoute
   '/pricing/': typeof PricingIndexRoute
   '/rankings/': typeof RankingsIndexRoute
   '/setup/': typeof SetupIndexRoute
@@ -654,6 +663,7 @@ export interface FileRouteTypes {
     | '/oauth/$provider'
     | '/about/'
     | '/faq/'
+    | '/model-status/'
     | '/pricing/'
     | '/rankings/'
     | '/setup/'
@@ -718,6 +728,7 @@ export interface FileRouteTypes {
     | '/oauth/$provider'
     | '/about'
     | '/faq'
+    | '/model-status'
     | '/pricing'
     | '/rankings'
     | '/setup'
@@ -785,6 +796,7 @@ export interface FileRouteTypes {
     | '/oauth/$provider'
     | '/about/'
     | '/faq/'
+    | '/model-status/'
     | '/pricing/'
     | '/rankings/'
     | '/setup/'
@@ -844,6 +856,7 @@ export interface RootRouteChildren {
   OauthProviderRoute: typeof OauthProviderRoute
   AboutIndexRoute: typeof AboutIndexRoute
   FaqIndexRoute: typeof FaqIndexRoute
+  ModelStatusIndexRoute: typeof ModelStatusIndexRoute
   PricingIndexRoute: typeof PricingIndexRoute
   RankingsIndexRoute: typeof RankingsIndexRoute
   SetupIndexRoute: typeof SetupIndexRoute
@@ -914,6 +927,13 @@ declare module '@tanstack/react-router' {
       path: '/pricing'
       fullPath: '/pricing/'
       preLoaderRoute: typeof PricingIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/model-status/': {
+      id: '/model-status/'
+      path: '/model-status'
+      fullPath: '/model-status/'
+      preLoaderRoute: typeof ModelStatusIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/faq/': {
@@ -1465,6 +1485,7 @@ const rootRouteChildren: RootRouteChildren = {
   OauthProviderRoute: OauthProviderRoute,
   AboutIndexRoute: AboutIndexRoute,
   FaqIndexRoute: FaqIndexRoute,
+  ModelStatusIndexRoute: ModelStatusIndexRoute,
   PricingIndexRoute: PricingIndexRoute,
   RankingsIndexRoute: RankingsIndexRoute,
   SetupIndexRoute: SetupIndexRoute,
