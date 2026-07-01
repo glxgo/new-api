@@ -81,9 +81,12 @@ export async function deleteUserAccount(
 
 /**
  * Generate/regenerate system access token
+ * @param force true=强制重新生成（覆盖旧令牌）；false=有令牌就返回现有的，无则生成首个
  */
-export async function generateAccessToken(): Promise<ApiResponse<string>> {
-  const res = await api.get('/api/user/token')
+export async function generateAccessToken(force = false): Promise<ApiResponse<string>> {
+  const res = await api.get('/api/user/token', {
+    params: force ? { force: 'true' } : {},
+  })
   return res.data
 }
 

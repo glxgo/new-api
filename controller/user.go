@@ -349,6 +349,17 @@ func GenerateAccessToken(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// 默认（非 force）：已有 access token 直接返回，不刷新——避免"查看"/CC Switch 导入等场景副作用刷新令牌
+	// 仅 force=true（用户主动点"重新生成"）或尚无令牌时才生成新令牌
+	force := c.Query("force") == "true"
+	if !force && user.AccessToken != nil && *user.AccessToken != "" {
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "",
+			"data":    *user.AccessToken,
+		})
+		return
+	}
 	// get rand int 28-32
 	randI := common.GetRandomInt(4)
 	key, err := common.GenerateRandomKey(29 + randI)

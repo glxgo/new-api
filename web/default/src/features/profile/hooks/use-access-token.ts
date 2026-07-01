@@ -32,10 +32,10 @@ export function useAccessToken() {
   const { copyToClipboard } = useCopyToClipboard({ notify: false })
 
   // Generate new access token
-  const generate = useCallback(async (): Promise<boolean> => {
+  const generate = useCallback(async (force = false): Promise<boolean> => {
     try {
       setGenerating(true)
-      const response = await generateAccessToken()
+      const response = await generateAccessToken(force)
 
       if (response.success && response.data) {
         setToken(response.data)

@@ -21,9 +21,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { Markdown } from '@/components/ui/markdown'
 import { PublicLayout } from '@/components/layout'
 import { Footer } from '@/components/layout/components/footer'
-import { CTA, Features, Hero, HowItWorks, Stats } from './components'
-import { ScrollVelocity } from './components/reactbits/scroll-velocity'
-import { getGatewayFeatures } from './constants'
+import { StarHome } from './components/star-home'
 import { useHomePageContent } from './hooks'
 
 export function Home() {
@@ -62,22 +60,10 @@ export function Home() {
     )
   }
 
+  // 默认 Landing：StarHome（复刻自 home.html，Star API 品牌主页）
   return (
     <PublicLayout showMainContainer={false}>
-      <Hero isAuthenticated={isAuthenticated} />
-      <Stats />
-      {/* reactbits ScrollVelocity：Gateway 特性双向滚动横幅 */}
-      <section className='border-border/40 bg-muted/10 relative z-10 overflow-hidden border-y py-10'>
-        <ScrollVelocity
-          texts={getGatewayFeatures(t)}
-          velocity={60}
-          numCopies={4}
-          className='text-foreground/40 text-2xl font-bold md:text-4xl'
-        />
-      </section>
-      <Features />
-      <HowItWorks />
-      <CTA isAuthenticated={isAuthenticated} />
+      <StarHome isAuthenticated={isAuthenticated} />
       <Footer />
     </PublicLayout>
   )

@@ -71,7 +71,7 @@ export function AccessTokenDialog({
           </Button>
           <Button
             type='button'
-            onClick={generate}
+            onClick={() => generate(true)}
             disabled={generating}
             className='gap-2'
           >
