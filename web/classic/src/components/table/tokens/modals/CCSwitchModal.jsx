@@ -63,6 +63,35 @@ function getServerAddress() {
   return window.location.origin;
 }
 
+// CC Switch 用量查询脚本（New API 模板）：调 /api/user/self 拿 quota/used_quota 换算成 USD
+const NEW_API_USAGE_SCRIPT = `({
+  request: {
+    url: "{{baseUrl}}/api/user/self",
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer {{accessToken}}",
+      "User-Agent": "cc-switch/1.0",
+      "New-Api-User": "{{userId}}"
+    }
+  },
+  extractor: function (response) {
+    if (response.success && response.data) {
+      return {
+        planName: response.data.group || "默认套餐",
+        remaining: response.data.quota / 500000,
+        used: response.data.used_quota / 500000,
+        total: (response.data.quota + response.data.used_quota) / 500000,
+        unit: "USD"
+      };
+    }
+    return {
+      isValid: false,
+      invalidMessage: response.message || "查询失败"
+    };
+  }
+})`;
+
 function buildCCSwitchURL(app, name, models, apiKey, accessToken, userId) {
   const serverAddress = getServerAddress();
   const endpoint = app === 'codex' ? serverAddress + '/v1' : serverAddress;
@@ -82,6 +111,7 @@ function buildCCSwitchURL(app, name, models, apiKey, accessToken, userId) {
   params.set('usageBaseUrl', serverAddress);
   if (accessToken) params.set('usageAccessToken', accessToken);
   if (userId) params.set('usageUserId', String(userId));
+  params.set('usageScript', NEW_API_USAGE_SCRIPT);
   return `ccswitch://v1/import?${params.toString()}`;
 }
 
