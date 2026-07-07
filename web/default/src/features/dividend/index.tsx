@@ -72,6 +72,7 @@ export function Dividend() {
   }
 
   return (
+    <>
     <SectionPageLayout>
       <SectionPageLayout.Title>{t('Dividend Account')}</SectionPageLayout.Title>
       <SectionPageLayout.Content>
@@ -145,6 +146,11 @@ export function Dividend() {
                       <div className='text-muted-foreground mt-0.5 text-xs'>
                         {dayjs(w.created_at * 1000).format('YYYY-MM-DD HH:mm')}
                       </div>
+                      {w.status === WITHDRAW_STATUS.REJECTED && w.remark && (
+                        <div className='text-rose-600 mt-1 text-xs'>
+                          {t('Reject Reason')}：{w.remark}
+                        </div>
+                      )}
                     </div>
                     <StatusBadge status={w.status} t={t} />
                   </div>
@@ -154,15 +160,16 @@ export function Dividend() {
           </div>
         </div>
       </SectionPageLayout.Content>
-
-      <WithdrawRequestSheet
-        open={sheetOpen}
-        onOpenChange={setSheetOpen}
-        type={WITHDRAW_TYPE.DIVIDEND}
-        maxAmount={balance}
-        onSuccess={refreshAll}
-      />
     </SectionPageLayout>
+
+    <WithdrawRequestSheet
+      open={sheetOpen}
+      onOpenChange={setSheetOpen}
+      type={WITHDRAW_TYPE.DIVIDEND}
+      maxAmount={balance}
+      onSuccess={refreshAll}
+    />
+    </>
   )
 }
 

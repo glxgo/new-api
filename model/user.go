@@ -1166,6 +1166,22 @@ func GetRootUser() (user *User) {
 	return user
 }
 
+// AssignRootAsInviterForUnbound 把所有"无邀请人(inviter_id=0)"的普通用户的邀请人和树顶管理员
+// 设为超管。用于存量用户补齐。幂等：只改 inviter_id=0 的用户。
+// 排除超管自身(id=rootId)和非普通用户(role>=RoleRootUser，避免误改管理员/超管)。
+func AssignRootAsInviterForUnbound(rootId int) (int64, error) {
+	if rootId <= 0 {
+		return 0, nil
+	}
+	result := DB.Model(&User{}).
+		Where("inviter_id = 0 AND id <> ? AND role < ?", rootId, common.RoleRootUser).
+		Updates(map[string]interface{}{
+			"inviter_id":   rootId,
+			"aff_admin_id": rootId,
+		})
+	return result.RowsAffected, result.Error
+}
+
 func UpdateUserLastLoginAt(id int) {
 	if err := DB.Model(&User{}).Where("id = ?", id).Update("last_login_at", common.GetTimestamp()).Error; err != nil {
 		common.SysLog("failed to update user last_login_at: " + err.Error())

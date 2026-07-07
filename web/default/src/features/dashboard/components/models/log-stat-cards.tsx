@@ -33,6 +33,15 @@ import type {
   DashboardFilters,
 } from '@/features/dashboard/types'
 
+// 能量条渐变（每卡一色），模仿 suning dashboard 多彩进度条配色
+const CARD_ACCENTS = [
+  'from-sky-500 to-blue-500',
+  'from-violet-500 to-purple-500',
+  'from-emerald-500 to-teal-500',
+  'from-amber-500 to-orange-500',
+  'from-rose-500 to-pink-500',
+] as const
+
 interface LogStatCardsProps {
   filters?: DashboardFilters
   onDataUpdate?: (data: QuotaDataItem[], loading: boolean) => void
@@ -111,50 +120,47 @@ export function LogStatCards(props: LogStatCardsProps) {
   }))
 
   return (
-    <div className='overflow-hidden rounded-lg border'>
-      <div className='divide-border/60 grid grid-cols-2 divide-x sm:grid-cols-3 lg:grid-cols-5'>
-        {items.map((it, idx) => {
-          const Icon = it.icon
-          return (
-            <div
-              key={it.title}
-              className={`px-3 py-2.5 sm:px-5 sm:py-4 ${idx === items.length - 1 && items.length % 2 !== 0 ? 'col-span-2 sm:col-span-1' : ''}`}
-            >
-              <div className='flex items-center gap-2'>
-                <Icon className='text-muted-foreground/60 size-3.5 shrink-0' />
-                <div className='text-muted-foreground truncate text-xs font-medium tracking-wider uppercase'>
-                  {it.title}
-                </div>
+    <div className='grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5'>
+      {items.map((it, idx) => {
+        const Icon = it.icon
+        const accent = CARD_ACCENTS[idx % CARD_ACCENTS.length]
+        return (
+          <div
+            key={it.title}
+            className='group rounded-xl border border-border bg-card p-4 shadow-sm transition-all duration-300 hover:scale-[1.03] hover:shadow-md'
+          >
+            <div className='flex items-center gap-2'>
+              <Icon className='text-muted-foreground/70 size-3.5 shrink-0' />
+              <div className='text-muted-foreground truncate text-xs font-medium tracking-wider uppercase'>
+                {it.title}
               </div>
-
-              {loading ? (
-                <div className='mt-2 space-y-1.5'>
-                  <Skeleton className='h-7 w-20' />
-                  <Skeleton className='h-3.5 w-28' />
-                </div>
-              ) : error ? (
-                <>
-                  <div className='text-muted-foreground mt-1.5 font-mono text-lg font-bold tracking-tight tabular-nums sm:mt-2 sm:text-2xl'>
-                    --
-                  </div>
-                  <div className='text-muted-foreground/40 mt-1 hidden text-xs md:block'>
-                    {it.desc}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className='text-foreground mt-1.5 font-mono text-lg font-bold tracking-tight tabular-nums sm:mt-2 sm:text-2xl'>
-                    {it.value}
-                  </div>
-                  <div className='text-muted-foreground/60 mt-1 hidden text-xs md:block'>
-                    {it.desc}
-                  </div>
-                </>
-              )}
             </div>
-          )
-        })}
-      </div>
+
+            {loading ? (
+              <Skeleton className='mt-2 h-7 w-24' />
+            ) : error ? (
+              <div className='text-muted-foreground mt-2 font-mono text-lg font-bold tracking-tight tabular-nums sm:text-2xl'>
+                --
+              </div>
+            ) : (
+              <div className='text-foreground mt-2 font-mono text-lg font-bold tracking-tight tabular-nums sm:text-2xl'>
+                {it.value}
+              </div>
+            )}
+
+            {/* 能量条：默认 50%，hover 充到 80%（模仿 suning dashboard）*/}
+            <div className='mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted'>
+              <div
+                className={`h-full w-full origin-left scale-x-50 rounded-full bg-gradient-to-r ${accent} transition-transform duration-500 ease-out group-hover:scale-x-[0.8]`}
+              />
+            </div>
+
+            <div className='text-muted-foreground/60 mt-1.5 hidden text-xs md:block'>
+              {it.desc}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }

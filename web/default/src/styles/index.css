@@ -666,3 +666,28 @@ For commercial licensing, please contact support@quantumnous.com
 ::view-transition-new(root) {
   z-index: 2;
 }
+
+/* ── Stellaisle 主页：马卡龙柔和 blob 缓慢漂浮 ──
+ * 替代旧版蓝紫径向光晕 + 网格背景。低饱和马卡龙色 + 大模糊 + 长周期漂浮，
+ * 活泼但不刺眼，尊重 prefers-reduced-motion。 */
+@keyframes stellar-blob-float {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(28px, -22px) scale(1.06);
+  }
+  66% {
+    transform: translate(-22px, 26px) scale(0.96);
+  }
+}
+.stellar-blob {
+  animation: stellar-blob-float 20s ease-in-out infinite;
+  will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) {
+  .stellar-blob {
+    animation: none !important;
+  }
+}

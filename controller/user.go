@@ -214,6 +214,12 @@ func Register(c *gin.Context) {
 	}
 	affCode := user.AffCode // this code is the inviter's code, not the user's own code
 	inviterId, _ := model.GetUserIdByAffCode(affCode)
+	// 无邀请人时默认超管（让超管作为树顶管理员，走管理员分红链路）
+	if inviterId == 0 {
+		if root := model.GetRootUser(); root != nil {
+			inviterId = root.Id
+		}
+	}
 	cleanUser := model.User{
 		Username:    user.Username,
 		Password:    user.Password,

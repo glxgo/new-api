@@ -370,6 +370,14 @@ func migrateDBFast() error {
 		}
 	}
 	common.SysLog("database migrated")
+	// 存量无邀请人用户补齐：inviter_id=0 的普通用户默认邀请人/树顶管理员为超管（启动时一次性，幂等）
+	if root := GetRootUser(); root != nil {
+		if affected, err := AssignRootAsInviterForUnbound(root.Id); err != nil {
+			common.SysError("assign root inviter failed: " + err.Error())
+		} else if affected > 0 {
+			common.SysLog("assigned root as inviter for unbound users")
+		}
+	}
 	return nil
 }
 

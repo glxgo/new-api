@@ -302,6 +302,11 @@ export function RechargeFormCard({
                     )}
                   </div>
                 </div>
+                {Number(localAmount) > 0 && Number(localAmount) < minTopup && (
+                  <p className='text-xs text-amber-600 dark:text-amber-400'>
+                    {t('Minimum topup amount: {{amount}}', { amount: minTopup })}
+                  </p>
+                )}
               </div>
 
               <div className='space-y-2.5 sm:space-y-3'>

@@ -135,10 +135,10 @@ export function ThemeCustomizationProvider(props: {
   // Mirror state to the <body> via data-* attributes so theme-presets.css can
   // override CSS variables at the right cascade layer.
   useEffect(() => {
-    applyAttribute(
-      'data-theme-preset',
-      preset === DEFAULT_THEME_CUSTOMIZATION.preset ? null : preset
-    )
+    // 'default' 预设 = :root（移除属性）；其他预设写属性激活 theme-presets.css 对应块。
+    // 判断必须固定为 'default'，不能用 DEFAULT_THEME_CUSTOMIZATION.preset——
+    // 否则把默认预设改成非 default（如 stellaisle）后，默认状态会被当成 :root 而失效。
+    applyAttribute('data-theme-preset', preset === 'default' ? null : preset)
   }, [preset])
 
   // Font is the one axis where we resolve before writing the attribute:

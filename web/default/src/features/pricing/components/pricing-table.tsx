@@ -61,6 +61,7 @@ export function PricingTable(props: PricingTableProps) {
     priceRate,
     usdExchangeRate,
     showRechargePrice,
+    onModelClick,
   })
 
   const { table } = useDataTable({

@@ -24,17 +24,22 @@ func Init() {
 	go flushLoop()
 }
 
-func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens int64) {
+func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens, cacheTokens, promptTokens int64) {
 	if info == nil {
 		return
 	}
 	now := time.Now()
 	hasTtft := info.IsStream && info.HasSendResponse()
+	// 起点用"发给上游的时刻"；未到上游(本地鉴权失败等)时回退到请求进入站点的时间
+	startTime := info.UpstreamStartTime
+	if startTime.IsZero() {
+		startTime = info.StartTime
+	}
 	ttftMs := int64(0)
 	if hasTtft {
-		ttftMs = info.FirstResponseTime.Sub(info.StartTime).Milliseconds()
+		ttftMs = info.FirstResponseTime.Sub(startTime).Milliseconds()
 	}
-	latencyMs := now.Sub(info.StartTime).Milliseconds()
+	latencyMs := now.Sub(startTime).Milliseconds()
 	generationMs := latencyMs
 	if hasTtft {
 		generationMs = now.Sub(info.FirstResponseTime).Milliseconds()
@@ -51,6 +56,8 @@ func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens i
 		Success:      success,
 		OutputTokens: outputTokens,
 		GenerationMs: generationMs,
+		CacheTokens:  cacheTokens,
+		PromptTokens: promptTokens,
 	})
 }
 
@@ -80,17 +87,27 @@ func Query(params QueryParams) (QueryResult, error) {
 	if params.Hours <= 0 {
 		params.Hours = 24
 	}
-	if params.Hours > 24*30 {
-		params.Hours = 24 * 30
+	limit := params.Hours
+	if limit > 1000 {
+		limit = 1000
 	}
-	endTs := time.Now().Unix()
-	startTs := endTs - int64(params.Hours)*3600
 
-	merged := map[bucketKey]counters{}
-	rows, err := model.GetPerfMetrics(params.Model, params.Group, startTs, endTs)
+	// B 方案：取该 model 最近 limit 个有数据的 bucket_ts（跨多天凑满，不固定 24h 时间窗口）。
+	// 这样即使流量稀疏（冷门模型），也能展示满 limit 根连续绿柱，不会因某些小时无请求而出现空柱。
+	bucketTsList, err := model.GetRecentPerfBucketTs(params.Model, limit)
 	if err != nil {
 		return QueryResult{}, err
 	}
+	if len(bucketTsList) == 0 {
+		return QueryResult{ModelName: params.Model, SeriesSchema: seriesSchema}, nil
+	}
+
+	rows, err := model.GetPerfMetricsByBucketTs(params.Model, params.Group, bucketTsList)
+	if err != nil {
+		return QueryResult{}, err
+	}
+
+	merged := map[bucketKey]counters{}
 	for _, row := range rows {
 		mergeCounters(merged, bucketKey{
 			model:    row.ModelName,
@@ -107,9 +124,14 @@ func Query(params QueryParams) (QueryResult, error) {
 		})
 	}
 
+	// 热桶（当前小时实时数据）：仅合并 bucketTs 在已选 bucket 列表内的热桶
+	tsSet := make(map[int64]bool, len(bucketTsList))
+	for _, ts := range bucketTsList {
+		tsSet[ts] = true
+	}
 	hotBuckets.Range(func(key, value any) bool {
 		k := key.(bucketKey)
-		if k.model != params.Model || k.bucketTs < startTs || k.bucketTs > endTs {
+		if k.model != params.Model || !tsSet[k.bucketTs] {
 			return true
 		}
 		if params.Group != "" && k.group != params.Group {
@@ -146,6 +168,8 @@ func QuerySummaryAll(hours int, groups []string) (SummaryAllResult, error) {
 			totalLatencyMs: row.TotalLatencyMs,
 			outputTokens:   row.OutputTokens,
 			generationMs:   row.GenerationMs,
+			cacheTokens:    row.CacheTokens,
+			promptTokens:   row.PromptTokens,
 		}
 	}
 
@@ -169,6 +193,8 @@ func QuerySummaryAll(hours int, groups []string) (SummaryAllResult, error) {
 		cur.totalLatencyMs += snap.totalLatencyMs
 		cur.outputTokens += snap.outputTokens
 		cur.generationMs += snap.generationMs
+		cur.cacheTokens += snap.cacheTokens
+		cur.promptTokens += snap.promptTokens
 		totals[k.model] = cur
 		return true
 	})
@@ -178,7 +204,7 @@ func QuerySummaryAll(hours int, groups []string) (SummaryAllResult, error) {
 		if total.requestCount == 0 {
 			continue
 		}
-		avgLatency := total.totalLatencyMs / total.requestCount
+		avgLatency := avg(total.totalLatencyMs, total.successCount)
 		successRate := float64(total.successCount) / float64(total.requestCount) * 100
 		avgTps := 0.0
 		if total.generationMs > 0 {
@@ -189,6 +215,7 @@ func QuerySummaryAll(hours int, groups []string) (SummaryAllResult, error) {
 			AvgLatencyMs: avgLatency,
 			SuccessRate:  math.Round(successRate*100) / 100,
 			AvgTps:       math.Round(avgTps*100) / 100,
+			CacheRate:    math.Round(cacheRate(total)*100) / 100,
 			RequestCount: total.requestCount,
 		})
 	}
@@ -230,6 +257,8 @@ func mergeCounters(merged map[bucketKey]counters, key bucketKey, value counters)
 	current.ttftCount += value.ttftCount
 	current.outputTokens += value.outputTokens
 	current.generationMs += value.generationMs
+	current.cacheTokens += value.cacheTokens
+	current.promptTokens += value.promptTokens
 	merged[key] = current
 }
 
@@ -273,15 +302,18 @@ func buildQueryResult(modelName string, merged map[bucketKey]counters) QueryResu
 			total.ttftCount += value.ttftCount
 			total.outputTokens += value.outputTokens
 			total.generationMs += value.generationMs
+			total.cacheTokens += value.cacheTokens
+			total.promptTokens += value.promptTokens
 			series = append(series, bucketPoint(ts, value))
 		}
 
 		results = append(results, GroupResult{
 			Group:        group,
 			AvgTtftMs:    avg(total.ttftSumMs, total.ttftCount),
-			AvgLatencyMs: avg(total.totalLatencyMs, total.requestCount),
+			AvgLatencyMs: avg(total.totalLatencyMs, total.successCount),
 			SuccessRate:  successRate(total),
 			AvgTps:       avgTps(total),
+			CacheRate:    cacheRate(total),
 			Series:       series,
 		})
 	}
@@ -297,10 +329,20 @@ func bucketPoint(ts int64, value counters) BucketPoint {
 	return BucketPoint{
 		Ts:           ts,
 		AvgTtftMs:    avg(value.ttftSumMs, value.ttftCount),
-		AvgLatencyMs: avg(value.totalLatencyMs, value.requestCount),
+		AvgLatencyMs: avg(value.totalLatencyMs, value.successCount),
 		SuccessRate:  successRate(value),
 		AvgTps:       avgTps(value),
+		CacheRate:    cacheRate(value),
 	}
+}
+
+// cacheRate = 命中缓存 token / (命中 + 未命中输入 token) × 100
+func cacheRate(value counters) float64 {
+	total := value.cacheTokens + value.promptTokens
+	if total <= 0 {
+		return 0
+	}
+	return float64(value.cacheTokens) / float64(total) * 100
 }
 
 func avg(sum int64, count int64) int64 {
@@ -337,7 +379,7 @@ func recordRedis(key bucketKey, sample Sample) {
 	if sample.Success {
 		pipe.HIncrBy(ctx, redisKey, "ok", 1)
 	}
-	if sample.LatencyMs > 0 {
+	if sample.Success && sample.LatencyMs > 0 {
 		pipe.HIncrBy(ctx, redisKey, "lat", sample.LatencyMs)
 	}
 	if sample.HasTtft && sample.TtftMs >= 0 {
@@ -347,6 +389,12 @@ func recordRedis(key bucketKey, sample Sample) {
 	if sample.OutputTokens > 0 && sample.GenerationMs > 0 {
 		pipe.HIncrBy(ctx, redisKey, "out", sample.OutputTokens)
 		pipe.HIncrBy(ctx, redisKey, "gen_ms", sample.GenerationMs)
+	}
+	if sample.CacheTokens > 0 {
+		pipe.HIncrBy(ctx, redisKey, "cache", sample.CacheTokens)
+	}
+	if sample.PromptTokens > 0 {
+		pipe.HIncrBy(ctx, redisKey, "prompt", sample.PromptTokens)
 	}
 	pipe.Expire(ctx, redisKey, time.Hour)
 	_, _ = pipe.Exec(ctx)

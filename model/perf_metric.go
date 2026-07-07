@@ -1,6 +1,7 @@
 package model
 
 import (
+	"database/sql"
 	"time"
 
 	"gorm.io/gorm"
@@ -20,6 +21,8 @@ type PerfMetric struct {
 	TtftCount      int64  `json:"-" gorm:"default:0"`
 	OutputTokens   int64  `json:"-" gorm:"default:0"`
 	GenerationMs   int64  `json:"-" gorm:"default:0"`
+	CacheTokens    int64  `json:"-" gorm:"default:0"` // prompt cache 命中 token 累计
+	PromptTokens   int64  `json:"-" gorm:"default:0"` // 输入 token（未命中缓存）累计
 }
 
 func (PerfMetric) TableName() string {
@@ -37,13 +40,15 @@ func UpsertPerfMetric(metric *PerfMetric) error {
 			{Name: "bucket_ts"},
 		},
 		DoUpdates: clause.Assignments(map[string]interface{}{
-			"request_count":    gorm.Expr("perf_metrics.request_count + ?", metric.RequestCount),
-			"success_count":    gorm.Expr("perf_metrics.success_count + ?", metric.SuccessCount),
+			"request_count":   gorm.Expr("perf_metrics.request_count + ?", metric.RequestCount),
+			"success_count":   gorm.Expr("perf_metrics.success_count + ?", metric.SuccessCount),
 			"total_latency_ms": gorm.Expr("perf_metrics.total_latency_ms + ?", metric.TotalLatencyMs),
-			"ttft_sum_ms":      gorm.Expr("perf_metrics.ttft_sum_ms + ?", metric.TtftSumMs),
-			"ttft_count":       gorm.Expr("perf_metrics.ttft_count + ?", metric.TtftCount),
-			"output_tokens":    gorm.Expr("perf_metrics.output_tokens + ?", metric.OutputTokens),
-			"generation_ms":    gorm.Expr("perf_metrics.generation_ms + ?", metric.GenerationMs),
+			"ttft_sum_ms":     gorm.Expr("perf_metrics.ttft_sum_ms + ?", metric.TtftSumMs),
+			"ttft_count":      gorm.Expr("perf_metrics.ttft_count + ?", metric.TtftCount),
+			"output_tokens":   gorm.Expr("perf_metrics.output_tokens + ?", metric.OutputTokens),
+			"generation_ms":   gorm.Expr("perf_metrics.generation_ms + ?", metric.GenerationMs),
+			"cache_tokens":    gorm.Expr("perf_metrics.cache_tokens + ?", metric.CacheTokens),
+			"prompt_tokens":   gorm.Expr("perf_metrics.prompt_tokens + ?", metric.PromptTokens),
 		}),
 	}).Create(metric).Error
 }
@@ -59,6 +64,52 @@ func GetPerfMetrics(modelName string, group string, startTs int64, endTs int64) 
 	return metrics, err
 }
 
+// GetLastPerfBucketTs 返回某模型在 beforeTs 之前最近一个有数据的 bucket_ts（无数据返回 0）。
+func GetLastPerfBucketTs(modelName string, beforeTs int64) (int64, error) {
+	var ts sql.NullInt64
+	err := DB.Model(&PerfMetric{}).
+		Where("model_name = ? AND bucket_ts <= ?", modelName, beforeTs).
+		Select("MAX(bucket_ts)").
+		Scan(&ts).Error
+	if err != nil {
+		return 0, err
+	}
+	if !ts.Valid {
+		return 0, nil
+	}
+	return ts.Int64, nil
+}
+
+// GetRecentPerfBucketTs 取该 model 最近 limit 个有数据的 bucket_ts（去重、跨所有 group、按时间倒序）。
+func GetRecentPerfBucketTs(modelName string, limit int) ([]int64, error) {
+	if limit <= 0 {
+		limit = 24
+	}
+	var tsList []int64
+	err := DB.Model(&PerfMetric{}).
+		Where("model_name = ?", modelName).
+		Distinct("bucket_ts").
+		Order("bucket_ts DESC").
+		Limit(limit).
+		Pluck("bucket_ts", &tsList).Error
+	return tsList, err
+}
+
+// GetPerfMetricsByBucketTs 取该 model 在指定 bucket_ts 列表内的数据（可按 group 过滤），按 bucket_ts 升序。
+func GetPerfMetricsByBucketTs(modelName string, group string, bucketTsList []int64) ([]PerfMetric, error) {
+	var metrics []PerfMetric
+	if len(bucketTsList) == 0 {
+		return metrics, nil
+	}
+	query := DB.Model(&PerfMetric{}).
+		Where("model_name = ? AND bucket_ts IN ?", modelName, bucketTsList)
+	if group != "" {
+		query = query.Where(commonGroupCol + " = ?", group)
+	}
+	err := query.Order("bucket_ts ASC").Find(&metrics).Error
+	return metrics, err
+}
+
 type PerfMetricSummary struct {
 	ModelName      string `json:"model_name"`
 	RequestCount   int64  `json:"request_count"`
@@ -66,12 +117,14 @@ type PerfMetricSummary struct {
 	TotalLatencyMs int64  `json:"total_latency_ms"`
 	OutputTokens   int64  `json:"output_tokens"`
 	GenerationMs   int64  `json:"generation_ms"`
+	CacheTokens    int64  `json:"cache_tokens"`
+	PromptTokens   int64  `json:"prompt_tokens"`
 }
 
 func GetPerfMetricsSummaryAll(startTs int64, endTs int64, groups []string) ([]PerfMetricSummary, error) {
 	var summaries []PerfMetricSummary
 	query := DB.Model(&PerfMetric{}).
-		Select("model_name, SUM(request_count) as request_count, SUM(success_count) as success_count, SUM(total_latency_ms) as total_latency_ms, SUM(output_tokens) as output_tokens, SUM(generation_ms) as generation_ms").
+		Select("model_name, SUM(request_count) as request_count, SUM(success_count) as success_count, SUM(total_latency_ms) as total_latency_ms, SUM(output_tokens) as output_tokens, SUM(generation_ms) as generation_ms, SUM(cache_tokens) as cache_tokens, SUM(prompt_tokens) as prompt_tokens").
 		Where("bucket_ts >= ? AND bucket_ts <= ?", startTs, endTs)
 	if groups != nil {
 		if len(groups) == 0 {

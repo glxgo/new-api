@@ -96,14 +96,14 @@ export function ModelStatusDrawer({ open, onOpenChange, model }: Props) {
               className='w-full'
               emptyLabel={t('No data')}
             />
-            <div className='text-muted-foreground mt-3 grid grid-cols-3 gap-2 text-xs'>
+            <div className='text-muted-foreground mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4'>
               <div>
                 <div className='text-[10px] tracking-wide uppercase'>
                   {t('Latency')}
                 </div>
                 <div className='font-medium text-foreground'>
                   {group.avg_latency_ms > 0
-                    ? `${group.avg_latency_ms}ms`
+                    ? `${(group.avg_latency_ms / 1000).toFixed(2)}s`
                     : '—'}
                 </div>
               </div>
@@ -112,7 +112,7 @@ export function ModelStatusDrawer({ open, onOpenChange, model }: Props) {
                   {t('TTFT')}
                 </div>
                 <div className='font-medium text-foreground'>
-                  {group.avg_ttft_ms > 0 ? `${group.avg_ttft_ms}ms` : '—'}
+                  {group.avg_ttft_ms > 0 ? `${(group.avg_ttft_ms / 1000).toFixed(2)}s` : '—'}
                 </div>
               </div>
               <div>
@@ -120,7 +120,15 @@ export function ModelStatusDrawer({ open, onOpenChange, model }: Props) {
                   {t('Throughput')}
                 </div>
                 <div className='font-medium text-foreground'>
-                  {group.avg_tps > 0 ? `${group.avg_tps} tok/s` : '—'}
+                  {group.avg_tps > 0 ? `${group.avg_tps.toFixed(2)} tok/s` : '—'}
+                </div>
+              </div>
+              <div>
+                <div className='text-[10px] tracking-wide uppercase'>
+                  {t('Cache')}
+                </div>
+                <div className='font-medium text-foreground'>
+                  {group.cache_rate > 0 ? `${group.cache_rate.toFixed(0)}%` : '—'}
                 </div>
               </div>
             </div>

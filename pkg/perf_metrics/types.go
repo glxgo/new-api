@@ -16,6 +16,8 @@ type Sample struct {
 	Success      bool
 	OutputTokens int64
 	GenerationMs int64
+	CacheTokens  int64 // prompt cache 命中 token
+	PromptTokens int64 // 输入 token（未命中缓存部分）
 }
 
 type QueryParams struct {
@@ -30,6 +32,7 @@ type BucketPoint struct {
 	AvgLatencyMs int64   `json:"avg_latency_ms"`
 	SuccessRate  float64 `json:"success_rate"`
 	AvgTps       float64 `json:"avg_tps"`
+	CacheRate    float64 `json:"cache_rate"`
 }
 
 type GroupResult struct {
@@ -38,6 +41,7 @@ type GroupResult struct {
 	AvgLatencyMs int64         `json:"avg_latency_ms"`
 	SuccessRate  float64       `json:"success_rate"`
 	AvgTps       float64       `json:"avg_tps"`
+	CacheRate    float64       `json:"cache_rate"`
 	Series       []BucketPoint `json:"series"`
 }
 
@@ -52,6 +56,7 @@ type ModelSummary struct {
 	AvgLatencyMs int64   `json:"avg_latency_ms"`
 	SuccessRate  float64 `json:"success_rate"`
 	AvgTps       float64 `json:"avg_tps"`
+	CacheRate    float64 `json:"cache_rate"`
 	RequestCount int64   `json:"-"`
 }
 
@@ -73,6 +78,8 @@ type counters struct {
 	ttftCount      int64
 	outputTokens   int64
 	generationMs   int64
+	cacheTokens    int64
+	promptTokens   int64
 }
 
 type atomicBucket struct {
@@ -83,6 +90,8 @@ type atomicBucket struct {
 	ttftCount      atomic.Int64
 	outputTokens   atomic.Int64
 	generationMs   atomic.Int64
+	cacheTokens    atomic.Int64
+	promptTokens   atomic.Int64
 }
 
 func (b *atomicBucket) add(sample Sample) {
@@ -90,7 +99,7 @@ func (b *atomicBucket) add(sample Sample) {
 	if sample.Success {
 		b.successCount.Add(1)
 	}
-	if sample.LatencyMs > 0 {
+	if sample.Success && sample.LatencyMs > 0 {
 		b.totalLatencyMs.Add(sample.LatencyMs)
 	}
 	if sample.HasTtft && sample.TtftMs >= 0 {
@@ -100,6 +109,12 @@ func (b *atomicBucket) add(sample Sample) {
 	if sample.OutputTokens > 0 && sample.GenerationMs > 0 {
 		b.outputTokens.Add(sample.OutputTokens)
 		b.generationMs.Add(sample.GenerationMs)
+	}
+	if sample.CacheTokens > 0 {
+		b.cacheTokens.Add(sample.CacheTokens)
+	}
+	if sample.PromptTokens > 0 {
+		b.promptTokens.Add(sample.PromptTokens)
 	}
 }
 
@@ -112,6 +127,8 @@ func (b *atomicBucket) snapshot() counters {
 		ttftCount:      b.ttftCount.Load(),
 		outputTokens:   b.outputTokens.Load(),
 		generationMs:   b.generationMs.Load(),
+		cacheTokens:    b.cacheTokens.Load(),
+		promptTokens:   b.promptTokens.Load(),
 	}
 }
 
@@ -124,6 +141,8 @@ func (b *atomicBucket) drain() counters {
 		ttftCount:      b.ttftCount.Swap(0),
 		outputTokens:   b.outputTokens.Swap(0),
 		generationMs:   b.generationMs.Swap(0),
+		cacheTokens:    b.cacheTokens.Swap(0),
+		promptTokens:   b.promptTokens.Swap(0),
 	}
 }
 
@@ -148,5 +167,11 @@ func (b *atomicBucket) addCounters(c counters) {
 	}
 	if c.generationMs != 0 {
 		b.generationMs.Add(c.generationMs)
+	}
+	if c.cacheTokens != 0 {
+		b.cacheTokens.Add(c.cacheTokens)
+	}
+	if c.promptTokens != 0 {
+		b.promptTokens.Add(c.promptTokens)
 	}
 }

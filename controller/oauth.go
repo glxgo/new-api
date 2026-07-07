@@ -268,6 +268,12 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	if affCode != nil {
 		inviterId, _ = model.GetUserIdByAffCode(affCode.(string))
 	}
+	// 无邀请人时默认超管（让超管作为树顶管理员，走管理员分红链路）
+	if inviterId == 0 {
+		if root := model.GetRootUser(); root != nil {
+			inviterId = root.Id
+		}
+	}
 
 	// Use transaction to ensure user creation and OAuth binding are atomic
 	if genericProvider, ok := provider.(*oauth.GenericOAuthProvider); ok {

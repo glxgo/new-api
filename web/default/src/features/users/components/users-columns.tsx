@@ -224,6 +224,38 @@ export function useUsersColumns(): ColumnDef<User>[] {
       size: 170,
     },
     {
+      id: 'gift_quota',
+      accessorKey: 'gift_quota',
+      header: t('Gift Balance'),
+      cell: ({ row }) => {
+        const gift = row.original.gift_quota ?? 0
+        const usedGift = row.original.used_gift_quota ?? 0
+        return (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span className='text-muted-foreground cursor-help text-sm font-medium tabular-nums' />
+              }
+            >
+              {formatQuota(gift)}
+            </TooltipTrigger>
+            <TooltipContent>
+              <div className='space-y-1 text-xs'>
+                <div>
+                  {t('Remaining:')} {formatQuota(gift)}
+                </div>
+                <div>
+                  {t('Used:')} {formatQuota(usedGift)}
+                </div>
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        )
+      },
+      size: 120,
+      meta: { mobileHidden: true },
+    },
+    {
       accessorKey: 'group',
       header: t('Group'),
       cell: ({ row }) => {

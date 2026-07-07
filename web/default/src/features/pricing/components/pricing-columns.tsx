@@ -17,16 +17,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { type ColumnDef } from '@tanstack/react-table'
+import { ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import {
-  BadgeCell,
   BadgeListCell,
   DataTableColumnHeader,
 } from '@/components/data-table'
-import { GroupBadge } from '@/components/group-badge'
 import { StatusBadge } from '@/components/status-badge'
-import { DEFAULT_TOKEN_UNIT, QUOTA_TYPE_VALUES } from '../constants'
+import { DEFAULT_TOKEN_UNIT } from '../constants'
 import {
   getDynamicDisplayGroupRatio,
   getDynamicPricingSummary,
@@ -41,7 +40,7 @@ import {
 import type { PricingModel, TokenUnit } from '../types'
 
 // ----------------------------------------------------------------------------
-// Pricing Table Columns
+// Pricing Table Columns（krill-ai 风格：模型/能力/上下文/输入/输出/缓存/操作）
 // ----------------------------------------------------------------------------
 
 export interface PricingColumnsOptions {
@@ -49,6 +48,24 @@ export interface PricingColumnsOptions {
   priceRate?: number
   usdExchangeRate?: number
   showRechargePrice?: boolean
+  onModelClick?: (modelName: string) => void
+}
+
+function formatContext(length?: number): string {
+  if (!length || length <= 0) return '—'
+  if (length >= 1000) return `${Math.round(length / 1000)}K`
+  return String(length)
+}
+
+function PriceCell({ value, label }: { value: string | null; label: string }) {
+  return value ? (
+    <div className='min-w-0'>
+      <span className='font-mono text-sm tabular-nums'>{value}</span>
+      <div className='text-muted-foreground/50 text-[10px]'>/ {label}</div>
+    </div>
+  ) : (
+    <span className='text-muted-foreground/30 text-xs'>—</span>
+  )
 }
 
 export function usePricingColumns(
@@ -60,12 +77,64 @@ export function usePricingColumns(
     priceRate = 1,
     usdExchangeRate = 1,
     showRechargePrice = false,
+    onModelClick,
   } = options
 
   const tokenUnitLabel = tokenUnit === 'K' ? '1K' : '1M'
 
+  // 计算单个价格字段（input/output/cache）的显示值，统一处理 dynamic / token / request
+  const fieldPrice = (
+    model: PricingModel,
+    field: 'input' | 'output' | 'cache'
+  ): string | null => {
+    const dynamicSummary = getDynamicPricingSummary(model, {
+      tokenUnit,
+      showRechargePrice,
+      priceRate,
+      usdExchangeRate,
+      groupRatioMultiplier: getDynamicDisplayGroupRatio(model),
+    })
+    if (dynamicSummary) {
+      if (dynamicSummary.isSpecialExpression) return null
+      const fieldMap: Record<typeof field, string> = {
+        input: 'promptPrice',
+        output: 'completionPrice',
+        cache: 'cacheReadPrice',
+      }
+      const entry = dynamicSummary.entries.find(
+        (e) => e.field === fieldMap[field]
+      )
+      return entry ? stripTrailingZeros(entry.formatted) : null
+    }
+    if (!isTokenBasedModel(model)) {
+      // 按次计费模型：只在 output 列显示单价
+      if (field === 'output') {
+        return stripTrailingZeros(
+          formatRequestPrice(
+            model,
+            showRechargePrice,
+            priceRate,
+            usdExchangeRate
+          )
+        )
+      }
+      return null
+    }
+    if (field === 'cache' && model.cache_ratio == null) return null
+    return stripTrailingZeros(
+      formatPrice(
+        model,
+        field,
+        tokenUnit,
+        showRechargePrice,
+        priceRate,
+        usdExchangeRate
+      )
+    )
+  }
+
   return [
-    // Model column
+    // Model column（logo + 名字 + 描述/厂商）
     {
       accessorKey: 'model_name',
       meta: { label: t('Model') },
@@ -75,331 +144,141 @@ export function usePricingColumns(
       cell: ({ row }) => {
         const model = row.original
         const modelIconKey = model.icon || model.vendor_icon
-        const modelIcon = modelIconKey ? getLobeIcon(modelIconKey, 14) : null
-
+        const modelIcon = modelIconKey ? getLobeIcon(modelIconKey, 18) : null
+        const initial = model.model_name?.charAt(0).toUpperCase() || '?'
         return (
-          <div className='flex max-w-full min-w-0 items-center gap-2'>
-            {modelIcon}
-            <span className='truncate font-mono text-sm font-medium'>
-              {model.model_name}
-            </span>
+          <div className='flex max-w-full min-w-0 items-center gap-2.5'>
+            <div className='bg-muted/50 flex size-9 shrink-0 items-center justify-center rounded-lg'>
+              {modelIcon || (
+                <span className='text-muted-foreground text-sm font-bold'>
+                  {initial}
+                </span>
+              )}
+            </div>
+            <div className='min-w-0'>
+              <div className='truncate font-mono text-sm font-semibold'>
+                {model.model_name}
+              </div>
+              {(model.description || model.vendor_name) && (
+                <div className='text-muted-foreground truncate text-xs'>
+                  {model.description || model.vendor_name}
+                </div>
+              )}
+            </div>
           </div>
         )
       },
-      minSize: 200,
+      minSize: 240,
     },
 
-    // Type column
+    // Capabilities column（tags + endpoints 合并为能力 pill）
     {
-      accessorKey: 'quota_type',
-      header: t('Type'),
+      id: 'capabilities',
+      header: t('Capabilities'),
       cell: ({ row }) => {
-        const isTokenBased = row.original.quota_type === QUOTA_TYPE_VALUES.TOKEN
+        const tags = parseTags(row.original.tags)
+        const endpoints = row.original.supported_endpoint_types || []
+        const items = [...endpoints, ...tags].slice(0, 4)
         return (
-          <StatusBadge
-            label={isTokenBased ? t('Token') : t('Request')}
-            variant={isTokenBased ? 'info' : 'neutral'}
-            copyable={false}
-            className='-ml-1.5'
+          <BadgeListCell
+            items={items.map((item) => (
+              <StatusBadge
+                key={item}
+                label={item}
+                autoColor={item}
+                size='sm'
+                copyable={false}
+              />
+            ))}
           />
         )
       },
-      size: 80,
+      size: 220,
       enableSorting: false,
     },
 
-    // Price column
+    // Context column（上下文长度）
     {
-      accessorKey: 'price',
-      meta: { label: t('Price') },
+      accessorKey: 'context_length',
+      header: t('Context'),
+      cell: ({ row }) => (
+        <span className='text-muted-foreground font-mono text-xs tabular-nums'>
+          {formatContext(row.original.context_length)}
+        </span>
+      ),
+      size: 90,
+      enableSorting: false,
+    },
+
+    // Input price column
+    {
+      id: 'input_price',
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title={t('Price')} />
+        <DataTableColumnHeader column={column} title={t('Input')} />
+      ),
+      cell: ({ row }) => (
+        <PriceCell value={fieldPrice(row.original, 'input')} label={tokenUnitLabel} />
+      ),
+      size: 110,
+      enableSorting: false,
+    },
+
+    // Output price column
+    {
+      id: 'output_price',
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Output')} />
       ),
       cell: ({ row }) => {
-        const model = row.original
-        const dynamicSummary = getDynamicPricingSummary(model, {
-          tokenUnit,
-          showRechargePrice,
-          priceRate,
-          usdExchangeRate,
-          groupRatioMultiplier: getDynamicDisplayGroupRatio(model),
-        })
-
-        if (dynamicSummary) {
-          if (dynamicSummary.isSpecialExpression) {
-            return (
-              <div className='max-w-full min-w-0'>
-                <div className='text-xs font-medium text-amber-700 dark:text-amber-300'>
-                  {t('Special billing expression')}
-                </div>
-                <div className='text-muted-foreground text-[11px]'>
-                  {t('Unable to parse structured pricing')}
-                </div>
-                <code className='text-muted-foreground/70 mt-1 line-clamp-2 block font-mono text-[10px] leading-relaxed break-all'>
-                  {dynamicSummary.rawExpression}
-                </code>
-              </div>
-            )
-          }
-
-          const primaryEntries = dynamicSummary.primaryEntries.slice(0, 2)
-          if (primaryEntries.length === 0) {
-            return (
-              <span className='text-muted-foreground text-xs'>
-                {t('Dynamic Pricing')}
-              </span>
-            )
-          }
-
-          return (
-            <div className='max-w-full min-w-0'>
-              <span className='font-mono text-sm tabular-nums'>
-                {primaryEntries.map((entry, index) => (
-                  <span key={entry.key}>
-                    {index > 0 && (
-                      <span className='text-muted-foreground/40 mx-1'>/</span>
-                    )}
-                    {stripTrailingZeros(entry.formatted)}
-                  </span>
-                ))}
-              </span>
-              <div className='text-muted-foreground/50 text-[10px]'>
-                / {tokenUnitLabel} tokens
-                {dynamicSummary.tierCount > 1 &&
-                  ` · ${t('{{count}} tiers', {
-                    count: dynamicSummary.tierCount,
-                  })}`}
-              </div>
-            </div>
-          )
-        }
-
-        const isTokenBased = isTokenBasedModel(model)
-
-        if (isTokenBased) {
-          const inputPrice = stripTrailingZeros(
-            formatPrice(
-              model,
-              'input',
-              tokenUnit,
-              showRechargePrice,
-              priceRate,
-              usdExchangeRate
-            )
-          )
-          const outputPrice = stripTrailingZeros(
-            formatPrice(
-              model,
-              'output',
-              tokenUnit,
-              showRechargePrice,
-              priceRate,
-              usdExchangeRate
-            )
-          )
-
-          return (
-            <div className='max-w-full min-w-0'>
-              <span className='font-mono text-sm tabular-nums'>
-                {inputPrice}
-                <span className='text-muted-foreground/40 mx-1'>/</span>
-                {outputPrice}
-              </span>
-              <div className='text-muted-foreground/50 text-[10px]'>
-                / {tokenUnitLabel} tokens
-              </div>
-            </div>
-          )
-        }
-
-        const price = stripTrailingZeros(
-          formatRequestPrice(
-            model,
-            showRechargePrice,
-            priceRate,
-            usdExchangeRate
-          )
-        )
-
-        return (
-          <div className='max-w-full min-w-0'>
-            <span className='font-mono text-sm tabular-nums'>{price}</span>
-            <div className='text-muted-foreground/50 text-[10px]'>
-              / {t('request')}
-            </div>
-          </div>
-        )
-      },
-      size: 180,
-      enableSorting: false,
-    },
-
-    // Cached price column (Vercel AI Gateway style)
-    {
-      id: 'cached_price',
-      header: t('Cached'),
-      cell: ({ row }) => {
-        const model = row.original
-        const dynamicSummary = getDynamicPricingSummary(model, {
-          tokenUnit,
-          showRechargePrice,
-          priceRate,
-          usdExchangeRate,
-          groupRatioMultiplier: getDynamicDisplayGroupRatio(model),
-        })
-
-        if (dynamicSummary) {
-          if (dynamicSummary.isSpecialExpression) {
-            return (
-              <span className='text-muted-foreground/50 text-xs'>
-                {t('Special billing expression')}
-              </span>
-            )
-          }
-
-          const cacheEntry = dynamicSummary.entries.find(
-            (entry) => entry.field === 'cacheReadPrice'
-          )
-          if (!cacheEntry) {
-            return <span className='text-muted-foreground/30 text-xs'>—</span>
-          }
-
-          return (
-            <div className='max-w-full min-w-0'>
-              <span className='font-mono text-sm tabular-nums'>
-                {stripTrailingZeros(cacheEntry.formatted)}
-              </span>
-              <div className='text-muted-foreground/50 text-[10px]'>
-                / {tokenUnitLabel}
-              </div>
-            </div>
-          )
-        }
-
-        const isTokenBased = isTokenBasedModel(model)
-
-        if (!isTokenBased || model.cache_ratio == null) {
-          return <span className='text-muted-foreground/30 text-xs'>—</span>
-        }
-
-        const cachedPrice = stripTrailingZeros(
-          formatPrice(
-            model,
-            'cache',
+        const isRequest =
+          !isTokenBasedModel(row.original) &&
+          !getDynamicPricingSummary(row.original, {
             tokenUnit,
             showRechargePrice,
             priceRate,
-            usdExchangeRate
-          )
-        )
-
+            usdExchangeRate,
+            groupRatioMultiplier: getDynamicDisplayGroupRatio(row.original),
+          })
         return (
-          <div className='max-w-full min-w-0'>
-            <span className='font-mono text-sm tabular-nums'>
-              {cachedPrice}
-            </span>
-            <div className='text-muted-foreground/50 text-[10px]'>
-              / {tokenUnitLabel}
-            </div>
-          </div>
+          <PriceCell
+            value={fieldPrice(row.original, 'output')}
+            label={isRequest ? t('request') : tokenUnitLabel}
+          />
         )
       },
       size: 110,
       enableSorting: false,
     },
 
-    // Vendor column
+    // Cached price column
     {
-      accessorKey: 'vendor_name',
-      header: t('Vendor'),
-      cell: ({ row }) => {
-        const model = row.original
-        if (!model.vendor_name) {
-          return <span className='text-muted-foreground/50 text-xs'>—</span>
-        }
-        const vendorIcon = model.vendor_icon
-          ? getLobeIcon(model.vendor_icon, 12)
-          : null
-        return (
-          <BadgeCell className='gap-1.5'>
-            {vendorIcon}
-            <StatusBadge
-              label={model.vendor_name}
-              autoColor={model.vendor_name}
-              size='sm'
-              copyable={false}
-            />
-          </BadgeCell>
-        )
-      },
-      size: 130,
+      id: 'cached_price',
+      header: t('Cached'),
+      cell: ({ row }) => (
+        <PriceCell value={fieldPrice(row.original, 'cache')} label={tokenUnitLabel} />
+      ),
+      size: 110,
       enableSorting: false,
     },
 
-    // Tags column
+    // Action column（详情按钮）
     {
-      accessorKey: 'tags',
-      header: t('Tags'),
-      cell: ({ row }) => {
-        const tags = parseTags(row.original.tags)
-        return (
-          <BadgeListCell
-            items={tags.map((tag) => (
-              <StatusBadge
-                key={tag}
-                label={tag}
-                autoColor={tag}
-                size='sm'
-                copyable={false}
-              />
-            ))}
-          />
-        )
-      },
-      size: 140,
-      enableSorting: false,
-    },
-
-    // Endpoints column
-    {
-      accessorKey: 'supported_endpoint_types',
-      header: t('Endpoints'),
-      cell: ({ row }) => {
-        const endpoints = row.original.supported_endpoint_types || []
-        return (
-          <BadgeListCell
-            items={endpoints.map((ep) => (
-              <StatusBadge
-                key={ep}
-                label={ep}
-                autoColor={ep}
-                size='sm'
-                copyable={false}
-              />
-            ))}
-          />
-        )
-      },
-      size: 130,
-      enableSorting: false,
-    },
-
-    // Enable Groups column
-    {
-      accessorKey: 'enable_groups',
-      header: t('Groups'),
-      cell: ({ row }) => {
-        const groups = row.original.enable_groups || []
-        return (
-          <BadgeListCell
-            items={groups.map((group) => (
-              <GroupBadge key={group} group={group} size='sm' />
-            ))}
-            tooltipClassName='max-w-[280px] p-2'
-          />
-        )
-      },
-      size: 130,
+      id: 'action',
+      header: () => <span className='text-muted-foreground font-medium text-xs'>{t('Action')}</span>,
+      cell: ({ row }) => (
+        <button
+          type='button'
+          onClick={(e) => {
+            e.stopPropagation()
+            onModelClick?.(row.original.model_name)
+          }}
+          className='text-muted-foreground hover:text-foreground hover:bg-muted hover:border-primary/40 inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors'
+        >
+          {t('Details')}
+          <ChevronRight className='size-3.5' />
+        </button>
+      ),
+      size: 100,
       enableSorting: false,
     },
   ]

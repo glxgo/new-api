@@ -19,52 +19,60 @@ For commercial licensing, please contact support@quantumnous.com
 import { Link } from '@tanstack/react-router'
 import { ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Aurora } from './reactbits/aurora'
+import { ScrollVelocity } from './reactbits/scroll-velocity'
 
-// 复刻自 home.html（Star API 品牌主页）：稳定优先 + 三大卖点 + 能力 + 三步 + CTA
+// Stellaisle 品牌主页（马卡龙多彩系）：
+// 一切颜色走设计系统 token（var(--primary)/--chart-*），不硬编码紫蓝渐变。
+// 多彩感由 chart-1~5（薄荷/樱花/奶油/天蓝/薰衣草）轮换点缀，主色蜜桃珊瑚统领。
 interface StarHomeProps {
   isAuthenticated?: boolean
 }
 
+// 马卡龙点缀色轮换（完整类名字面量，确保 Tailwind 识别）
 const FEATURES = [
   {
     ico: '🛡️',
     title: '稳定优先',
-    grad: 'from-blue-500/14 to-blue-500/4',
+    iconBg: 'bg-chart-1/10',
+    hoverBorder: 'hover:border-chart-1/40',
     desc: (
       <>
-        宁留余量，<b className='text-slate-900'>不超售、不滥用</b>。线路精挑细选，高峰期也不让你排队失败——该通的请求，一定通。
+        宁留余量，<b className='text-foreground'>不超售、不滥用</b>。线路精挑细选，高峰期也不让你排队失败——该通的请求，一定通。
       </>
     ),
   },
   {
     ico: '💰',
     title: '余额可退',
-    grad: 'from-emerald-500/14 to-emerald-500/4',
+    iconBg: 'bg-chart-2/10',
+    hoverBorder: 'hover:border-chart-2/40',
     desc: (
       <>
-        没用完的余额<b className='text-slate-900'>支持退款</b>。不靠&ldquo;充进去拿不出来&rdquo;赚钱，靠你长期稳稳地用。
+        没用完的余额<b className='text-foreground'>支持退款</b>。不靠&ldquo;充进去拿不出来&rdquo;赚钱，靠你长期稳稳地用。
       </>
     ),
   },
   {
     ico: '⚖️',
     title: '公道定价',
-    grad: 'from-purple-500/14 to-purple-500/4',
+    iconBg: 'bg-chart-3/10',
+    hoverBorder: 'hover:border-chart-3/40',
     desc: (
       <>
-        不卷最低价（低价的代价是超售和掉线）。稳定前提下给公道价，<b className='text-slate-900'>每一分钱都买得到可用性</b>。
+        不卷最低价（低价的代价是超售和掉线）。稳定前提下给公道价，<b className='text-foreground'>每一分钱都买得到可用性</b>。
       </>
     ),
   },
 ] as const
 
 const CAPABILITIES = [
-  { ci: '💬', t: '对话补全', p: 'GPT / Claude / Gemini 全系列' },
-  { ci: '🖼️', t: '图像生成', p: 'DALL·E · Midjourney · SD' },
-  { ci: '🔢', t: '向量与重排', p: 'Embedding · Rerank · RAG' },
-  { ci: '⚡', t: '进阶能力', p: 'Function Call · Realtime' },
-  { ci: '📡', t: '全客户端兼容', p: 'Cherry / NextChat / Cursor' },
-  { ci: '🔌', t: '统一接口', p: '兼容 OpenAI 格式' },
+  { ci: '💬', t: '对话补全', p: 'GPT / Claude / Gemini 全系列', bg: 'bg-chart-4/10' },
+  { ci: '🖼️', t: '图像生成', p: 'DALL·E · Midjourney · SD', bg: 'bg-chart-1/10' },
+  { ci: '🔢', t: '向量与重排', p: 'Embedding · Rerank · RAG', bg: 'bg-chart-2/10' },
+  { ci: '⚡', t: '进阶能力', p: 'Function Call · Realtime', bg: 'bg-chart-3/10' },
+  { ci: '📡', t: '全客户端兼容', p: 'Cherry / NextChat / Cursor', bg: 'bg-chart-5/10' },
+  { ci: '🔌', t: '统一接口', p: '兼容 OpenAI 格式', bg: 'bg-chart-4/10' },
 ] as const
 
 const STEPS = [
@@ -75,57 +83,59 @@ const STEPS = [
 
 export function StarHome({ isAuthenticated }: StarHomeProps) {
   return (
-    <div className='relative'>
-      {/* 背景光晕 */}
+    <div
+      className='relative'
+      data-theme-preset='stellaisle'
+      /* 局部强制 stellaisle：主页保留马卡龙特殊配色，
+         其他页面走全局 default（原系统配色）。*/
+    >
+      {/* 马卡龙极光背景（Aurora 改马卡龙色：珊瑚/薄荷/奶油，替代旧蓝青紫 AI 极光）*/}
       <div
         aria-hidden
-        className='pointer-events-none fixed inset-0 z-0'
-        style={{
-          background: [
-            'radial-gradient(ellipse 60% 50% at 20% 18%, oklch(0.72 0.18 250 / .45) 0%, transparent 70%)',
-            'radial-gradient(ellipse 50% 40% at 82% 12%, oklch(0.65 0.15 200 / .38) 0%, transparent 70%)',
-            'radial-gradient(ellipse 42% 38% at 45% 88%, oklch(0.70 0.12 280 / .32) 0%, transparent 70%)',
-          ].join(', '),
-        }}
-      />
-      {/* 网格背景 */}
-      <div
-        aria-hidden
-        className='pointer-events-none fixed inset-0 z-0 opacity-55 dark:opacity-25'
-        style={{
-          backgroundImage:
-            'linear-gradient(to right, #e2e8f0 1px, transparent 1px), linear-gradient(to bottom, #e2e8f0 1px, transparent 1px)',
-          backgroundSize: '56px 56px',
-          maskImage:
-            'radial-gradient(ellipse 65% 55% at 50% 22%, #000 12%, transparent 100%)',
-          WebkitMaskImage:
-            'radial-gradient(ellipse 65% 55% at 50% 22%, #000 12%, transparent 100%)',
-        }}
-      />
+        className='pointer-events-none fixed inset-0 -z-10 overflow-hidden opacity-[0.28] dark:opacity-[0.18]'
+      >
+        <Aurora
+          colorStops={['#E8916C', '#7AD9B8', '#FFE5A0']}
+          amplitude={0.8}
+          blend={0.6}
+        />
+      </div>
 
       <div className='relative z-10 mx-auto max-w-[1120px] px-6 pt-[84px]'>
         {/* Hero */}
         <div className='py-9 text-center sm:py-11'>
-          <span className='mb-6 inline-flex items-center gap-2 rounded-full border border-blue-500/22 bg-blue-500/[0.08] px-3.5 py-1.5 text-xs font-semibold tracking-[1.5px] text-blue-600 dark:text-blue-400'>
-            <span className='size-1.5 rounded-full bg-blue-500 shadow-[0_0_0_3px_rgba(59,130,246,.18)]' />
+          <span
+            className='landing-animate-fade-up mb-6 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3.5 py-1.5 text-xs font-semibold tracking-[1.5px] text-primary opacity-0'
+            style={{ animationDelay: '0ms' }}
+          >
+            <span className='size-1.5 rounded-full bg-primary' />
             STABLE FIRST · 稳定优先
           </span>
-          <h1 className='text-[clamp(34px,6vw,58px)] font-extrabold leading-[1.15] tracking-tight'>
+          <h1
+            className='landing-animate-fade-up text-[clamp(34px,6vw,58px)] font-extrabold leading-[1.15] tracking-tight opacity-0'
+            style={{ animationDelay: '80ms' }}
+          >
             稳到让你忘了它存在的
             <br />
-            <span className='bg-gradient-to-r from-blue-500 via-violet-500 to-purple-500 bg-clip-text text-transparent'>
-              AI API 中转站
-            </span>
+            <span className='text-[#d97757]'>AI API 中转站</span>
           </h1>
-          <p className='mx-auto mt-5 max-w-[620px] text-[clamp(16px,2.5vw,19px)] leading-relaxed text-slate-500 dark:text-slate-400'>
+          <p
+            className='landing-animate-fade-up mx-auto mt-5 max-w-[620px] text-[clamp(16px,2.5vw,19px)] leading-relaxed text-muted-foreground opacity-0'
+            style={{ animationDelay: '160ms' }}
+          >
             聚合 OpenAI、Claude、Gemini 等主流模型，一个 Key 通吃。
             <br />
-            不盲目追求最低价——只做<strong className='text-slate-700 dark:text-slate-300'>稳定</strong>与<strong className='text-slate-700 dark:text-slate-300'>低价</strong>之间最舒服的平衡。
+            不盲目追求最低价——只做
+            <strong className='text-foreground'>稳定</strong>与
+            <strong className='text-foreground'>低价</strong>之间最舒服的平衡。
           </p>
-          <div className='mt-8 flex flex-wrap justify-center gap-3.5'>
+          <div
+            className='landing-animate-fade-up mt-8 flex flex-wrap justify-center gap-3.5 opacity-0'
+            style={{ animationDelay: '240ms' }}
+          >
             {isAuthenticated ? (
               <Button
-                className='h-[51px] rounded-[10px] bg-gradient-to-br from-indigo-500 to-violet-500 px-8 text-[15px] font-semibold shadow-[0_6px_18px_rgba(99,102,241,.28)] hover:shadow-[0_10px_24px_rgba(99,102,241,.4)]'
+                className='star-glow h-[51px] rounded-2xl bg-primary px-8 text-[15px] font-semibold shadow-lg hover:-translate-y-0.5 hover:shadow-xl'
                 render={<Link to='/dashboard' />}
               >
                 进入控制台 <ArrowRight className='ml-1 size-4' />
@@ -133,14 +143,14 @@ export function StarHome({ isAuthenticated }: StarHomeProps) {
             ) : (
               <>
                 <Button
-                  className='h-[51px] rounded-[10px] bg-gradient-to-br from-indigo-500 to-violet-500 px-7 text-[15px] font-semibold shadow-[0_6px_18px_rgba(99,102,241,.28)] hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(99,102,241,.4)]'
-                  render={<Link to='/sign-up' />}
+                  className='star-glow h-[51px] rounded-2xl bg-primary px-7 text-[15px] font-semibold shadow-lg hover:-translate-y-0.5 hover:shadow-xl'
+                  render={<Link to='/dashboard' />}
                 >
-                  🚀 立即注册
+                  进入控制台 <ArrowRight className='ml-1 size-4' />
                 </Button>
                 <Button
                   variant='outline'
-                  className='h-[51px] rounded-[10px] px-7 text-[15px] font-semibold'
+                  className='h-[51px] rounded-2xl px-7 text-[15px] font-semibold'
                   render={<Link to='/pricing' />}
                 >
                   查看定价
@@ -150,25 +160,50 @@ export function StarHome({ isAuthenticated }: StarHomeProps) {
           </div>
         </div>
 
+        {/* ScrollVelocity 横幅：特性词 + 模型名双向滚动，活泼动效 */}
+        <div
+          className='landing-animate-fade-in overflow-hidden py-2 opacity-0'
+          style={{ animationDelay: '320ms' }}
+        >
+          <ScrollVelocity
+            texts={[
+              <span key='a' className='text-foreground/80'>
+                稳定优先 ✦ 余额可退 ✦ 公道定价 ✦ 全客户端兼容
+              </span>,
+              <span key='b' className='text-primary/70'>
+                GPT ✦ Claude ✦ Gemini ✦ Midjourney ✦ DALL·E
+              </span>,
+            ]}
+            velocity={40}
+            numCopies={3}
+          />
+        </div>
+
         {/* 为什么选我们 */}
         <section className='py-[50px]'>
-          <div className='mb-10 text-center'>
-            <h2 className='text-[clamp(25px,4vw,34px)] font-bold'>为什么选我们</h2>
-            <p className='mt-2.5 text-slate-500 dark:text-slate-400'>三件事，说到做到</p>
+          <div
+            className='landing-animate-fade-up mb-10 text-center opacity-0'
+            style={{ animationDelay: '100ms' }}
+          >
+            <h2 className='text-[clamp(25px,4vw,34px)] font-bold'>
+              为什么选我们
+            </h2>
+            <p className='mt-2.5 text-muted-foreground'>三件事，说到做到</p>
           </div>
           <div className='grid gap-[22px] sm:grid-cols-3'>
-            {FEATURES.map((f) => (
+            {FEATURES.map((f, i) => (
               <div
                 key={f.title}
-                className='rounded-[18px] border border-[#e8ecf3] bg-white p-7 shadow-[0_1px_3px_rgba(15,23,42,.04),0_10px_30px_rgba(15,23,42,.04)] transition-all duration-300 hover:-translate-y-1.5 hover:border-indigo-500/30 hover:shadow-[0_4px_8px_rgba(15,23,42,.05),0_20px_40px_rgba(99,102,241,.1)] dark:bg-card'
+                className={`landing-animate-fade-up rounded-3xl border border-border bg-card p-7 shadow-sm transition-all duration-300 hover:-translate-y-1.5 ${f.hoverBorder} hover:shadow-xl opacity-0`}
+                style={{ animationDelay: `${120 + i * 80}ms` }}
               >
                 <div
-                  className={`mb-[18px] flex size-14 items-center justify-center rounded-[14px] bg-gradient-to-br ${f.grad} text-[28px]`}
+                  className={`mb-[18px] flex size-14 items-center justify-center rounded-2xl ${f.iconBg} text-[28px]`}
                 >
                   {f.ico}
                 </div>
                 <h3 className='mb-2.5 text-xl font-bold'>{f.title}</h3>
-                <p className='text-[14.5px] leading-relaxed text-slate-500 dark:text-slate-400'>
+                <p className='text-[14.5px] leading-relaxed text-muted-foreground'>
                   {f.desc}
                 </p>
               </div>
@@ -180,17 +215,23 @@ export function StarHome({ isAuthenticated }: StarHomeProps) {
         <section className='py-[50px]'>
           <div className='mb-10 text-center'>
             <h2 className='text-[clamp(25px,4vw,34px)] font-bold'>能力一览</h2>
-            <p className='mt-2.5 text-slate-500 dark:text-slate-400'>主流模型与接口，一站接入</p>
+            <p className='mt-2.5 text-muted-foreground'>
+              主流模型与接口，一站接入
+            </p>
           </div>
           <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-3'>
             {CAPABILITIES.map((c) => (
               <div
                 key={c.t}
-                className='rounded-[14px] border border-[#e8ecf3] bg-white p-[22px] transition-all duration-200 hover:-translate-y-[3px] hover:border-violet-500/35 hover:shadow-[0_12px_24px_rgba(15,23,42,.06)] dark:bg-card'
+                className='rounded-2xl border border-border bg-card p-[22px] transition-all duration-200 hover:-translate-y-[3px] hover:border-primary/30 hover:shadow-lg'
               >
-                <div className='mb-2.5 text-[26px]'>{c.ci}</div>
+                <div
+                  className={`mb-2.5 flex size-11 items-center justify-center rounded-xl ${c.bg} text-[22px]`}
+                >
+                  {c.ci}
+                </div>
                 <h4 className='mb-1.5 text-[15.5px] font-semibold'>{c.t}</h4>
-                <p className='text-[13px] text-slate-500 dark:text-slate-400'>{c.p}</p>
+                <p className='text-[13px] text-muted-foreground'>{c.p}</p>
               </div>
             ))}
           </div>
@@ -200,56 +241,79 @@ export function StarHome({ isAuthenticated }: StarHomeProps) {
         <section className='py-[50px]'>
           <div className='mb-10 text-center'>
             <h2 className='text-[clamp(25px,4vw,34px)] font-bold'>三步上手</h2>
-            <p className='mt-2.5 text-slate-500 dark:text-slate-400'>从注册到调用，几分钟搞定</p>
+            <p className='mt-2.5 text-muted-foreground'>
+              从注册到调用，几分钟搞定
+            </p>
           </div>
           <div className='grid gap-6 sm:grid-cols-3'>
             {STEPS.map((s) => (
               <div
                 key={s.num}
-                className='rounded-[16px] border border-[#e8ecf3] bg-white p-7 shadow-[0_1px_3px_rgba(15,23,42,.04)] dark:bg-card'
+                className='rounded-2xl border border-border bg-card p-7 shadow-sm'
               >
-                <div className='mb-3 bg-gradient-to-br from-indigo-500 to-violet-500 bg-clip-text text-[42px] leading-none font-extrabold text-transparent'>
+                <div className='mb-3 text-[42px] leading-none font-extrabold text-primary'>
                   {s.num}
                 </div>
                 <h4 className='mb-2 text-[17px] font-semibold'>{s.t}</h4>
-                <p className='text-sm text-slate-500 dark:text-slate-400'>{s.p}</p>
+                <p className='text-sm text-muted-foreground'>{s.p}</p>
               </div>
             ))}
           </div>
-          <div className='mt-7 overflow-x-auto rounded-[14px] border border-[#1e293b] bg-[#0b1020] p-5 font-mono text-[13px] leading-[1.9] text-[#93c5fd] shadow-[0_12px_30px_rgba(15,23,42,.12)]'>
-            <span className='text-slate-500'># 发起你的第一个请求</span>
+          {/* 浅色马卡龙代码卡（替代旧深蓝黑终端块）：去 AI 味，语法色用 chart */}
+          <div className='mt-7 overflow-x-auto rounded-2xl border border-border bg-muted/40 p-5 font-mono text-[13px] leading-[1.9] shadow-sm backdrop-blur-sm'>
+            <span className='text-muted-foreground/70'>
+              # 发起你的第一个请求
+            </span>
             <br />
-            curl https://token.stellaisle.com/v1/chat/completions \
+            <span className='text-chart-4'>curl</span>{' '}
+            <span className='text-foreground/90'>
+              https://token.stellaisle.com/v1/chat/completions
+            </span>{' '}
+            \
             <br />
-            &nbsp;&nbsp;-H &quot;Authorization: Bearer sk-你的令牌&quot; \
+            &nbsp;&nbsp;
+            <span className='text-chart-1'>-H</span>{' '}
+            <span className='text-chart-2'>
+              &quot;Authorization: Bearer sk-你的令牌&quot;
+            </span>{' '}
+            \
             <br />
-            &nbsp;&nbsp;-H &quot;Content-Type: application/json&quot; \
+            &nbsp;&nbsp;
+            <span className='text-chart-1'>-H</span>{' '}
+            <span className='text-chart-2'>
+              &quot;Content-Type: application/json&quot;
+            </span>{' '}
+            \
             <br />
-            &nbsp;&nbsp;-d &apos;&#123;&quot;model&quot;:&quot;gpt-4o-mini&quot;,&quot;messages&quot;:[&#123;&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;你好&quot;&#125;]&#125;&apos;
+            &nbsp;&nbsp;
+            <span className='text-chart-1'>-d</span>{' '}
+            <span className='text-chart-2'>
+              &apos;&#123;&quot;model&quot;:&quot;gpt-4o-mini&quot;,&quot;messages&quot;:[&#123;&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;你好&quot;&#125;]&#125;&apos;
+            </span>
           </div>
         </section>
 
         {/* Final CTA */}
-        <div className='my-[50px] rounded-3xl border border-indigo-500/18 bg-gradient-to-br from-indigo-500/[0.08] to-purple-500/[0.06] px-8 py-[58px] text-center'>
+        <div className='my-[50px] rounded-3xl border border-primary/20 bg-primary/10 px-8 py-[58px] text-center'>
           <h2 className='text-[clamp(23px,4vw,32px)] font-bold'>
             选择我们，不是选最便宜的，而是选最省心的
           </h2>
-          <p className='my-[14px] italic text-slate-500 dark:text-slate-400'>
+          <p className='my-[14px] italic text-muted-foreground'>
             稳定是承诺，退款是底气，平衡是态度。
           </p>
           {isAuthenticated ? (
             <Button
-              className='h-[51px] rounded-[10px] bg-gradient-to-br from-indigo-500 to-violet-500 px-8 text-[15px] font-semibold shadow-[0_6px_18px_rgba(99,102,241,.28)] hover:shadow-[0_10px_24px_rgba(99,102,241,.4)]'
+              className='star-glow h-[51px] rounded-2xl bg-primary px-8 text-[15px] font-semibold shadow-lg hover:-translate-y-0.5 hover:shadow-xl'
               render={<Link to='/dashboard' />}
             >
               进入控制台 <ArrowRight className='ml-1 size-4' />
             </Button>
           ) : (
             <Button
-              className='h-[51px] rounded-[10px] bg-gradient-to-br from-indigo-500 to-violet-500 px-8 text-[15px] font-semibold shadow-[0_6px_18px_rgba(99,102,241,.28)] hover:shadow-[0_10px_24px_rgba(99,102,241,.4)]'
-              render={<Link to='/sign-up' />}
+              className='star-glow h-[51px] rounded-2xl bg-primary px-8 text-[15px] font-semibold shadow-lg hover:-translate-y-0.5 hover:shadow-xl'
+              render={<Link to='/dashboard' />}
             >
-              立即开始使用 <ArrowRight className='ml-1 size-4' />
+              进入控制台 <ArrowRight className='ml-1 size-4' />
             </Button>
           )}
         </div>

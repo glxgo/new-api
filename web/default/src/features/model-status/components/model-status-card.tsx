@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { memo, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { Activity, AlertCircle, ChevronRight } from 'lucide-react'
+import { Activity, AlertCircle, ChevronRight, Zap } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { PricingModel } from '@/features/pricing/types'
 import { getPerfMetrics } from '@/features/performance-metrics/api'
@@ -31,6 +31,7 @@ type Summary = {
   success_rate: number
   avg_latency_ms: number
   avg_tps: number
+  cache_rate?: number
   request_count?: number
 } | undefined
 
@@ -135,13 +136,21 @@ export const ModelStatusCard = memo(function ModelStatusCard({
       />
 
       <div className='text-muted-foreground flex items-center justify-between text-xs'>
-        <span className='inline-flex items-center gap-1'>
-          {hasData && (rate as number) < 95 ? (
-            <AlertCircle className='size-3 text-amber-500' />
-          ) : (
-            <Activity className='size-3 text-emerald-500' />
+        <span className='inline-flex items-center gap-3'>
+          <span className='inline-flex items-center gap-1'>
+            {hasData && (rate as number) < 95 ? (
+              <AlertCircle className='size-3 text-amber-500' />
+            ) : (
+              <Activity className='size-3 text-emerald-500' />
+            )}
+            {summary?.avg_latency_ms ? `${(summary.avg_latency_ms / 1000).toFixed(2)}s` : t('No data')}
+          </span>
+          {typeof summary?.cache_rate === 'number' && summary.cache_rate > 0 && (
+            <span className='inline-flex items-center gap-1'>
+              <Zap className='size-3 text-sky-500' />
+              {summary.cache_rate.toFixed(0)}% {t('cache')}
+            </span>
           )}
-          {summary?.avg_latency_ms ? `${summary.avg_latency_ms}ms` : t('No data')}
         </span>
         <span className='group-hover:text-primary inline-flex items-center gap-0.5'>
           {t('Details')}

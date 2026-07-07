@@ -106,6 +106,17 @@ function getModelPrice(model: PricingModel): number {
 }
 
 /**
+ * 模型展示优先级：gpt 系最前，claude 系其次，其他模型最后。
+ * 每个分组内部仍按字母序排列。
+ */
+function modelDisplayPriority(name: string): number {
+  const lower = (name || '').toLowerCase()
+  if (lower.includes('gpt')) return 0
+  if (lower.includes('claude')) return 1
+  return 2
+}
+
+/**
  * Sort models by specified option
  */
 export function sortModels(
@@ -116,9 +127,12 @@ export function sortModels(
 
   switch (sortBy) {
     case SORT_OPTIONS.NAME:
-      sorted.sort((a, b) =>
-        (a.model_name || '').localeCompare(b.model_name || '')
-      )
+      sorted.sort((a, b) => {
+        const pa = modelDisplayPriority(a.model_name)
+        const pb = modelDisplayPriority(b.model_name)
+        if (pa !== pb) return pa - pb
+        return (a.model_name || '').localeCompare(b.model_name || '')
+      })
       break
     case SORT_OPTIONS.PRICE_LOW:
       sorted.sort((a, b) => getModelPrice(a) - getModelPrice(b))

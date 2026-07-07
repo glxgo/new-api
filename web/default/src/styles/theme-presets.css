@@ -291,6 +291,67 @@ For commercial licensing, please contact support@quantumnous.com
   --sidebar-ring: oklch(0.6359 0.1699 307.95);
 }
 
+/* ── Stellaisle（星屿马卡龙）──────────────────────────────────────────── */
+/*
+ * 站点品牌预设：蜜桃珊瑚主色 + 马卡龙多彩点缀（薄荷/樱花/奶油黄/天空蓝/薰衣草）。
+ * 低饱和暖底 + 圆润大圆角，刻意区别于 AI 产品的冷紫蓝极光语言。
+ *
+ * Defining counter-positioning: 微暖奶油 canvas（非死白）配暖墨 ink；surface 由
+ * semantic bridge 用 primary 微染，整站统一马卡龙调性。多彩只作点缀（图表/图标/标签），
+ * 绝不作大面色块渐变——这是"活泼但不花哨"的边界。
+ *
+ * OKLCH hue 40 = 蜜桃珊瑚（主色）；hue 80 = 暖奶油底；hue 50 = 暖墨字。
+ */
+[data-theme-preset='stellaisle'] {
+  /* Canvas + ink — 纯白底 + 中性墨（回白）*/
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+
+  /* 主色：青蓝（按钮）*/
+  --primary: oklch(0.58 0.14 225); /* ≈ #2e8fbf 青蓝 */
+  --primary-foreground: oklch(0.985 0 0);
+
+  --secondary: oklch(0.96 0 0);
+  --secondary-foreground: oklch(0.145 0 0);
+  --ring: oklch(0.58 0.14 225);
+
+  /* 马卡龙多彩 chart（低饱和、高明度）*/
+  --chart-1: oklch(0.8 0.1 165); /* 薄荷绿 */
+  --chart-2: oklch(0.82 0.09 350); /* 樱花粉 */
+  --chart-3: oklch(0.9 0.1 85); /* 奶油黄 */
+  --chart-4: oklch(0.78 0.09 230); /* 天空蓝 */
+  --chart-5: oklch(0.74 0.1 290); /* 薰衣草 */
+
+  --sidebar-primary: oklch(0.58 0.14 225);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-ring: oklch(0.58 0.14 225);
+
+  --radius: 1rem;
+}
+.dark [data-theme-preset='stellaisle'] {
+  /* 暖深 canvas，非冷黑 —— 保留马卡龙调性 */
+  --background: oklch(0.205 0.006 40); /* ≈ #221c18 暖深 */
+  --foreground: oklch(0.96 0.005 80);
+
+  --primary: oklch(0.68 0.13 228); /* 暗色下青蓝提亮 */
+  --primary-foreground: oklch(0.985 0 0);
+
+  --secondary: oklch(0.3 0.015 50);
+  --secondary-foreground: oklch(0.96 0.005 80);
+  --ring: oklch(0.68 0.13 228);
+
+  /* chart 暗色微调，避免脏 */
+  --chart-1: oklch(0.74 0.11 165);
+  --chart-2: oklch(0.76 0.1 350);
+  --chart-3: oklch(0.84 0.11 85);
+  --chart-4: oklch(0.72 0.1 230);
+  --chart-5: oklch(0.68 0.11 290);
+
+  --sidebar-primary: oklch(0.68 0.13 228);
+  --sidebar-primary-foreground: oklch(0.145 0 0);
+  --sidebar-ring: oklch(0.68 0.13 228);
+}
+
 /* ── Simple Large-font ────────────────────────────────────────────────── */
 [data-theme-preset='simple-large'] {
   --background: oklch(0.99 0 0);

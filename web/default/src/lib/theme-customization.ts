@@ -25,6 +25,13 @@ For commercial licensing, please contact support@quantumnous.com
 
 export const THEME_PRESETS = [
   {
+    // 站点品牌预设：蜜桃珊瑚 + 马卡龙多彩点缀（薄荷/樱花/奶油/天蓝/薰衣草），
+    // 低饱和暖底，圆润活泼，刻意区别于 AI 产品的冷紫蓝极光语言。
+    value: 'stellaisle',
+    name: 'Stellaisle',
+    swatches: ['oklch(0.995 0.004 80)', 'oklch(0.74 0.14 40)'],
+  },
+  {
     value: 'default',
     name: 'Default',
     swatches: ['oklch(0.13 0 0)', 'oklch(0.95 0 0)'],
@@ -178,6 +185,7 @@ export const PRESET_DEFAULT_FONT: Partial<
 > = {
   default: 'sans',
   anthropic: 'serif',
+  stellaisle: 'sans',
 }
 
 /**

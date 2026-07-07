@@ -96,9 +96,9 @@ export function Tutorial() {
         {sections.length > 0 ? (
           <div className='grid gap-4 md:grid-cols-2'>
             {sections.map((s) => (
-              <Card key={s.num} className='overflow-hidden'>
+              <Card key={s.num} className='group overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-lg'>
                 <CardHeader className='flex flex-row items-center gap-3 space-y-0'>
-                  <span className='bg-foreground text-background flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold'>
+                  <span className='bg-primary text-primary-foreground flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold shadow-sm transition-transform duration-300 group-hover:scale-110'>
                     {s.num}
                   </span>
                   <CardTitle className='text-base'>{s.title}</CardTitle>

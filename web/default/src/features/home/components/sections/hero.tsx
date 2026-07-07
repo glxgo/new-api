@@ -86,7 +86,7 @@ export function Hero(props: HeroProps) {
         className='pointer-events-none absolute inset-0 -z-10 overflow-hidden opacity-60 dark:opacity-40'
       >
         <Aurora
-          colorStops={['#3A67FF', '#5CE1E6', '#A855F7']}
+          colorStops={['#E8916C', '#7AD9B8', '#FFE5A0']}
           amplitude={0.9}
           blend={0.7}
         />

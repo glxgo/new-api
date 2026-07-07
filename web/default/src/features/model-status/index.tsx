@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useCallback, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Activity } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { PublicLayout } from '@/components/layout'
 import { PageTransition } from '@/components/page-transition'
@@ -50,6 +51,7 @@ export function ModelStatus() {
         success_rate: number
         avg_latency_ms: number
         avg_tps: number
+        cache_rate?: number
         request_count?: number
       }
     >()
@@ -58,6 +60,7 @@ export function ModelStatus() {
         success_rate: m.success_rate,
         avg_latency_ms: m.avg_latency_ms,
         avg_tps: m.avg_tps,
+        cache_rate: m.cache_rate,
         request_count: m.request_count,
       })
     }
@@ -115,6 +118,11 @@ export function ModelStatus() {
     <PublicLayout showMainContainer={false}>
       <PageTransition className='mx-auto w-full max-w-[1800px] px-3 pt-16 pb-8 sm:px-6 sm:pt-20 sm:pb-10 xl:px-8'>
         <header className='mx-auto mb-8 max-w-3xl pt-5 text-center sm:mb-10 sm:pt-10'>
+          <div className='mb-4 flex justify-center'>
+            <div className='bg-primary/10 text-primary flex h-14 w-14 items-center justify-center rounded-2xl'>
+              <Activity className='h-7 w-7' />
+            </div>
+          </div>
           <h1 className='text-[clamp(2rem,5.5vw,3.5rem)] leading-[1.15] font-bold tracking-tight'>
             {t('Model Status')}
           </h1>

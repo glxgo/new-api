@@ -95,6 +95,9 @@ type RelayInfo struct {
 	TokenUnlimited    bool
 	StartTime         time.Time
 	FirstResponseTime time.Time
+	// UpstreamStartTime 是发给上游请求(client.Do)的时刻，用于纯上游延迟/首字统计。
+	// 为零(如本地鉴权失败未到上游)时回退到 StartTime。
+	UpstreamStartTime time.Time
 	isFirstResponse   bool
 	//SendLastReasoningResponse bool
 	IsStream               bool
