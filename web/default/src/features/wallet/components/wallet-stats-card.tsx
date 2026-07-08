@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Activity, BarChart3, Gift, WalletCards } from 'lucide-react'
+import { Activity, BarChart3, WalletCards } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { formatQuota } from '@/lib/format'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -40,8 +40,8 @@ export function WalletStatsCard(props: WalletStatsCardProps) {
   const { t } = useTranslation()
   if (props.loading) {
     return (
-      <div className='grid grid-cols-2 gap-3 sm:grid-cols-4'>
-        {Array.from({ length: 4 }).map((_, i) => (
+      <div className='grid grid-cols-1 gap-3 sm:grid-cols-3'>
+        {Array.from({ length: 3 }).map((_, i) => (
           <div key={i} className='rounded-xl border p-4 shadow-sm'>
             <Skeleton className='h-3.5 w-20' />
             <Skeleton className='mt-2 h-7 w-28' />
@@ -52,22 +52,22 @@ export function WalletStatsCard(props: WalletStatsCardProps) {
     )
   }
 
-  // Gift balance is shown alongside principal balance: gift quota (referral
-  // rewards / checkin / redemption codes) is consumable but NOT withdrawable.
+  // 当前余额 = 原余额（可提现）+ 赠金余额（不可提现）。赠金来自拉新返利/签到/兑换码。
+  const quotaValue = Number(props.user?.quota ?? 0)
+  const giftValue = Number(props.user?.gift_quota ?? 0)
+  const totalValue = quotaValue + giftValue
+
   const stats = [
     {
       label: t('Current Balance'),
-      rawValue: Number(props.user?.quota ?? 0),
+      rawValue: totalValue,
       format: (v: number) => formatQuota(v),
-      description: t('Withdrawable principal'),
+      description: t('Principal balance + gift balance'),
+      detail: t('Principal {{principal}}, Gift {{gift}}', {
+        principal: formatQuota(quotaValue),
+        gift: formatQuota(giftValue),
+      }),
       icon: WalletCards,
-    },
-    {
-      label: t('Gift Balance'),
-      rawValue: Number(props.user?.gift_quota ?? 0),
-      format: (v: number) => formatQuota(v),
-      description: t('Referral rewards, not withdrawable'),
-      icon: Gift,
     },
     {
       label: t('Total Usage'),
@@ -86,7 +86,7 @@ export function WalletStatsCard(props: WalletStatsCardProps) {
   ]
 
   return (
-    <div className='grid grid-cols-2 gap-3 sm:grid-cols-4'>
+    <div className='grid grid-cols-1 gap-3 sm:grid-cols-3'>
       {stats.map((item, idx) => {
         const Icon = item.icon
         const accent = CARD_ACCENTS[idx % CARD_ACCENTS.length]
@@ -106,9 +106,15 @@ export function WalletStatsCard(props: WalletStatsCardProps) {
               <CountUp value={item.rawValue} format={item.format} />
             </div>
 
-            <div className='text-muted-foreground/60 mt-1 hidden text-xs md:block'>
-              {item.description}
-            </div>
+            {item.detail ? (
+              <div className='text-muted-foreground mt-1 text-xs md:block'>
+                {item.detail}
+              </div>
+            ) : (
+              <div className='text-muted-foreground/60 mt-1 hidden text-xs md:block'>
+                {item.description}
+              </div>
+            )}
 
             {/* 能量条：默认 50%，hover 充到 80%（与 dashboard 统计卡一致）*/}
             <div className='mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted'>

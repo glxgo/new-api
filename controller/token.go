@@ -201,6 +201,13 @@ func AddToken(c *gin.Context) {
 		})
 		return
 	}
+	if strings.TrimSpace(token.Group) == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "请选择令牌分组",
+		})
+		return
+	}
 	key, err := common.GenerateKey()
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgTokenGenerateFailed)
@@ -219,7 +226,7 @@ func AddToken(c *gin.Context) {
 		ModelLimitsEnabled: token.ModelLimitsEnabled,
 		ModelLimits:        token.ModelLimits,
 		AllowIps:           token.AllowIps,
-		Group:              token.Group,
+		Group:              strings.TrimSpace(token.Group),
 		CrossGroupRetry:    token.CrossGroupRetry,
 	}
 	err = cleanToken.Insert()
@@ -289,6 +296,13 @@ func UpdateToken(c *gin.Context) {
 	if statusOnly != "" {
 		cleanToken.Status = token.Status
 	} else {
+		if strings.TrimSpace(token.Group) == "" {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "请选择令牌分组",
+			})
+			return
+		}
 		// If you add more fields, please also update token.Update()
 		cleanToken.Name = token.Name
 		cleanToken.ExpiredTime = token.ExpiredTime
@@ -297,7 +311,7 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.ModelLimitsEnabled = token.ModelLimitsEnabled
 		cleanToken.ModelLimits = token.ModelLimits
 		cleanToken.AllowIps = token.AllowIps
-		cleanToken.Group = token.Group
+		cleanToken.Group = strings.TrimSpace(token.Group)
 		cleanToken.CrossGroupRetry = token.CrossGroupRetry
 	}
 	err = cleanToken.Update()
