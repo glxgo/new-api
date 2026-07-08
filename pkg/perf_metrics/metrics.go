@@ -121,6 +121,8 @@ func Query(params QueryParams) (QueryResult, error) {
 			ttftCount:      row.TtftCount,
 			outputTokens:   row.OutputTokens,
 			generationMs:   row.GenerationMs,
+			cacheTokens:    row.CacheTokens,
+			promptTokens:   row.PromptTokens,
 		})
 	}
 
