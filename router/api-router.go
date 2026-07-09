@@ -34,6 +34,11 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/home_page_content", controller.GetHomePageContent)
 		apiRouter.GET("/pricing", middleware.HeaderNavModuleAuth("pricing"), controller.GetPricing)
 		perfMetricsRoute := apiRouter.Group("/perf-metrics")
+		// no-store: 防止 CF/CDN 缓存动态 perf-metrics 接口(否则新接口上线前会被缓存 404)
+		perfMetricsRoute.Use(func(c *gin.Context) {
+			c.Header("Cache-Control", "no-store")
+			c.Next()
+		})
 		perfMetricsRoute.Use(middleware.HeaderNavModulePublicOrUserAuth("pricing"))
 		{
 			perfMetricsRoute.GET("/summary", controller.GetPerfMetricsSummary)

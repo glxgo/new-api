@@ -38,7 +38,7 @@ export async function getPerfMetricsGroupSummary(
   const res = await api.get<GroupSummaryAllData>(
     '/api/perf-metrics/group-summary',
     {
-      params: { hours },
+      params: { hours, _t: Date.now() },
     }
   )
   return res.data
