@@ -20,6 +20,7 @@ const (
 	SubscriptionDurationYear   = "year"
 	SubscriptionDurationMonth  = "month"
 	SubscriptionDurationDay    = "day"
+	SubscriptionDurationWeek   = "week"
 	SubscriptionDurationHour   = "hour"
 	SubscriptionDurationCustom = "custom"
 )
@@ -172,6 +173,9 @@ type SubscriptionPlan struct {
 	// Upgrade user group after purchase (empty = no change)
 	UpgradeGroup string `json:"upgrade_group" gorm:"type:varchar(64);default:''"`
 
+	// AllowedGroup: 订阅级分组限制。非空时订阅额度只能用于该分组(不改 user.group, 与 UpgradeGroup 互斥)
+	AllowedGroup string `json:"allowed_group" gorm:"type:varchar(64);default:''"`
+
 	// Total quota (amount in quota units, 0 = unlimited)
 	TotalAmount int64 `json:"total_amount" gorm:"type:bigint;not null;default:0"`
 
@@ -261,6 +265,9 @@ type UserSubscription struct {
 	UpgradeGroup  string `json:"upgrade_group" gorm:"type:varchar(64);default:''"`
 	PrevUserGroup string `json:"prev_user_group" gorm:"type:varchar(64);default:''"`
 
+	// AllowedGroup: 冗余自 plan, 扣费时按 relayInfo.UsingGroup 过滤(订阅级分组限制)
+	AllowedGroup string `json:"allowed_group" gorm:"type:varchar(64);default:''"`
+
 	CreatedAt int64 `json:"created_at" gorm:"bigint"`
 	UpdatedAt int64 `json:"updated_at" gorm:"bigint"`
 }
@@ -295,6 +302,8 @@ func calcPlanEndTime(start time.Time, plan *SubscriptionPlan) (int64, error) {
 		return start.AddDate(0, plan.DurationValue, 0).Unix(), nil
 	case SubscriptionDurationDay:
 		return start.Add(time.Duration(plan.DurationValue) * 24 * time.Hour).Unix(), nil
+	case SubscriptionDurationWeek:
+		return start.Add(time.Duration(plan.DurationValue) * 7 * 24 * time.Hour).Unix(), nil
 	case SubscriptionDurationHour:
 		return start.Add(time.Duration(plan.DurationValue) * time.Hour).Unix(), nil
 	case SubscriptionDurationCustom:
@@ -482,7 +491,7 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 	}
 	upgradeGroup := strings.TrimSpace(plan.UpgradeGroup)
 	prevGroup := ""
-	if upgradeGroup != "" {
+	if upgradeGroup != "" && strings.TrimSpace(plan.AllowedGroup) == "" {
 		currentGroup, err := getUserGroupByIdTx(tx, userId)
 		if err != nil {
 			return nil, err
@@ -508,6 +517,7 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		NextResetTime: nextReset,
 		UpgradeGroup:  upgradeGroup,
 		PrevUserGroup: prevGroup,
+		AllowedGroup:  strings.TrimSpace(plan.AllowedGroup),
 		CreatedAt:     common.GetTimestamp(),
 		UpdatedAt:     common.GetTimestamp(),
 	}
@@ -588,6 +598,10 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 	if logUserId > 0 {
 		msg := fmt.Sprintf("订阅购买成功，套餐: %s，支付金额: %.2f，支付方式: %s", logPlanTitle, logMoney, logPaymentMethod)
 		RecordLog(logUserId, LogTypeTopup, msg)
+		// 购买时分润: 按订单金额一次性分润给推荐人/管理员/超管(兑换码兑换不调此)
+		if orderQuota, qErr := calcSubscriptionBalanceQuota(logMoney); qErr == nil && orderQuota > 0 {
+			SettleOrderDividend(logUserId, int64(orderQuota), tradeNo)
+		}
 	}
 	return nil
 }
@@ -700,6 +714,7 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 	var logMoney float64
 	var chargedQuota int
 	var upgradeGroup string
+	var tradeNo string
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		plan, err := getSubscriptionPlanByIdTx(tx, planId)
 		if err != nil {
@@ -739,7 +754,7 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 		}
 
 		now := common.GetTimestamp()
-		tradeNo := fmt.Sprintf("SUBBALUSR%dNO%s%d", userId, common.GetRandomString(6), time.Now().UnixNano())
+		tradeNo = fmt.Sprintf("SUBBALUSR%dNO%s%d", userId, common.GetRandomString(6), time.Now().UnixNano())
 		order := &SubscriptionOrder{
 			UserId:          userId,
 			PlanId:          plan.Id,
@@ -776,6 +791,10 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 	}
 	msg := fmt.Sprintf("使用余额购买订阅成功，套餐: %s，支付金额: %.2f，扣除额度: %d", logPlanTitle, logMoney, chargedQuota)
 	RecordLog(userId, LogTypeTopup, msg)
+	// 购买时分润(兑换码兑换不调此)
+	if chargedQuota > 0 {
+		SettleOrderDividend(userId, int64(chargedQuota), tradeNo)
+	}
 	return nil
 }
 
@@ -809,6 +828,38 @@ func HasActiveUserSubscription(userId int) (bool, error) {
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// HasActiveUserSubscriptionByGroup 检查用户是否有绑定指定分组的有效订阅(订阅即凭证: auth 旁路放行该分组)。
+func HasActiveUserSubscriptionByGroup(userId int, group string) (bool, error) {
+	if userId <= 0 || strings.TrimSpace(group) == "" {
+		return false, nil
+	}
+	now := common.GetTimestamp()
+	var count int64
+	if err := DB.Model(&UserSubscription{}).
+		Where("user_id = ? AND status = ? AND end_time > ? AND allowed_group = ?", userId, "active", now, group).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// GetActiveUserSubscriptionAllowedGroups 返回用户有效订阅绑定的 AllowedGroup 列表(去重, 供分组下拉/凭证用)。
+func GetActiveUserSubscriptionAllowedGroups(userId int) ([]string, error) {
+	if userId <= 0 {
+		return nil, nil
+	}
+	now := common.GetTimestamp()
+	var groups []string
+	err := DB.Model(&UserSubscription{}).
+		Where("user_id = ? AND status = ? AND end_time > ? AND allowed_group != ''", userId, "active", now).
+		Distinct("allowed_group").
+		Pluck("allowed_group", &groups).Error
+	if err != nil {
+		return nil, err
+	}
+	return groups, nil
 }
 
 // GetAllUserSubscriptions returns all subscriptions (active and expired) for a user.
@@ -1082,7 +1133,7 @@ func maybeResetUserSubscriptionWithPlanTx(tx *gorm.DB, sub *UserSubscription, pl
 }
 
 // PreConsumeUserSubscription pre-consumes from any active subscription total quota.
-func PreConsumeUserSubscription(requestId string, userId int, modelName string, quotaType int, amount int64) (*SubscriptionPreConsumeResult, error) {
+func PreConsumeUserSubscription(requestId string, userId int, modelName string, quotaType int, amount int64, usingGroup string) (*SubscriptionPreConsumeResult, error) {
 	if userId <= 0 {
 		return nil, errors.New("invalid userId")
 	}
@@ -1120,7 +1171,7 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 
 		var subs []UserSubscription
 		if err := tx.Set("gorm:query_option", "FOR UPDATE").
-			Where("user_id = ? AND status = ? AND end_time > ?", userId, "active", now).
+			Where("user_id = ? AND status = ? AND end_time > ? AND (allowed_group = '' OR allowed_group = ?)", userId, "active", now, usingGroup).
 			Order("end_time asc, id asc").
 			Find(&subs).Error; err != nil {
 			return errors.New("no active subscription")

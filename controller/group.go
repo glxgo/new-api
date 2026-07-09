@@ -44,6 +44,17 @@ func GetUserGroups(c *gin.Context) {
 			"desc":  setting.GetUsableGroupDescription("auto"),
 		}
 	}
+	// 订阅即凭证: 并入用户有效订阅的 AllowedGroup(月卡/周卡绑定的分组), 让 token 分组下拉能选到
+	if subGroups, err := model.GetActiveUserSubscriptionAllowedGroups(userId); err == nil {
+		for _, g := range subGroups {
+			if _, exists := usableGroups[g]; !exists {
+				usableGroups[g] = map[string]interface{}{
+					"ratio": service.GetUserGroupRatio(userGroup, g),
+					"desc":  setting.GetUsableGroupDescription(g),
+				}
+			}
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

@@ -62,6 +62,7 @@ type Log struct {
 	Inviter2IdSnap    int    `json:"inviter2_id_snap" gorm:"default:0;column:inviter2_id_snap"`
 	Settled           bool   `json:"settled" gorm:"default:false;column:settled;index:idx_logs_settle"`
 	SettleBatchId     string `json:"settle_batch_id" gorm:"type:varchar(40);column:settle_batch_id;index:idx_logs_settle"`
+	BillingSource     string `json:"billing_source" gorm:"type:varchar(16);default:'';column:billing_source"` // wallet/subscription，订阅消费不计分润(购买时已分润)
 }
 
 // don't use iota, avoid change log type value
@@ -303,6 +304,7 @@ type RecordConsumeLogParams struct {
 	IsStream       bool                   `json:"is_stream"`
 	Group          string                 `json:"group"`
 	Other          map[string]interface{} `json:"other"`
+	BillingSource  string                 `json:"billing_source"` // wallet/subscription
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
@@ -352,6 +354,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		RequestId:         requestId,
 		UpstreamRequestId: upstreamRequestId,
 		Other:             otherStr,
+		BillingSource:     params.BillingSource,
 	}
 	err := LOG_DB.Create(log).Error
 	if err != nil {
@@ -380,6 +383,7 @@ type RecordTaskBillingLogParams struct {
 	TokenId   int
 	Group     string
 	Other     map[string]interface{}
+	BillingSource string // wallet/subscription
 }
 
 func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
@@ -412,6 +416,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 		TokenId:   params.TokenId,
 		Group:     params.Group,
 		Other:     common.MapToJsonStr(params.Other),
+		BillingSource: params.BillingSource,
 	}
 	err := LOG_DB.Create(log).Error
 	if err != nil {
@@ -662,7 +667,7 @@ func DeleteOldLog(ctx context.Context, targetTimestamp int64, limit int) (int64,
 // 用于 T+1 分润结算。走 LOG_DB(日志库)。
 func GetUnsettledConsumeLogs(dayStart, dayEnd int64, afterLogId, limit int) ([]*Log, error) {
 	var logs []*Log
-	err := LOG_DB.Where("settled = ? AND type = ? AND created_at >= ? AND created_at < ? AND id > ? AND quota > 0",
+	err := LOG_DB.Where("settled = ? AND type = ? AND created_at >= ? AND created_at < ? AND id > ? AND quota > 0 AND (billing_source = '' OR billing_source = 'wallet')",
 		false, LogTypeConsume, dayStart, dayEnd, afterLogId).
 		Order("id asc").Limit(limit).Find(&logs).Error
 	return logs, err

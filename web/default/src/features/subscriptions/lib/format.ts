@@ -29,6 +29,7 @@ export function formatDuration(
   const unitLabels: Record<string, string> = {
     year: t('years'),
     month: t('months'),
+    week: t('weeks'),
     day: t('days'),
     hour: t('hours'),
     custom: t('Custom (seconds)'),

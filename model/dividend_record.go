@@ -10,6 +10,7 @@ type DividendRecord struct {
 	Type         int    `json:"type" gorm:"not null"`                            // 见 DividendType* 常量
 	GrossProfit  int    `json:"gross_profit" gorm:"not null"`                    // 该笔毛利(quota 单位)
 	Amount       int    `json:"amount" gorm:"not null"`                          // 分得金额(quota 单位)
+	SourceRef    string `json:"source_ref" gorm:"type:varchar(64);index;not null;default:''"` // 幂等键, 订单分润用(如订单号), 空=消费分润(T+1)
 	CreatedAt    int64  `json:"created_at" gorm:"bigint"`
 }
 
@@ -31,6 +32,16 @@ func BatchInsertDividendRecords(records []*DividendRecord) error {
 		return nil
 	}
 	return DB.CreateInBatches(records, 500).Error
+}
+
+// HasDividendRecordBySourceRef 幂等检查: 该 sourceRef(如订单号)是否已发过分润。防 webhook 重放重复发放。
+func HasDividendRecordBySourceRef(sourceRef string) (bool, error) {
+	if sourceRef == "" {
+		return false, nil
+	}
+	var count int64
+	err := DB.Model(&DividendRecord{}).Where("source_ref = ?", sourceRef).Count(&count).Error
+	return count > 0, err
 }
 
 // GetDividendRecordsByRecipient 用户收到的返利明细(仅 type=1,2 拉新返利), 分页倒序。

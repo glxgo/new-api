@@ -228,6 +228,76 @@ func QuerySummaryAll(hours int, groups []string) (SummaryAllResult, error) {
 	return SummaryAllResult{Models: models}, nil
 }
 
+// QueryGroupSummaryAll 按分组聚合所有模型的缓存命中数据，用于数据看板缓存率卡片
+func QueryGroupSummaryAll(hours int, groups []string) (GroupSummaryAllResult, error) {
+	if hours <= 0 {
+		hours = 24
+	}
+	if hours > 24*30 {
+		hours = 24 * 30
+	}
+	endTs := time.Now().Unix()
+	startTs := endTs - int64(hours)*3600
+	allowedGroups := allowedGroupSet(groups)
+
+	rows, err := model.GetPerfMetricsGroupSummaryAll(startTs, endTs, groups)
+	if err != nil {
+		return GroupSummaryAllResult{}, err
+	}
+
+	totals := map[string]counters{}
+	for _, row := range rows {
+		totals[row.Group] = counters{
+			requestCount:  row.RequestCount,
+			successCount:  row.SuccessCount,
+			cacheTokens:   row.CacheTokens,
+			promptTokens:  row.PromptTokens,
+		}
+	}
+
+	hotBuckets.Range(func(key, value any) bool {
+		k := key.(bucketKey)
+		if k.bucketTs < startTs || k.bucketTs > endTs {
+			return true
+		}
+		if allowedGroups != nil {
+			if _, ok := allowedGroups[k.group]; !ok {
+				return true
+			}
+		}
+		snap := value.(*atomicBucket).snapshot()
+		if snap.requestCount == 0 {
+			return true
+		}
+		cur := totals[k.group]
+		cur.requestCount += snap.requestCount
+		cur.successCount += snap.successCount
+		cur.cacheTokens += snap.cacheTokens
+		cur.promptTokens += snap.promptTokens
+		totals[k.group] = cur
+		return true
+	})
+
+	groupList := make([]GroupCacheSummary, 0, len(totals))
+	for name, total := range totals {
+		if total.requestCount == 0 {
+			continue
+		}
+		groupList = append(groupList, GroupCacheSummary{
+			Group:        name,
+			CacheRate:    math.Round(cacheRate(total)*100) / 100,
+			RequestCount: total.requestCount,
+			CacheTokens:  total.cacheTokens,
+			PromptTokens: total.promptTokens,
+		})
+	}
+	sort.Slice(groupList, func(i, j int) bool {
+		return groupList[i].RequestCount > groupList[j].RequestCount
+	})
+
+	return GroupSummaryAllResult{Groups: groupList}, nil
+}
+
 func allowedGroupSet(groups []string) map[string]struct{} {
 	if groups == nil {
 		return nil

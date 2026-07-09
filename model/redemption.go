@@ -18,6 +18,8 @@ type Redemption struct {
 	Status       int            `json:"status" gorm:"default:1"`
 	Name         string         `json:"name" gorm:"index"`
 	Quota        int            `json:"quota" gorm:"default:100"`
+	TargetType   string         `json:"target_type" gorm:"type:varchar(16);default:'quota'"` // quota:兑换赠金, subscription:兑换订阅
+	PlanId       int            `json:"plan_id" gorm:"default:0"`                            // target_type=subscription 时绑定的套餐ID
 	CreatedTime  int64          `json:"created_time" gorm:"bigint"`
 	RedeemedTime int64          `json:"redeemed_time" gorm:"bigint"`
 	Count        int            `json:"count" gorm:"-:all"` // only for api request
@@ -112,12 +114,12 @@ func GetRedemptionById(id int) (*Redemption, error) {
 	return &redemption, err
 }
 
-func Redeem(key string, userId int) (quota int, err error) {
+func Redeem(key string, userId int) (*Redemption, error) {
 	if key == "" {
-		return 0, errors.New("未提供兑换码")
+		return nil, errors.New("未提供兑换码")
 	}
 	if userId == 0 {
-		return 0, errors.New("无效的 user id")
+		return nil, errors.New("无效的 user id")
 	}
 	redemption := &Redemption{}
 
@@ -126,7 +128,7 @@ func Redeem(key string, userId int) (quota int, err error) {
 		keyCol = `"key"`
 	}
 	common.RandomSleep()
-	err = DB.Transaction(func(tx *gorm.DB) error {
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		err := tx.Set("gorm:query_option", "FOR UPDATE").Where(keyCol+" = ?", key).First(redemption).Error
 		if err != nil {
 			return errors.New("无效的兑换码")
@@ -137,10 +139,24 @@ func Redeem(key string, userId int) (quota int, err error) {
 		if redemption.ExpiredTime != 0 && redemption.ExpiredTime < common.GetTimestamp() {
 			return errors.New("该兑换码已过期")
 		}
-		// 阶段2b: 兑换码额度进赠金池(不可提现、不产利润), 而非本金池。
-		err = tx.Model(&User{}).Where("id = ?", userId).Update("gift_quota", gorm.Expr("gift_quota + ?", redemption.Quota)).Error
-		if err != nil {
-			return err
+		if redemption.TargetType == "subscription" {
+			// 兑换订阅套餐（兑换码兑换的订阅不计入分润）
+			plan := &SubscriptionPlan{}
+			if e := tx.First(plan, redemption.PlanId).Error; e != nil {
+				return errors.New("兑换码绑定的套餐不存在")
+			}
+			if !plan.Enabled {
+				return errors.New("该套餐已下架")
+			}
+			if _, e := CreateUserSubscriptionFromPlanTx(tx, userId, plan, "redeem"); e != nil {
+				return e
+			}
+		} else {
+			// 阶段2b: 兑换码额度进赠金池(不可提现、不产利润), 而非本金池。
+			err = tx.Model(&User{}).Where("id = ?", userId).Update("gift_quota", gorm.Expr("gift_quota + ?", redemption.Quota)).Error
+			if err != nil {
+				return err
+			}
 		}
 		redemption.RedeemedTime = common.GetTimestamp()
 		redemption.Status = common.RedemptionCodeStatusUsed
@@ -150,14 +166,18 @@ func Redeem(key string, userId int) (quota int, err error) {
 	})
 	if err != nil {
 		common.SysError("redemption failed: " + err.Error())
-		return 0, ErrRedeemFailed
+		return nil, ErrRedeemFailed
 	}
-	// 事务内直接改了 gift_quota, 事务外同步 Redis 缓存(赠金 +N)。
-	if cacheErr := cacheIncrUserGiftQuota(userId, int64(redemption.Quota)); cacheErr != nil {
-		common.SysLog(fmt.Sprintf("redemption: failed to incr gift cache (userId=%d): %s", userId, cacheErr.Error()))
+	if redemption.TargetType == "subscription" {
+		RecordLog(userId, LogTypeTopup, fmt.Sprintf("通过兑换码兑换订阅「%s」，兑换码ID %d", redemption.Name, redemption.Id))
+	} else {
+		// 事务内直接改了 gift_quota, 事务外同步 Redis 缓存(赠金 +N)。
+		if cacheErr := cacheIncrUserGiftQuota(userId, int64(redemption.Quota)); cacheErr != nil {
+			common.SysLog(fmt.Sprintf("redemption: failed to incr gift cache (userId=%d): %s", userId, cacheErr.Error()))
+		}
+		RecordLog(userId, LogTypeTopup, fmt.Sprintf("通过兑换码兑换赠金 %s，兑换码ID %d", logger.LogQuota(redemption.Quota), redemption.Id))
 	}
-	RecordLog(userId, LogTypeTopup, fmt.Sprintf("通过兑换码兑换赠金 %s，兑换码ID %d", logger.LogQuota(redemption.Quota), redemption.Id))
-	return redemption.Quota, nil
+	return redemption, nil
 }
 
 func (redemption *Redemption) Insert() error {
@@ -174,7 +194,7 @@ func (redemption *Redemption) SelectUpdate() error {
 // Update Make sure your token's fields is completed, because this will update non-zero values
 func (redemption *Redemption) Update() error {
 	var err error
-	err = DB.Model(redemption).Select("name", "status", "quota", "redeemed_time", "expired_time").Updates(redemption).Error
+	err = DB.Model(redemption).Select("name", "status", "quota", "redeemed_time", "expired_time", "target_type", "plan_id").Updates(redemption).Error
 	return err
 }
 

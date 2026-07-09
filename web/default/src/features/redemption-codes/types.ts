@@ -29,6 +29,8 @@ export const redemptionSchema = z.object({
   key: z.string(),
   status: z.number(), // 1: enabled, 2: disabled, 3: used
   quota: z.number(),
+  target_type: z.string().default('quota'), // quota:兑换赠金, subscription:兑换订阅
+  plan_id: z.number().default(0), // target_type=subscription 时绑定的套餐
   created_time: z.number(),
   redeemed_time: z.number(),
   expired_time: z.number(), // 0 for never expires
@@ -73,6 +75,8 @@ export interface RedemptionFormData {
   id?: number
   name: string
   quota: number
+  target_type?: string // quota/subscription
+  plan_id?: number // target_type=subscription 时绑定的套餐
   expired_time: number
   count?: number // Only for create
   status?: number // Only for status update

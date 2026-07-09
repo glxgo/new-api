@@ -61,3 +61,19 @@ export type PerfSummaryAllData = {
     models: PerfModelSummary[]
   }
 }
+
+export type GroupCacheSummary = {
+  group: string
+  cache_rate: number
+  request_count: number
+  cache_tokens: number
+  prompt_tokens: number
+}
+
+export type GroupSummaryAllData = {
+  success: boolean
+  message?: string
+  data: {
+    groups: GroupCacheSummary[]
+  }
+}

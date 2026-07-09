@@ -336,7 +336,15 @@ export function SubscriptionsMutateDrawer({
                   name='total_amount'
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t('Received amount')}</FormLabel>
+                      <FormLabel>
+                        {resetPeriod === 'daily'
+                          ? t('Daily Limit')
+                          : resetPeriod === 'weekly'
+                            ? t('Weekly Limit')
+                            : resetPeriod === 'monthly'
+                              ? t('Monthly Limit')
+                              : t('Received amount')}
+                      </FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -370,9 +378,11 @@ export function SubscriptionsMutateDrawer({
                           { value: '__none__', label: t('No Upgrade') },
                           ...groupOptions.map((g) => ({ value: g, label: g })),
                         ]}
-                        onValueChange={(v) =>
-                          field.onChange(v === '__none__' ? '' : v)
-                        }
+                        onValueChange={(v) => {
+                          const val = v === '__none__' ? '' : v
+                          field.onChange(val)
+                          if (val) form.setValue('allowed_group', '')
+                        }}
                         value={field.value || ''}
                       >
                         <FormControl>
@@ -393,6 +403,52 @@ export function SubscriptionsMutateDrawer({
                           </SelectGroup>
                         </SelectContent>
                       </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name='allowed_group'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Allowed Group (Subscription Lock)')}</FormLabel>
+                      <Select
+                        items={[
+                          { value: '__none__', label: t('No Limit') },
+                          ...groupOptions.map((g) => ({ value: g, label: g })),
+                        ]}
+                        onValueChange={(v) => {
+                          const val = v === '__none__' ? '' : v
+                          field.onChange(val)
+                          if (val) form.setValue('upgrade_group', '')
+                        }}
+                        value={field.value || ''}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder={t('No Limit')} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent alignItemWithTrigger={false}>
+                          <SelectGroup>
+                            <SelectItem value='__none__'>
+                              {t('No Limit')}
+                            </SelectItem>
+                            {groupOptions.map((g) => (
+                              <SelectItem key={g} value={g}>
+                                {g}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        {t(
+                          'Subscription quota only usable in this group; wallet unaffected. Mutually exclusive with Upgrade Group.'
+                        )}
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

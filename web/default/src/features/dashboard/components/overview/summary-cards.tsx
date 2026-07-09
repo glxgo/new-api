@@ -19,12 +19,13 @@ For commercial licensing, please contact support@quantumnous.com
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { ArrowRight, Flame, ShieldCheck, TrendingDown } from 'lucide-react'
+import { ArrowRight, Flame, ShieldCheck, TrendingDown, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
 import { getCurrencyLabel, isCurrencyDisplayEnabled } from '@/lib/currency'
 import { formatNumber, formatQuota } from '@/lib/format'
 import { computeTimeRange } from '@/lib/time'
+import { getPerfMetricsGroupSummary } from '@/features/performance-metrics/api'
 import { cn } from '@/lib/utils'
 import { useStatus } from '@/hooks/use-status'
 import { Button } from '@/components/ui/button'
@@ -140,6 +141,19 @@ export function SummaryCards() {
   const { status, loading } = useStatus()
 
   const summaryTimeRange = useMemo(() => computeTimeRange(1), [])
+
+  const cacheRateQuery = useQuery({
+    queryKey: ['perf-metrics-group-summary', 24],
+    queryFn: () => getPerfMetricsGroupSummary(24),
+    staleTime: 60 * 1000,
+  })
+  const cacheRate = useMemo(() => {
+    const groups = cacheRateQuery.data?.data?.groups ?? []
+    const totalCache = groups.reduce((s, g) => s + (g.cache_tokens || 0), 0)
+    const totalPrompt = groups.reduce((s, g) => s + (g.prompt_tokens || 0), 0)
+    const denom = Math.max(totalPrompt, totalCache)
+    return denom > 0 ? (totalCache / denom) * 100 : 0
+  }, [cacheRateQuery.data])
   const remainQuota = Number(user?.quota ?? 0)
   const usedQuota = Number(user?.used_quota ?? 0)
   const requestCount = Number(user?.request_count ?? 0)
@@ -210,7 +224,7 @@ export function SummaryCards() {
 
   const todayUsageDisplay = formatQuota(recentUsage)
 
-  const items = useSummaryCardsConfig({
+  const baseItems = useSummaryCardsConfig({
     ...summaryValues,
     todayUsageDisplay,
     currencyEnabled,
@@ -233,6 +247,20 @@ export function SummaryCards() {
     }
   })
 
+  const items = [
+    ...baseItems,
+    {
+      key: 'cacheRate',
+      title: t('Cache Hit Rate'),
+      value: cacheRateQuery.isLoading ? '—' : `${cacheRate.toFixed(1)}%`,
+      desc: t('Prompt cache hit rate'),
+      icon: Zap,
+      tone: 'teal' as const,
+      sparkline: [],
+      sparklineVariant: 'line' as const,
+    },
+  ]
+
   return (
     <div className='bg-card overflow-hidden rounded-2xl border shadow-xs'>
       <div className='grid xl:grid-cols-[minmax(0,1fr)_19rem]'>
@@ -247,7 +275,7 @@ export function SummaryCards() {
               </p>
             </div>
           </div>
-          <StaggerContainer className='grid gap-3 md:grid-cols-3'>
+          <StaggerContainer className='grid gap-3 md:grid-cols-4'>
             {items.map((it) => (
               <StaggerItem
                 key={it.key}

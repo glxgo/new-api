@@ -277,7 +277,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
               {isTokenBased ? t('Token-based') : t('Per Request')}
             </span>
             <span className='inline-flex items-center rounded-full border border-blue-300 bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-300'>
-              倍率 {formatRatio(currentRatio)} = {formatRatio(currentRatio)} 折
+              倍率 {formatRatio(currentRatio)}
             </span>
             {dynamicSummary?.isSpecialExpression && (
               <StatusBadge

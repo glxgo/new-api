@@ -26,7 +26,7 @@ export function getPlanFormSchema(t: TFunction) {
     title: z.string().min(1, t('Please enter plan title')),
     subtitle: z.string().optional(),
     price_amount: z.coerce.number().min(0, t('Please enter amount')),
-    duration_unit: z.enum(['year', 'month', 'day', 'hour', 'custom']),
+    duration_unit: z.enum(['year', 'month', 'week', 'day', 'hour', 'custom']),
     duration_value: z.coerce.number().min(1),
     custom_seconds: z.coerce.number().min(0).optional(),
     quota_reset_period: z.enum([
@@ -43,6 +43,7 @@ export function getPlanFormSchema(t: TFunction) {
     max_purchase_per_user: z.coerce.number().min(0),
     total_amount: z.coerce.number().min(0),
     upgrade_group: z.string().optional(),
+    allowed_group: z.string().optional(),
     stripe_price_id: z.string().optional(),
     creem_product_id: z.string().optional(),
     waffo_pancake_product_id: z.string().optional(),
@@ -66,6 +67,7 @@ export const PLAN_FORM_DEFAULTS: PlanFormValues = {
   max_purchase_per_user: 0,
   total_amount: 0,
   upgrade_group: '',
+  allowed_group: '',
   stripe_price_id: '',
   creem_product_id: '',
   waffo_pancake_product_id: '',
@@ -87,6 +89,7 @@ export function planToFormValues(plan: SubscriptionPlan): PlanFormValues {
     max_purchase_per_user: Number(plan.max_purchase_per_user || 0),
     total_amount: quotaUnitsToDollars(Number(plan.total_amount || 0)),
     upgrade_group: plan.upgrade_group || '',
+    allowed_group: plan.allowed_group || '',
     stripe_price_id: plan.stripe_price_id || '',
     creem_product_id: plan.creem_product_id || '',
     waffo_pancake_product_id: plan.waffo_pancake_product_id || '',
@@ -110,6 +113,7 @@ export function formValuesToPlanPayload(values: PlanFormValues): PlanPayload {
       max_purchase_per_user: Number(values.max_purchase_per_user || 0),
       total_amount: parseQuotaFromDollars(Number(values.total_amount || 0)),
       upgrade_group: values.upgrade_group || '',
+      allowed_group: values.allowed_group || '',
     },
   }
 }

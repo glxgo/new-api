@@ -139,6 +139,33 @@ func GetPerfMetricsSummaryAll(startTs int64, endTs int64, groups []string) ([]Pe
 	return summaries, err
 }
 
+// PerfMetricGroupSummary 按分组聚合的性能汇总（用于缓存命中率卡片）
+type PerfMetricGroupSummary struct {
+	Group        string `json:"group" gorm:"column:group"`
+	RequestCount int64  `json:"request_count"`
+	SuccessCount int64  `json:"success_count"`
+	CacheTokens  int64  `json:"cache_tokens"`
+	PromptTokens int64  `json:"prompt_tokens"`
+}
+
+func GetPerfMetricsGroupSummaryAll(startTs int64, endTs int64, groups []string) ([]PerfMetricGroupSummary, error) {
+	var summaries []PerfMetricGroupSummary
+	query := DB.Model(&PerfMetric{}).
+		Select(commonGroupCol + ", SUM(request_count) as request_count, SUM(success_count) as success_count, SUM(cache_tokens) as cache_tokens, SUM(prompt_tokens) as prompt_tokens").
+		Where("bucket_ts >= ? AND bucket_ts <= ?", startTs, endTs)
+	if groups != nil {
+		if len(groups) == 0 {
+			return summaries, nil
+		}
+		query = query.Where(commonGroupCol + " IN ?", groups)
+	}
+	err := query.
+		Group(commonGroupCol).
+		Having("SUM(request_count) > 0").
+		Find(&summaries).Error
+	return summaries, err
+}
+
 func DeletePerfMetricsBefore(cutoffTs int64) error {
 	if cutoffTs <= 0 {
 		return nil

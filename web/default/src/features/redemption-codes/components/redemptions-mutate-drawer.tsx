@@ -35,6 +35,14 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Sheet,
   SheetClose,
   SheetContent,
@@ -197,6 +205,67 @@ export function RedemptionsMutateDrawer({
                   </FormItem>
                 )}
               />
+
+              <FormField
+                control={form.control}
+                name='target_type'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Redemption Type')}</FormLabel>
+                    <Select
+                      items={[
+                        { value: 'quota', label: t('Quota (Gift)') },
+                        { value: 'subscription', label: t('Subscription') },
+                      ]}
+                      onValueChange={field.onChange}
+                      value={field.value || 'quota'}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent alignItemWithTrigger={false}>
+                        <SelectGroup>
+                          <SelectItem value='quota'>{t('Quota (Gift)')}</SelectItem>
+                          <SelectItem value='subscription'>
+                            {t('Subscription')}
+                          </SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      {t(
+                        'Quota adds gift balance; Subscription redeems a plan (no dividend)'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {form.watch('target_type') === 'subscription' && (
+                <FormField
+                  control={form.control}
+                  name='plan_id'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Subscription Plan ID')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          type='number'
+                          value={field.value || 0}
+                          onChange={(e) =>
+                            field.onChange(parseInt(e.target.value) || 0)
+                          }
+                          placeholder={t('Enter plan ID')}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <FormField
                 control={form.control}

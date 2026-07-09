@@ -88,6 +88,23 @@ func AddRedemption(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": msg})
 		return
 	}
+	if redemption.TargetType == "" {
+		redemption.TargetType = "quota"
+	}
+	if redemption.TargetType == "subscription" {
+		if redemption.PlanId <= 0 {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "兑换订阅必须指定套餐"})
+			return
+		}
+		plan, err := model.GetSubscriptionPlanById(redemption.PlanId)
+		if err != nil || plan == nil || !plan.Enabled {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "指定的套餐不存在或已下架"})
+			return
+		}
+	} else if redemption.TargetType != "quota" {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的兑换类型"})
+		return
+	}
 	var keys []string
 	for i := 0; i < redemption.Count; i++ {
 		key := common.GetUUID()
@@ -97,6 +114,8 @@ func AddRedemption(c *gin.Context) {
 			Key:         key,
 			CreatedTime: common.GetTimestamp(),
 			Quota:       redemption.Quota,
+			TargetType:  redemption.TargetType,
+			PlanId:      redemption.PlanId,
 			ExpiredTime: redemption.ExpiredTime,
 		}
 		err = cleanRedemption.Insert()

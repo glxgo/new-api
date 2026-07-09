@@ -64,6 +64,19 @@ type SummaryAllResult struct {
 	Models []ModelSummary `json:"models"`
 }
 
+// GroupCacheSummary 单个分组的缓存命中率汇总（数据看板缓存率卡片用）
+type GroupCacheSummary struct {
+	Group        string  `json:"group"`
+	CacheRate    float64 `json:"cache_rate"`
+	RequestCount int64   `json:"request_count"`
+	CacheTokens  int64   `json:"cache_tokens"`
+	PromptTokens int64   `json:"prompt_tokens"`
+}
+
+type GroupSummaryAllResult struct {
+	Groups []GroupCacheSummary `json:"groups"`
+}
+
 type bucketKey struct {
 	model    string
 	group    string
