@@ -205,6 +205,16 @@ export async function getUserGroups(): Promise<{
   return res.data
 }
 
+// 个人缓存命中率(基于本人消费日志, 非全站平均)
+export async function getUserCacheRate(hours = 24): Promise<{
+  success: boolean
+  message?: string
+  data?: { cache_rate: number; cache_tokens: number; prompt_tokens: number }
+}> {
+  const res = await api.get('/api/user/cache-rate', { params: { hours } })
+  return res.data
+}
+
 // ----------------------------------------------------------------------------
 // System APIs
 // ----------------------------------------------------------------------------

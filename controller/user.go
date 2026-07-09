@@ -623,6 +623,40 @@ func GetUserModels(c *gin.Context) {
 	return
 }
 
+// GetUserCacheRate 用户个人缓存命中率(基于本人消费日志, 非全站平均)。
+func GetUserCacheRate(c *gin.Context) {
+	userId := c.GetInt("id")
+	hours := 24
+	if rawHours := c.Query("hours"); rawHours != "" {
+		if parsed, err := strconv.Atoi(rawHours); err == nil {
+			hours = parsed
+		}
+	}
+	endTime := common.GetTimestamp()
+	startTime := endTime - int64(hours)*3600
+	cacheTokens, promptTokens, err := model.GetUserCacheRate(userId, startTime, endTime)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	denom := promptTokens
+	if cacheTokens > denom {
+		denom = cacheTokens
+	}
+	rate := 0.0
+	if denom > 0 {
+		rate = float64(cacheTokens) / float64(denom) * 100
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"cache_rate":    rate,
+			"cache_tokens":  cacheTokens,
+			"prompt_tokens": promptTokens,
+		},
+	})
+}
+
 func UpdateUser(c *gin.Context) {
 	var updatedUser model.User
 	err := json.NewDecoder(c.Request.Body).Decode(&updatedUser)

@@ -42,6 +42,7 @@ type Log struct {
 	ModelName         string `json:"model_name" gorm:"index;index:index_username_model_name,priority:1;default:''"`
 	Quota             int    `json:"quota" gorm:"default:0"`
 	PromptTokens      int    `json:"prompt_tokens" gorm:"default:0"`
+	CacheTokens       int    `json:"cache_tokens" gorm:"default:0"` // prompt cache 命中 token(个人缓存率用)
 	CompletionTokens  int    `json:"completion_tokens" gorm:"default:0"`
 	UseTime           int    `json:"use_time" gorm:"default:0"`
 	IsStream          bool   `json:"is_stream"`
@@ -288,6 +289,7 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 type RecordConsumeLogParams struct {
 	ChannelId      int                    `json:"channel_id"`
 	PromptTokens   int                    `json:"prompt_tokens"`
+	CacheTokens    int                    `json:"cache_tokens"` // prompt cache 命中 token
 	CompletionTokens int                  `json:"completion_tokens"`
 	ModelName      string                 `json:"model_name"`
 	TokenName      string                 `json:"token_name"`
@@ -330,6 +332,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		Type:             LogTypeConsume,
 		Content:          params.Content,
 		PromptTokens:     params.PromptTokens,
+		CacheTokens:      params.CacheTokens,
 		CompletionTokens: params.CompletionTokens,
 		TokenName:        params.TokenName,
 		ModelName:        params.ModelName,
@@ -671,6 +674,27 @@ func GetUnsettledConsumeLogs(dayStart, dayEnd int64, afterLogId, limit int) ([]*
 		false, LogTypeConsume, dayStart, dayEnd, afterLogId).
 		Order("id asc").Limit(limit).Find(&logs).Error
 	return logs, err
+}
+
+// GetUserCacheRate 用户个人缓存命中数据(近指定时段): 返回 sum(cache_tokens)/sum(prompt_tokens)。
+// 用于数据看板「缓存命中率」卡片展示个人(非全站)缓存率。cache_tokens 命中部分, prompt_tokens 总输入(含命中)。
+func GetUserCacheRate(userId int, startTime, endTime int64) (cacheTokens, promptTokens int64, err error) {
+	if userId <= 0 {
+		return 0, 0, nil
+	}
+	type cacheResult struct {
+		CacheTokens  int64
+		PromptTokens int64
+	}
+	var r cacheResult
+	err = LOG_DB.Model(&Log{}).
+		Where("user_id = ? AND type = ? AND created_at >= ? AND created_at < ?", userId, LogTypeConsume, startTime, endTime).
+		Select("COALESCE(SUM(cache_tokens),0) as cache_tokens, COALESCE(SUM(prompt_tokens),0) as prompt_tokens").
+		Scan(&r).Error
+	if err != nil {
+		return 0, 0, err
+	}
+	return r.CacheTokens, r.PromptTokens, nil
 }
 
 // MarkLogsSettled 批量标记日志已结算(原子 WHERE settled=false 防重跑重复算)。走 LOG_DB。

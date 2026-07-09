@@ -23,9 +23,9 @@ import { ArrowRight, Flame, ShieldCheck, TrendingDown, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
 import { getCurrencyLabel, isCurrencyDisplayEnabled } from '@/lib/currency'
+import { getUserCacheRate } from '@/lib/api'
 import { formatNumber, formatQuota } from '@/lib/format'
 import { computeTimeRange } from '@/lib/time'
-import { getPerfMetricsGroupSummary } from '@/features/performance-metrics/api'
 import { cn } from '@/lib/utils'
 import { useStatus } from '@/hooks/use-status'
 import { Button } from '@/components/ui/button'
@@ -143,17 +143,11 @@ export function SummaryCards() {
   const summaryTimeRange = useMemo(() => computeTimeRange(1), [])
 
   const cacheRateQuery = useQuery({
-    queryKey: ['perf-metrics-group-summary', 24],
-    queryFn: () => getPerfMetricsGroupSummary(24),
+    queryKey: ['user-cache-rate', 24],
+    queryFn: () => getUserCacheRate(24),
     staleTime: 60 * 1000,
   })
-  const cacheRate = useMemo(() => {
-    const groups = cacheRateQuery.data?.data?.groups ?? []
-    const totalCache = groups.reduce((s, g) => s + (g.cache_tokens || 0), 0)
-    const totalPrompt = groups.reduce((s, g) => s + (g.prompt_tokens || 0), 0)
-    const denom = Math.max(totalPrompt, totalCache)
-    return denom > 0 ? (totalCache / denom) * 100 : 0
-  }, [cacheRateQuery.data])
+  const cacheRate = cacheRateQuery.data?.data?.cache_rate ?? 0
   const remainQuota = Number(user?.quota ?? 0)
   const usedQuota = Number(user?.used_quota ?? 0)
   const requestCount = Number(user?.request_count ?? 0)
