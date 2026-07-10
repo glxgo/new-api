@@ -260,8 +260,19 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 		IsStream:         relayInfo.IsStream,
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
-		BillingSource:  relayInfo.BillingSource,
+		BillingSource:    relayInfo.BillingSource,
 	})
+}
+
+func normalizedCacheHitTokens(usage *dto.Usage) int {
+	if usage == nil {
+		return 0
+	}
+	cachedTokens := usage.PromptTokensDetails.CachedTokens
+	if usage.PromptCacheHitTokens > cachedTokens {
+		return usage.PromptCacheHitTokens
+	}
+	return cachedTokens
 }
 
 func CalcOpenRouterCacheCreateTokens(usage dto.Usage, priceData types.PriceData) int {
@@ -376,7 +387,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     usage.PromptTokens,
-		CacheTokens:      int(usage.PromptTokensDetails.CachedTokens) + int(usage.PromptCacheHitTokens),
+		CacheTokens:      normalizedCacheHitTokens(usage),
 		CompletionTokens: usage.CompletionTokens,
 		ModelName:        logModel,
 		TokenName:        tokenName,
@@ -393,11 +404,11 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		IsStream:         relayInfo.IsStream,
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
-		BillingSource:  relayInfo.BillingSource,
+		BillingSource:    relayInfo.BillingSource,
 	})
 	gopool.Go(func() {
 		perfmetrics.RecordRelaySample(relayInfo, true, int64(usage.CompletionTokens),
-			int64(usage.PromptTokensDetails.CachedTokens)+int64(usage.PromptCacheHitTokens),
+			int64(normalizedCacheHitTokens(usage)),
 			int64(usage.PromptTokens))
 	})
 }

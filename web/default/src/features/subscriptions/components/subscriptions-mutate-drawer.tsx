@@ -23,6 +23,7 @@ import { CalendarClock, CreditCard, RefreshCw, Settings2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Markdown } from '@/components/ui/markdown'
 import {
   Form,
   FormControl,
@@ -499,6 +500,67 @@ export function SubscriptionsMutateDrawer({
                       <FormDescription>
                         {t(
                           'Lowest model ratio of this plan, display only (e.g. 0.35)'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name='description'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Plan Description')}</FormLabel>
+                      <FormControl>
+                        <textarea
+                          {...field}
+                          rows={5}
+                          className='border-input bg-background flex min-h-[80px] w-full rounded-md border px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                          placeholder={t('Detailed description shown when user clicks Subscribe')}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t(
+                          'Supports Markdown: **bold**, <span style="color:#e11d48">colored text</span>, [link](url). Shown in popup when user clicks Subscribe.'
+                        )}
+                      </FormDescription>
+                      {field.value ? (
+                        <div className='bg-muted/30 rounded-md border p-3'>
+                          <div className='text-muted-foreground mb-1 text-xs'>
+                            {t('Preview')}
+                          </div>
+                          <div className='text-sm'>
+                            <Markdown>{String(field.value)}</Markdown>
+                          </div>
+                        </div>
+                      ) : null}
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name='amount_cap'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Plan Amount Cap')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          type='number'
+                          step='0.01'
+                          min={0}
+                          value={field.value ?? 0}
+                          onChange={(e) =>
+                            field.onChange(parseFloat(e.target.value) || 0)
+                          }
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t(
+                          'Total quota cap for entire plan duration (0 = unlimited). When reached, plan expires immediately.'
                         )}
                       </FormDescription>
                       <FormMessage />

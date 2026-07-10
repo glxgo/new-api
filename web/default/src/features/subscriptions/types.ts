@@ -42,6 +42,8 @@ export const subscriptionPlanSchema = z.object({
   allowed_group: z.string().optional(),
   recommended: z.boolean().optional(),
   min_ratio: z.number().optional(),
+  amount_cap: z.number().optional(),
+  description: z.string().optional(),
   stripe_price_id: z.string().optional(),
   creem_product_id: z.string().optional(),
   waffo_pancake_product_id: z.string().optional(),

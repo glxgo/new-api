@@ -253,10 +253,10 @@ func QueryGroupSummaryAll(hours int, groups []string) (GroupSummaryAllResult, er
 	totals := map[string]counters{}
 	for _, row := range rows {
 		totals[row.Group] = counters{
-			requestCount:  row.RequestCount,
-			successCount:  row.SuccessCount,
-			cacheTokens:   row.CacheTokens,
-			promptTokens:  row.PromptTokens,
+			requestCount: row.RequestCount,
+			successCount: row.SuccessCount,
+			cacheTokens:  row.CacheTokens,
+			promptTokens: row.PromptTokens,
 		}
 	}
 
@@ -414,13 +414,16 @@ func bucketPoint(ts int64, value counters) BucketPoint {
 }
 
 // cacheRate = 命中缓存 token / 总输入 token × 100
-// promptTokens 通常是「总输入 token」（已含缓存命中部分），分母直接用它即可。
-// 但个别上游会把命中缓存单独给(PromptCacheHitTokens)而不计入 PromptTokens，
-// 此时 promptTokens 可能 < cacheTokens，用 max 兜底防止出现 >100%。
+// 大多数上游 promptTokens 是总输入(已含缓存命中), 直接作分母。
+// 少数渠道会把命中缓存单独给, promptTokens 只含非缓存输入；当 cache > prompt 时，
+// 用 prompt+cache 重建总输入，避免 100% 或偏差。
 func cacheRate(value counters) float64 {
+	if value.promptTokens <= 0 {
+		return 0
+	}
 	denom := value.promptTokens
-	if value.cacheTokens > denom {
-		denom = value.cacheTokens
+	if value.cacheTokens > value.promptTokens {
+		denom = value.promptTokens + value.cacheTokens
 	}
 	if denom <= 0 {
 		return 0

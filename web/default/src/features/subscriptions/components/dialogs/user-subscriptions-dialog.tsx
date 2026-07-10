@@ -297,21 +297,50 @@ export function UserSubscriptionsDialog(props: Props) {
                 },
                 {
                   id: 'quota',
-                  header: t('Remaining Quota'),
+                  header: t('Usage'),
                   cell: (record) => {
                     const sub = record.subscription
                     const total = Number(sub.amount_total || 0)
                     const used = Number(sub.amount_used || 0)
-                    if (total <= 0) return t('Unlimited')
-                    const remain = total - used
-                    return (
-                      <div className='flex flex-col'>
-                        <span className='font-mono font-semibold'>
-                          {formatQuota(remain)}
-                        </span>
+                    if (total <= 0) {
+                      return (
                         <span className='text-muted-foreground text-xs'>
-                          {formatQuota(used)} / {formatQuota(total)}
+                          {t('Unlimited')}
                         </span>
+                      )
+                    }
+                    const remain = total - used
+                    const percent = Math.round((used / total) * 100)
+                    const barColor =
+                      percent >= 90
+                        ? 'bg-rose-500'
+                        : percent >= 70
+                          ? 'bg-amber-500'
+                          : 'bg-emerald-500'
+                    return (
+                      <div className='w-full min-w-[120px]'>
+                        <div className='mb-1 flex items-baseline justify-between'>
+                          <span className='text-xs font-semibold'>
+                            {formatQuota(remain)}
+                          </span>
+                          <span className='text-muted-foreground text-[10px]'>
+                            {percent}% {t('Used')}
+                          </span>
+                        </div>
+                        <div className='h-2 w-full overflow-hidden rounded-full bg-muted'>
+                          <div
+                            className={`h-full rounded-full transition-all ${barColor}`}
+                            style={{ width: `${percent}%` }}
+                          />
+                        </div>
+                        <div className='text-muted-foreground mt-1 flex justify-between text-[10px]'>
+                          <span>
+                            {formatQuota(used)} {t('Used')}
+                          </span>
+                          <span>
+                            {formatQuota(total)} {t('Total')}
+                          </span>
+                        </div>
                       </div>
                     )
                   },

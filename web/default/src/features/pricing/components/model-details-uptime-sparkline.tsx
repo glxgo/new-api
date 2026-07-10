@@ -48,6 +48,8 @@ type UptimeSparklineProps = {
   showOverall?: boolean
   emptyLabel?: string
   className?: string
+  maxPoints?: number
+  fill?: boolean
 }
 
 function colourFor(uptime: number): string {
@@ -76,8 +78,15 @@ function overallTextColour(pct: number): string {
 export function UptimeSparkline(props: UptimeSparklineProps) {
   const size = props.size ?? 'md'
   const showOverall = props.showOverall ?? true
+  const series = useMemo(() => {
+    if (props.maxPoints && props.maxPoints > 0) {
+      return props.series.slice(-props.maxPoints)
+    }
+    return props.series
+  }, [props.maxPoints, props.series])
+  const fillBars = props.fill ?? false
 
-  if (props.series.length === 0) {
+  if (series.length === 0) {
     return (
       <span className={cn('text-muted-foreground text-xs', props.className)}>
         {props.emptyLabel ?? '—'}
@@ -86,21 +95,25 @@ export function UptimeSparkline(props: UptimeSparklineProps) {
   }
 
   const overall =
-    props.series.reduce((s, p) => s + p.uptime_pct, 0) / props.series.length
+    series.reduce((s, p) => s + p.uptime_pct, 0) / series.length
 
   const containerHeight = size === 'sm' ? 'h-3.5' : 'h-5'
-  const barWidth = size === 'sm' ? 'w-[3px]' : 'w-1'
+  const barWidth = fillBars
+    ? 'min-w-0 flex-1'
+    : size === 'sm'
+      ? 'w-[3px]'
+      : 'w-1'
   const gap = size === 'sm' ? 'gap-px' : 'gap-[2px]'
 
   return (
     <div className={cn('flex items-center gap-2', props.className)}>
       <div
-        className={cn('flex items-end', containerHeight, gap)}
+        className={cn('flex items-end', containerHeight, gap, fillBars && 'w-full')}
         role='img'
         aria-label={`30 day uptime ${overall.toFixed(2)}%`}
       >
-        {props.series.map((day) => (
-          <Tooltip key={day.date}>
+        {series.map((day, index) => (
+          <Tooltip key={`${day.date}-${index}`}>
             <TooltipTrigger
               render={
                 <div

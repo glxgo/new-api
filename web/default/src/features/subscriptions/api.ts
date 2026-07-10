@@ -206,6 +206,25 @@ export async function getPublicPlans(): Promise<ApiResponse<PlanRecord[]>> {
   return res.data
 }
 
+// 套餐订阅页顶部全局介绍(富文本 markdown), 后台套餐管理页编辑
+// 兼容旧后端: 线上未部署 /intro 时静默降级为空, 避免本地预览弹 404 toast.
+export async function getSubscriptionIntro(): Promise<
+  ApiResponse<{ intro: string }>
+> {
+  try {
+    const res = await api.get('/api/subscription/intro', {
+      skipErrorHandler: true,
+    })
+    return res.data
+  } catch (error: unknown) {
+    const status = (error as { response?: { status?: number } })?.response?.status
+    if (status === 404) {
+      return { success: true, data: { intro: '' } }
+    }
+    throw error
+  }
+}
+
 export async function updateBillingPreference(
   preference: string
 ): Promise<ApiResponse<{ billing_preference?: string }>> {

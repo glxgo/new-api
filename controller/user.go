@@ -640,9 +640,6 @@ func GetUserCacheRate(c *gin.Context) {
 		return
 	}
 	denom := promptTokens
-	if cacheTokens > denom {
-		denom = cacheTokens
-	}
 	rate := 0.0
 	if denom > 0 {
 		rate = float64(cacheTokens) / float64(denom) * 100

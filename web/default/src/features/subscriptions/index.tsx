@@ -17,12 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState } from 'react'
-import { Info, Users } from 'lucide-react'
+import { FileText, Info, Users } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { SectionPageLayout } from '@/components/layout'
 import { SubscribersDialog } from './components/subscribers-dialog'
+import { SubscriptionIntroDialog } from './components/subscription-intro-dialog'
 import { SubscriptionsDialogs } from './components/subscriptions-dialogs'
 import { SubscriptionsPrimaryButtons } from './components/subscriptions-primary-buttons'
 import {
@@ -35,6 +36,7 @@ function SubscriptionsContent() {
   const { t } = useTranslation()
   const { complianceConfirmed } = useSubscriptions()
   const [subscribersOpen, setSubscribersOpen] = useState(false)
+  const [introOpen, setIntroOpen] = useState(false)
 
   return (
     <>
@@ -52,6 +54,14 @@ function SubscriptionsContent() {
                 )}
               </AlertDescription>
             </Alert>
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={() => setIntroOpen(true)}
+            >
+              <FileText className='h-4 w-4' />
+              {t('Plans Intro')}
+            </Button>
             <Button
               variant='outline'
               size='sm'
@@ -82,6 +92,7 @@ function SubscriptionsContent() {
       </SectionPageLayout>
 
       <SubscriptionsDialogs />
+      <SubscriptionIntroDialog open={introOpen} onOpenChange={setIntroOpen} />
       <SubscribersDialog
         open={subscribersOpen}
         onOpenChange={setSubscribersOpen}

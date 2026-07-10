@@ -186,7 +186,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	summary.PromptTokens = usage.PromptTokens
 	summary.CompletionTokens = usage.CompletionTokens
 	summary.TotalTokens = usage.PromptTokens + usage.CompletionTokens
-	summary.CacheTokens = usage.PromptTokensDetails.CachedTokens
+	summary.CacheTokens = normalizedCacheHitTokens(usage)
 	summary.CacheCreationTokens = usage.PromptTokensDetails.CachedCreationTokens
 	summary.CacheCreationTokens5m = usage.ClaudeCacheCreation5mTokens
 	summary.CacheCreationTokens1h = usage.ClaudeCacheCreation1hTokens
@@ -469,26 +469,26 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	// 双池记账(阶段2b): 从 BillingSession 取实际扣减拆分, 无则回退全本金。
 	paidGift, paidPrincipal := paidSplitForLog(relayInfo, summary.Quota)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
-		ChannelId:     relayInfo.ChannelId,
-		PromptTokens:  summary.PromptTokens,
-		CacheTokens:   summary.CacheTokens,
+		ChannelId:        relayInfo.ChannelId,
+		PromptTokens:     summary.PromptTokens,
+		CacheTokens:      summary.CacheTokens,
 		CompletionTokens: summary.CompletionTokens,
-		ModelName:     logModel,
-		TokenName:     summary.TokenName,
-		Quota:         summary.Quota,
-		Cost:          summary.Cost,
-		PaidQuota:      paidPrincipal,
-		PaidGiftQuota:  paidGift,
-		AffAdminIdSnap: affAdminIdSnap,
-		InviterIdSnap:  inviterIdSnap,
-		Inviter2IdSnap: inviter2IdSnap,
-		Content:        logContent,
-		TokenId:        relayInfo.TokenId,
-		UseTimeSeconds: int(summary.UseTimeSeconds),
-		IsStream:       relayInfo.IsStream,
-		Group:          relayInfo.UsingGroup,
-		Other:          other,
-		BillingSource:  relayInfo.BillingSource,
+		ModelName:        logModel,
+		TokenName:        summary.TokenName,
+		Quota:            summary.Quota,
+		Cost:             summary.Cost,
+		PaidQuota:        paidPrincipal,
+		PaidGiftQuota:    paidGift,
+		AffAdminIdSnap:   affAdminIdSnap,
+		InviterIdSnap:    inviterIdSnap,
+		Inviter2IdSnap:   inviter2IdSnap,
+		Content:          logContent,
+		TokenId:          relayInfo.TokenId,
+		UseTimeSeconds:   int(summary.UseTimeSeconds),
+		IsStream:         relayInfo.IsStream,
+		Group:            relayInfo.UsingGroup,
+		Other:            other,
+		BillingSource:    relayInfo.BillingSource,
 	})
 	gopool.Go(func() {
 		perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens),

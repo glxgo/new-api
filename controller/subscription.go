@@ -51,6 +51,15 @@ func GetSubscriptionPlans(c *gin.Context) {
 	common.ApiSuccess(c, result)
 }
 
+// GetSubscriptionIntro 返回套餐订阅页顶部的全局介绍(富文本, markdown).
+// 存于系统选项 SubscriptionPlansIntro, 后台在套餐管理页编辑.
+func GetSubscriptionIntro(c *gin.Context) {
+	common.OptionMapRWMutex.RLock()
+	intro := common.OptionMap["SubscriptionPlansIntro"]
+	common.OptionMapRWMutex.RUnlock()
+	common.ApiSuccess(c, gin.H{"intro": intro})
+}
+
 func GetSubscriptionSelf(c *gin.Context) {
 	userId := c.GetInt("id")
 	settingMap, _ := model.GetUserSetting(userId, false)
@@ -329,6 +338,8 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 			"allowed_group":              req.Plan.AllowedGroup,
 			"recommended":                req.Plan.Recommended,
 			"min_ratio":                  req.Plan.MinRatio,
+			"amount_cap":                 req.Plan.AmountCap,
+			"description":                req.Plan.Description,
 			"quota_reset_period":         req.Plan.QuotaResetPeriod,
 			"quota_reset_custom_seconds": req.Plan.QuotaResetCustomSeconds,
 			"updated_at":                 common.GetTimestamp(),

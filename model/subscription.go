@@ -148,7 +148,9 @@ type SubscriptionPlan struct {
 	Id int `json:"id"`
 
 	Title    string `json:"title" gorm:"type:varchar(128);not null"`
-	Subtitle string `json:"subtitle" gorm:"type:varchar(255);default:''"`
+	Subtitle     string `json:"subtitle" gorm:"type:varchar(255);default:''"`
+	// Description: 套餐详细介绍(用户订阅时弹出展示, "已阅读"关闭/"永不展示"localStorage 记住)
+	Description string `json:"description" gorm:"type:text"`
 
 	// Display money amount (follow existing code style: float64 for money)
 	PriceAmount float64 `json:"price_amount" gorm:"type:decimal(10,6);not null;default:0"`
@@ -183,6 +185,9 @@ type SubscriptionPlan struct {
 
 	// Total quota (amount in quota units, 0 = unlimited)
 	TotalAmount int64 `json:"total_amount" gorm:"type:bigint;not null;default:0"`
+
+	// AmountCap: 套餐总额度上限(整个套餐周期, 不随 reset 重置, 0=不限)。达到则套餐到期。
+	AmountCap int64 `json:"amount_cap" gorm:"type:bigint;not null;default:0"`
 
 	// Quota reset period for plan
 	QuotaResetPeriod        string `json:"quota_reset_period" gorm:"type:varchar(16);default:'never'"`
@@ -257,6 +262,11 @@ type UserSubscription struct {
 
 	AmountTotal int64 `json:"amount_total" gorm:"type:bigint;not null;default:0"`
 	AmountUsed  int64 `json:"amount_used" gorm:"type:bigint;not null;default:0"`
+
+	// AmountCap: 套餐总额度上限(冗余自 plan, 不随 reset 重置, 0=不限)
+	AmountCap int64 `json:"amount_cap" gorm:"type:bigint;not null;default:0"`
+	// AmountCapUsed: 已用总额度(不随 reset 重置, 达到 AmountCap 则套餐到期)
+	AmountCapUsed int64 `json:"amount_cap_used" gorm:"type:bigint;not null;default:0"`
 
 	StartTime int64  `json:"start_time" gorm:"bigint"`
 	EndTime   int64  `json:"end_time" gorm:"bigint;index;index:idx_user_sub_active,priority:3"`
@@ -514,6 +524,8 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		PlanId:        plan.Id,
 		AmountTotal:   plan.TotalAmount,
 		AmountUsed:    0,
+		AmountCap:     plan.AmountCap,
+		AmountCapUsed: 0,
 		StartTime:     now.Unix(),
 		EndTime:       endUnix,
 		Status:        "active",
@@ -1258,6 +1270,13 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 					continue
 				}
 			}
+			// 月限额(套餐总额度上限, 不随 reset 重置)
+			if sub.AmountCap > 0 {
+				capRemain := sub.AmountCap - sub.AmountCapUsed
+				if capRemain < amount {
+					continue
+				}
+			}
 			record := &SubscriptionPreConsumeRecord{
 				RequestId:          requestId,
 				UserId:             userId,
@@ -1281,6 +1300,11 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 				return err
 			}
 			sub.AmountUsed += amount
+			sub.AmountCapUsed += amount
+			// 月限额用完 → 套餐到期
+			if sub.AmountCap > 0 && sub.AmountCapUsed >= sub.AmountCap {
+				sub.Status = "expired"
+			}
 			if err := tx.Save(&sub).Error; err != nil {
 				return err
 			}
@@ -1295,6 +1319,15 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 	})
 	if err != nil {
 		return nil, err
+	}
+	// 月限额到期: post-commit 分润(扣费后 status 变 expired)
+	if returnValue.UserSubscriptionId > 0 {
+		var sub UserSubscription
+		if dbErr := DB.Where("id = ?", returnValue.UserSubscriptionId).First(&sub).Error; dbErr == nil {
+			if sub.Status == "expired" && sub.AmountCap > 0 && sub.AmountCapUsed >= sub.AmountCap {
+				settleSubscriptionEndForSub(&sub)
+			}
+		}
 	}
 	return returnValue, nil
 }

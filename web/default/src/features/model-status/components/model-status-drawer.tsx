@@ -93,6 +93,8 @@ export function ModelStatusDrawer({ open, onOpenChange, model }: Props) {
               series={toGroupUptimeSeries(group)}
               size='md'
               showOverall={false}
+              maxPoints={24}
+              fill
               className='w-full'
               emptyLabel={t('No data')}
             />

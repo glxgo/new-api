@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Markdown } from '@/components/ui/markdown'
 import { TitledCard } from '@/components/ui/titled-card'
 import {
   Tooltip,
@@ -121,6 +122,7 @@ export function SubscriptionPlansCard({
 
   const [purchaseOpen, setPurchaseOpen] = useState(false)
   const [selectedPlan, setSelectedPlan] = useState<PlanRecord | null>(null)
+  const [descPlan, setDescPlan] = useState<PlanRecord | null>(null)
 
   const enableStripe = !!topupInfo?.enable_stripe_topup
   const enableCreem = !!topupInfo?.enable_creem_topup
@@ -477,33 +479,59 @@ export function SubscriptionPlansCard({
                           ).toLocaleString()}
                         </div>
                       )}
-                      <div className='text-muted-foreground mt-1'>
-                        {t('Total Quota')}:{' '}
-                        {totalAmount > 0 ? (
-                          <Tooltip>
-                            <TooltipTrigger
-                              render={<span className='cursor-help' />}
-                            >
-                              {formatQuota(usedAmount)}/
-                              {formatQuota(totalAmount)} · {t('Remaining')}{' '}
-                              {formatQuota(remainAmount)}
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {t('Raw Quota')}: {usedAmount}/{totalAmount} ·{' '}
-                              {t('Remaining')} {remainAmount}
-                            </TooltipContent>
-                          </Tooltip>
-                        ) : (
-                          t('Unlimited')
-                        )}
-                        {totalAmount > 0 && (
-                          <span className='ml-2'>
-                            {t('Used')} {usagePercent}%
-                          </span>
-                        )}
-                      </div>
-                      {totalAmount > 0 && isActive && (
-                        <Progress value={usagePercent} className='mt-2 h-1.5' />
+                      {totalAmount > 0 ? (
+                        <div className='mt-2'>
+                          <div className='flex items-baseline justify-between gap-2'>
+                            <div className='flex items-baseline gap-1'>
+                              <span className='text-primary text-sm font-bold'>
+                                {formatQuota(remainAmount)}
+                              </span>
+                              <span className='text-muted-foreground text-xs'>
+                                / {formatQuota(totalAmount)} {t('Remaining')}
+                              </span>
+                            </div>
+                            <Tooltip>
+                              <TooltipTrigger
+                                render={<span className='cursor-help' />}
+                              >
+                                <span
+                                  className={cn(
+                                    'text-xs font-medium',
+                                    usagePercent >= 90
+                                      ? 'text-rose-500'
+                                      : usagePercent >= 70
+                                        ? 'text-amber-500'
+                                        : 'text-muted-foreground'
+                                  )}
+                                >
+                                  {t('Used')} {usagePercent}%
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {t('Raw Quota')}: {usedAmount}/{totalAmount} ·{' '}
+                                {t('Remaining')} {remainAmount}
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                          {isActive && (
+                            <Progress
+                              value={usagePercent}
+                              className={cn(
+                                'mt-1.5',
+                                '[&_[data-slot=progress-track]]:h-2',
+                                usagePercent >= 90
+                                  ? '[&_[data-slot=progress-indicator]]:bg-rose-500'
+                                  : usagePercent >= 70
+                                    ? '[&_[data-slot=progress-indicator]]:bg-amber-500'
+                                    : '[&_[data-slot=progress-indicator]]:bg-emerald-500'
+                              )}
+                            />
+                          )}
+                        </div>
+                      ) : (
+                        <div className='text-muted-foreground mt-2 text-xs'>
+                          {t('Unlimited')}
+                        </div>
                       )}
                     </div>
                   )
@@ -551,6 +579,9 @@ export function SubscriptionPlansCard({
                   label: limitLabel,
                   value: totalAmount > 0 ? formatQuota(totalAmount) : t('Unlimited'),
                 },
+                plan.amount_cap
+                  ? { label: t('Plan Amount Cap'), value: formatQuota(Number(plan.amount_cap)) }
+                  : null,
                 plan.min_ratio
                   ? { label: t('Min Ratio'), value: `×${plan.min_ratio}` }
                   : null,
@@ -637,8 +668,12 @@ export function SubscriptionPlansCard({
                         variant='outline'
                         className='w-full'
                         onClick={() => {
-                          setSelectedPlan(p)
-                          setPurchaseOpen(true)
+                          if (plan.description && !localStorage.getItem(`sub-desc-hide-${plan.id}`)) {
+                            setDescPlan(p)
+                          } else {
+                            setSelectedPlan(p)
+                            setPurchaseOpen(true)
+                          }
                         }}
                       >
                         {t('Subscribe Now')}
@@ -660,6 +695,53 @@ export function SubscriptionPlansCard({
           </p>
         )}
       </TitledCard>
+
+      {/* 套餐介绍弹窗: 有 description 时点击订阅先弹, "已阅读"继续/"永不展示"localStorage 记住 */}
+      {descPlan && (
+        <div
+          className='fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4'
+          onClick={() => setDescPlan(null)}
+        >
+          <div
+            className='bg-card max-w-lg rounded-2xl border p-6 shadow-xl'
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className='mb-3 text-lg font-bold'>
+              {descPlan.plan.title}
+            </h3>
+            <div className='mb-5 max-h-[40vh] overflow-y-auto text-sm'>
+              <Markdown>{descPlan.plan.description || ''}</Markdown>
+            </div>
+            <div className='flex justify-end gap-2'>
+              <Button
+                variant='ghost'
+                size='sm'
+                onClick={() => {
+                  localStorage.setItem(
+                    `sub-desc-hide-${descPlan.plan.id}`,
+                    '1'
+                  )
+                  setSelectedPlan(descPlan)
+                  setPurchaseOpen(true)
+                  setDescPlan(null)
+                }}
+              >
+                {t('Never show again')}
+              </Button>
+              <Button
+                size='sm'
+                onClick={() => {
+                  setSelectedPlan(descPlan)
+                  setPurchaseOpen(true)
+                  setDescPlan(null)
+                }}
+              >
+                {t('Got it')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <SubscriptionPurchaseDialog
         open={purchaseOpen}

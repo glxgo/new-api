@@ -129,6 +129,8 @@ export const ModelStatusCard = memo(function ModelStatusCard({
         series={series}
         size='sm'
         showOverall={false}
+        maxPoints={24}
+        fill
         className='w-full'
         emptyLabel={
           metricsQuery.isLoading ? t('Loading...') : t('No data')

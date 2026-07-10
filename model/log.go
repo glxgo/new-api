@@ -55,15 +55,15 @@ type Log struct {
 	UpstreamRequestId string `json:"upstream_request_id,omitempty" gorm:"type:varchar(128);index:idx_logs_upstream_request_id;default:''"`
 	Other             string `json:"other"`
 	// 分润系统字段(T+1结算用)
-	Cost              int    `json:"cost" gorm:"default:0"`                                            // 该请求成本(quota单位,平台付上游)
-	PaidQuota         int    `json:"paid_quota" gorm:"default:0;column:paid_quota"`                    // 本金分摊
-	PaidGiftQuota     int    `json:"paid_gift_quota" gorm:"default:0;column:paid_gift_quota"`           // 赠金分摊
-	AffAdminIdSnap    int    `json:"aff_admin_id_snap" gorm:"default:0;column:aff_admin_id_snap;index:idx_logs_settle"`
-	InviterIdSnap     int    `json:"inviter_id_snap" gorm:"default:0;column:inviter_id_snap"`
-	Inviter2IdSnap    int    `json:"inviter2_id_snap" gorm:"default:0;column:inviter2_id_snap"`
-	Settled           bool   `json:"settled" gorm:"default:false;column:settled;index:idx_logs_settle"`
-	SettleBatchId     string `json:"settle_batch_id" gorm:"type:varchar(40);column:settle_batch_id;index:idx_logs_settle"`
-	BillingSource     string `json:"billing_source" gorm:"type:varchar(16);default:'';column:billing_source"` // wallet/subscription，订阅消费不计分润(购买时已分润)
+	Cost           int    `json:"cost" gorm:"default:0"`                                   // 该请求成本(quota单位,平台付上游)
+	PaidQuota      int    `json:"paid_quota" gorm:"default:0;column:paid_quota"`           // 本金分摊
+	PaidGiftQuota  int    `json:"paid_gift_quota" gorm:"default:0;column:paid_gift_quota"` // 赠金分摊
+	AffAdminIdSnap int    `json:"aff_admin_id_snap" gorm:"default:0;column:aff_admin_id_snap;index:idx_logs_settle"`
+	InviterIdSnap  int    `json:"inviter_id_snap" gorm:"default:0;column:inviter_id_snap"`
+	Inviter2IdSnap int    `json:"inviter2_id_snap" gorm:"default:0;column:inviter2_id_snap"`
+	Settled        bool   `json:"settled" gorm:"default:false;column:settled;index:idx_logs_settle"`
+	SettleBatchId  string `json:"settle_batch_id" gorm:"type:varchar(40);column:settle_batch_id;index:idx_logs_settle"`
+	BillingSource  string `json:"billing_source" gorm:"type:varchar(16);default:'';column:billing_source"` // wallet/subscription，订阅消费不计分润(购买时已分润)
 }
 
 // don't use iota, avoid change log type value
@@ -287,26 +287,26 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 }
 
 type RecordConsumeLogParams struct {
-	ChannelId      int                    `json:"channel_id"`
-	PromptTokens   int                    `json:"prompt_tokens"`
-	CacheTokens    int                    `json:"cache_tokens"` // prompt cache 命中 token
-	CompletionTokens int                  `json:"completion_tokens"`
-	ModelName      string                 `json:"model_name"`
-	TokenName      string                 `json:"token_name"`
-	Quota          int                    `json:"quota"`
-	Cost           int                    `json:"cost"`             // 平台成本(quota 单位, T+1 毛利计算用)
-	PaidQuota      int                    `json:"paid_quota"`       // 本金分摊
-	PaidGiftQuota  int                    `json:"paid_gift_quota"`  // 赠金分摊
-	AffAdminIdSnap int                    `json:"aff_admin_id_snap"` // 树顶管理员快照
-	InviterIdSnap  int                    `json:"inviter_id_snap"`  // 直接上级快照
-	Inviter2IdSnap int                    `json:"inviter2_id_snap"` // 间接上级快照
-	Content        string                 `json:"content"`
-	TokenId        int                    `json:"token_id"`
-	UseTimeSeconds int                    `json:"use_time_seconds"`
-	IsStream       bool                   `json:"is_stream"`
-	Group          string                 `json:"group"`
-	Other          map[string]interface{} `json:"other"`
-	BillingSource  string                 `json:"billing_source"` // wallet/subscription
+	ChannelId        int                    `json:"channel_id"`
+	PromptTokens     int                    `json:"prompt_tokens"`
+	CacheTokens      int                    `json:"cache_tokens"` // prompt cache 命中 token
+	CompletionTokens int                    `json:"completion_tokens"`
+	ModelName        string                 `json:"model_name"`
+	TokenName        string                 `json:"token_name"`
+	Quota            int                    `json:"quota"`
+	Cost             int                    `json:"cost"`              // 平台成本(quota 单位, T+1 毛利计算用)
+	PaidQuota        int                    `json:"paid_quota"`        // 本金分摊
+	PaidGiftQuota    int                    `json:"paid_gift_quota"`   // 赠金分摊
+	AffAdminIdSnap   int                    `json:"aff_admin_id_snap"` // 树顶管理员快照
+	InviterIdSnap    int                    `json:"inviter_id_snap"`   // 直接上级快照
+	Inviter2IdSnap   int                    `json:"inviter2_id_snap"`  // 间接上级快照
+	Content          string                 `json:"content"`
+	TokenId          int                    `json:"token_id"`
+	UseTimeSeconds   int                    `json:"use_time_seconds"`
+	IsStream         bool                   `json:"is_stream"`
+	Group            string                 `json:"group"`
+	Other            map[string]interface{} `json:"other"`
+	BillingSource    string                 `json:"billing_source"` // wallet/subscription
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
@@ -371,22 +371,22 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 }
 
 type RecordTaskBillingLogParams struct {
-	UserId    int
-	LogType   int
-	Content   string
-	ChannelId int
-	ModelName string
-	Quota     int
+	UserId         int
+	LogType        int
+	Content        string
+	ChannelId      int
+	ModelName      string
+	Quota          int
 	Cost           int // 平台成本(quota 单位)
 	PaidQuota      int // 本金分摊
 	PaidGiftQuota  int // 赠金分摊
 	AffAdminIdSnap int // 树顶管理员快照
 	InviterIdSnap  int // 直接上级快照
 	Inviter2IdSnap int // 间接上级快照
-	TokenId   int
-	Group     string
-	Other     map[string]interface{}
-	BillingSource string // wallet/subscription
+	TokenId        int
+	Group          string
+	Other          map[string]interface{}
+	BillingSource  string // wallet/subscription
 }
 
 func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
@@ -401,25 +401,25 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 		}
 	}
 	log := &Log{
-		UserId:    params.UserId,
-		Username:  username,
-		CreatedAt: common.GetTimestamp(),
-		Type:      params.LogType,
-		Content:   params.Content,
-		TokenName: tokenName,
-		ModelName: params.ModelName,
-		Quota:     params.Quota,
+		UserId:         params.UserId,
+		Username:       username,
+		CreatedAt:      common.GetTimestamp(),
+		Type:           params.LogType,
+		Content:        params.Content,
+		TokenName:      tokenName,
+		ModelName:      params.ModelName,
+		Quota:          params.Quota,
 		Cost:           params.Cost,
 		PaidQuota:      params.PaidQuota,
 		PaidGiftQuota:  params.PaidGiftQuota,
 		AffAdminIdSnap: params.AffAdminIdSnap,
 		InviterIdSnap:  params.InviterIdSnap,
 		Inviter2IdSnap: params.Inviter2IdSnap,
-		ChannelId: params.ChannelId,
-		TokenId:   params.TokenId,
-		Group:     params.Group,
-		Other:     common.MapToJsonStr(params.Other),
-		BillingSource: params.BillingSource,
+		ChannelId:      params.ChannelId,
+		TokenId:        params.TokenId,
+		Group:          params.Group,
+		Other:          common.MapToJsonStr(params.Other),
+		BillingSource:  params.BillingSource,
 	}
 	err := LOG_DB.Create(log).Error
 	if err != nil {
@@ -676,8 +676,11 @@ func GetUnsettledConsumeLogs(dayStart, dayEnd int64, afterLogId, limit int) ([]*
 	return logs, err
 }
 
-// GetUserCacheRate 用户个人缓存命中数据(近指定时段): 返回 sum(cache_tokens)/sum(prompt_tokens)。
-// 用于数据看板「缓存命中率」卡片展示个人(非全站)缓存率。cache_tokens 命中部分, prompt_tokens 总输入(含命中)。
+// GetUserCacheRate 用户个人缓存命中数据(近指定时段): 返回 sum(cache_tokens)/sum(effective_prompt_tokens)。
+// 兼容两种上游口径:
+// 1. prompt_tokens 已含缓存命中: 分母=prompt_tokens
+// 2. prompt_tokens 只含非缓存输入: 当 cache_tokens > prompt_tokens 时, 分母=prompt_tokens+cache_tokens
+// prompt_tokens<=0 的不完整日志不参与计算, 避免异常日志把命中率顶成 100%。
 func GetUserCacheRate(userId int, startTime, endTime int64) (cacheTokens, promptTokens int64, err error) {
 	if userId <= 0 {
 		return 0, 0, nil
@@ -689,7 +692,7 @@ func GetUserCacheRate(userId int, startTime, endTime int64) (cacheTokens, prompt
 	var r cacheResult
 	err = LOG_DB.Model(&Log{}).
 		Where("user_id = ? AND type = ? AND created_at >= ? AND created_at < ?", userId, LogTypeConsume, startTime, endTime).
-		Select("COALESCE(SUM(cache_tokens),0) as cache_tokens, COALESCE(SUM(prompt_tokens),0) as prompt_tokens").
+		Select("COALESCE(SUM(CASE WHEN prompt_tokens <= 0 THEN 0 ELSE cache_tokens END),0) as cache_tokens, COALESCE(SUM(CASE WHEN prompt_tokens <= 0 THEN 0 WHEN cache_tokens > prompt_tokens THEN prompt_tokens + cache_tokens ELSE prompt_tokens END),0) as prompt_tokens").
 		Scan(&r).Error
 	if err != nil {
 		return 0, 0, err
