@@ -78,6 +78,9 @@ export const userSubscriptionSchema = z.object({
   end_time: z.number(),
   amount_total: z.number(),
   amount_used: z.number(),
+  amount_cap: z.number().optional(),
+  amount_cap_used: z.number().optional(),
+  allowed_group: z.string().optional(),
   next_reset_time: z.number().optional(),
 })
 
