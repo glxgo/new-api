@@ -26,6 +26,7 @@ import type {
   SubscriptionPayResponse,
   SubscriptionPayRequest,
   SelfSubscriptionData,
+  SubscriberSummary,
 } from './types'
 
 // ============================================================================
@@ -72,6 +73,13 @@ export async function getUserSubscriptions(
   const res = await api.get(
     `/api/subscription/admin/users/${userId}/subscriptions`
   )
+  return res.data
+}
+
+export async function getSubscriptionSubscribers(): Promise<
+  ApiResponse<SubscriberSummary[]>
+> {
+  const res = await api.get('/api/subscription/admin/subscribers')
   return res.data
 }
 

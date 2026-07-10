@@ -87,7 +87,12 @@ func Query(params QueryParams) (QueryResult, error) {
 	if params.Hours <= 0 {
 		params.Hours = 24
 	}
-	limit := params.Hours
+	// 桶数 = 时间窗口 / 桶大小(原来误用 hours 当 limit, 导致 5min 桶也只能显示 24 根)
+	bucketSeconds := perf_metrics_setting.GetBucketSeconds()
+	if bucketSeconds <= 0 {
+		bucketSeconds = 3600
+	}
+	limit := int(int64(params.Hours) * 3600 / bucketSeconds)
 	if limit > 1000 {
 		limit = 1000
 	}

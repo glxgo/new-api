@@ -129,6 +129,23 @@ export function useSubscriptionsColumns(): ColumnDef<PlanRecord>[] {
         size: 80,
       },
       {
+        accessorFn: (row) => row.subscriber_count ?? 0,
+        id: 'subscribers',
+        header: t('Subscribers'),
+        meta: { mobileHidden: true },
+        cell: ({ row }) => (
+          <div className='flex flex-col text-xs'>
+            <span className='font-semibold'>
+              {row.original.subscriber_count ?? 0}
+            </span>
+            <span className='text-muted-foreground'>
+              {t('Active')}: {row.original.active_count ?? 0}
+            </span>
+          </div>
+        ),
+        size: 90,
+      },
+      {
         id: 'payment',
         header: t('Payment Channel'),
         meta: { mobileHidden: true },

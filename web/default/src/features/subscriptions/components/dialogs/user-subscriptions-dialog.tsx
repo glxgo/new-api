@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { formatQuota } from '@/lib/format'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -296,12 +297,23 @@ export function UserSubscriptionsDialog(props: Props) {
                 },
                 {
                   id: 'quota',
-                  header: t('Total Quota'),
+                  header: t('Remaining Quota'),
                   cell: (record) => {
                     const sub = record.subscription
                     const total = Number(sub.amount_total || 0)
                     const used = Number(sub.amount_used || 0)
-                    return total > 0 ? `${used}/${total}` : t('Unlimited')
+                    if (total <= 0) return t('Unlimited')
+                    const remain = total - used
+                    return (
+                      <div className='flex flex-col'>
+                        <span className='font-mono font-semibold'>
+                          {formatQuota(remain)}
+                        </span>
+                        <span className='text-muted-foreground text-xs'>
+                          {formatQuota(used)} / {formatQuota(total)}
+                        </span>
+                      </div>
+                    )
                   },
                 },
                 {

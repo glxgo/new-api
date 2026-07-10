@@ -40,6 +40,8 @@ export const subscriptionPlanSchema = z.object({
   total_amount: z.number(),
   upgrade_group: z.string().optional(),
   allowed_group: z.string().optional(),
+  recommended: z.boolean().optional(),
+  min_ratio: z.number().optional(),
   stripe_price_id: z.string().optional(),
   creem_product_id: z.string().optional(),
   waffo_pancake_product_id: z.string().optional(),
@@ -49,6 +51,15 @@ export type SubscriptionPlan = z.infer<typeof subscriptionPlanSchema>
 
 export interface PlanRecord {
   plan: SubscriptionPlan
+  subscriber_count?: number
+  active_count?: number
+}
+
+export type SubscriberSummary = {
+  user_id: number
+  username: string
+  total_count: number
+  active_count: number
 }
 
 // ============================================================================

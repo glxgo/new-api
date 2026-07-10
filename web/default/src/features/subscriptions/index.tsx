@@ -16,10 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Info } from 'lucide-react'
+import { useState } from 'react'
+import { Info, Users } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import { SectionPageLayout } from '@/components/layout'
+import { SubscribersDialog } from './components/subscribers-dialog'
 import { SubscriptionsDialogs } from './components/subscriptions-dialogs'
 import { SubscriptionsPrimaryButtons } from './components/subscriptions-primary-buttons'
 import {
@@ -31,6 +34,7 @@ import { SubscriptionsTable } from './components/subscriptions-table'
 function SubscriptionsContent() {
   const { t } = useTranslation()
   const { complianceConfirmed } = useSubscriptions()
+  const [subscribersOpen, setSubscribersOpen] = useState(false)
 
   return (
     <>
@@ -48,6 +52,14 @@ function SubscriptionsContent() {
                 )}
               </AlertDescription>
             </Alert>
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={() => setSubscribersOpen(true)}
+            >
+              <Users className='h-4 w-4' />
+              {t('Subscribers')}
+            </Button>
             <SubscriptionsPrimaryButtons />
           </div>
         </SectionPageLayout.Actions>
@@ -70,6 +82,10 @@ function SubscriptionsContent() {
       </SectionPageLayout>
 
       <SubscriptionsDialogs />
+      <SubscribersDialog
+        open={subscribersOpen}
+        onOpenChange={setSubscribersOpen}
+      />
     </>
   )
 }

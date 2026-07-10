@@ -59,6 +59,15 @@ import type {
 } from '@/features/subscriptions/types'
 import type { PaymentMethod, TopupInfo } from '../types'
 
+// 套餐卡片配色轮换(顶部色条+售价+能量条), 每张卡不同色
+const PLAN_ACCENTS = [
+  { bar: 'from-sky-500 to-blue-500', price: 'text-sky-600 dark:text-sky-400' },
+  { bar: 'from-violet-500 to-purple-500', price: 'text-violet-600 dark:text-violet-400' },
+  { bar: 'from-emerald-500 to-teal-500', price: 'text-emerald-600 dark:text-emerald-400' },
+  { bar: 'from-amber-500 to-orange-500', price: 'text-amber-600 dark:text-amber-400' },
+  { bar: 'from-rose-500 to-pink-500', price: 'text-rose-600 dark:text-rose-400' },
+] as const
+
 interface SubscriptionPlansCardProps {
   topupInfo: TopupInfo | null
   onAvailabilityChange?: (available: boolean) => void
@@ -512,37 +521,59 @@ export function SubscriptionPlansCard({
 
         {/* Available plans grid */}
         {plans.length > 0 ? (
-          <div className='grid grid-cols-1 gap-3 2xl:grid-cols-2 2xl:gap-4'>
+          <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:gap-4'>
             {plans.map((p, index) => {
               const plan = p?.plan
               if (!plan) return null
               const totalAmount = Number(plan.total_amount || 0)
               const price = Number(plan.price_amount || 0).toFixed(2)
-              const isPopular = index === 0 && plans.length > 1
+              const accent = PLAN_ACCENTS[index % PLAN_ACCENTS.length]
+              const isPopular = Boolean(plan.recommended) || (index === 0 && plans.length > 1)
               const limit = Number(plan.max_purchase_per_user || 0)
               const count = planPurchaseCountMap.get(plan.id) || 0
               const reached = limit > 0 && count >= limit
 
+              // 限额标签按重置周期动态: daily→日限额/weekly→周限额/monthly→月限额
+              const limitLabel =
+                plan.quota_reset_period === 'daily'
+                  ? t('Daily Limit')
+                  : plan.quota_reset_period === 'weekly'
+                    ? t('Weekly Limit')
+                    : plan.quota_reset_period === 'monthly'
+                      ? t('Monthly Limit')
+                      : t('Total Quota')
               const benefits = [
-                `${t('Validity Period')}: ${formatDuration(plan, t)}`,
+                { label: t('Validity Period'), value: formatDuration(plan, t) },
                 formatResetPeriod(plan, t) !== t('No Reset')
-                  ? `${t('Quota Reset')}: ${formatResetPeriod(plan, t)}`
+                  ? { label: t('Quota Reset'), value: formatResetPeriod(plan, t) }
                   : null,
-                totalAmount > 0
-                  ? `${t('Total Quota')}: ${formatQuota(totalAmount)}`
-                  : `${t('Total Quota')}: ${t('Unlimited')}`,
-                limit > 0 ? `${t('Purchase Limit')}: ${limit}` : null,
+                {
+                  label: limitLabel,
+                  value: totalAmount > 0 ? formatQuota(totalAmount) : t('Unlimited'),
+                },
+                plan.min_ratio
+                  ? { label: t('Min Ratio'), value: `×${plan.min_ratio}` }
+                  : null,
+                plan.allowed_group
+                  ? { label: t('Allowed Group'), value: plan.allowed_group }
+                  : null,
+                limit > 0 ? { label: t('Purchase Limit'), value: String(limit) } : null,
                 plan.upgrade_group
-                  ? `${t('Upgrade Group')}: ${plan.upgrade_group}`
+                  ? { label: t('Upgrade Group'), value: plan.upgrade_group }
                   : null,
-              ].filter(Boolean) as string[]
+              ].filter(Boolean) as { label: string; value: string }[]
 
               return (
                 <Card
                   key={plan.id}
                   data-card-hover='false'
-                  className={cn(isPopular && 'border-primary/70 shadow-sm')}
+                  className={cn(
+                    'group relative overflow-hidden from-primary/5 to-card bg-gradient-to-br transition-all duration-300 hover:scale-[1.03] hover:shadow-md',
+                    isPopular &&
+                      'border-primary/70 shadow-md ring-2 ring-primary/20'
+                  )}
                 >
+                  <div className={cn('absolute inset-x-0 top-0 h-1 bg-gradient-to-r', accent.bar)} />
                   <CardContent className='flex h-full flex-col p-3.5 sm:p-4'>
                     <div className='mb-2 flex items-start justify-between gap-3'>
                       <div className='min-w-0'>
@@ -550,7 +581,7 @@ export function SubscriptionPlansCard({
                           {plan.title || t('Subscription Plans')}
                         </h4>
                         {plan.subtitle && (
-                          <p className='text-muted-foreground truncate text-xs'>
+                          <p className='text-muted-foreground line-clamp-3 text-xs'>
                             {plan.subtitle}
                           </p>
                         )}
@@ -568,19 +599,22 @@ export function SubscriptionPlansCard({
                     </div>
 
                     <div className='py-2'>
-                      <span className='text-primary text-2xl font-bold'>
+                      <span className={cn('text-2xl font-bold', accent.price)}>
                         ${price}
                       </span>
                     </div>
 
                     <div className='flex-1 space-y-1.5 pb-3'>
-                      {benefits.map((label) => (
+                      {benefits.map((b) => (
                         <div
-                          key={label}
-                          className='text-muted-foreground flex items-center gap-2 text-xs'
+                          key={b.label}
+                          className='text-muted-foreground flex items-center gap-1.5 text-xs'
                         >
                           <Check className='text-primary h-3 w-3 shrink-0' />
-                          <span>{label}</span>
+                          <span>{b.label}:</span>
+                          <span className='text-primary font-mono text-sm font-bold'>
+                            {b.value}
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -610,6 +644,11 @@ export function SubscriptionPlansCard({
                         {t('Subscribe Now')}
                       </Button>
                     )}
+
+                    {/* 能量条：默认50%，hover充到80%（与其他卡片一致） */}
+                    <div className='mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted'>
+                      <div className={cn('h-full w-full origin-left scale-x-50 rounded-full bg-gradient-to-r transition-transform duration-500 ease-out group-hover:scale-x-[0.8]', accent.bar)} />
+                    </div>
                   </CardContent>
                 </Card>
               )

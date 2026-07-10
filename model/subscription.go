@@ -176,6 +176,11 @@ type SubscriptionPlan struct {
 	// AllowedGroup: 订阅级分组限制。非空时订阅额度只能用于该分组(不改 user.group, 与 UpgradeGroup 互斥)
 	AllowedGroup string `json:"allowed_group" gorm:"type:varchar(64);default:''"`
 
+	// Recommended: 前台展示「推荐」标记
+	Recommended bool `json:"recommended" gorm:"default:false"`
+	// MinRatio: 最低倍率(展示用, 如 0.35 表示该套餐分组模型最低 0.35 折)
+	MinRatio float64 `json:"min_ratio" gorm:"default:0"`
+
 	// Total quota (amount in quota units, 0 = unlimited)
 	TotalAmount int64 `json:"total_amount" gorm:"type:bigint;not null;default:0"`
 
@@ -598,10 +603,6 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 	if logUserId > 0 {
 		msg := fmt.Sprintf("订阅购买成功，套餐: %s，支付金额: %.2f，支付方式: %s", logPlanTitle, logMoney, logPaymentMethod)
 		RecordLog(logUserId, LogTypeTopup, msg)
-		// 购买时分润: 按订单金额一次性分润给推荐人/管理员/超管(兑换码兑换不调此)
-		if orderQuota, qErr := calcSubscriptionBalanceQuota(logMoney); qErr == nil && orderQuota > 0 {
-			SettleOrderDividend(logUserId, int64(orderQuota), tradeNo)
-		}
 	}
 	return nil
 }
@@ -791,10 +792,6 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 	}
 	msg := fmt.Sprintf("使用余额购买订阅成功，套餐: %s，支付金额: %.2f，扣除额度: %d", logPlanTitle, logMoney, chargedQuota)
 	RecordLog(userId, LogTypeTopup, msg)
-	// 购买时分润(兑换码兑换不调此)
-	if chargedQuota > 0 {
-		SettleOrderDividend(userId, int64(chargedQuota), tradeNo)
-	}
 	return nil
 }
 
@@ -877,6 +874,27 @@ func GetAllUserSubscriptions(userId int) ([]SubscriptionSummary, error) {
 	return buildSubscriptionSummaries(subs), nil
 }
 
+// SubscriberSummary 订阅用户汇总(超管「订阅用户列表」用)
+type SubscriberSummary struct {
+	UserId      int    `json:"user_id" gorm:"column:user_id"`
+	Username    string `json:"username" gorm:"column:username"`
+	TotalCount  int    `json:"total_count" gorm:"column:total_count"`
+	ActiveCount int    `json:"active_count" gorm:"column:active_count"`
+}
+
+// GetSubscriptionSubscribers 返回所有买过套餐的用户(含总订阅数 + 未到期数)。
+func GetSubscriptionSubscribers() ([]SubscriberSummary, error) {
+	var results []SubscriberSummary
+	now := GetDBTimestamp()
+	err := DB.Model(&UserSubscription{}).
+		Select("user_subscriptions.user_id as user_id, users.username as username, COUNT(*) as total_count, SUM(CASE WHEN user_subscriptions.status = 'active' AND user_subscriptions.end_time > ? THEN 1 ELSE 0 END) as active_count", now).
+		Joins("JOIN users ON users.id = user_subscriptions.user_id").
+		Group("user_subscriptions.user_id").
+		Order("total_count desc").
+		Find(&results).Error
+	return results, err
+}
+
 func buildSubscriptionSummaries(subs []UserSubscription) []SubscriptionSummary {
 	if len(subs) == 0 {
 		return []SubscriptionSummary{}
@@ -900,8 +918,8 @@ func AdminInvalidateUserSubscription(userSubscriptionId int) (string, error) {
 	cacheGroup := ""
 	downgradeGroup := ""
 	var userId int
+	var sub UserSubscription
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		var sub UserSubscription
 		if err := tx.Set("gorm:query_option", "FOR UPDATE").
 			Where("id = ?", userSubscriptionId).First(&sub).Error; err != nil {
 			return err
@@ -930,6 +948,8 @@ func AdminInvalidateUserSubscription(userSubscriptionId int) (string, error) {
 	if cacheGroup != "" && userId > 0 {
 		_ = UpdateUserGroupCache(userId, cacheGroup)
 	}
+	// 失效分润(post-commit): 按实际利润结算(利润≤0不分润)
+	settleSubscriptionEndForSub(&sub)
 	if downgradeGroup != "" {
 		return fmt.Sprintf("用户分组将回退到 %s", downgradeGroup), nil
 	}
@@ -945,8 +965,8 @@ func AdminDeleteUserSubscription(userSubscriptionId int) (string, error) {
 	cacheGroup := ""
 	downgradeGroup := ""
 	var userId int
+	var sub UserSubscription
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		var sub UserSubscription
 		if err := tx.Set("gorm:query_option", "FOR UPDATE").
 			Where("id = ?", userSubscriptionId).First(&sub).Error; err != nil {
 			return err
@@ -971,10 +991,33 @@ func AdminDeleteUserSubscription(userSubscriptionId int) (string, error) {
 	if cacheGroup != "" && userId > 0 {
 		_ = UpdateUserGroupCache(userId, cacheGroup)
 	}
+	// 删除前已存 sub 值, 删除后按实际利润结算(利润≤0不分润)
+	settleSubscriptionEndForSub(&sub)
 	if downgradeGroup != "" {
 		return fmt.Sprintf("用户分组将回退到 %s", downgradeGroup), nil
 	}
 	return "", nil
+}
+
+// settleSubscriptionEndForSub 套餐结束时按实际利润分润(复用 SettleSubscriptionEndDividend)。
+// 取订阅的 AllowedGroup(优先)/UpgradeGroup + AmountUsed + 套餐价, 供 AdminInvalidate/AdminDelete/Expire 调用。
+func settleSubscriptionEndForSub(sub *UserSubscription) {
+	if sub == nil || sub.UserId <= 0 {
+		return
+	}
+	subGroup := strings.TrimSpace(sub.AllowedGroup)
+	if subGroup == "" {
+		subGroup = strings.TrimSpace(sub.UpgradeGroup)
+	}
+	plan, pErr := GetSubscriptionPlanById(sub.PlanId)
+	if pErr != nil || plan == nil {
+		return
+	}
+	priceQuota, qErr := calcSubscriptionBalanceQuota(plan.PriceAmount)
+	if qErr != nil || priceQuota <= 0 {
+		return
+	}
+	SettleSubscriptionEndDividend(sub.UserId, sub.Id, int64(priceQuota), sub.AmountUsed, subGroup)
 }
 
 type SubscriptionPreConsumeResult struct {
@@ -1068,6 +1111,26 @@ func ExpireDueSubscriptions(limit int) (int, error) {
 		if cacheGroup != "" {
 			_ = UpdateUserGroupCache(userId, cacheGroup)
 		}
+	}
+
+	// 到期分润(post-commit): 逐条按实际利润结算(利润=套餐价-反推成本, ≤0不分润)
+	for _, sub := range subs {
+		if sub.UserId <= 0 {
+			continue
+		}
+		subGroup := strings.TrimSpace(sub.AllowedGroup)
+		if subGroup == "" {
+			subGroup = strings.TrimSpace(sub.UpgradeGroup)
+		}
+		plan, pErr := GetSubscriptionPlanById(sub.PlanId)
+		if pErr != nil || plan == nil {
+			continue
+		}
+		priceQuota, qErr := calcSubscriptionBalanceQuota(plan.PriceAmount)
+		if qErr != nil || priceQuota <= 0 {
+			continue
+		}
+		SettleSubscriptionEndDividend(sub.UserId, sub.Id, int64(priceQuota), sub.AmountUsed, subGroup)
 	}
 	return expiredCount, nil
 }

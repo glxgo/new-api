@@ -15,7 +15,9 @@ import (
 // ---- Shared types ----
 
 type SubscriptionPlanDTO struct {
-	Plan model.SubscriptionPlan `json:"plan"`
+	Plan            model.SubscriptionPlan `json:"plan"`
+	SubscriberCount int                    `json:"subscriber_count"` // 总购买数
+	ActiveCount     int                    `json:"active_count"`     // 未到期数
 }
 
 type BillingPreferenceRequest struct {
@@ -124,14 +126,42 @@ func AdminListSubscriptionPlans(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// 统计每个套餐的购买数 + 未到期数
+	now := common.GetTimestamp()
+	type planStat struct {
+		PlanId int
+		Total  int
+		Active int
+	}
+	var stats []planStat
+	model.DB.Model(&model.UserSubscription{}).
+		Select("plan_id, COUNT(*) as total, SUM(CASE WHEN status = 'active' AND end_time > ? THEN 1 ELSE 0 END) as active", now).
+		Group("plan_id").Find(&stats)
+	statMap := make(map[int]planStat, len(stats))
+	for _, s := range stats {
+		statMap[s.PlanId] = s
+	}
 	result := make([]SubscriptionPlanDTO, 0, len(plans))
 	for _, p := range plans {
 		p.NormalizeDefaults()
+		s := statMap[p.Id]
 		result = append(result, SubscriptionPlanDTO{
-			Plan: p,
+			Plan:            p,
+			SubscriberCount: s.Total,
+			ActiveCount:     s.Active,
 		})
 	}
 	common.ApiSuccess(c, result)
+}
+
+// GetSubscriptionSubscribers 返回所有买过套餐的用户列表(超管「订阅用户」入口)。
+func GetSubscriptionSubscribers(c *gin.Context) {
+	results, err := model.GetSubscriptionSubscribers()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, results)
 }
 
 type AdminUpsertSubscriptionPlanRequest struct {
@@ -297,6 +327,8 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 			"total_amount":               req.Plan.TotalAmount,
 			"upgrade_group":              req.Plan.UpgradeGroup,
 			"allowed_group":              req.Plan.AllowedGroup,
+			"recommended":                req.Plan.Recommended,
+			"min_ratio":                  req.Plan.MinRatio,
 			"quota_reset_period":         req.Plan.QuotaResetPeriod,
 			"quota_reset_custom_seconds": req.Plan.QuotaResetCustomSeconds,
 			"updated_at":                 common.GetTimestamp(),

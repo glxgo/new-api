@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/shopspring/decimal"
 )
 
@@ -128,4 +129,47 @@ func SettleOrderDividend(buyerUserId int, orderQuota int64, sourceRef string) {
 			common.SysError(fmt.Sprintf("SettleOrderDividend increase dividend failed uid=%d: %v", uid, err))
 		}
 	}
+}
+
+// SettleSubscriptionEndDividend 套餐到期/失效时按实际利润分润。
+// 利润 = priceQuota - costQuota; costQuota 从已用额度反推(amountUsed/groupRatio×costRatio)。
+// 利润≤0(用户消费超购买价)不分润, 平台承担。sourceRef = sub-end-{subId}, 幂等。
+// 复用 SettleOrderDividend 的 Order 比例分发(base=profit)。
+func SettleSubscriptionEndDividend(buyerUserId, subId int, priceQuota, amountUsed int64, group string) {
+	if buyerUserId <= 0 || priceQuota <= 0 {
+		return
+	}
+	sourceRef := fmt.Sprintf("sub-end-%d", subId)
+	// 幂等: 同一 subId 已结算则跳过
+	if exists, err := HasDividendRecordBySourceRef(sourceRef); err != nil {
+		common.SysError("SettleSubscriptionEndDividend idempotency check failed: " + err.Error())
+		return
+	} else if exists {
+		return
+	}
+	costQuota := calcSubscriptionCostFromAmountUsed(amountUsed, group)
+	profit := priceQuota - costQuota
+	if profit <= 0 {
+		common.SysLog(fmt.Sprintf("SettleSubscriptionEndDividend skip: subId=%d profit=%d<=0 (price=%d cost=%d)", subId, profit, priceQuota, costQuota))
+		return
+	}
+	// 复用 SettleOrderDividend 按 profit 分发(Order 比例)
+	SettleOrderDividend(buyerUserId, profit, sourceRef)
+}
+
+// calcSubscriptionCostFromAmountUsed 从已用额度(售价口径)反推平台成本(quota)。
+// cost = amountUsed / GroupRatio[group] × GroupCostRatio[group]; AllowedGroup(group恒定)精确。
+func calcSubscriptionCostFromAmountUsed(amountUsed int64, group string) int64 {
+	if amountUsed <= 0 || group == "" {
+		return 0
+	}
+	groupRatio := ratio_setting.GetGroupRatio(group)
+	if groupRatio <= 0 {
+		groupRatio = 1
+	}
+	costRatio := ratio_setting.GetGroupCostRatio(group)
+	dAmount := decimal.NewFromInt(amountUsed)
+	dGroup := decimal.NewFromFloat(groupRatio)
+	dCost := decimal.NewFromFloat(costRatio)
+	return dAmount.Div(dGroup).Mul(dCost).Round(0).IntPart()
 }

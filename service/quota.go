@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -498,6 +499,13 @@ func checkAndSendQuotaNotify(relayInfo *relaycommon.RelayInfo, quota int, preCon
 			quotaTooLow = true
 		}
 		if quotaTooLow {
+			// 限频: 每用户每小时最多1次余额预警, 避免余额低时每次请求都发邮件
+			if common.RedisEnabled && common.RDB != nil {
+				key := fmt.Sprintf("quota_warn:%d", relayInfo.UserId)
+				if ok, err := common.RDB.SetNX(context.Background(), key, 1, time.Hour).Result(); err == nil && !ok {
+					return
+				}
+			}
 			prompt := "您的额度即将用尽"
 			topUpLink := PaymentReturnURL("/console/topup")
 
@@ -550,6 +558,13 @@ func checkAndSendSubscriptionQuotaNotify(relayInfo *relaycommon.RelayInfo) {
 		remaining := relayInfo.SubscriptionAmountTotal - usedAfter
 		if remaining >= int64(threshold) {
 			return
+		}
+		// 限频: 每用户每小时最多1次订阅额度预警
+		if common.RedisEnabled && common.RDB != nil {
+			key := fmt.Sprintf("sub_quota_warn:%d", relayInfo.UserId)
+			if ok, err := common.RDB.SetNX(context.Background(), key, 1, time.Hour).Result(); err == nil && !ok {
+				return
+			}
 		}
 
 		prompt := "您的订阅额度即将用尽"
