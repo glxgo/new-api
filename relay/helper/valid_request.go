@@ -169,7 +169,7 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 				imageRequest.Image, _ = common.Marshal(imageValue)
 			}
 
-			if imageRequest.Model == "gpt-image-1" {
+			if strings.HasPrefix(imageRequest.Model, "gpt-image") {
 				if imageRequest.Quality == "" {
 					imageRequest.Quality = "standard"
 				}
@@ -219,7 +219,7 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 			if imageRequest.Size == "" {
 				imageRequest.Size = "1024x1024"
 			}
-		} else if imageRequest.Model == "gpt-image-1" {
+		} else if strings.HasPrefix(imageRequest.Model, "gpt-image") {
 			if imageRequest.Quality == "" {
 				imageRequest.Quality = "auto"
 			}

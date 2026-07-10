@@ -24,7 +24,6 @@ import { formatQuota } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
-import { Progress } from '@/components/ui/progress'
 import {
   Select,
   SelectContent,
@@ -404,7 +403,7 @@ export function SubscriptionPlansCard({
           {hasAny && (
             <>
               <Separator className='my-3' />
-              <div className='max-h-64 space-y-3 overflow-y-auto pr-1'>
+              <div className='grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-4'>
                 {allSubscriptions.map((sub) => {
                   const subscription = sub.subscription
                   const totalAmount = Number(subscription?.amount_total || 0)
@@ -424,72 +423,52 @@ export function SubscriptionPlansCard({
                   return (
                     <div
                       key={subscription?.id}
-                      className='bg-background rounded-md border p-3 text-xs'
+                      className='bg-card flex flex-col gap-2 rounded-lg border p-3 shadow-sm'
                     >
-                      <div className='flex items-center justify-between'>
-                        <div className='flex items-center gap-2'>
-                          <span className='font-medium'>
-                            {planTitle
-                              ? `${planTitle} · ${t('Subscription')} #${subscription?.id}`
-                              : `${t('Subscription')} #${subscription?.id}`}
-                          </span>
-                          {isActive ? (
-                            <StatusBadge
-                              label={t('Active')}
-                              variant='success'
-                              copyable={false}
-                            />
-                          ) : isCancelled ? (
-                            <StatusBadge
-                              label={t('Cancelled')}
-                              variant='neutral'
-                              copyable={false}
-                            />
-                          ) : (
-                            <StatusBadge
-                              label={t('Expired')}
-                              variant='neutral'
-                              copyable={false}
-                            />
-                          )}
-                        </div>
-                        {isActive && (
-                          <span className='text-muted-foreground'>
-                            {t('{{count}} days remaining', {
-                              count: remainDays,
-                            })}
-                          </span>
+                      <div className='flex items-start justify-between gap-1.5'>
+                        <span className='text-xs leading-tight font-semibold line-clamp-2'>
+                          {planTitle ||
+                            `${t('Subscription')} #${subscription?.id}`}
+                        </span>
+                        {isActive ? (
+                          <StatusBadge
+                            label={t('Active')}
+                            variant='success'
+                            copyable={false}
+                          />
+                        ) : isCancelled ? (
+                          <StatusBadge
+                            label={t('Cancelled')}
+                            variant='neutral'
+                            copyable={false}
+                          />
+                        ) : (
+                          <StatusBadge
+                            label={t('Expired')}
+                            variant='neutral'
+                            copyable={false}
+                          />
                         )}
                       </div>
-                      <div className='text-muted-foreground mt-1.5'>
-                        {isActive
-                          ? t('Until')
-                          : isCancelled
-                            ? t('Cancelled at')
-                            : t('Expired at')}{' '}
-                        {new Date(
-                          (subscription?.end_time || 0) * 1000
-                        ).toLocaleString()}
-                      </div>
-                      {isActive && (subscription?.next_reset_time ?? 0) > 0 && (
-                        <div className='text-muted-foreground mt-1'>
-                          {t('Next reset')}:{' '}
-                          {new Date(
-                            subscription!.next_reset_time! * 1000
-                          ).toLocaleString()}
-                        </div>
+
+                      {isActive ? (
+                        <span className='text-xs font-medium text-emerald-500'>
+                          {t('{{count}} days remaining', {
+                            count: remainDays,
+                          })}
+                        </span>
+                      ) : (
+                        <span className='text-muted-foreground text-xs font-medium'>
+                          {isCancelled ? t('Cancelled') : t('Expired')}
+                        </span>
                       )}
+
                       {totalAmount > 0 ? (
-                        <div className='mt-2'>
-                          <div className='flex items-baseline justify-between gap-2'>
-                            <div className='flex items-baseline gap-1'>
-                              <span className='text-primary text-sm font-bold'>
-                                {formatQuota(remainAmount)}
-                              </span>
-                              <span className='text-muted-foreground text-xs'>
-                                / {formatQuota(totalAmount)} {t('Remaining')}
-                              </span>
-                            </div>
+                        <div className='space-y-1.5'>
+                          <div className='flex items-baseline justify-between gap-1'>
+                            <span className='text-primary text-base font-bold'>
+                              {formatQuota(remainAmount)}
+                            </span>
                             <Tooltip>
                               <TooltipTrigger
                                 render={<span className='cursor-help' />}
@@ -504,7 +483,7 @@ export function SubscriptionPlansCard({
                                         : 'text-muted-foreground'
                                   )}
                                 >
-                                  {t('Used')} {usagePercent}%
+                                  {usagePercent}%
                                 </span>
                               </TooltipTrigger>
                               <TooltipContent>
@@ -513,26 +492,41 @@ export function SubscriptionPlansCard({
                               </TooltipContent>
                             </Tooltip>
                           </div>
-                          {isActive && (
-                            <Progress
-                              value={usagePercent}
+                          <div className='bg-muted h-1.5 w-full overflow-hidden rounded-full'>
+                            <div
                               className={cn(
-                                'mt-1.5',
-                                '[&_[data-slot=progress-track]]:h-2',
+                                'h-full rounded-full transition-all',
                                 usagePercent >= 90
-                                  ? '[&_[data-slot=progress-indicator]]:bg-rose-500'
+                                  ? 'bg-rose-500'
                                   : usagePercent >= 70
-                                    ? '[&_[data-slot=progress-indicator]]:bg-amber-500'
-                                    : '[&_[data-slot=progress-indicator]]:bg-emerald-500'
+                                    ? 'bg-amber-500'
+                                    : 'bg-emerald-500'
                               )}
+                              style={{
+                                width: `${Math.min(100, usagePercent)}%`,
+                              }}
                             />
-                          )}
+                          </div>
+                          <div className='text-muted-foreground truncate text-[10px]'>
+                            / {formatQuota(totalAmount)} {t('Total')}
+                          </div>
                         </div>
                       ) : (
-                        <div className='text-muted-foreground mt-2 text-xs'>
+                        <span className='text-muted-foreground text-xs'>
                           {t('Unlimited')}
-                        </div>
+                        </span>
                       )}
+
+                      <div className='text-muted-foreground mt-auto truncate text-[10px]'>
+                        {isActive
+                          ? t('Until')
+                          : isCancelled
+                            ? t('Cancelled at')
+                            : t('Expired at')}{' '}
+                        {new Date(
+                          (subscription?.end_time || 0) * 1000
+                        ).toLocaleDateString()}
+                      </div>
                     </div>
                   )
                 })}
