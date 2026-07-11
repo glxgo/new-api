@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -488,11 +489,38 @@ func PostConsumeQuota(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQu
 
 	if sendEmail {
 		if (quota + preConsumedQuota) != 0 {
-			checkAndSendQuotaNotify(relayInfo, quota, preConsumedQuota)
+			if relayInfo.BillingSource == BillingSourceSubscription {
+				checkAndSendSubscriptionQuotaNotify(relayInfo)
+			} else {
+				checkAndSendQuotaNotify(relayInfo, quota, preConsumedQuota)
+			}
 		}
 	}
 
 	return nil
+}
+
+// quotaWarnLastSent 内存限流兜底(Redis 故障/未启用时生效), 每用户每小时最多1次余额预警.
+var quotaWarnLastSent sync.Map
+
+// shouldSkipQuotaWarn 余额预警限流: 订阅与钱包共享同一窗口, 每用户每小时最多1次.
+// Redis SETNX 优先(跨实例一致), 故障/未启用时回退内存 map(单实例兜底).
+// 返回 true 表示本次应跳过(已被限流).
+func shouldSkipQuotaWarn(userId int) bool {
+	if common.RedisEnabled && common.RDB != nil {
+		key := fmt.Sprintf("quota_warn:%d", userId)
+		ok, err := common.RDB.SetNX(context.Background(), key, 1, time.Hour).Result()
+		if err == nil {
+			return !ok // ok=true→刚设置→放行; ok=false→已存在→跳过
+		}
+		// Redis 调用出错 → 走内存兜底, 避免 Redis 抖动时双发
+	}
+	now := time.Now().Unix()
+	if last, ok := quotaWarnLastSent.Load(userId); ok && now-last.(int64) < 3600 {
+		return true
+	}
+	quotaWarnLastSent.Store(userId, now)
+	return false
 }
 
 func checkAndSendQuotaNotify(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQuota int) {
@@ -510,12 +538,9 @@ func checkAndSendQuotaNotify(relayInfo *relaycommon.RelayInfo, quota int, preCon
 			quotaTooLow = true
 		}
 		if quotaTooLow {
-			// 限频: 每用户每小时最多1次余额预警, 避免余额低时每次请求都发邮件
-			if common.RedisEnabled && common.RDB != nil {
-				key := fmt.Sprintf("quota_warn:%d", relayInfo.UserId)
-				if ok, err := common.RDB.SetNX(context.Background(), key, 1, time.Hour).Result(); err == nil && !ok {
-					return
-				}
+			// 限频: 每用户每小时最多1次余额预警(订阅/钱包共享, Redis 故障走内存兜底)
+			if shouldSkipQuotaWarn(relayInfo.UserId) {
+				return
 			}
 			prompt := "您的额度即将用尽"
 			topUpLink := PaymentReturnURL("/console/topup")
@@ -570,12 +595,9 @@ func checkAndSendSubscriptionQuotaNotify(relayInfo *relaycommon.RelayInfo) {
 		if remaining >= int64(threshold) {
 			return
 		}
-		// 限频: 每用户每小时最多1次订阅额度预警
-		if common.RedisEnabled && common.RDB != nil {
-			key := fmt.Sprintf("sub_quota_warn:%d", relayInfo.UserId)
-			if ok, err := common.RDB.SetNX(context.Background(), key, 1, time.Hour).Result(); err == nil && !ok {
-				return
-			}
+		// 限频: 与钱包余额提醒共享, 每用户每小时最多1次
+		if shouldSkipQuotaWarn(relayInfo.UserId) {
+			return
 		}
 
 		prompt := "您的订阅额度即将用尽"

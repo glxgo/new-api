@@ -148,7 +148,7 @@ type SubscriptionPlan struct {
 	Id int `json:"id"`
 
 	Title    string `json:"title" gorm:"type:varchar(128);not null"`
-	Subtitle     string `json:"subtitle" gorm:"type:varchar(255);default:''"`
+	Subtitle string `json:"subtitle" gorm:"type:varchar(255);default:''"`
 	// Description: 套餐详细介绍(用户订阅时弹出展示, "已阅读"关闭/"永不展示"localStorage 记住)
 	Description string `json:"description" gorm:"type:text"`
 
@@ -1462,7 +1462,25 @@ func PostConsumeUserSubscriptionDelta(userSubscriptionId int, delta int64) error
 		if sub.AmountTotal > 0 && newUsed > sub.AmountTotal {
 			return fmt.Errorf("subscription used exceeds total, used=%d total=%d", newUsed, sub.AmountTotal)
 		}
+		newCapUsed := sub.AmountCapUsed
+		if sub.AmountCap > 0 {
+			newCapUsed += delta
+			if newCapUsed < 0 {
+				newCapUsed = 0
+			}
+			if newCapUsed > sub.AmountCap {
+				return fmt.Errorf("subscription cap used exceeds cap, used=%d cap=%d", newCapUsed, sub.AmountCap)
+			}
+		}
 		sub.AmountUsed = newUsed
+		sub.AmountCapUsed = newCapUsed
+		if sub.AmountCap > 0 {
+			if sub.AmountCapUsed >= sub.AmountCap {
+				sub.Status = "expired"
+			} else if sub.Status == "expired" && sub.EndTime > GetDBTimestamp() {
+				sub.Status = "active"
+			}
+		}
 		return tx.Save(&sub).Error
 	})
 }

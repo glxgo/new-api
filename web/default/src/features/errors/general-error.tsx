@@ -26,6 +26,7 @@ const FEEDBACK_URL = 'https://github.com/QuantumNous/new-api/issues'
 type GeneralErrorProps = React.HTMLAttributes<HTMLDivElement> & {
   minimal?: boolean
   error?: unknown
+  reset?: () => void
 }
 
 function getHttpStatus(error: unknown): number | undefined {
@@ -40,10 +41,12 @@ export function GeneralError({
   className,
   minimal = false,
   error,
+  reset,
 }: GeneralErrorProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { history } = useRouter()
+  const router = useRouter()
+  const { history } = router
   const status = getHttpStatus(error)
   const isRateLimited = status === 429
   const title = isRateLimited
@@ -52,6 +55,15 @@ export function GeneralError({
   const description = isRateLimited
     ? t('Please wait a moment before trying again.')
     : t('Please try again later.')
+
+  const handleRetry = async () => {
+    reset?.()
+    try {
+      await router.invalidate()
+    } catch {
+      window.location.reload()
+    }
+  }
 
   return (
     <div className={cn('h-svh w-full', className)}>
@@ -72,6 +84,7 @@ export function GeneralError({
         )}
         {!minimal && (
           <div className='mt-6 flex flex-wrap justify-center gap-4'>
+            <Button onClick={handleRetry}>{t('Try again')}</Button>
             <Button variant='outline' onClick={() => history.go(-1)}>
               {t('Go Back')}
             </Button>

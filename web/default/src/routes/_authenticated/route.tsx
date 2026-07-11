@@ -17,12 +17,26 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { createFileRoute, redirect } from '@tanstack/react-router'
-import { useAuthStore } from '@/stores/auth-store'
-import { getSelf } from '@/lib/api'
 import { AuthenticatedLayout } from '@/components/layout'
+import { getSelf } from '@/lib/api'
+import { useAuthStore } from '@/stores/auth-store'
 
-// 内存中的验证标记，避免同一会话中重复验证
-let sessionVerified = false
+const VERIFIED_USER_KEY = 'new-api:verified-user-id'
+
+function getVerifiedUserId() {
+  if (typeof window === 'undefined') return null
+  return window.sessionStorage.getItem(VERIFIED_USER_KEY)
+}
+
+function setVerifiedUserId(userId: number) {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.setItem(VERIFIED_USER_KEY, String(userId))
+}
+
+function clearVerifiedUserId() {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.removeItem(VERIFIED_USER_KEY)
+}
 
 export const Route = createFileRoute('/_authenticated')({
   beforeLoad: async ({ location }) => {
@@ -36,15 +50,17 @@ export const Route = createFileRoute('/_authenticated')({
       })
     }
 
-    // 本地有用户信息，但需要验证 session 是否有效（每个会话只验证一次）
-    if (!sessionVerified) {
+    // 本地有用户信息，但需要按当前用户验证 session 是否有效。
+    // 不使用模块级变量，避免退出/切号/热更新后复用旧验证状态。
+    if (getVerifiedUserId() !== String(auth.user.id)) {
       const res = await getSelf().catch(() => null)
       if (res?.success && res.data) {
         // 验证成功，更新用户信息（可能有变化）
         auth.setUser(res.data)
-        sessionVerified = true
+        setVerifiedUserId(res.data.id)
       } else {
         // 验证失败或 API 调用失败，清除本地缓存并跳转登录页
+        clearVerifiedUserId()
         auth.reset()
         throw redirect({
           to: '/sign-in',
