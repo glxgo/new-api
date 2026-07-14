@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -131,45 +132,106 @@ func SettleOrderDividend(buyerUserId int, orderQuota int64, sourceRef string) {
 	}
 }
 
-// SettleSubscriptionEndDividend 套餐到期/失效时按实际利润分润。
-// 利润 = priceQuota - costQuota; costQuota 从已用额度反推(amountUsed/groupRatio×costRatio)。
-// 利润≤0(用户消费超购买价)不分润, 平台承担。sourceRef = sub-end-{subId}, 幂等。
-// 复用 SettleOrderDividend 的 Order 比例分发(base=profit)。
-func SettleSubscriptionEndDividend(buyerUserId, subId int, priceQuota, amountUsed int64, group string) {
-	if buyerUserId <= 0 || priceQuota <= 0 {
+// SettleSubscriptionEndDividend 套餐到期/失效时按实际利润分润(v2 简化版)。
+//
+//	利润 = 套餐售价 − 成本
+//	  套餐售价 = plan.PriceAmount × QuotaPerUnit (用户实付金额)
+//	  成本     = 用户消费全部售价 × 分组成本倍率(GroupCostRatio)
+//
+// 依据(2026-07-14): 售价=官方价(套餐专用分组 GR=1 平价), log.quota 即官方售价;
+// log.quota 由分段公式算出已含缓存折扣(cache 自动包含), 无需 ModelCost/单独算 cache。
+// 不参与: Source=redeem(兑换码) / buyer.Role>=root(超管)。
+// GroupCostRatio 未配(default) → 整个套餐不分润。profit<=0 → 不分润。
+// 幂等: sourceRef=sub-end-{subId}。
+func SettleSubscriptionEndDividend(buyerUserId, subId int) {
+	if buyerUserId <= 0 || subId <= 0 {
 		return
 	}
 	sourceRef := fmt.Sprintf("sub-end-%d", subId)
-	// 幂等: 同一 subId 已结算则跳过
 	if exists, err := HasDividendRecordBySourceRef(sourceRef); err != nil {
 		common.SysError("SettleSubscriptionEndDividend idempotency check failed: " + err.Error())
 		return
 	} else if exists {
 		return
 	}
-	costQuota := calcSubscriptionCostFromAmountUsed(amountUsed, group)
-	profit := priceQuota - costQuota
-	if profit <= 0 {
-		common.SysLog(fmt.Sprintf("SettleSubscriptionEndDividend skip: subId=%d profit=%d<=0 (price=%d cost=%d)", subId, profit, priceQuota, costQuota))
+
+	var sub UserSubscription
+	if err := DB.Where("id = ?", subId).First(&sub).Error; err != nil {
+		common.SysError(fmt.Sprintf("SettleSubscriptionEndDividend sub %d not found: %v", subId, err))
 		return
 	}
-	// 复用 SettleOrderDividend 按 profit 分发(Order 比例)
+
+	// 兑换码兑换不分润
+	if strings.TrimSpace(sub.Source) == "redeem" {
+		common.SysLog(fmt.Sprintf("SettleSubscriptionEndDividend skip: subId=%d source=redeem(兑换码不分润)", subId))
+		return
+	}
+
+	// 超管不分润
+	buyer, err := GetUserById(buyerUserId, false)
+	if err != nil || buyer == nil {
+		return
+	}
+	if buyer.Role >= common.RoleRootUser {
+		return
+	}
+
+	// 分组成本倍率: 未配(default) → 整个套餐不分润
+	group := strings.TrimSpace(sub.AllowedGroup)
+	if group == "" {
+		group = strings.TrimSpace(sub.UpgradeGroup)
+	}
+	gcr, costSource := ratio_setting.GetGroupCostRatioWithSource(group)
+	if costSource == ratio_setting.CostRatioSourceDefault {
+		common.SysError(fmt.Sprintf("SettleSubscriptionEndDividend skip: subId=%d group=%s GroupCostRatio未配置→整个套餐不分润", subId, group))
+		return
+	}
+	// 守护(方案A): 套餐分组销售倍率(GroupRatio)必须=1(平价)。
+	// 成本 = log.quota × GCR, 而 log.quota 含销售倍率; 倍率=1 时 log.quota=官方价口径才正确。
+	// 若被改成≠1(加价卖), 成本会放大→利润算错, 故直接拦下告警, 不分润。
+	if gr := ratio_setting.GetGroupRatio(group); gr != 1 {
+		common.SysError(fmt.Sprintf("SettleSubscriptionEndDividend skip: subId=%d group=%s GroupRatio=%.4f≠1, 套餐分组必须平价(否则成本口径错误)→整个套餐不分润", subId, group, gr))
+		return
+	}
+
+	// 套餐售价(用户实付)
+	plan, err := GetSubscriptionPlanById(sub.PlanId)
+	if err != nil || plan == nil {
+		return
+	}
+	priceQuota, err := calcSubscriptionBalanceQuota(plan.PriceAmount)
+	if err != nil || priceQuota <= 0 {
+		return
+	}
+
+	// 成本 = 用户消费全部售价 × GCR
+	totalSaleQuota, err := GetSubscriptionConsumedQuota(subId)
+	if err != nil {
+		common.SysError(fmt.Sprintf("SettleSubscriptionEndDividend get consumed quota failed subId=%d: %v", subId, err))
+		return
+	}
+	costQuota := decimal.NewFromInt(totalSaleQuota).Mul(decimal.NewFromFloat(gcr)).Round(0).IntPart()
+
+	profit := int64(priceQuota) - costQuota
+	if profit <= 0 {
+		common.SysLog(fmt.Sprintf("SettleSubscriptionEndDividend skip: subId=%d profit=%d<=0 (price=%d cost=%d saleQuota=%d gcr=%.4f)",
+			subId, profit, priceQuota, costQuota, totalSaleQuota, gcr))
+		return
+	}
+
+	common.SysLog(fmt.Sprintf("SettleSubscriptionEndDividend settle: subId=%d price=%d saleQuota=%d gcr=%.4f cost=%d profit=%d",
+		subId, priceQuota, totalSaleQuota, gcr, costQuota, profit))
 	SettleOrderDividend(buyerUserId, profit, sourceRef)
 }
 
-// calcSubscriptionCostFromAmountUsed 从已用额度(售价口径)反推平台成本(quota)。
-// cost = amountUsed / GroupRatio[group] × GroupCostRatio[group]; AllowedGroup(group恒定)精确。
-func calcSubscriptionCostFromAmountUsed(amountUsed int64, group string) int64 {
-	if amountUsed <= 0 || group == "" {
-		return 0
-	}
-	groupRatio := ratio_setting.GetGroupRatio(group)
-	if groupRatio <= 0 {
-		groupRatio = 1
-	}
-	costRatio := ratio_setting.GetGroupCostRatio(group)
-	dAmount := decimal.NewFromInt(amountUsed)
-	dGroup := decimal.NewFromFloat(groupRatio)
-	dCost := decimal.NewFromFloat(costRatio)
-	return dAmount.Div(dGroup).Mul(dCost).Round(0).IntPart()
+// GetSubscriptionConsumedQuota 返回某订阅所有消费日志的售价额度合计(quota)。
+// 用于套餐结束分润成本反推: 成本 = 该合计 × GroupCostRatio。
+// log.quota 已含缓存折扣(分段公式算), 无需单独处理 cache。
+func GetSubscriptionConsumedQuota(subId int) (int64, error) {
+	var sum int64
+	err := LOG_DB.Model(&Log{}).
+		Where("type = ? AND billing_source = ? AND JSON_EXTRACT(other, '$.subscription_id') = ?",
+			LogTypeConsume, "subscription", subId).
+		Select("COALESCE(SUM(quota),0)").Scan(&sum).Error
+	return sum, err
 }

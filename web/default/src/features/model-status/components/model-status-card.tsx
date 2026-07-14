@@ -41,15 +41,14 @@ type Props = {
   onClick: () => void
 }
 
-// 聚合多分组的逐桶 success_rate → 时序点（卡片展示整体分时绿柱）
+// 聚合多分组的逐桶 success_rate → 时序点(方案B: 取最佳分组, 只要一个分组绿柱子就绿)
+// 避免少量低成功率分组把整根柱子(简单平均)拉红, 更贴近用户"总能选到可用分组"的体感。
 function aggregateGroupSeries(groups: PerformanceGroup[]): UptimeDayPoint[] {
-  const byTs = new Map<number, { sum: number; count: number; incidents: number }>()
+  const byTs = new Map<number, { best: number }>()
   for (const g of groups) {
     for (const p of g.series) {
-      const cur = byTs.get(p.ts) ?? { sum: 0, count: 0, incidents: 0 }
-      cur.sum += p.success_rate
-      cur.count += 1
-      if (p.success_rate < 100) cur.incidents += 1
+      const cur = byTs.get(p.ts) ?? { best: -1 }
+      if (p.success_rate > cur.best) cur.best = p.success_rate
       byTs.set(p.ts, cur)
     }
   }
@@ -57,8 +56,8 @@ function aggregateGroupSeries(groups: PerformanceGroup[]): UptimeDayPoint[] {
     .sort(([a], [b]) => a - b)
     .map(([ts, v]) => ({
       date: new Date(ts * 1000).toISOString(),
-      uptime_pct: v.count > 0 ? Math.round((v.sum / v.count) * 100) / 100 : 0,
-      incidents: v.incidents,
+      uptime_pct: v.best >= 0 ? Math.round(v.best * 100) / 100 : 0,
+      incidents: v.best >= 0 && v.best < 100 ? 1 : 0,
       outage_minutes: 0,
     }))
 }

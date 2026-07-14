@@ -1012,24 +1012,12 @@ func AdminDeleteUserSubscription(userSubscriptionId int) (string, error) {
 }
 
 // settleSubscriptionEndForSub 套餐结束时按实际利润分润(复用 SettleSubscriptionEndDividend)。
-// 取订阅的 AllowedGroup(优先)/UpgradeGroup + AmountUsed + 套餐价, 供 AdminInvalidate/AdminDelete/Expire 调用。
+// 供 AdminInvalidate/AdminDelete/Expire 调用。v2: 只需 subId, 参数内部自查。
 func settleSubscriptionEndForSub(sub *UserSubscription) {
 	if sub == nil || sub.UserId <= 0 {
 		return
 	}
-	subGroup := strings.TrimSpace(sub.AllowedGroup)
-	if subGroup == "" {
-		subGroup = strings.TrimSpace(sub.UpgradeGroup)
-	}
-	plan, pErr := GetSubscriptionPlanById(sub.PlanId)
-	if pErr != nil || plan == nil {
-		return
-	}
-	priceQuota, qErr := calcSubscriptionBalanceQuota(plan.PriceAmount)
-	if qErr != nil || priceQuota <= 0 {
-		return
-	}
-	SettleSubscriptionEndDividend(sub.UserId, sub.Id, int64(priceQuota), sub.AmountUsed, subGroup)
+	SettleSubscriptionEndDividend(sub.UserId, sub.Id)
 }
 
 type SubscriptionPreConsumeResult struct {
@@ -1125,26 +1113,54 @@ func ExpireDueSubscriptions(limit int) (int, error) {
 		}
 	}
 
-	// 到期分润(post-commit): 逐条按实际利润结算(利润=套餐价-反推成本, ≤0不分润)
+	// 到期不立即分润: 交给 SettleDelayedSubscriptionDividend 在到期 24h 后扫描
+	// (等 Codex 异步任务结算完写 log, 避免 log 不完整→成本漏算→利润虚高)
+	return expiredCount, nil
+}
+
+// SettleDelayedSubscriptionDividend 扫描已到期超过 delaySeconds(默认24h) 的订阅, 触发结束分润。
+// 延迟目的: 等 Codex 异步任务结算完(写 log), 避免 log 不完整→成本漏算→利润虚高。
+// 幂等: SettleSubscriptionEndDividend 内部 sourceRef 去重, 已分的秒跳过。
+// Order end_time desc 优先扫新到期的, 由 subscription quota reset task 每分钟调用。
+func SettleDelayedSubscriptionDividend(delaySeconds int64, limit int) (int, error) {
+	if delaySeconds <= 0 {
+		delaySeconds = 24 * 3600
+	}
+	if limit <= 0 {
+		limit = 200
+	}
+	now := GetDBTimestamp()
+	cutoff := now - delaySeconds
+	query := DB.Where("status = ? AND end_time > 0 AND end_time <= ?", "expired", cutoff)
+	// 部署时间分界: 只扫部署后到期的, 排除历史(历史由人工/追回处理, 不走新机制扫描)
+	// 避免给旧机制漏分的套餐补发分润
+	if deployCutoff := getSubEndDividendCutoff(); deployCutoff > 0 {
+		query = query.Where("end_time > ?", deployCutoff)
+	}
+	var subs []UserSubscription
+	if err := query.Order("end_time desc, id desc").Limit(limit).Find(&subs).Error; err != nil {
+		return 0, err
+	}
 	for _, sub := range subs {
 		if sub.UserId <= 0 {
 			continue
 		}
-		subGroup := strings.TrimSpace(sub.AllowedGroup)
-		if subGroup == "" {
-			subGroup = strings.TrimSpace(sub.UpgradeGroup)
-		}
-		plan, pErr := GetSubscriptionPlanById(sub.PlanId)
-		if pErr != nil || plan == nil {
-			continue
-		}
-		priceQuota, qErr := calcSubscriptionBalanceQuota(plan.PriceAmount)
-		if qErr != nil || priceQuota <= 0 {
-			continue
-		}
-		SettleSubscriptionEndDividend(sub.UserId, sub.Id, int64(priceQuota), sub.AmountUsed, subGroup)
+		SettleSubscriptionEndDividend(sub.UserId, sub.Id)
 	}
-	return expiredCount, nil
+	return len(subs), nil
+}
+
+// getSubEndDividendCutoff 读取 option 'SubEndDividendCutoff'(部署时间戳, 秒, 0=不限)。
+// 用于排除部署前的历史套餐, 避免新机制扫描给旧漏分套餐补发分润。
+// 部署后由超管设此 option = 部署时刻, 即可把所有历史套餐挡在扫描之外。
+func getSubEndDividendCutoff() int64 {
+	var opt Option
+	if err := DB.Where("`key` = ?", "SubEndDividendCutoff").First(&opt).Error; err != nil {
+		return 0
+	}
+	var n int64
+	fmt.Sscanf(opt.Value, "%d", &n)
+	return n
 }
 
 // SubscriptionPreConsumeRecord stores idempotent pre-consume operations per request.

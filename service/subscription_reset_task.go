@@ -67,6 +67,17 @@ func runSubscriptionQuotaResetOnce() {
 			break
 		}
 	}
+	// 到期 24h+ 的订阅延迟分润(等 Codex 异步任务结算完写 log)
+	for {
+		n, err := model.SettleDelayedSubscriptionDividend(24*3600, subscriptionResetBatchSize)
+		if err != nil {
+			logger.LogWarn(ctx, fmt.Sprintf("subscription delayed settle task failed: %v", err))
+			break
+		}
+		if n < subscriptionResetBatchSize {
+			break
+		}
+	}
 	for {
 		n, err := model.ResetDueSubscriptions(subscriptionResetBatchSize)
 		if err != nil {

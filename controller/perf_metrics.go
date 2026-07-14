@@ -3,8 +3,10 @@ package controller
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
@@ -19,7 +21,7 @@ func GetPerfMetricsSummary(c *gin.Context) {
 		}
 	}
 
-	activeGroups := append(lo.Keys(ratio_setting.GetGroupRatioCopy()), "auto")
+	activeGroups := visibleStatusGroups()
 	result, err := perfmetrics.QuerySummaryAll(hours, activeGroups)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -43,7 +45,7 @@ func GetPerfMetricsGroupSummary(c *gin.Context) {
 		}
 	}
 
-	activeGroups := append(lo.Keys(ratio_setting.GetGroupRatioCopy()), "auto")
+	activeGroups := visibleStatusGroups()
 	result, err := perfmetrics.QueryGroupSummaryAll(hours, activeGroups)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -99,8 +101,42 @@ func GetPerfMetrics(c *gin.Context) {
 
 func filterActiveGroups(groups []perfmetrics.GroupResult) []perfmetrics.GroupResult {
 	activeRatios := ratio_setting.GetGroupRatioCopy()
+	hidden := hiddenStatusGroups()
 	return lo.Filter(groups, func(g perfmetrics.GroupResult, _ int) bool {
+		if hidden[g.Group] {
+			return false
+		}
 		_, ok := activeRatios[g.Group]
 		return ok || g.Group == "auto"
 	})
+}
+
+// hiddenStatusGroups 读取 option 'HiddenStatusGroups'(逗号分隔), 返回模型状态页不展示的分组集合。
+// 默认黑名单: "gpt 企业专属,自用分组"(内部分组, 用户选不到)。后台可增删。
+func hiddenStatusGroups() map[string]bool {
+	hidden := map[string]bool{}
+	var value string
+	if err := model.DB.Model(&model.Option{}).Where("`key` = ?", "HiddenStatusGroups").
+		Limit(1).Pluck("value", &value).Error; err != nil || strings.TrimSpace(value) == "" {
+		value = "gpt 企业专属,自用分组"
+	}
+	for _, g := range strings.Split(value, ",") {
+		if g = strings.TrimSpace(g); g != "" {
+			hidden[g] = true
+		}
+	}
+	return hidden
+}
+
+// visibleStatusGroups 返回模型状态页应展示的分组(ratio 分组 - 黑名单 + auto)。
+func visibleStatusGroups() []string {
+	hidden := hiddenStatusGroups()
+	var groups []string
+	for g := range ratio_setting.GetGroupRatioCopy() {
+		if !hidden[g] {
+			groups = append(groups, g)
+		}
+	}
+	groups = append(groups, "auto")
+	return groups
 }
