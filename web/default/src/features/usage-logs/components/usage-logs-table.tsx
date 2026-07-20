@@ -39,6 +39,7 @@ import { useColumnsByCategory } from '../lib/columns'
 import { fetchLogsByCategory } from '../lib/utils'
 import type { LogCategory } from '../types'
 import { CommonLogsFilterBar } from './common-logs-filter-bar'
+import { CommonLogsStats } from './common-logs-stats'
 import { TaskLogsFilterBar } from './task-logs-filter-bar'
 import { UsageLogsMobileList } from './usage-logs-mobile-card'
 
@@ -159,50 +160,55 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   const isCommon = logCategory === 'common'
 
   return (
-    <DataTablePage
-      table={table}
-      columns={columns as ColumnDef<Record<string, unknown>>[]}
-      isLoading={isLoadingData}
-      isFetching={isFetching}
-      emptyTitle={t('No Logs Found')}
-      emptyDescription={t(
-        'No usage logs available. Logs will appear here once API calls are made.'
-      )}
-      skeletonKeyPrefix='usage-log-skeleton'
-      applyHeaderSize
-      tableClassName={cn(
-        '[&_[data-slot=table]]:text-[13px] [&_[data-slot=table]_td]:text-[13px] [&_[data-slot=table]_td_*]:text-[13px] [&_[data-slot=table]_th]:text-[13px] [&_[data-slot=table]_th_*]:text-[13px]'
-      )}
-      mobile={
-        <UsageLogsMobileList
+    <div className='flex h-full min-h-0 flex-col gap-3'>
+      {isCommon && <CommonLogsStats totalCount={data?.total || 0} />}
+      <div className='min-h-0 flex-1'>
+        <DataTablePage
           table={table}
+          columns={columns as ColumnDef<Record<string, unknown>>[]}
           isLoading={isLoadingData}
-          logCategory={logCategory}
-        />
-      }
-      toolbar={
-        isCommon ? (
-          <CommonLogsFilterBar table={table} />
-        ) : (
-          <TaskLogsFilterBar table={table} logCategory={logCategory} />
-        )
-      }
-      renderRow={(row) => {
-        const logType = (row.original as Record<string, unknown>).type as
-          | number
-          | undefined
-        const tintClass =
-          isCommon && logType != null ? (logTypeRowTint[logType] ?? '') : ''
+          isFetching={isFetching}
+          emptyTitle={t('No Logs Found')}
+          emptyDescription={t(
+            'No usage logs available. Logs will appear here once API calls are made.'
+          )}
+          skeletonKeyPrefix='usage-log-skeleton'
+          applyHeaderSize
+          tableClassName={cn(
+            'border-border/70 bg-background/75 rounded-xl shadow-xs [&_[data-slot=table]]:text-[13px] [&_[data-slot=table]_td]:text-[13px] [&_[data-slot=table]_td_*]:text-[13px] [&_[data-slot=table]_th]:text-[13px] [&_[data-slot=table]_th_*]:text-[13px]'
+          )}
+          mobile={
+            <UsageLogsMobileList
+              table={table}
+              isLoading={isLoadingData}
+              logCategory={logCategory}
+            />
+          }
+          toolbar={
+            isCommon ? (
+              <CommonLogsFilterBar table={table} />
+            ) : (
+              <TaskLogsFilterBar table={table} logCategory={logCategory} />
+            )
+          }
+          renderRow={(row) => {
+            const logType = (row.original as Record<string, unknown>).type as
+              | number
+              | undefined
+            const tintClass =
+              isCommon && logType != null ? (logTypeRowTint[logType] ?? '') : ''
 
-        return (
-          <DataTableRow
-            key={row.id}
-            row={row}
-            className={cn('transition-colors', tintClass)}
-            getColumnClassName={() => (isCommon ? 'py-2' : 'py-3.5')}
-          />
-        )
-      }}
-    />
+            return (
+              <DataTableRow
+                key={row.id}
+                row={row}
+                className={cn('transition-colors', tintClass)}
+                getColumnClassName={() => (isCommon ? 'py-2' : 'py-3.5')}
+              />
+            )
+          }}
+        />
+      </div>
+    </div>
   )
 }

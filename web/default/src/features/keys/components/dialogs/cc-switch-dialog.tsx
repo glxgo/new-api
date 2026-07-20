@@ -20,8 +20,8 @@ import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { getUserModels, api } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
+import { getUserModels, api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { ComboboxInput } from '@/components/ui/combobox-input'
 import { Label } from '@/components/ui/label'
@@ -121,7 +121,14 @@ function buildCCSwitchURL(
   params.set('usageBaseUrl', serverAddress)
   if (accessToken) params.set('usageAccessToken', accessToken)
   if (userId) params.set('usageUserId', String(userId))
-  params.set('usageScript', btoa(Array.from(new TextEncoder().encode(NEW_API_USAGE_SCRIPT), (b) => String.fromCharCode(b)).join('')))
+  params.set(
+    'usageScript',
+    btoa(
+      Array.from(new TextEncoder().encode(NEW_API_USAGE_SCRIPT), (b) =>
+        String.fromCharCode(b)
+      ).join('')
+    )
+  )
   return `ccswitch://v1/import?${params.toString()}`
 }
 
@@ -197,7 +204,7 @@ export function CCSwitchDialog(props: Props) {
     <Dialog
       open={props.open}
       onOpenChange={props.onOpenChange}
-      title={t('Import to CC Switch')}
+      title={t('One-click import to CC Switch')}
       contentClassName='sm:max-w-md'
       contentHeight='auto'
       bodyClassName={

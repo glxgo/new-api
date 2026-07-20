@@ -41,7 +41,6 @@ import { LOG_TYPE_ALL_VALUE, LOG_TYPE_FILTERS } from '../constants'
 import { buildSearchParams } from '../lib/filter'
 import { getDefaultTimeRange } from '../lib/utils'
 import type { CommonLogFilters } from '../types'
-import { CommonLogsStats } from './common-logs-stats'
 import { CompactDateTimeRangePicker } from './compact-date-time-range-picker'
 import {
   LogsFilterField,
@@ -82,6 +81,8 @@ export function CommonLogsFilterBar<TData>(
 
   useEffect(() => {
     const { start, end } = getDefaultTimeRange()
+    // Keep the editable filter form aligned with URL changes from navigation.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFilters({
       startTime: searchParams.startTime
         ? new Date(searchParams.startTime)
@@ -166,19 +167,22 @@ export function CommonLogsFilterBar<TData>(
     [handleApply]
   )
 
+  const hasTypeFilter = logType !== LOG_TYPE_ALL_VALUE
   const hasExpandedFilters =
-    !!filters.token ||
+    !!filters.model ||
+    !!filters.group ||
+    hasTypeFilter ||
     !!filters.username ||
     !!filters.channel ||
     !!filters.requestId ||
     !!filters.upstreamRequestId
 
-  const hasTypeFilter = logType !== LOG_TYPE_ALL_VALUE
-  const hasAdditionalFilters =
-    !!filters.model || !!filters.group || hasTypeFilter || hasExpandedFilters
+  const hasAdditionalFilters = !!filters.token || hasExpandedFilters
 
   const expandedFilterCount = [
-    filters.token,
+    filters.model,
+    filters.group,
+    hasTypeFilter ? logType : undefined,
     isAdmin ? filters.username : undefined,
     isAdmin ? filters.channel : undefined,
     filters.requestId,
@@ -198,7 +202,6 @@ export function CommonLogsFilterBar<TData>(
 
   const statsBar = (
     <div className='flex flex-wrap items-center gap-2'>
-      <CommonLogsStats />
       <Tooltip>
         <TooltipTrigger
           render={
@@ -279,17 +282,22 @@ export function CommonLogsFilterBar<TData>(
       </Select>
     </LogsFilterField>
   )
+  const tokenFilter = (
+    <LogsFilterField wide>
+      <LogsFilterInput
+        placeholder={t('API Key')}
+        type={sensitiveType}
+        value={filters.token || ''}
+        onChange={(e) => handleChange('token', e.target.value)}
+        onKeyDown={handleKeyDown}
+      />
+    </LogsFilterField>
+  )
   const advancedFilters = (
     <>
-      <LogsFilterField>
-        <LogsFilterInput
-          placeholder={t('Token Name')}
-          type={sensitiveType}
-          value={filters.token || ''}
-          onChange={(e) => handleChange('token', e.target.value)}
-          onKeyDown={handleKeyDown}
-        />
-      </LogsFilterField>
+      {modelFilter}
+      {groupFilter}
+      {typeFilter}
       {isAdmin && (
         <LogsFilterField>
           <LogsFilterInput
@@ -336,16 +344,15 @@ export function CommonLogsFilterBar<TData>(
       stats={statsBar}
       primaryFilters={
         <>
+          {tokenFilter}
           {dateRangeFilter}
-          {modelFilter}
-          {groupFilter}
-          {typeFilter}
         </>
       }
       advancedFilters={advancedFilters}
       mobilePinnedFilters={dateRangeFilter}
       mobileFilters={
         <>
+          {tokenFilter}
           {modelFilter}
           {groupFilter}
           {typeFilter}
@@ -353,8 +360,7 @@ export function CommonLogsFilterBar<TData>(
         </>
       }
       mobileFilterCount={
-        [filters.model, filters.group, hasTypeFilter].filter(Boolean).length +
-        expandedFilterCount
+        [filters.token].filter(Boolean).length + expandedFilterCount
       }
       hasAdvancedActiveFilters={hasExpandedFilters}
       advancedFilterCount={expandedFilterCount}

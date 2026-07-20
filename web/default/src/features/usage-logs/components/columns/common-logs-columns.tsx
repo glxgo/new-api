@@ -42,6 +42,7 @@ import {
   formatModelName,
   getFirstResponseTimeColor,
   getResponseTimeColor,
+  getThroughputColor,
   getTieredBillingSummary,
   hasAnyCacheTokens,
   parseLogOther,
@@ -94,6 +95,38 @@ function splitQuotaDisplay(value: string): { prefix: string; amount: string } {
   const match = value.match(/^([^0-9+\-.,\s]+)(.+)$/)
   if (!match) return { prefix: '', amount: value }
   return { prefix: match[1], amount: match[2] }
+}
+
+const timingBgMap: Record<string, string> = {
+  success:
+    'border border-emerald-200/40 bg-emerald-50/35 dark:border-emerald-900/40 dark:bg-emerald-950/15',
+  warning:
+    'border border-amber-200/45 bg-amber-50/35 dark:border-amber-900/40 dark:bg-amber-950/15',
+  danger:
+    'border border-rose-200/50 bg-rose-50/35 dark:border-rose-900/40 dark:bg-rose-950/15',
+  neutral:
+    'border border-border/60 bg-muted/30 dark:border-border/40 dark:bg-muted/20',
+}
+
+function getFirstTokenSeconds(log: UsageLog): number | null {
+  const frt = parseLogOther(log.other)?.frt
+  return frt != null && frt > 0 ? frt / 1000 : null
+}
+
+function getGenerationSeconds(log: UsageLog): number | null {
+  if (log.use_time <= 0) return null
+  if (!log.is_stream) return log.use_time
+
+  const firstTokenSeconds = getFirstTokenSeconds(log)
+  if (firstTokenSeconds == null) return null
+  return Math.max(0, log.use_time - firstTokenSeconds)
+}
+
+function getOutputSpeed(log: UsageLog): number | null {
+  const generationSeconds = getGenerationSeconds(log)
+  if (generationSeconds == null || generationSeconds <= 0) return null
+  if (log.completion_tokens <= 0) return null
+  return log.completion_tokens / generationSeconds
 }
 
 function buildDetailSegments(
@@ -541,110 +574,138 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
     },
     {
       accessorKey: 'use_time',
-      header: t('Timing'),
+      header: t('Total Time'),
       cell: ({ row }) => {
         const log = row.original
         if (!isTimingLogType(log.type)) return null
 
         const useTime = row.getValue('use_time') as number
         const other = parseLogOther(log.other)
-        const frt = other?.frt
-        const tokensPerSecond =
-          useTime > 0 && log.completion_tokens > 0
-            ? log.completion_tokens / useTime
-            : null
         const timeVariant = getResponseTimeColor(useTime, log.completion_tokens)
-        const frtVariant = frt
-          ? getFirstResponseTimeColor(frt / 1000)
-          : 'neutral'
-
-        const timingBgMap: Record<string, string> = {
-          success:
-            'border border-emerald-200/40 bg-emerald-50/35 dark:border-emerald-900/40 dark:bg-emerald-950/15',
-          warning:
-            'border border-amber-200/45 bg-amber-50/35 dark:border-amber-900/40 dark:bg-amber-950/15',
-          danger:
-            'border border-rose-200/50 bg-rose-50/35 dark:border-rose-900/40 dark:bg-rose-950/15',
-          neutral:
-            'border border-border/60 bg-muted/30 dark:border-border/40 dark:bg-muted/20',
-        }
 
         return (
-          <div className='flex flex-col gap-1'>
-            <div className='flex items-center gap-1.5'>
-              <StatusBadge
-                label={formatUseTime(useTime)}
-                variant={timeVariant as StatusBadgeProps['variant']}
-                size='sm'
-                copyable={false}
-                className={cn('rounded-md font-mono', timingBgMap[timeVariant])}
-              />
-              {log.is_stream &&
-                (frt != null && frt > 0 ? (
-                  <StatusBadge
-                    label={formatUseTime(frt / 1000)}
-                    variant={frtVariant as StatusBadgeProps['variant']}
-                    size='sm'
-                    showDot={false}
-                    copyable={false}
-                    className={cn(
-                      'rounded-md font-mono',
-                      timingBgMap[frtVariant]
-                    )}
-                  />
-                ) : (
-                  <StatusBadge
-                    label='N/A'
-                    variant='neutral'
-                    size='sm'
-                    showDot={false}
-                    copyable={false}
-                    className={cn('rounded-md font-mono', timingBgMap.neutral)}
-                  />
-                ))}
-            </div>
-            <div className='flex items-center gap-1 [font-family:var(--font-body)] !text-xs leading-none'>
-              <span className='text-muted-foreground/60 [font-family:var(--font-body)] !text-xs leading-none'>
-                {log.is_stream ? t('Stream') : t('Non-stream')}
-                {tokensPerSecond != null && (
-                  <>
-                    {' · '}
-                    <span className='tabular-nums'>
-                      {Math.round(tokensPerSecond)}
-                    </span>
-                    {' t/s'}
-                  </>
-                )}
-              </span>
-              {log.is_stream &&
-                other?.stream_status &&
-                other.stream_status.status !== 'ok' && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={<CircleAlert className='size-3 text-red-500' />}
-                      ></TooltipTrigger>
-                      <TooltipContent>
-                        <div className='space-y-0.5 text-xs'>
+          <div className='flex items-center gap-1.5'>
+            <StatusBadge
+              label={formatUseTime(useTime)}
+              variant={timeVariant as StatusBadgeProps['variant']}
+              size='sm'
+              copyable={false}
+              className={cn('rounded-md font-mono', timingBgMap[timeVariant])}
+            />
+            {log.is_stream &&
+              other?.stream_status &&
+              other.stream_status.status !== 'ok' && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={<CircleAlert className='size-3 text-red-500' />}
+                    ></TooltipTrigger>
+                    <TooltipContent>
+                      <div className='space-y-0.5 text-xs'>
+                        <p>
+                          {t('Stream Status')}: {t('Error')}
+                        </p>
+                        <p>{other.stream_status.end_reason || 'unknown'}</p>
+                        {(other.stream_status.error_count ?? 0) > 0 && (
                           <p>
-                            {t('Stream Status')}: {t('Error')}
+                            {t('Soft Errors')}:{' '}
+                            {other.stream_status.error_count}
                           </p>
-                          <p>{other.stream_status.end_reason || 'unknown'}</p>
-                          {(other.stream_status.error_count ?? 0) > 0 && (
-                            <p>
-                              {t('Soft Errors')}:{' '}
-                              {other.stream_status.error_count}
-                            </p>
-                          )}
-                        </div>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
-            </div>
+                        )}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
           </div>
         )
       },
+      size: 112,
+    },
+    {
+      id: 'first_token_time',
+      header: t('First Token Time'),
+      accessorFn: getFirstTokenSeconds,
+      cell: ({ row }) => {
+        const log = row.original
+        if (!isTimingLogType(log.type)) return null
+
+        const firstTokenSeconds = getFirstTokenSeconds(log)
+        if (!log.is_stream || firstTokenSeconds == null) {
+          return <span className='text-muted-foreground text-xs'>N/A</span>
+        }
+
+        const variant = getFirstResponseTimeColor(firstTokenSeconds)
+        return (
+          <StatusBadge
+            label={formatUseTime(firstTokenSeconds)}
+            variant={variant as StatusBadgeProps['variant']}
+            size='sm'
+            showDot={false}
+            copyable={false}
+            className={cn('rounded-md font-mono', timingBgMap[variant])}
+          />
+        )
+      },
+      size: 124,
+    },
+    {
+      id: 'generation_time',
+      header: t('Generation Time'),
+      accessorFn: getGenerationSeconds,
+      cell: ({ row }) => {
+        const log = row.original
+        if (!isTimingLogType(log.type)) return null
+
+        const generationSeconds = getGenerationSeconds(log)
+        if (generationSeconds == null) {
+          return <span className='text-muted-foreground text-xs'>N/A</span>
+        }
+
+        const variant = getResponseTimeColor(
+          generationSeconds,
+          log.completion_tokens
+        )
+        return (
+          <StatusBadge
+            label={formatUseTime(generationSeconds)}
+            variant={variant as StatusBadgeProps['variant']}
+            size='sm'
+            showDot={false}
+            copyable={false}
+            className={cn('rounded-md font-mono', timingBgMap[variant])}
+          />
+        )
+      },
+      size: 112,
+    },
+    {
+      id: 'output_speed',
+      header: t('Output Speed'),
+      accessorFn: getOutputSpeed,
+      cell: ({ row }) => {
+        const log = row.original
+        if (!isTimingLogType(log.type)) return null
+
+        const outputSpeed = getOutputSpeed(log)
+        if (outputSpeed == null) {
+          return <span className='text-muted-foreground text-xs'>N/A</span>
+        }
+
+        const variant = getThroughputColor(outputSpeed)
+        const digits = outputSpeed >= 10 ? 0 : 1
+        return (
+          <StatusBadge
+            label={`${outputSpeed.toFixed(digits)} t/s`}
+            variant={variant as StatusBadgeProps['variant']}
+            size='sm'
+            showDot={false}
+            copyable={false}
+            className={cn('rounded-md font-mono', timingBgMap[variant])}
+          />
+        )
+      },
+      size: 112,
     },
 
     {

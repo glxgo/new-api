@@ -110,6 +110,12 @@ export type DataTablePageProps<TData> = {
   mobile?: React.ReactNode
 
   /**
+   * Custom desktop content — fully replaces the default table while preserving
+   * the shared toolbar, pagination, fetching state, and bulk-action lifecycle.
+   */
+  desktop?: React.ReactNode
+
+  /**
    * Pass-through props for the default {@link MobileCardList}.
    * Ignored if `mobile` is provided.
    */
@@ -329,6 +335,20 @@ function renderDesktop<TData>(
 
   const isFetchingOnly = props.isFetching && !props.isLoading
   const fixedHeight = props.fixedHeight !== false
+
+  if (props.desktop !== undefined) {
+    return (
+      <div
+        className={cn(
+          fixedHeight && 'min-h-0 flex-1',
+          'transition-opacity duration-150',
+          isFetchingOnly && 'pointer-events-none opacity-60'
+        )}
+      >
+        {props.desktop}
+      </div>
+    )
+  }
 
   return (
     <DataTableView

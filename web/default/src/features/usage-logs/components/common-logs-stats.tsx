@@ -18,9 +18,9 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
+import { Activity, Gauge, ReceiptText, Waypoints } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { formatLogQuota } from '@/lib/format'
-import { cn } from '@/lib/utils'
 import { useIsAdmin } from '@/hooks/use-admin'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getLogStats, getUserLogStats } from '../api'
@@ -30,23 +30,37 @@ import { useUsageLogsContext } from './usage-logs-provider'
 
 const route = getRouteApi('/_authenticated/usage-logs/$section')
 
-function StatBadge(props: {
+function StatCard(props: {
   label: string
   value: string | number
-  accent: string
+  helper: string
+  icon: React.ComponentType<{ className?: string }>
 }) {
+  const Icon = props.icon
+
   return (
-    <span className='border-border/60 bg-muted/25 inline-flex h-7 items-center gap-2 rounded-md border px-2.5 text-xs shadow-xs'>
-      <span className={cn('h-3.5 w-0.5 rounded-full', props.accent)} />
-      <span className='text-muted-foreground'>{props.label}</span>
-      <span className='text-foreground/85 font-mono font-semibold tabular-nums'>
-        {props.value}
+    <div className='group border-border/70 bg-background/80 hover:border-foreground/20 flex min-h-24 origin-center items-center gap-3 rounded-xl border px-4 py-3 shadow-xs transition-[transform,box-shadow,border-color] duration-300 ease-out will-change-transform hover:-translate-y-1 hover:scale-[1.025] hover:shadow-lg motion-reduce:transform-none motion-reduce:transition-none'>
+      <span className='border-border/70 bg-muted/25 group-hover:bg-muted/50 flex size-9 shrink-0 items-center justify-center rounded-lg border transition-[transform,background-color] duration-300 group-hover:scale-105 group-hover:-rotate-2 motion-reduce:transform-none'>
+        <Icon className='text-foreground/80 size-4' />
       </span>
-    </span>
+      <div className='min-w-0'>
+        <p className='text-muted-foreground text-xs'>{props.label}</p>
+        <p className='mt-0.5 truncate font-mono text-xl font-semibold tracking-tight tabular-nums'>
+          {props.value}
+        </p>
+        <p className='text-muted-foreground mt-0.5 truncate text-[11px]'>
+          {props.helper}
+        </p>
+      </div>
+    </div>
   )
 }
 
-export function CommonLogsStats() {
+interface CommonLogsStatsProps {
+  totalCount: number
+}
+
+export function CommonLogsStats(props: CommonLogsStatsProps) {
   const { t } = useTranslation()
   const isAdmin = useIsAdmin()
   const searchParams = route.useSearch()
@@ -76,30 +90,39 @@ export function CommonLogsStats() {
 
   if (isLoading) {
     return (
-      <div className='flex items-center gap-2'>
-        <Skeleton className='h-7 w-[150px] rounded-md' />
-        <Skeleton className='h-7 w-[100px] rounded-md' />
-        <Skeleton className='h-7 w-[120px] rounded-md' />
+      <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4'>
+        {Array.from({ length: 4 }).map((_, index) => (
+          <Skeleton key={index} className='h-24 rounded-xl' />
+        ))}
       </div>
     )
   }
 
   return (
-    <div className='flex flex-wrap items-center gap-2'>
-      <StatBadge
-        label={t('Usage')}
-        value={sensitiveVisible ? formatLogQuota(stats?.quota || 0) : '••••'}
-        accent='bg-sky-500/70'
+    <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4'>
+      <StatCard
+        label={t('Request Count')}
+        value={props.totalCount}
+        helper={t('Total Count')}
+        icon={ReceiptText}
       />
-      <StatBadge
+      <StatCard
+        label={t('Total Usage')}
+        value={sensitiveVisible ? formatLogQuota(stats?.quota || 0) : '••••'}
+        helper={t('Usage')}
+        icon={Waypoints}
+      />
+      <StatCard
         label={t('RPM')}
         value={stats?.rpm || 0}
-        accent='bg-rose-500/65'
+        helper={t('Requests per minute')}
+        icon={Gauge}
       />
-      <StatBadge
+      <StatCard
         label={t('TPM')}
         value={stats?.tpm || 0}
-        accent='bg-slate-400/70'
+        helper={t('Tokens per minute')}
+        icon={Activity}
       />
     </div>
   )
