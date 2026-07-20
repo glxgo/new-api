@@ -102,7 +102,10 @@ export async function updateApiKeyStatus(
 export async function fetchTokenKey(
   id: number
 ): Promise<{ success: boolean; message?: string; data?: { key: string } }> {
-  const res = await api.post(`/api/token/${id}/key`)
+  const res = await api.post(`/api/token/${id}/key`, undefined, {
+    skipBusinessError: true,
+    skipErrorHandler: true,
+  })
   return res.data
 }
 
@@ -112,6 +115,10 @@ export async function fetchTokenKeysBatch(ids: number[]): Promise<{
   message?: string
   data?: { keys: Record<number, string> }
 }> {
-  const res = await api.post('/api/token/batch/keys', { ids })
+  const res = await api.post(
+    '/api/token/batch/keys',
+    { ids },
+    { skipBusinessError: true, skipErrorHandler: true }
+  )
   return res.data
 }

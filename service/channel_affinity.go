@@ -25,6 +25,7 @@ const (
 	ginKeyChannelAffinityMeta       = "channel_affinity_meta"
 	ginKeyChannelAffinityLogInfo    = "channel_affinity_log_info"
 	ginKeyChannelAffinitySkipRetry  = "channel_affinity_skip_retry_on_failure"
+	ginKeyChannelAffinityNoRecord   = "channel_affinity_no_record"
 
 	channelAffinityCacheNamespace           = "new-api:channel_affinity:v1"
 	channelAffinityUsageCacheStatsNamespace = "new-api:channel_affinity_usage_cache_stats:v1"
@@ -665,6 +666,16 @@ func ClearCurrentChannelAffinityCache(c *gin.Context) bool {
 	return false
 }
 
+// PreventChannelAffinityRecord marks the current request as unsuccessful for
+// affinity purposes. This is needed for streaming responses whose HTTP status
+// has already been committed as 200 before an incomplete stream is detected.
+func PreventChannelAffinityRecord(c *gin.Context) {
+	if c == nil {
+		return
+	}
+	c.Set(ginKeyChannelAffinityNoRecord, true)
+}
+
 func ShouldKeepChannelAffinityOnChannelDisabled() bool {
 	setting := operation_setting.GetChannelAffinitySetting()
 	if setting == nil {
@@ -711,7 +722,7 @@ func AppendChannelAffinityAdminInfo(c *gin.Context, adminInfo map[string]interfa
 }
 
 func RecordChannelAffinity(c *gin.Context, channelID int) {
-	if channelID <= 0 {
+	if c == nil || c.GetBool(ginKeyChannelAffinityNoRecord) || channelID <= 0 {
 		return
 	}
 	setting := operation_setting.GetChannelAffinitySetting()

@@ -90,7 +90,9 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.GET("/self/groups", controller.GetUserGroups)
 				selfRoute.GET("/self", controller.GetSelf)
 				selfRoute.GET("/models", controller.GetUserModels)
-			selfRoute.GET("/cache-rate", controller.GetUserCacheRate)
+				selfRoute.GET("/cache-rate", controller.GetUserCacheRate)
+				selfRoute.GET("/concurrency-applications", controller.GetSelfConcurrencyApplications)
+				selfRoute.POST("/concurrency-applications", middleware.CriticalRateLimit(), controller.CreateConcurrencyApplication)
 				selfRoute.PUT("/self", controller.UpdateSelf)
 				selfRoute.DELETE("/self", controller.DeleteSelf)
 				selfRoute.GET("/token", controller.GenerateAccessToken)
@@ -156,6 +158,8 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.PUT("/", controller.UpdateUser)
 				adminRoute.DELETE("/:id", controller.DeleteUser)
 				adminRoute.DELETE("/:id/reset_passkey", controller.AdminResetPasskey)
+				adminRoute.GET("/admin/concurrency-applications", controller.GetConcurrencyApplications)
+				adminRoute.POST("/admin/concurrency-applications/:id/review", controller.ReviewConcurrencyApplication)
 
 				// Admin 2FA routes
 				adminRoute.GET("/2fa/stats", controller.Admin2FAStats)

@@ -279,13 +279,13 @@ func UpdateOptionsBulk(values map[string]string) error {
 func migrateGroupModelPricingV1() {
 	const sentinel = "group_model_pricing_migration_v1"
 	var existing Option
-	if DB.Where("key = ?", sentinel).First(&existing).Error == nil && existing.Value == "true" {
+	if DB.Where(optionKeyWhereClause(), sentinel).First(&existing).Error == nil && existing.Value == "true" {
 		return // 已迁移
 	}
 	keys := []string{"GroupModelRatio", "GroupModelPrice", "GroupModelCost"}
 	for _, k := range keys {
 		var opt Option
-		hasOld := DB.Where("key = ?", k).First(&opt).Error == nil && opt.Value != "" && opt.Value != "{}"
+		hasOld := DB.Where(optionKeyWhereClause(), k).First(&opt).Error == nil && opt.Value != "" && opt.Value != "{}"
 		if hasOld {
 			common.SysLog("[group-model-pricing-migration-v1] 清空废弃分组独立模型价: " + k)
 		}
@@ -297,6 +297,10 @@ func migrateGroupModelPricingV1() {
 	sentinelOpt.Value = "true"
 	DB.Save(&sentinelOpt)
 	common.SysLog("[group-model-pricing-migration-v1] 完成: GroupModelRatio/Price/Cost 已清空, 后续走「全局官方价 × 分组倍率」")
+}
+
+func optionKeyWhereClause() string {
+	return commonKeyCol + " = ?"
 }
 
 func updateOptionMap(key string, value string) (err error) {

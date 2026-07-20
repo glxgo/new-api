@@ -3,7 +3,6 @@ package model
 import (
 	"errors"
 	"fmt"
-	"math/rand"
 	"sort"
 	"strings"
 	"sync"
@@ -60,7 +59,15 @@ func InitChannelCache() {
 	for group, model2channels := range newGroup2model2channels {
 		for model, channels := range model2channels {
 			sort.Slice(channels, func(i, j int) bool {
-				return newChannelId2channel[channels[i]].GetPriority() > newChannelId2channel[channels[j]].GetPriority()
+				left := newChannelId2channel[channels[i]]
+				right := newChannelId2channel[channels[j]]
+				if left.GetPriority() != right.GetPriority() {
+					return left.GetPriority() > right.GetPriority()
+				}
+				if left.GetWeight() != right.GetWeight() {
+					return left.GetWeight() > right.GetWeight()
+				}
+				return left.Id < right.Id
 			})
 			newGroup2model2channels[group][model] = channels
 		}
@@ -95,22 +102,38 @@ func SyncChannelCache(frequency int) {
 	}
 }
 
-func GetRandomSatisfiedChannel(group string, model string, retry int, relayFormat types.RelayFormat) (*Channel, error) {
+func GetRandomSatisfiedChannel(group string, model string, retry int, relayFormat types.RelayFormat, excludedChannelIds map[int]struct{}) (*Channel, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
-		return GetChannel(group, model, retry, relayFormat)
+		return GetChannel(group, model, retry, relayFormat, excludedChannelIds)
 	}
 
 	channelSyncLock.RLock()
-	defer channelSyncLock.RUnlock()
-
-	// First, try to find channels with the exact model name.
-	channels := group2model2channels[group][model]
-
-	// If no channels found, try to find channels with the normalized model name.
+	model2channels := group2model2channels[group]
+	// Copy the candidate IDs before releasing the cache lock.
+	channels := append([]int(nil), model2channels[model]...)
 	if len(channels) == 0 {
 		normalizedModel := ratio_setting.FormatMatchingModelName(model)
-		channels = group2model2channels[group][normalizedModel]
+		channels = append([]int(nil), model2channels[normalizedModel]...)
+	}
+	channelMap := make(map[int]*Channel, len(channels))
+	for _, channelId := range channels {
+		channelMap[channelId] = channelsIDM[channelId]
+	}
+	channelSyncLock.RUnlock()
+
+	if len(channels) == 0 {
+		return nil, nil
+	}
+
+	if len(excludedChannelIds) > 0 {
+		untriedChannels := make([]int, 0, len(channels))
+		for _, channelId := range channels {
+			if _, used := excludedChannelIds[channelId]; !used {
+				untriedChannels = append(untriedChannels, channelId)
+			}
+		}
+		channels = untriedChannels
 	}
 
 	if len(channels) == 0 {
@@ -118,7 +141,7 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, relayForma
 	}
 
 	if len(channels) == 1 {
-		if channel, ok := channelsIDM[channels[0]]; ok {
+		if channel, ok := channelMap[channels[0]]; ok {
 			return channel, nil
 		}
 		return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channels[0])
@@ -126,7 +149,7 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, relayForma
 
 	uniquePriorities := make(map[int]bool)
 	for _, channelId := range channels {
-		if channel, ok := channelsIDM[channelId]; ok {
+		if channel, ok := channelMap[channelId]; ok {
 			uniquePriorities[int(channel.GetPriority())] = true
 		} else {
 			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
@@ -144,12 +167,10 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, relayForma
 	targetPriority := int64(sortedUniquePriorities[retry])
 
 	// get the priority for the given retry number
-	var sumWeight = 0
 	var targetChannels []*Channel
 	for _, channelId := range channels {
-		if channel, ok := channelsIDM[channelId]; ok {
+		if channel, ok := channelMap[channelId]; ok {
 			if channel.GetPriority() == targetPriority {
-				sumWeight += channel.GetWeight()
 				targetChannels = append(targetChannels, channel)
 			}
 		} else {
@@ -173,42 +194,13 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, relayForma
 		}
 		if len(preferred) > 0 {
 			targetChannels = preferred
-			sumWeight = 0
-			for _, ch := range targetChannels {
-				sumWeight += ch.GetWeight()
-			}
 		}
 	}
 
-	// smoothing factor and adjustment
-	smoothingFactor := 1
-	smoothingAdjustment := 0
-
-	if sumWeight == 0 {
-		// when all channels have weight 0, set sumWeight to the number of channels and set smoothing adjustment to 100
-		// each channel's effective weight = 100
-		sumWeight = len(targetChannels) * 100
-		smoothingAdjustment = 100
-	} else if sumWeight/len(targetChannels) < 10 {
-		// when the average weight is less than 10, set smoothing factor to 100
-		smoothingFactor = 100
-	}
-
-	// Calculate the total weight of all channels up to endIdx
-	totalWeight := sumWeight * smoothingFactor
-
-	// Generate a random value in the range [0, totalWeight)
-	randomWeight := rand.Intn(totalWeight)
-
-	// Find a channel based on its weight
-	for _, channel := range targetChannels {
-		randomWeight -= channel.GetWeight()*smoothingFactor + smoothingAdjustment
-		if randomWeight < 0 {
-			return channel, nil
-		}
-	}
-	// return null if no channel is not found
-	return nil, errors.New("channel not found")
+	// New conversations always start from the first configured candidate.
+	// Retries exclude already-used channel IDs, so the next call naturally
+	// advances to the next candidate without introducing cross-request state.
+	return targetChannels[0], nil
 }
 
 func CacheGetChannel(id int) (*Channel, error) {

@@ -59,6 +59,7 @@ export const userSchema = z.object({
   last_login_at: z.number().optional(),
   DeletedAt: z.any().nullable().optional(),
   remark: z.string().optional(),
+  concurrency_limit: z.number().default(8),
 })
 export type User = z.infer<typeof userSchema>
 
@@ -108,6 +109,7 @@ export interface UserFormData {
   quota?: number // Only used when updating user
   group?: string // Only used when updating user
   remark?: string // Only used when updating user
+  concurrency_limit?: number
 }
 
 export type ManageUserAction =
@@ -132,3 +134,16 @@ export interface ManageUserQuotaPayload {
 // ============================================================================
 
 export type UsersDialogType = 'create' | 'update' | 'delete'
+
+export interface AdminConcurrencyApplication {
+  id: number
+  user_id: number
+  username: string
+  current_limit: number
+  requested_limit: number
+  reason: string
+  contact: string
+  status: 'pending' | 'approved' | 'rejected'
+  admin_note?: string
+  created_at: number
+}

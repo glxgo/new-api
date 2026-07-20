@@ -466,36 +466,38 @@ func GetSelf(c *gin.Context) {
 
 	// 构建响应数据，包含用户信息和权限
 	responseData := map[string]interface{}{
-		"id":                user.Id,
-		"username":          user.Username,
-		"display_name":      user.DisplayName,
-		"role":              user.Role,
-		"status":            user.Status,
-		"email":             user.Email,
-		"github_id":         user.GitHubId,
-		"discord_id":        user.DiscordId,
-		"oidc_id":           user.OidcId,
-		"wechat_id":         user.WeChatId,
-		"telegram_id":       user.TelegramId,
-		"group":             user.Group,
-		"quota":             user.Quota,
-		"used_quota":        user.UsedQuota,
-		"request_count":     user.RequestCount,
-		"aff_code":          user.AffCode,
-		"aff_count":         user.AffCount,
-		"aff_quota":         user.AffQuota,
-		"aff_history_quota": user.AffHistoryQuota,
-		"inviter_id":        user.InviterId,
-		"gift_quota":        user.GiftQuota,
-		"used_gift_quota":   user.UsedGiftQuota,
-		"dividend_balance":  user.DividendBalance,
-		"dividend_total":    user.DividendTotal,
-		"aff_admin_id":      user.AffAdminId,
-		"linux_do_id":       user.LinuxDOId,
-		"setting":           user.Setting,
-		"stripe_customer":   user.StripeCustomer,
-		"sidebar_modules":   userSetting.SidebarModules, // 正确提取sidebar_modules字段
-		"permissions":       permissions,                // 新增权限字段
+		"id":                  user.Id,
+		"username":            user.Username,
+		"display_name":        user.DisplayName,
+		"role":                user.Role,
+		"status":              user.Status,
+		"email":               user.Email,
+		"github_id":           user.GitHubId,
+		"discord_id":          user.DiscordId,
+		"oidc_id":             user.OidcId,
+		"wechat_id":           user.WeChatId,
+		"telegram_id":         user.TelegramId,
+		"group":               user.Group,
+		"quota":               getSelfQuotaForResponse(c, user),
+		"used_quota":          user.UsedQuota,
+		"request_count":       user.RequestCount,
+		"aff_code":            user.AffCode,
+		"aff_count":           user.AffCount,
+		"aff_quota":           user.AffQuota,
+		"aff_history_quota":   user.AffHistoryQuota,
+		"inviter_id":          user.InviterId,
+		"gift_quota":          user.GiftQuota,
+		"used_gift_quota":     user.UsedGiftQuota,
+		"dividend_balance":    user.DividendBalance,
+		"dividend_total":      user.DividendTotal,
+		"aff_admin_id":        user.AffAdminId,
+		"linux_do_id":         user.LinuxDOId,
+		"setting":             user.Setting,
+		"stripe_customer":     user.StripeCustomer,
+		"sidebar_modules":     userSetting.SidebarModules, // 正确提取sidebar_modules字段
+		"permissions":         permissions,                // 新增权限字段
+		"concurrency_limit":   user.ConcurrencyLimit,
+		"current_concurrency": service.GetUserConcurrency(user.Id),
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -504,6 +506,21 @@ func GetSelf(c *gin.Context) {
 		"data":    responseData,
 	})
 	return
+}
+
+// getSelfQuotaForResponse keeps the browser/API response compatible with the
+// dual-pool wallet while adapting the legacy New API balance contract used by
+// the CC Switch import script. CC Switch only reads data.quota, so it must see
+// all API-spendable funds; browser clients still receive principal separately
+// and combine it with gift_quota where appropriate.
+func getSelfQuotaForResponse(c *gin.Context, user *model.User) int {
+	if user == nil {
+		return 0
+	}
+	if c != nil && strings.HasPrefix(strings.ToLower(c.GetHeader("User-Agent")), "cc-switch/") {
+		return user.Quota + user.GiftQuota
+	}
+	return user.Quota
 }
 
 // 计算用户权限的辅助函数
@@ -666,6 +683,10 @@ func UpdateUser(c *gin.Context) {
 	}
 	if err := common.Validate.Struct(&updatedUser); err != nil {
 		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": err.Error()})
+		return
+	}
+	if updatedUser.ConcurrencyLimit < 0 || updatedUser.ConcurrencyLimit > 10000 {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "用户并发上限必须在 1-10000 之间"})
 		return
 	}
 	originUser, err := model.GetUserById(updatedUser.Id, false)

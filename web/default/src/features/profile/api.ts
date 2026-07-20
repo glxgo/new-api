@@ -25,6 +25,7 @@ import type {
   DeleteAccountRequest,
   CheckinStatusResponse,
   CheckinResponse,
+  ConcurrencyApplication,
 } from './types'
 
 // ============================================================================
@@ -36,6 +37,22 @@ import type {
  */
 export async function getUserProfile(): Promise<ApiResponse<UserProfile>> {
   const res = await api.get('/api/user/self')
+  return res.data
+}
+
+export async function getSelfConcurrencyApplications(): Promise<
+  ApiResponse<{ items: ConcurrencyApplication[]; total: number }>
+> {
+  const res = await api.get('/api/user/concurrency-applications')
+  return res.data
+}
+
+export async function createConcurrencyApplication(data: {
+  requested_limit: number
+  reason: string
+  contact: string
+}): Promise<ApiResponse<ConcurrencyApplication>> {
+  const res = await api.post('/api/user/concurrency-applications', data)
   return res.data
 }
 
@@ -83,7 +100,9 @@ export async function deleteUserAccount(
  * Generate/regenerate system access token
  * @param force true=强制重新生成（覆盖旧令牌）；false=有令牌就返回现有的，无则生成首个
  */
-export async function generateAccessToken(force = false): Promise<ApiResponse<string>> {
+export async function generateAccessToken(
+  force = false
+): Promise<ApiResponse<string>> {
   const res = await api.get('/api/user/token', {
     params: force ? { force: 'true' } : {},
   })

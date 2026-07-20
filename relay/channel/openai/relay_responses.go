@@ -112,6 +112,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 					c.Set("image_generation_call_size", streamResponse.Response.GetSize())
 				}
 			}
+			sr.Done()
 		case "response.output_text.delta":
 			// 处理输出文本
 			responseTextBuilder.WriteString(streamResponse.Delta)
@@ -129,6 +130,30 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			}
 		}
 	})
+
+	if info.StreamStatus == nil || info.StreamStatus.EndReason != relaycommon.StreamEndReasonDone {
+		streamSummary := "status unavailable"
+		if info.StreamStatus != nil {
+			streamSummary = info.StreamStatus.Summary()
+		}
+		streamErr := fmt.Errorf("responses stream ended before response.completed: %s", streamSummary)
+		service.PreventChannelAffinityRecord(c)
+		service.ClearCurrentChannelAffinityCache(c)
+
+		errorOptions := []types.NewAPIErrorOptions{}
+		if info.ReceivedResponseCount > 0 || c.Request.Context().Err() != nil {
+			// Retrying after forwarding upstream events can duplicate output. Let
+			// the client reconnect; the cleared affinity will route that retry away
+			// from the failed channel.
+			errorOptions = append(errorOptions, types.ErrOptionWithSkipRetry())
+		}
+		return nil, types.NewErrorWithStatusCode(
+			streamErr,
+			types.ErrorCodeChannelIncompleteStream,
+			http.StatusBadGateway,
+			errorOptions...,
+		)
+	}
 
 	if usage.CompletionTokens == 0 {
 		// 计算输出文本的 token 数量

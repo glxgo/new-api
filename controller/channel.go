@@ -457,6 +457,12 @@ func validateTwoFactorAuth(twoFA *model.TwoFA, code string) bool {
 
 // validateChannel 通用的渠道校验函数
 func validateChannel(channel *model.Channel, isAdd bool) error {
+	if channel == nil {
+		return fmt.Errorf("channel cannot be empty")
+	}
+	if channel.ConcurrencyLimit < 0 || channel.ConcurrencyLimit > 100000 {
+		return fmt.Errorf("渠道并发上限必须在 0-100000 之间，0 表示不限制")
+	}
 	// 校验 channel settings
 	if err := channel.ValidateSettings(); err != nil {
 		return fmt.Errorf("渠道额外设置[channel setting] 格式错误：%s", err.Error())
@@ -1004,11 +1010,18 @@ func UpdateChannel(c *gin.Context) {
 			// 覆盖模式：直接使用新密钥（默认行为，不需要特殊处理）
 		}
 	}
+	requestedConcurrencyLimit := channel.ConcurrencyLimit
 	err = channel.Update()
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	if err := model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).
+		Update("concurrency_limit", requestedConcurrencyLimit).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	channel.ConcurrencyLimit = requestedConcurrencyLimit
 	model.InitChannelCache()
 	service.ResetProxyClientCache()
 	// 记录变更的字段名（语言无关的字段标识），密钥仅记录"已更换"绝不记录内容。

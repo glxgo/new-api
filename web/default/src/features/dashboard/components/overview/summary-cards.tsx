@@ -26,6 +26,7 @@ import { getCurrencyLabel, isCurrencyDisplayEnabled } from '@/lib/currency'
 import { getUserCacheRate } from '@/lib/api'
 import { formatNumber, formatQuota } from '@/lib/format'
 import { computeTimeRange } from '@/lib/time'
+import { getUserAvailableBalance } from '@/lib/user-balance'
 import { cn } from '@/lib/utils'
 import { useStatus } from '@/hooks/use-status'
 import { Button } from '@/components/ui/button'
@@ -148,7 +149,7 @@ export function SummaryCards() {
     staleTime: 60 * 1000,
   })
   const cacheRate = cacheRateQuery.data?.data?.cache_rate ?? 0
-  const remainQuota = Number(user?.quota ?? 0)
+  const remainQuota = getUserAvailableBalance(user)
   const usedQuota = Number(user?.used_quota ?? 0)
   const requestCount = Number(user?.request_count ?? 0)
 

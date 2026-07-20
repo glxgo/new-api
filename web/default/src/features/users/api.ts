@@ -26,6 +26,7 @@ import type {
   ManageUserAction,
   ManageUserQuotaPayload,
   ApiResponse,
+  AdminConcurrencyApplication,
 } from './types'
 
 // ============================================================================
@@ -40,6 +41,28 @@ export async function getUsers(
 ): Promise<GetUsersResponse> {
   const { p = 1, page_size = 10 } = params
   const res = await api.get(`/api/user/?p=${p}&page_size=${page_size}`)
+  return res.data
+}
+
+export async function getConcurrencyApplications(
+  status = 'pending'
+): Promise<
+  ApiResponse<{ items: AdminConcurrencyApplication[]; total: number }>
+> {
+  const res = await api.get('/api/user/admin/concurrency-applications', {
+    params: { status, page_size: 100 },
+  })
+  return res.data
+}
+
+export async function reviewConcurrencyApplication(
+  id: number,
+  data: { approve: boolean; approved_limit: number; admin_note?: string }
+): Promise<ApiResponse<AdminConcurrencyApplication>> {
+  const res = await api.post(
+    `/api/user/admin/concurrency-applications/${id}/review`,
+    data
+  )
   return res.data
 }
 

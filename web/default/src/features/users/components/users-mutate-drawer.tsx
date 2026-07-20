@@ -397,6 +397,31 @@ export function UsersMutateDrawer({
 
                   <FormField
                     control={form.control}
+                    name='concurrency_limit'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>账号并发上限</FormLabel>
+                        <FormControl>
+                          <Input
+                            type='number'
+                            min={1}
+                            max={10000}
+                            value={field.value}
+                            onChange={(event) =>
+                              field.onChange(Number(event.target.value))
+                            }
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          同一时刻允许执行的 API 请求数；新注册用户默认为 8。
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
                     name='remark'
                     render={({ field }) => (
                       <FormItem>

@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -144,21 +145,53 @@ func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
 	return channelQuery, nil
 }
 
-func GetChannel(group string, model string, retry int, relayFormat types.RelayFormat) (*Channel, error) {
+func GetChannel(group string, model string, retry int, relayFormat types.RelayFormat, excludedChannelIds map[int]struct{}) (*Channel, error) {
 	var abilities []Ability
 
-	var err error = nil
-	channelQuery, err := getChannelQuery(group, model, retry)
+	err := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).
+		Order("priority DESC, weight DESC, channel_id ASC").
+		Find(&abilities).Error
 	if err != nil {
 		return nil, err
 	}
-	if common.UsingSQLite || common.UsingPostgreSQL {
-		err = channelQuery.Order("weight DESC").Find(&abilities).Error
-	} else {
-		err = channelQuery.Order("weight DESC").Find(&abilities).Error
+	if len(excludedChannelIds) > 0 {
+		untriedAbilities := make([]Ability, 0, len(abilities))
+		for _, ability := range abilities {
+			if _, used := excludedChannelIds[ability.ChannelId]; !used {
+				untriedAbilities = append(untriedAbilities, ability)
+			}
+		}
+		abilities = untriedAbilities
 	}
-	if err != nil {
-		return nil, err
+	if len(abilities) > 0 {
+		prioritySet := make(map[int64]struct{})
+		for _, ability := range abilities {
+			priority := int64(0)
+			if ability.Priority != nil {
+				priority = *ability.Priority
+			}
+			prioritySet[priority] = struct{}{}
+		}
+		priorities := make([]int64, 0, len(prioritySet))
+		for priority := range prioritySet {
+			priorities = append(priorities, priority)
+		}
+		sort.Slice(priorities, func(i, j int) bool { return priorities[i] > priorities[j] })
+		if retry >= len(priorities) {
+			retry = len(priorities) - 1
+		}
+		targetPriority := priorities[retry]
+		targetAbilities := make([]Ability, 0, len(abilities))
+		for _, ability := range abilities {
+			priority := int64(0)
+			if ability.Priority != nil {
+				priority = *ability.Priority
+			}
+			if priority == targetPriority {
+				targetAbilities = append(targetAbilities, ability)
+			}
+		}
+		abilities = targetAbilities
 	}
 	// 协议优先过滤（与 channel_cache.go 一致，避免跨协议转换 Issue #4755）
 	if relayFormat != "" && len(abilities) > 1 {
@@ -184,21 +217,7 @@ func GetChannel(group string, model string, retry int, relayFormat types.RelayFo
 	}
 	channel := Channel{}
 	if len(abilities) > 0 {
-		// Randomly choose one
-		weightSum := uint(0)
-		for _, ability_ := range abilities {
-			weightSum += ability_.Weight + 10
-		}
-		// Randomly choose one
-		weight := common.GetRandomInt(int(weightSum))
-		for _, ability_ := range abilities {
-			weight -= int(ability_.Weight) + 10
-			//log.Printf("weight: %d, ability weight: %d", weight, *ability_.Weight)
-			if weight <= 0 {
-				channel.Id = ability_.ChannelId
-				break
-			}
-		}
+		channel.Id = abilities[0].ChannelId
 	} else {
 		return nil, nil
 	}

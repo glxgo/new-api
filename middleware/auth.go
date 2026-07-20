@@ -416,6 +416,14 @@ func TokenAuth() func(c *gin.Context) {
 		if err != nil {
 			return
 		}
+		lease, acquired := service.AcquireUserConcurrency(token.UserId, userCache.ConcurrencyLimit)
+		if !acquired {
+			abortWithOpenAiMessage(c, http.StatusTooManyRequests,
+				fmt.Sprintf("当前账号并发已达到上限（%d），请等待正在执行的请求完成后重试", userCache.ConcurrencyLimit),
+				types.ErrorCode("user_concurrency_exceeded"))
+			return
+		}
+		defer lease.Release()
 		c.Next()
 	}
 }

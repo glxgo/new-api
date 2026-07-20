@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next'
 import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
 import { formatCompactNumber, formatQuota } from '@/lib/format'
 import { getRoleLabel } from '@/lib/roles'
+import { getUserAvailableBalance } from '@/lib/user-balance'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -84,7 +85,7 @@ export function ProfileHeader({ profile, loading }: ProfileHeaderProps) {
   const stats = [
     {
       label: t('Current Balance'),
-      value: formatQuota(profile.quota),
+      value: formatQuota(getUserAvailableBalance(profile)),
       description: t('Remaining quota'),
       icon: WalletCards,
     },

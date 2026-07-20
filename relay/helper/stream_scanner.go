@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
@@ -25,7 +26,35 @@ const (
 	InitialScannerBufferSize    = 64 << 10  // 64KB (64*1024)
 	DefaultMaxScannerBufferSize = 128 << 20 // 64MB (64*1024*1024) default SSE buffer size
 	DefaultPingInterval         = 10 * time.Second
+	MaxResponsesPingInterval    = 15 * time.Second
 )
+
+// ResolveStreamPing keeps Responses streams alive even when the global ping
+// switch is disabled. Responses requests can legitimately spend longer than a
+// reverse proxy timeout waiting for the first upstream event, so relying on an
+// optional administrator setting leaves the default deployment vulnerable to
+// truncated streams.
+func ResolveStreamPing(info *relaycommon.RelayInfo, generalSettings *operation_setting.GeneralSetting) (bool, time.Duration) {
+	if info == nil || info.DisablePing {
+		return false, 0
+	}
+
+	isResponses := info.RelayMode == relayconstant.RelayModeResponses ||
+		info.RelayMode == relayconstant.RelayModeResponsesCompact
+	globalEnabled := generalSettings != nil && generalSettings.PingIntervalEnabled
+	if !isResponses && !globalEnabled {
+		return false, 0
+	}
+
+	pingInterval := DefaultPingInterval
+	if generalSettings != nil && generalSettings.PingIntervalSeconds > 0 {
+		pingInterval = time.Duration(generalSettings.PingIntervalSeconds) * time.Second
+	}
+	if isResponses && (!globalEnabled || pingInterval > MaxResponsesPingInterval) {
+		pingInterval = DefaultPingInterval
+	}
+	return true, pingInterval
+}
 
 func getScannerBufferSize() int {
 	if constant.StreamScannerMaxBufferMB > 0 {
@@ -68,11 +97,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	)
 
 	generalSettings := operation_setting.GetGeneralSetting()
-	pingEnabled := generalSettings.PingIntervalEnabled && !info.DisablePing
-	pingInterval := time.Duration(generalSettings.PingIntervalSeconds) * time.Second
-	if pingInterval <= 0 {
-		pingInterval = DefaultPingInterval
-	}
+	pingEnabled, pingInterval := ResolveStreamPing(info, generalSettings)
 
 	if pingEnabled {
 		pingTicker = time.NewTicker(pingInterval)
@@ -190,6 +215,10 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 				logger.LogError(c, fmt.Sprintf("data handler goroutine panic: %v", r))
 				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonPanic, fmt.Errorf("handler panic: %v", r))
 			}
+			// The scanner may reach EOF before buffered events are handled. Only
+			// classify EOF after the handler has drained dataChan, so handler-level
+			// terminators such as response.completed can win deterministically.
+			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonEOF, nil)
 			common.SafeSendBool(stopChan, true)
 		}()
 		sr := newStreamResult(info.StreamStatus)
@@ -214,7 +243,6 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 				logger.LogError(c, fmt.Sprintf("scanner goroutine panic: %v", r))
 				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonPanic, fmt.Errorf("scanner panic: %v", r))
 			}
-			common.SafeSendBool(stopChan, true)
 			logger.LogDebug(c, "scanner goroutine exited")
 		}()
 
@@ -270,7 +298,6 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, err)
 			}
 		}
-		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonEOF, nil)
 	})
 
 	// 主循环等待完成或超时

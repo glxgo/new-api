@@ -1,14 +1,89 @@
 package channel
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
+	appcommon "github.com/QuantumNous/new-api/common"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+type cancellationTestAdaptor struct {
+	Adaptor
+	url string
+}
+
+func (a cancellationTestAdaptor) GetRequestURL(_ *relaycommon.RelayInfo) (string, error) {
+	return a.url, nil
+}
+
+func (a cancellationTestAdaptor) SetupRequestHeader(_ *gin.Context, _ *http.Header, _ *relaycommon.RelayInfo) error {
+	return nil
+}
+
+func TestDoApiRequest_CancelsUpstreamWhenClientDisconnects(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	oldRelayTimeout := appcommon.RelayTimeout
+	appcommon.RelayTimeout = 0
+	service.InitHttpClient()
+	t.Cleanup(func() {
+		appcommon.RelayTimeout = oldRelayTimeout
+		service.InitHttpClient()
+	})
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		select {
+		case <-r.Context().Done():
+		case <-release:
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+		server.Close()
+	})
+
+	requestContext, cancel := context.WithCancel(context.Background())
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil).WithContext(requestContext)
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
+
+	requestDone := make(chan error, 1)
+	go func() {
+		_, err := DoApiRequest(cancellationTestAdaptor{url: server.URL}, c, info, strings.NewReader("{}"))
+		requestDone <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("upstream request did not start")
+	}
+	cancel()
+
+	select {
+	case err := <-requestDone:
+		require.Error(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("DoApiRequest did not return after cancellation")
+	}
+}
 
 func TestProcessHeaderOverride_ChannelTestSkipsPassthroughRules(t *testing.T) {
 	t.Parallel()

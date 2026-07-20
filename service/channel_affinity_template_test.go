@@ -263,6 +263,37 @@ func TestClearCurrentChannelAffinityCache(t *testing.T) {
 	require.False(t, ShouldSkipRetryAfterChannelAffinityFailure(ctx))
 }
 
+func TestPreventChannelAffinityRecord_SkipsSuccessfulStatusWriteback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	setting := operation_setting.GetChannelAffinitySetting()
+	require.NotNil(t, setting)
+	oldEnabled := setting.Enabled
+	setting.Enabled = true
+	t.Cleanup(func() {
+		setting.Enabled = oldEnabled
+	})
+
+	cacheKeySuffix := fmt.Sprintf("codex cli trace:default:no-record-%d", time.Now().UnixNano())
+	cacheKeyFull := channelAffinityCacheNamespace + ":" + cacheKeySuffix
+	cache := getChannelAffinityCache()
+	t.Cleanup(func() {
+		_, _ = cache.DeleteMany([]string{cacheKeySuffix})
+	})
+
+	ctx := buildChannelAffinityTemplateContextForTest(channelAffinityMeta{
+		CacheKey:   cacheKeyFull,
+		TTLSeconds: 60,
+		RuleName:   "codex cli trace",
+	})
+	PreventChannelAffinityRecord(ctx)
+	RecordChannelAffinity(ctx, 9527)
+
+	_, found, err := cache.Get(cacheKeySuffix)
+	require.NoError(t, err)
+	require.False(t, found)
+}
+
 func TestChannelAffinityHitCodexTemplatePassHeadersEffective(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -331,4 +362,21 @@ func TestChannelAffinityHitCodexTemplatePassHeadersEffective(t *testing.T) {
 	require.False(t, exists)
 	_, exists = info.RuntimeHeadersOverride["x-codex-turn-metadata"]
 	require.False(t, exists)
+}
+
+func TestDefaultChannelAffinityRulesUseConversationKeysOnly(t *testing.T) {
+	setting := operation_setting.GetChannelAffinitySetting()
+	require.NotNil(t, setting)
+	require.NotEmpty(t, setting.Rules)
+
+	foundPromptCacheKey := false
+	for _, rule := range setting.Rules {
+		require.False(t, rule.SkipRetryOnFailure)
+		for _, source := range rule.KeySources {
+			require.Equal(t, "gjson", source.Type)
+			require.Equal(t, "prompt_cache_key", source.Path)
+			foundPromptCacheKey = true
+		}
+	}
+	require.True(t, foundPromptCacheKey)
 }

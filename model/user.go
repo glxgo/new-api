@@ -38,15 +38,15 @@ type User struct {
 	VerificationCode string         `json:"verification_code" gorm:"-:all"`                         // this field is only for Email verification, don't save it to database!
 	AccessToken      *string        `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
 	Quota            int            `json:"quota" gorm:"type:int;default:0"`
-	UsedQuota        int            `json:"used_quota" gorm:"type:int;default:0;column:used_quota"`          // used quota
-	GiftQuota        int            `json:"gift_quota" gorm:"type:int;default:0;column:gift_quota"`          // 赠金池余额(不可提现,不产利润)
-	UsedGiftQuota    int            `json:"used_gift_quota" gorm:"type:int;default:0;column:used_gift_quota"` // 赠金历史消耗
+	UsedQuota        int            `json:"used_quota" gorm:"type:int;default:0;column:used_quota"`             // used quota
+	GiftQuota        int            `json:"gift_quota" gorm:"type:int;default:0;column:gift_quota"`             // 赠金池余额(不可提现,不产利润)
+	UsedGiftQuota    int            `json:"used_gift_quota" gorm:"type:int;default:0;column:used_gift_quota"`   // 赠金历史消耗
 	DividendBalance  int            `json:"dividend_balance" gorm:"type:int;default:0;column:dividend_balance"` // 分红可提余额(管理员/超管)
-	DividendTotal    int            `json:"dividend_total" gorm:"type:int;default:0;column:dividend_total"`    // 累计分红(只增不减)
-	FrozenQuota      int            `json:"frozen_quota" gorm:"type:int;default:0;column:frozen_quota"`        // 提现冻结的本金
-	FrozenDividend   int            `json:"frozen_dividend" gorm:"type:int;default:0;column:frozen_dividend"`  // 提现冻结的分红
-	DividendRate     float64        `json:"dividend_rate" gorm:"column:dividend_rate;default:0"`               // 仅管理员:超管设的分红比例 0~0.75
-	RequestCount     int            `json:"request_count" gorm:"type:int;default:0;"`               // request number
+	DividendTotal    int            `json:"dividend_total" gorm:"type:int;default:0;column:dividend_total"`     // 累计分红(只增不减)
+	FrozenQuota      int            `json:"frozen_quota" gorm:"type:int;default:0;column:frozen_quota"`         // 提现冻结的本金
+	FrozenDividend   int            `json:"frozen_dividend" gorm:"type:int;default:0;column:frozen_dividend"`   // 提现冻结的分红
+	DividendRate     float64        `json:"dividend_rate" gorm:"column:dividend_rate;default:0"`                // 仅管理员:超管设的分红比例 0~0.75
+	RequestCount     int            `json:"request_count" gorm:"type:int;default:0;"`                           // request number
 	Group            string         `json:"group" gorm:"type:varchar(64);default:'default'"`
 	AffCode          string         `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
 	AffCount         int            `json:"aff_count" gorm:"type:int;default:0;column:aff_count"`
@@ -61,18 +61,20 @@ type User struct {
 	StripeCustomer   string         `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
 	CreatedAt        int64          `json:"created_at" gorm:"autoCreateTime;column:created_at"`
 	LastLoginAt      int64          `json:"last_login_at" gorm:"default:0;column:last_login_at"`
+	ConcurrencyLimit int            `json:"concurrency_limit" gorm:"not null;default:8;column:concurrency_limit"`
 }
 
 func (user *User) ToBaseUser() *UserBase {
 	cache := &UserBase{
-		Id:        user.Id,
-		Group:     user.Group,
-		Quota:     user.Quota,
-		GiftQuota: user.GiftQuota,
-		Status:    user.Status,
-		Username:  user.Username,
-		Setting:   user.Setting,
-		Email:     user.Email,
+		Id:               user.Id,
+		Group:            user.Group,
+		Quota:            user.Quota,
+		GiftQuota:        user.GiftQuota,
+		Status:           user.Status,
+		Username:         user.Username,
+		Setting:          user.Setting,
+		Email:            user.Email,
+		ConcurrencyLimit: user.ConcurrencyLimit,
 	}
 	return cache
 }
@@ -585,6 +587,9 @@ func (user *User) Edit(updatePassword bool) error {
 		"group":        newUser.Group,
 		"remark":       newUser.Remark,
 	}
+	if newUser.ConcurrencyLimit > 0 {
+		updates["concurrency_limit"] = newUser.ConcurrencyLimit
+	}
 	if updatePassword {
 		updates["password"] = newUser.Password
 	}
@@ -900,7 +905,7 @@ func DecreaseUserGiftQuotaGuarded(id int, amount int) (bool, error) {
 	result := DB.Model(&User{}).
 		Where("id = ? AND gift_quota >= ?", id, amount).
 		Updates(map[string]interface{}{
-			"gift_quota":     gorm.Expr("gift_quota - ?", amount),
+			"gift_quota":      gorm.Expr("gift_quota - ?", amount),
 			"used_gift_quota": gorm.Expr("used_gift_quota + ?", amount),
 		})
 	if result.Error != nil {

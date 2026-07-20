@@ -47,6 +47,8 @@ export interface UserProfile {
   group: string
   /** Current quota balance */
   quota: number
+  /** Gift quota balance (spendable but not withdrawable) */
+  gift_quota?: number
   /** Total used quota */
   used_quota: number
   /** Total request count */
@@ -81,6 +83,22 @@ export interface UserProfile {
   telegram_id?: string
   /** LinuxDO ID (OAuth) */
   linux_do_id?: string
+  /** Maximum simultaneously active API requests for this account */
+  concurrency_limit: number
+  /** Best-effort current active request count */
+  current_concurrency?: number
+}
+
+export interface ConcurrencyApplication {
+  id: number
+  current_limit: number
+  requested_limit: number
+  reason: string
+  contact: string
+  status: 'pending' | 'approved' | 'rejected'
+  admin_note?: string
+  created_at: number
+  reviewed_at?: number
 }
 
 /**

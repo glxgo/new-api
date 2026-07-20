@@ -17,7 +17,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SectionPageLayout } from '@/components/layout'
+import { ConcurrencyApplicationsPanel } from './components/concurrency-applications-panel'
 import { UsersDeleteDialog } from './components/users-delete-dialog'
 import { UsersMutateDrawer } from './components/users-mutate-drawer'
 import { UsersPrimaryButtons } from './components/users-primary-buttons'
@@ -36,7 +38,24 @@ function UsersContent() {
           <UsersPrimaryButtons />
         </SectionPageLayout.Actions>
         <SectionPageLayout.Content>
-          <UsersTable />
+          <Tabs
+            defaultValue='users'
+            className='flex min-h-0 flex-1 flex-col gap-4'
+          >
+            <TabsList className='w-fit'>
+              <TabsTrigger value='users'>用户列表</TabsTrigger>
+              <TabsTrigger value='concurrency'>并发申请</TabsTrigger>
+            </TabsList>
+            <TabsContent value='users' className='min-h-0 flex-1'>
+              <UsersTable />
+            </TabsContent>
+            <TabsContent
+              value='concurrency'
+              className='min-h-0 flex-1 overflow-auto'
+            >
+              <ConcurrencyApplicationsPanel />
+            </TabsContent>
+          </Tabs>
         </SectionPageLayout.Content>
       </SectionPageLayout>
 

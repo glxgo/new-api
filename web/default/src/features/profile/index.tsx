@@ -24,6 +24,7 @@ import {
   CardStaggerItem,
 } from '@/components/page-transition'
 import { CheckinCalendarCard } from './components/checkin-calendar-card'
+import { ConcurrencyCard } from './components/concurrency-card'
 import { LanguagePreferencesCard } from './components/language-preferences-card'
 import { PasskeyCard } from './components/passkey-card'
 import { ProfileHeader } from './components/profile-header'
@@ -69,6 +70,7 @@ export function Profile() {
               </div>
 
               <div className='space-y-4 sm:space-y-6 xl:sticky xl:top-6'>
+                <ConcurrencyCard profile={profile} loading={loading} />
                 {checkinEnabled && (
                   <CheckinCalendarCard
                     checkinEnabled={checkinEnabled}

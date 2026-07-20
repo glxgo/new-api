@@ -53,7 +53,8 @@ type Channel struct {
 	// add after v0.8.5
 	ChannelInfo ChannelInfo `json:"channel_info" gorm:"type:json"`
 
-	OtherSettings string `json:"settings" gorm:"column:settings"` // 其他设置，存储azure版本等不需要检索的信息，详见dto.ChannelOtherSettings
+	OtherSettings    string `json:"settings" gorm:"column:settings"`                                                                  // 其他设置，存储azure版本等不需要检索的信息，详见dto.ChannelOtherSettings
+	ConcurrencyLimit int    `json:"concurrency_limit" gorm:"not null;default:0;column:concurrency_limit" validate:"min=0,max=100000"` // 0 表示不限制；达到上限时仅跳过本次调度，不禁用渠道
 
 	// cache info
 	Keys []string `json:"-" gorm:"-"`

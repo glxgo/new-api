@@ -2510,7 +2510,7 @@ export function ChannelMutateDrawer({
                           title={t('Routing Strategy')}
                           icon={<Route className='h-3.5 w-3.5' />}
                         />
-                        <div className='grid gap-4 sm:grid-cols-2'>
+                        <div className='grid gap-4 sm:grid-cols-3'>
                           <FormField
                             control={form.control}
                             name='priority'
@@ -2553,6 +2553,31 @@ export function ChannelMutateDrawer({
                                 </FormControl>
                                 <FormDescription>
                                   {t(FIELD_DESCRIPTIONS.WEIGHT)}
+                                </FormDescription>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+
+                          <FormField
+                            control={form.control}
+                            name='concurrency_limit'
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>并发上限</FormLabel>
+                                <FormControl>
+                                  <Input
+                                    type='number'
+                                    min={0}
+                                    max={100000}
+                                    value={field.value}
+                                    onChange={(e) =>
+                                      field.onChange(Number(e.target.value))
+                                    }
+                                  />
+                                </FormControl>
+                                <FormDescription>
+                                  0 表示不限制；满载时无感切换同组渠道。
                                 </FormDescription>
                                 <FormMessage />
                               </FormItem>
