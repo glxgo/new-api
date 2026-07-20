@@ -3,6 +3,7 @@ package service
 import (
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/stretchr/testify/require"
@@ -53,4 +54,25 @@ func TestLocalConcurrencyAcquireIsAtomic(t *testing.T) {
 	for lease := range leases {
 		lease.Release()
 	}
+}
+
+func TestLocalConcurrencyHeartbeatKeepsLongRequestCounted(t *testing.T) {
+	oldRedisEnabled, oldRDB := common.RedisEnabled, common.RDB
+	common.RedisEnabled, common.RDB = false, nil
+	defer func() { common.RedisEnabled, common.RDB = oldRedisEnabled, oldRDB }()
+	resetLocalConcurrencyForTest()
+
+	ttl := 500 * time.Millisecond
+	first, ok := acquireConcurrencySlotWithTiming("concurrency:test:local-heartbeat", 1, ttl, 50*time.Millisecond)
+	require.True(t, ok)
+	t.Cleanup(first.Release)
+
+	time.Sleep(ttl + 250*time.Millisecond)
+	_, ok = acquireConcurrencySlotWithTiming("concurrency:test:local-heartbeat", 1, ttl, 50*time.Millisecond)
+	require.False(t, ok, "an active request must retain its slot after the original TTL")
+
+	first.Release()
+	second, ok := acquireConcurrencySlotWithTiming("concurrency:test:local-heartbeat", 1, ttl, 50*time.Millisecond)
+	require.True(t, ok)
+	second.Release()
 }
