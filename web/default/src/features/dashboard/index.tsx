@@ -25,6 +25,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SectionPageLayout } from '@/components/layout'
 import { FadeIn } from '@/components/page-transition'
+import { ConcurrencyCard } from '@/features/profile/components/concurrency-card'
+import { useProfile } from '@/features/profile/hooks'
 import { ModelsChartPreferences } from './components/models/models-chart-preferences'
 import { ModelsFilter } from './components/models/models-filter-dialog'
 import { SummaryCards } from './components/overview/summary-cards'
@@ -141,6 +143,7 @@ const SECTION_META: Record<DashboardSectionId, { titleKey: string }> = {
 
 export function Dashboard() {
   const { t } = useTranslation()
+  const { profile, loading: profileLoading } = useProfile()
   const navigate = useNavigate()
   const params = route.useParams()
   const userRole = useAuthStore((state) => state.auth.user?.role)
@@ -245,6 +248,9 @@ export function Dashboard() {
             <>
               <FadeIn>
                 <SummaryCards />
+              </FadeIn>
+              <FadeIn delay={0.03}>
+                <ConcurrencyCard profile={profile} loading={profileLoading} />
               </FadeIn>
               <FadeIn delay={0.05}>
                 <Suspense fallback={<LogStatCardsFallback />}>
