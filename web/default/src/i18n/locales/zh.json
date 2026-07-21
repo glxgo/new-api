@@ -4881,7 +4881,7 @@
     "Subscription Profit Commission": "订阅利润佣金",
     "Actual profit × rate": "实际利润 × 比例",
     "Direct invitee subscription: share of actual plan profit at expiry (0.20 = 20%)": "直接邀请用户的订阅套餐：到期时按套餐实际利润分成（0.20 = 20%）",
-    "Agent commission: direct invitee API consumption pays {{rate}}% of gross profit; subscriptions pay {{orderRate}}% of actual plan profit after expiry; indirect commission remains {{irate}}%.": "代理佣金：直接邀请用户的 API 消费按毛利的 {{rate}}% 计算；订阅套餐到期后按实际利润的 {{orderRate}}% 计算；间接邀新比例仍为 {{irate}}%。",
+    "Agent commission: direct invitee API consumption pays {{rate}}% of gross profit; subscriptions pay {{orderRate}}% of actual plan profit after expiry. Indirect referral commission follows the platform standard rates.": "代理佣金：直接邀请用户的 API 消费按毛利的 {{rate}}% 计算；订阅套餐到期后按实际利润的 {{orderRate}}% 计算。间接邀新佣金沿用平台现有比例规则。",
     "Agent commission enters your withdrawable commission account. API consumption is settled T+1; subscription commission is credited after the plan expires and its actual profit is calculated.": "代理佣金进入可提现佣金账户。API 消费按 T+1 结算，订阅佣金在套餐到期并核算实际利润后入账。",
     "Withdrawable commission enabled": "可提现佣金已开启",
     "View Commission Account": "查看佣金账户",

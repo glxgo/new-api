@@ -4827,7 +4827,7 @@
     "Subscription Profit Commission": "Subscription Profit Commission",
     "Actual profit × rate": "Actual profit × rate",
     "Direct invitee subscription: share of actual plan profit at expiry (0.20 = 20%)": "Direct invitee subscriptions: percentage of actual plan profit at expiry (0.20 = 20%)",
-    "Agent commission: direct invitee API consumption pays {{rate}}% of gross profit; subscriptions pay {{orderRate}}% of actual plan profit after expiry; indirect commission remains {{irate}}%.": "Agent commission: direct invitee API consumption pays {{rate}}% of gross profit; subscriptions pay {{orderRate}}% of actual plan profit after expiry; indirect commission remains {{irate}}%.",
+    "Agent commission: direct invitee API consumption pays {{rate}}% of gross profit; subscriptions pay {{orderRate}}% of actual plan profit after expiry. Indirect referral commission follows the platform standard rates.": "Agent commission: direct invitee API consumption pays {{rate}}% of gross profit; subscriptions pay {{orderRate}}% of actual plan profit after expiry. Indirect referral commission follows the platform standard rates.",
     "Agent commission enters your withdrawable commission account. API consumption is settled T+1; subscription commission is credited after the plan expires and its actual profit is calculated.": "Agent commission enters your withdrawable commission account. API consumption is settled T+1; subscription commission is credited after the plan expires and its actual profit is calculated.",
     "Withdrawable commission enabled": "Withdrawable commission enabled",
     "View Commission Account": "View Commission Account",

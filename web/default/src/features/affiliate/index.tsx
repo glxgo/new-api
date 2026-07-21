@@ -85,13 +85,12 @@ export function Affiliate() {
             <p className='text-muted-foreground mt-2 text-sm leading-relaxed'>
               {s?.rebate_withdrawable
                 ? t(
-                    'Agent commission: direct invitee API consumption pays {{rate}}% of gross profit; subscriptions pay {{orderRate}}% of actual plan profit after expiry; indirect commission remains {{irate}}%.',
+                    'Agent commission: direct invitee API consumption pays {{rate}}% of gross profit; subscriptions pay {{orderRate}}% of actual plan profit after expiry. Indirect referral commission follows the platform standard rates.',
                     {
                       rate: Math.round((s?.direct_rate ?? 0.2) * 100),
                       orderRate: Math.round(
                         (s?.order_direct_rate ?? 0.2) * 100
                       ),
-                      irate: Math.round((s?.indirect_rate ?? 0.05) * 100),
                     }
                   )
                 : t(
