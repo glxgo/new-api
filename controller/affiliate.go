@@ -51,7 +51,7 @@ func GetAffiliateSummary(c *gin.Context) {
 		"direct_count":   directCount,
 		"indirect_count": indirectCount,
 		"total_rebate":   totalRebate,
-		"direct_rate":    common.AffiliateDirectRate,
+		"direct_rate":    common.AffiliateDirectRateForRole(user.Role),
 		"indirect_rate":  common.AffiliateIndirectRate,
 	})
 }

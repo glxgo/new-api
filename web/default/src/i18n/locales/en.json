@@ -1,5 +1,11 @@
 {
   "translation": {
+    "Agent": "Agent",
+    "Agent receives 20% direct referral rebate and has no admin permissions.": "Agent receives 20% direct referral rebate and has no admin permissions.",
+    "Agent role removed successfully": "Agent role removed successfully",
+    "Remove Agent": "Remove Agent",
+    "Set as Agent": "Set as Agent",
+    "User set as agent successfully": "User set as agent successfully",
     "360": "360",
     "1000": "1000",
     "10000": "10000",

@@ -356,6 +356,9 @@ func buildGroupProbeSummaries(hours int, visibleGroups []string) (map[string]*pe
 		if channel.Status != common.ChannelStatusEnabled {
 			continue
 		}
+		if len(settings.ChannelCanaryChannelIds) > 0 && !lo.Contains(settings.ChannelCanaryChannelIds, channel.Id) {
+			continue
+		}
 		channelGroups := make([]string, 0, len(channel.GetGroups())+1)
 		for _, group := range channel.GetGroups() {
 			if _, ok := visible[group]; ok {
@@ -478,4 +481,44 @@ func buildGroupProbeSummaries(hours int, visibleGroups []string) (map[string]*pe
 		result[group] = summary
 	}
 	return result, nil
+}
+
+func filterStatusGroupsByCanarySelection(
+	groups []string,
+	channels []*model.Channel,
+	settings *operation_setting.MonitorSetting,
+) []string {
+	selectedIds := []int(nil)
+	if settings != nil {
+		selectedIds = settings.ChannelCanaryChannelIds
+	}
+	allowed := make(map[string]struct{})
+	for _, channel := range channels {
+		if channel.Status != common.ChannelStatusEnabled {
+			continue
+		}
+		if len(selectedIds) > 0 && !lo.Contains(selectedIds, channel.Id) {
+			continue
+		}
+		for _, group := range channel.GetGroups() {
+			allowed[group] = struct{}{}
+		}
+	}
+	if len(allowed) > 0 {
+		allowed["auto"] = struct{}{}
+	}
+	filtered := make([]string, 0, len(groups))
+	seen := make(map[string]struct{}, len(groups))
+	for _, group := range groups {
+		if _, ok := allowed[group]; !ok {
+			continue
+		}
+		if _, ok := seen[group]; ok {
+			continue
+		}
+		seen[group] = struct{}{}
+		filtered = append(filtered, group)
+	}
+	sort.Strings(filtered)
+	return filtered
 }

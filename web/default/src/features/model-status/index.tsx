@@ -48,6 +48,7 @@ import {
   probeLabel,
   probeTone,
 } from './probe'
+import { availabilityBarClass } from './visuals'
 
 type HealthTone = 'healthy' | 'unstable' | 'critical' | 'empty'
 
@@ -103,11 +104,7 @@ function AvailabilityBars({
           title={`${new Date(point.ts * 1000).toLocaleString()} · ${point.successRate.toFixed(1)}%`}
           className={cn(
             'min-w-1 flex-1 rounded-[2px] transition-[height,opacity] duration-200 hover:opacity-60',
-            point.successRate >= 99
-              ? 'bg-foreground'
-              : point.successRate >= 95
-                ? 'bg-foreground/45'
-                : 'bg-destructive'
+            availabilityBarClass(point.successRate)
           )}
           style={{ height: `${Math.max(18, point.successRate)}%` }}
         />
@@ -163,11 +160,7 @@ function ProbeStatusBand({ summary }: { summary?: GroupCacheSummary }) {
               title={`${new Date(point.ts * 1000).toLocaleString()} · ${point.success_rate.toFixed(1)}%`}
               className={cn(
                 'min-w-1 flex-1 rounded-[2px]',
-                point.success_rate >= 99
-                  ? 'bg-foreground'
-                  : point.success_rate > 0
-                    ? 'bg-foreground/35'
-                    : 'bg-destructive'
+                availabilityBarClass(point.success_rate)
               )}
               style={{ height: `${Math.max(20, point.success_rate)}%` }}
             />

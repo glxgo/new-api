@@ -115,6 +115,8 @@ export interface UserFormData {
 export type ManageUserAction =
   | 'promote'
   | 'demote'
+  | 'set_agent'
+  | 'remove_agent'
   | 'enable'
   | 'disable'
   | 'delete'

@@ -17,8 +17,9 @@ const dailySettleLogBatchSize = 1000
 // batchId 如 "2026-06-16", dayStart/dayEnd 为该日 [起, 止) 时间戳(秒)。
 //
 // 流程: 幂等检查 → 分批扫未结算消费日志 → 算每笔毛利(CalcGrossProfit)
-//   → 按规则累加分润(拉新进赠金池 / 管理员+超管进分红账户) → 批量标记日志 settled
-//   → 发放 → 写 DividendRecord 明细 → 标记批次完成。
+//
+//	→ 按规则累加分润(拉新进赠金池 / 管理员+超管进分红账户) → 批量标记日志 settled
+//	→ 发放 → 写 DividendRecord 明细 → 标记批次完成。
 //
 // 安全性: 「先标记 settled 再发放」, 崩溃只会漏发(不凭空多发), 可用 AffiliateSettle.TotalGross
 // 与 DividendRecord 汇总对账补齐。重跑只处理 settled=false 的日志。
@@ -44,7 +45,6 @@ func RunDailySettle(batchId string, dayStart, dayEnd int64) error {
 		}
 	}
 
-	dDirect := decimal.NewFromFloat(common.AffiliateDirectRate)
 	dIndirect := decimal.NewFromFloat(common.AffiliateIndirectRate)
 	dRoot := decimal.NewFromFloat(common.RootDividendRate)
 	dMaxDiv := decimal.NewFromFloat(common.MaxDividendRate())
@@ -88,6 +88,7 @@ func RunDailySettle(batchId string, dayStart, dayEnd int64) error {
 
 		// 拉新返利 - 直接上级(普通用户才发; 上级是管理员则走分红, 不发返利)
 		if inv := getUser(log.InviterIdSnap); inv != nil && inv.Role < common.RoleAdminUser {
+			dDirect := decimal.NewFromFloat(common.AffiliateDirectRateForRole(inv.Role))
 			if amt := int(dGross.Mul(dDirect).Round(0).IntPart()); amt > 0 {
 				accumGift[inv.Id] += amt
 				records = append(records, &model.DividendRecord{BatchId: batchId, UserId: inv.Id, SourceUserId: log.UserId, LogId: log.Id, Type: model.DividendTypeDirect, GrossProfit: gross, Amount: amt, CreatedAt: common.GetTimestamp()})

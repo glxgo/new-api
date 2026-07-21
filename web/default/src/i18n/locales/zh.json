@@ -1,5 +1,11 @@
 {
   "translation": {
+    "Agent": "代理",
+    "Agent receives 20% direct referral rebate and has no admin permissions.": "代理的直接邀新返利为 20%，但不具有任何管理权限。",
+    "Agent role removed successfully": "已取消代理身份",
+    "Remove Agent": "取消代理",
+    "Set as Agent": "设为代理",
+    "User set as agent successfully": "已将用户设为代理",
     "360": "360",
     "1000": "1000",
     "10000": "10000",

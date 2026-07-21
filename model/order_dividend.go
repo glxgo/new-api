@@ -47,7 +47,6 @@ func SettleOrderDividend(buyerUserId int, orderQuota int64, sourceRef string) {
 	}
 	root := GetRootUser()
 
-	dDirect := decimal.NewFromFloat(common.OrderAffiliateDirectRate)
 	dIndirect := decimal.NewFromFloat(common.OrderAffiliateIndirectRate)
 	dRoot := decimal.NewFromFloat(common.OrderRootDividendRate)
 	dMaxDiv := decimal.NewFromFloat(common.MaxOrderDividendRate())
@@ -74,6 +73,7 @@ func SettleOrderDividend(buyerUserId int, orderQuota int64, sourceRef string) {
 
 	// 直接上级(普通用户才发返利)
 	if inv := getUser(inviterId); inv != nil && inv.Role < common.RoleAdminUser {
+		dDirect := decimal.NewFromFloat(common.OrderAffiliateDirectRateForRole(inv.Role))
 		if amt := int(dBase.Mul(dDirect).Round(0).IntPart()); amt > 0 {
 			accumGift[inv.Id] += amt
 			records = append(records, &DividendRecord{BatchId: batchId, UserId: inv.Id, SourceUserId: buyerUserId, Type: DividendTypeDirect, GrossProfit: int(orderQuota), Amount: amt, SourceRef: sourceRef, CreatedAt: now})

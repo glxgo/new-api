@@ -8,6 +8,7 @@ import (
 
 	"github.com/QuantumNous/new-api/model"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
@@ -124,14 +125,12 @@ func GetPerfMetrics(c *gin.Context) {
 }
 
 func filterActiveGroups(groups []perfmetrics.GroupResult) []perfmetrics.GroupResult {
-	activeRatios := ratio_setting.GetGroupRatioCopy()
-	hidden := hiddenStatusGroups()
+	visible := lo.SliceToMap(visibleStatusGroups(), func(group string) (string, struct{}) {
+		return group, struct{}{}
+	})
 	return lo.Filter(groups, func(g perfmetrics.GroupResult, _ int) bool {
-		if hidden[g.Group] {
-			return false
-		}
-		_, ok := activeRatios[g.Group]
-		return ok || g.Group == "auto"
+		_, ok := visible[g.Group]
+		return ok
 	})
 }
 
@@ -167,5 +166,9 @@ func visibleStatusGroups() []string {
 		groups = append(groups, group)
 	}
 	sort.Strings(groups)
-	return groups
+	channels, err := model.GetAllChannelsWithoutKey()
+	if err != nil {
+		return groups
+	}
+	return filterStatusGroupsByCanarySelection(groups, channels, operation_setting.GetMonitorSetting())
 }

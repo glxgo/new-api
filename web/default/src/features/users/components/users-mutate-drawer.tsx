@@ -242,6 +242,7 @@ export function UsersMutateDrawer({
                         <Select
                           items={[
                             { value: '1', label: t('Common User') },
+                            { value: '5', label: t('Agent') },
                             { value: '10', label: t('Admin') },
                           ]}
                           onValueChange={(value) =>
@@ -259,12 +260,17 @@ export function UsersMutateDrawer({
                               <SelectItem value='1'>
                                 {t('Common User')}
                               </SelectItem>
+                              <SelectItem value='5'>{t('Agent')}</SelectItem>
                               <SelectItem value='10'>{t('Admin')}</SelectItem>
                             </SelectGroup>
                           </SelectContent>
                         </Select>
                         <FormDescription>
-                          {t("Set the user's role (cannot be Root)")}
+                          {field.value === 5
+                            ? t(
+                                'Agent receives 20% direct referral rebate and has no admin permissions.'
+                              )
+                            : t("Set the user's role (cannot be Root)")}
                         </FormDescription>
                         <FormMessage />
                       </FormItem>

@@ -966,6 +966,10 @@ func CreateUser(c *gin.Context) {
 		user.DisplayName = user.Username
 	}
 	myRole := c.GetInt("role")
+	if !common.IsValidateRole(user.Role) {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
 	if user.Role >= myRole {
 		common.ApiErrorI18n(c, i18n.MsgUserCannotCreateHigherLevel)
 		return
@@ -1069,6 +1073,18 @@ func ManageUser(c *gin.Context) {
 			return
 		}
 		user.Role = common.RoleCommonUser
+	case "set_agent":
+		if user.Role != common.RoleCommonUser {
+			common.ApiErrorMsg(c, "只有普通用户可以设置为代理")
+			return
+		}
+		user.Role = common.RoleAgentUser
+	case "remove_agent":
+		if user.Role != common.RoleAgentUser {
+			common.ApiErrorMsg(c, "该用户不是代理")
+			return
+		}
+		user.Role = common.RoleCommonUser
 	case "add_quota":
 		switch req.Mode {
 		case "add":
@@ -1124,7 +1140,7 @@ func ManageUser(c *gin.Context) {
 	// 避免在 Redis TTL 过期前仍使用旧状态（尤其是禁用后仍可发起请求的问题）。
 	// InvalidateUserCache 会让下一次 GetUserCache 从数据库重新加载，
 	// InvalidateUserTokensCache 则确保令牌侧的缓存也同步刷新。
-	if req.Action == "disable" || req.Action == "promote" || req.Action == "demote" {
+	if req.Action == "disable" || req.Action == "promote" || req.Action == "demote" || req.Action == "set_agent" || req.Action == "remove_agent" {
 		if err := model.InvalidateUserCache(user.Id); err != nil {
 			common.SysLog(fmt.Sprintf("failed to invalidate user cache for user %d: %s", user.Id, err.Error()))
 		}

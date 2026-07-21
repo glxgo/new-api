@@ -144,16 +144,21 @@ var TelegramBotName = ""
 var QuotaForNewUser = 0
 var QuotaForInviter = 0
 var QuotaForInvitee = 0
+
 // 分润系统比例(超管后台「运营设置」可配,见 plan mellow-growing-waterfall.md)
 var AffiliateDirectRate = 0.10   // 拉新返利:直接上级占毛利比例
 var AffiliateIndirectRate = 0.05 // 拉新返利:间接(上上级)占毛利比例
+const AgentAffiliateDirectRate = 0.20
+
 var RootDividendRate = 0.15           // 超管分红:占所有用户毛利比例(全站利润 15%)
-var AffiliateAdminDirectRate = 0.75    // 管理员分红:直接拉新占毛利比例
-var AffiliateAdminIndirectRate = 0.22  // 管理员分红:间接/三层+拉新占毛利比例
+var AffiliateAdminDirectRate = 0.75   // 管理员分红:直接拉新占毛利比例
+var AffiliateAdminIndirectRate = 0.22 // 管理员分红:间接/三层+拉新占毛利比例
 
 // 订单分润比例(订阅购买订单金额分润, 与毛利比例独立配置, 默认较低留平台利润)
-var OrderAffiliateDirectRate = 0.05        // 拉新返利:直接上级占订单金额比例
-var OrderAffiliateIndirectRate = 0.02      // 拉新返利:间接上级占订单金额比例
+var OrderAffiliateDirectRate = 0.05   // 拉新返利:直接上级占订单金额比例
+var OrderAffiliateIndirectRate = 0.02 // 拉新返利:间接上级占订单金额比例
+const AgentOrderAffiliateDirectRate = 0.20
+
 var OrderRootDividendRate = 0.05           // 超管分红:占订单金额比例
 var OrderAffiliateAdminDirectRate = 0.20   // 管理员分红:直接拉新占订单金额比例
 var OrderAffiliateAdminIndirectRate = 0.08 // 管理员分红:间接拉新占订单金额比例
@@ -176,6 +181,21 @@ func MaxDividendRate() float64 {
 	}
 	return max
 }
+
+func AffiliateDirectRateForRole(role int) float64 {
+	if role == RoleAgentUser {
+		return AgentAffiliateDirectRate
+	}
+	return AffiliateDirectRate
+}
+
+func OrderAffiliateDirectRateForRole(role int) float64 {
+	if role == RoleAgentUser {
+		return AgentOrderAffiliateDirectRate
+	}
+	return OrderAffiliateDirectRate
+}
+
 var ChannelDisableThreshold = 5.0
 var AutomaticDisableChannelEnabled = false
 var AutomaticEnableChannelEnabled = false
@@ -220,12 +240,13 @@ const (
 const (
 	RoleGuestUser  = 0
 	RoleCommonUser = 1
+	RoleAgentUser  = 5
 	RoleAdminUser  = 10
 	RoleRootUser   = 100
 )
 
 func IsValidateRole(role int) bool {
-	return role == RoleGuestUser || role == RoleCommonUser || role == RoleAdminUser || role == RoleRootUser
+	return role == RoleGuestUser || role == RoleCommonUser || role == RoleAgentUser || role == RoleAdminUser || role == RoleRootUser
 }
 
 var (

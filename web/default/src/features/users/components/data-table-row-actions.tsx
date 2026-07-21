@@ -26,6 +26,7 @@ import {
   PowerOff,
   ArrowUp,
   ArrowDown,
+  Handshake,
   KeyRound,
   ShieldAlert,
   Link2,
@@ -128,6 +129,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   }
 
   const isDisabled = user.status === USER_STATUS.DISABLED
+  const isAgent = user.role === USER_ROLE.AGENT
   const isAdmin = user.role >= USER_ROLE.ADMIN
   const isRoot = user.role === USER_ROLE.ROOT
 
@@ -192,6 +194,24 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
               {t('Promote')}
               <DropdownMenuShortcut>
                 <ArrowUp size={16} />
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
+          )}
+
+          {user.role === USER_ROLE.USER && (
+            <DropdownMenuItem onClick={() => handleManage('set_agent')}>
+              {t('Set as Agent')}
+              <DropdownMenuShortcut>
+                <Handshake size={16} />
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
+          )}
+
+          {isAgent && (
+            <DropdownMenuItem onClick={() => handleManage('remove_agent')}>
+              {t('Remove Agent')}
+              <DropdownMenuShortcut>
+                <ArrowDown size={16} />
               </DropdownMenuShortcut>
             </DropdownMenuItem>
           )}

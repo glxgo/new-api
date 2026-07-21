@@ -8,6 +8,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -19,6 +20,23 @@ func TestSanitizeProbeErrorRedactsCredentials(t *testing.T) {
 	require.NotContains(t, message, "sk-abcdefghijk")
 	require.NotContains(t, message, "visible-secret")
 	require.True(t, strings.Contains(message, "upstream failed"))
+}
+
+func TestVisibleStatusGroupsFollowSelectedCanaryChannels(t *testing.T) {
+	channels := []*model.Channel{
+		{Id: 8, Status: common.ChannelStatusEnabled, Group: "套餐专用分组,shared"},
+		{Id: 20, Status: common.ChannelStatusEnabled, Group: "gpt-image-2(0.15/张),shared"},
+		{Id: 30, Status: common.ChannelStatusManuallyDisabled, Group: "disabled-only"},
+	}
+	settings := &operation_setting.MonitorSetting{ChannelCanaryChannelIds: []int{8}}
+
+	groups := filterStatusGroupsByCanarySelection(
+		[]string{"auto", "套餐专用分组", "gpt-image-2(0.15/张)", "shared", "disabled-only"},
+		channels,
+		settings,
+	)
+
+	require.Equal(t, []string{"auto", "shared", "套餐专用分组"}, groups)
 }
 
 func TestClassifyChannelProbeError(t *testing.T) {
