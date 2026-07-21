@@ -18,7 +18,6 @@ import { Route as TutorialIndexRouteImport } from './routes/tutorial/index'
 import { Route as SetupIndexRouteImport } from './routes/setup/index'
 import { Route as RankingsIndexRouteImport } from './routes/rankings/index'
 import { Route as PricingIndexRouteImport } from './routes/pricing/index'
-import { Route as ModelStatusIndexRouteImport } from './routes/model-status/index'
 import { Route as FaqIndexRouteImport } from './routes/faq/index'
 import { Route as AboutIndexRouteImport } from './routes/about/index'
 import { Route as OauthProviderRouteImport } from './routes/oauth/$provider'
@@ -51,6 +50,7 @@ import { Route as AuthenticatedProfitIndexRouteImport } from './routes/_authenti
 import { Route as AuthenticatedProfileIndexRouteImport } from './routes/_authenticated/profile/index'
 import { Route as AuthenticatedPlaygroundIndexRouteImport } from './routes/_authenticated/playground/index'
 import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenticated/models/index'
+import { Route as AuthenticatedModelStatusIndexRouteImport } from './routes/_authenticated/model-status/index'
 import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authenticated/keys/index'
 import { Route as AuthenticatedDividendIndexRouteImport } from './routes/_authenticated/dividend/index'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
@@ -118,11 +118,6 @@ const RankingsIndexRoute = RankingsIndexRouteImport.update({
 const PricingIndexRoute = PricingIndexRouteImport.update({
   id: '/pricing/',
   path: '/pricing/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ModelStatusIndexRoute = ModelStatusIndexRouteImport.update({
-  id: '/model-status/',
-  path: '/model-status/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FaqIndexRoute = FaqIndexRouteImport.update({
@@ -297,6 +292,12 @@ const AuthenticatedModelsIndexRoute =
     path: '/models/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedModelStatusIndexRoute =
+  AuthenticatedModelStatusIndexRouteImport.update({
+    id: '/model-status/',
+    path: '/model-status/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedKeysIndexRoute = AuthenticatedKeysIndexRouteImport.update({
   id: '/keys/',
   path: '/keys/',
@@ -468,7 +469,6 @@ export interface FileRoutesByFullPath {
   '/oauth/$provider': typeof OauthProviderRoute
   '/about/': typeof AboutIndexRoute
   '/faq/': typeof FaqIndexRoute
-  '/model-status/': typeof ModelStatusIndexRoute
   '/pricing/': typeof PricingIndexRoute
   '/rankings/': typeof RankingsIndexRoute
   '/setup/': typeof SetupIndexRoute
@@ -484,6 +484,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/dividend/': typeof AuthenticatedDividendIndexRoute
   '/keys/': typeof AuthenticatedKeysIndexRoute
+  '/model-status/': typeof AuthenticatedModelStatusIndexRoute
   '/models/': typeof AuthenticatedModelsIndexRoute
   '/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/profile/': typeof AuthenticatedProfileIndexRoute
@@ -534,7 +535,6 @@ export interface FileRoutesByTo {
   '/oauth/$provider': typeof OauthProviderRoute
   '/about': typeof AboutIndexRoute
   '/faq': typeof FaqIndexRoute
-  '/model-status': typeof ModelStatusIndexRoute
   '/pricing': typeof PricingIndexRoute
   '/rankings': typeof RankingsIndexRoute
   '/setup': typeof SetupIndexRoute
@@ -550,6 +550,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/dividend': typeof AuthenticatedDividendIndexRoute
   '/keys': typeof AuthenticatedKeysIndexRoute
+  '/model-status': typeof AuthenticatedModelStatusIndexRoute
   '/models': typeof AuthenticatedModelsIndexRoute
   '/playground': typeof AuthenticatedPlaygroundIndexRoute
   '/profile': typeof AuthenticatedProfileIndexRoute
@@ -604,7 +605,6 @@ export interface FileRoutesById {
   '/oauth/$provider': typeof OauthProviderRoute
   '/about/': typeof AboutIndexRoute
   '/faq/': typeof FaqIndexRoute
-  '/model-status/': typeof ModelStatusIndexRoute
   '/pricing/': typeof PricingIndexRoute
   '/rankings/': typeof RankingsIndexRoute
   '/setup/': typeof SetupIndexRoute
@@ -620,6 +620,7 @@ export interface FileRoutesById {
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/dividend/': typeof AuthenticatedDividendIndexRoute
   '/_authenticated/keys/': typeof AuthenticatedKeysIndexRoute
+  '/_authenticated/model-status/': typeof AuthenticatedModelStatusIndexRoute
   '/_authenticated/models/': typeof AuthenticatedModelsIndexRoute
   '/_authenticated/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/_authenticated/profile/': typeof AuthenticatedProfileIndexRoute
@@ -673,7 +674,6 @@ export interface FileRouteTypes {
     | '/oauth/$provider'
     | '/about/'
     | '/faq/'
-    | '/model-status/'
     | '/pricing/'
     | '/rankings/'
     | '/setup/'
@@ -689,6 +689,7 @@ export interface FileRouteTypes {
     | '/dashboard/'
     | '/dividend/'
     | '/keys/'
+    | '/model-status/'
     | '/models/'
     | '/playground/'
     | '/profile/'
@@ -739,7 +740,6 @@ export interface FileRouteTypes {
     | '/oauth/$provider'
     | '/about'
     | '/faq'
-    | '/model-status'
     | '/pricing'
     | '/rankings'
     | '/setup'
@@ -755,6 +755,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/dividend'
     | '/keys'
+    | '/model-status'
     | '/models'
     | '/playground'
     | '/profile'
@@ -808,7 +809,6 @@ export interface FileRouteTypes {
     | '/oauth/$provider'
     | '/about/'
     | '/faq/'
-    | '/model-status/'
     | '/pricing/'
     | '/rankings/'
     | '/setup/'
@@ -824,6 +824,7 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard/'
     | '/_authenticated/dividend/'
     | '/_authenticated/keys/'
+    | '/_authenticated/model-status/'
     | '/_authenticated/models/'
     | '/_authenticated/playground/'
     | '/_authenticated/profile/'
@@ -869,7 +870,6 @@ export interface RootRouteChildren {
   OauthProviderRoute: typeof OauthProviderRoute
   AboutIndexRoute: typeof AboutIndexRoute
   FaqIndexRoute: typeof FaqIndexRoute
-  ModelStatusIndexRoute: typeof ModelStatusIndexRoute
   PricingIndexRoute: typeof PricingIndexRoute
   RankingsIndexRoute: typeof RankingsIndexRoute
   SetupIndexRoute: typeof SetupIndexRoute
@@ -940,13 +940,6 @@ declare module '@tanstack/react-router' {
       path: '/pricing'
       fullPath: '/pricing/'
       preLoaderRoute: typeof PricingIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/model-status/': {
-      id: '/model-status/'
-      path: '/model-status'
-      fullPath: '/model-status/'
-      preLoaderRoute: typeof ModelStatusIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/faq/': {
@@ -1171,6 +1164,13 @@ declare module '@tanstack/react-router' {
       path: '/models'
       fullPath: '/models/'
       preLoaderRoute: typeof AuthenticatedModelsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/model-status/': {
+      id: '/_authenticated/model-status/'
+      path: '/model-status'
+      fullPath: '/model-status/'
+      preLoaderRoute: typeof AuthenticatedModelStatusIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/keys/': {
@@ -1447,6 +1447,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedDividendIndexRoute: typeof AuthenticatedDividendIndexRoute
   AuthenticatedKeysIndexRoute: typeof AuthenticatedKeysIndexRoute
+  AuthenticatedModelStatusIndexRoute: typeof AuthenticatedModelStatusIndexRoute
   AuthenticatedModelsIndexRoute: typeof AuthenticatedModelsIndexRoute
   AuthenticatedPlaygroundIndexRoute: typeof AuthenticatedPlaygroundIndexRoute
   AuthenticatedProfileIndexRoute: typeof AuthenticatedProfileIndexRoute
@@ -1474,6 +1475,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedDividendIndexRoute: AuthenticatedDividendIndexRoute,
   AuthenticatedKeysIndexRoute: AuthenticatedKeysIndexRoute,
+  AuthenticatedModelStatusIndexRoute: AuthenticatedModelStatusIndexRoute,
   AuthenticatedModelsIndexRoute: AuthenticatedModelsIndexRoute,
   AuthenticatedPlaygroundIndexRoute: AuthenticatedPlaygroundIndexRoute,
   AuthenticatedProfileIndexRoute: AuthenticatedProfileIndexRoute,
@@ -1508,7 +1510,6 @@ const rootRouteChildren: RootRouteChildren = {
   OauthProviderRoute: OauthProviderRoute,
   AboutIndexRoute: AboutIndexRoute,
   FaqIndexRoute: FaqIndexRoute,
-  ModelStatusIndexRoute: ModelStatusIndexRoute,
   PricingIndexRoute: PricingIndexRoute,
   RankingsIndexRoute: RankingsIndexRoute,
   SetupIndexRoute: SetupIndexRoute,

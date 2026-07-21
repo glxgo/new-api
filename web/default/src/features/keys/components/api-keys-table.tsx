@@ -57,6 +57,12 @@ import { GroupBadge } from '@/components/group-badge'
 import { StatusBadge } from '@/components/status-badge'
 import { useChatPresets } from '@/features/chat/hooks/use-chat-presets'
 import { getUserProfile } from '@/features/profile/api'
+import {
+  ConcurrencyCard,
+  RpmCard,
+} from '@/features/profile/components/concurrency-card'
+import { resolveCurrentRpm, resolveRpmLimit } from '@/features/profile/rpm'
+import type { UserProfile } from '@/features/profile/types'
 import { resolveTutorialApiBaseUrl } from '@/features/tutorial/content'
 import { getApiKeys, searchApiKeys } from '../api'
 import {
@@ -81,6 +87,8 @@ const route = getRouteApi('/_authenticated/keys/')
 type ConcurrencySnapshot = {
   current: number
   limit: number
+  currentRpm: number | null
+  rpmLimit: number
   loading: boolean
 }
 
@@ -207,6 +215,17 @@ function ApiKeysMobileList({
               )}
             </div>
             <div className='flex items-center justify-between gap-2 text-xs'>
+              <span className='text-muted-foreground'>RPM</span>
+              <span className='font-mono font-medium tabular-nums'>
+                {concurrency.loading
+                  ? '—'
+                  : `${concurrency.currentRpm ?? '—'} / ${concurrency.rpmLimit}`}
+                <span className='text-muted-foreground ml-1 font-sans text-[10px] font-normal'>
+                  {t('Account shared')}
+                </span>
+              </span>
+            </div>
+            <div className='flex items-center justify-between gap-2 text-xs'>
               <span className='text-muted-foreground'>
                 {t('Current Concurrency')}
               </span>
@@ -228,9 +247,13 @@ function ApiKeysMobileList({
 
 function ApiKeysDesktopSkeleton() {
   return (
-    <div className='grid items-start gap-5 md:grid-cols-[14rem_minmax(0,1fr)]'>
+    <div className='grid items-start gap-5 md:grid-cols-[14rem_minmax(0,1fr)] xl:grid-cols-[14rem_minmax(0,1fr)_17rem]'>
       <Skeleton className='h-72 rounded-xl' />
       <Skeleton className='h-96 rounded-xl' />
+      <div className='grid gap-3 md:col-start-2 md:grid-cols-2 xl:col-start-3 xl:row-start-1 xl:grid-cols-1'>
+        <Skeleton className='h-48 rounded-xl' />
+        <Skeleton className='h-40 rounded-xl' />
+      </div>
     </div>
   )
 }
@@ -238,11 +261,13 @@ function ApiKeysDesktopSkeleton() {
 function ApiKeysDesktopWorkspace({
   table,
   isLoading,
-  concurrency,
+  profile,
+  profileLoading,
 }: {
   table: TanstackTable<ApiKey>
   isLoading: boolean
-  concurrency: ConcurrencySnapshot
+  profile: UserProfile | null
+  profileLoading: boolean
 }) {
   const { t } = useTranslation()
   const [selectedKeyId, setSelectedKeyId] = useState<number | null>(null)
@@ -314,7 +339,7 @@ function ApiKeysDesktopWorkspace({
   }
 
   return (
-    <div className='grid items-start gap-5 md:grid-cols-[14rem_minmax(0,1fr)]'>
+    <div className='grid items-start gap-5 md:grid-cols-[14rem_minmax(0,1fr)] xl:grid-cols-[14rem_minmax(0,1fr)_17rem]'>
       <div className='self-start'>
         <div className='border-border/70 bg-background relative z-10 ml-4 flex w-28 items-center gap-2 rounded-t-xl border border-b-0 px-3 py-2'>
           <KeyRound className='size-3.5' />
@@ -457,7 +482,7 @@ function ApiKeysDesktopWorkspace({
               </Button>
             </div>
           </div>
-          <div className='grid grid-cols-2 gap-3 border-t border-dashed pt-3 sm:grid-cols-3'>
+          <div className='grid grid-cols-2 gap-3 border-t border-dashed pt-3'>
             <div>
               <p className='text-muted-foreground mb-2 text-[10px]'>
                 {t('Models')}
@@ -469,19 +494,6 @@ function ApiKeysDesktopWorkspace({
                 {t('IP Restriction')}
               </p>
               <IpRestrictionsCell apiKey={apiKey} />
-            </div>
-            <div>
-              <p className='text-muted-foreground mb-2 text-[10px]'>
-                {t('Current Concurrency')}
-              </p>
-              <p className='font-mono text-xs font-semibold tabular-nums'>
-                {concurrency.loading
-                  ? '—'
-                  : `${concurrency.current} / ${concurrency.limit}`}
-              </p>
-              <p className='text-muted-foreground mt-1 text-[10px]'>
-                {t('Account shared')}
-              </p>
             </div>
           </div>
         </div>
@@ -565,6 +577,11 @@ function ApiKeysDesktopWorkspace({
           </Button>
         </div>
       </section>
+
+      <aside className='grid gap-3 md:col-start-2 md:grid-cols-2 xl:col-start-3 xl:row-start-1 xl:grid-cols-1'>
+        <ConcurrencyCard profile={profile} loading={profileLoading} compact />
+        <RpmCard profile={profile} loading={profileLoading} />
+      </aside>
     </div>
   )
 }
@@ -581,9 +598,12 @@ export function ApiKeysTable() {
     refetchInterval: 10_000,
     refetchIntervalInBackground: false,
   })
+  const profile = profileResponse?.data ?? null
   const concurrency: ConcurrencySnapshot = {
-    current: profileResponse?.data?.current_concurrency ?? 0,
-    limit: profileResponse?.data?.concurrency_limit ?? 8,
+    current: profile?.current_concurrency ?? 0,
+    limit: profile?.concurrency_limit ?? 8,
+    currentRpm: resolveCurrentRpm(profile),
+    rpmLimit: resolveRpmLimit(profile),
     loading: concurrencyLoading,
   }
 
@@ -739,7 +759,8 @@ export function ApiKeysTable() {
         <ApiKeysDesktopWorkspace
           table={table}
           isLoading={isLoading}
-          concurrency={concurrency}
+          profile={profile}
+          profileLoading={concurrencyLoading}
         />
       }
       tableClassName='border-border/70 bg-background/75 rounded-xl shadow-xs'

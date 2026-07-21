@@ -498,6 +498,8 @@ func GetSelf(c *gin.Context) {
 		"permissions":         permissions,                // 新增权限字段
 		"concurrency_limit":   user.ConcurrencyLimit,
 		"current_concurrency": service.GetUserConcurrency(user.Id),
+		"rpm_limit":           service.UserRPMLimit(user.ConcurrencyLimit),
+		"current_rpm":         service.GetUserRPM(user.Id),
 	}
 
 	c.JSON(http.StatusOK, gin.H{

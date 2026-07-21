@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useState } from 'react'
 import { type ColumnDef } from '@tanstack/react-table'
-import { CircleAlert, Sparkles, KeyRound } from 'lucide-react'
+import { Sparkles, KeyRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
@@ -36,12 +36,11 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
-import { LOG_TYPE_ALL_VALUE } from '../../constants'
+import { LOG_TYPE_ALL_VALUE, LOG_TYPE_ENUM } from '../../constants'
 import type { UsageLog } from '../../data/schema'
 import {
   formatModelName,
   getFirstResponseTimeColor,
-  getResponseTimeColor,
   getThroughputColor,
   getTieredBillingSummary,
   hasAnyCacheTokens,
@@ -573,54 +572,52 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
       meta: { mobileTitle: true },
     },
     {
-      accessorKey: 'use_time',
-      header: t('Total Time'),
+      id: 'stream_status',
+      header: t('Stream Status'),
       cell: ({ row }) => {
         const log = row.original
-        if (!isTimingLogType(log.type)) return null
-
-        const useTime = row.getValue('use_time') as number
+        if (!isTimingLogType(log.type) || !log.is_stream) {
+          return <span className='text-muted-foreground text-xs'>N/A</span>
+        }
         const other = parseLogOther(log.other)
-        const timeVariant = getResponseTimeColor(useTime, log.completion_tokens)
+        const streamStatus = other?.stream_status
+        const successful = streamStatus?.status
+          ? streamStatus.status === 'ok'
+          : log.type !== LOG_TYPE_ENUM.ERROR
 
         return (
-          <div className='flex items-center gap-1.5'>
-            <StatusBadge
-              label={formatUseTime(useTime)}
-              variant={timeVariant as StatusBadgeProps['variant']}
-              size='sm'
-              copyable={false}
-              className={cn('rounded-md font-mono', timingBgMap[timeVariant])}
-            />
-            {log.is_stream &&
-              other?.stream_status &&
-              other.stream_status.status !== 'ok' && (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={<CircleAlert className='size-3 text-red-500' />}
-                    ></TooltipTrigger>
-                    <TooltipContent>
-                      <div className='space-y-0.5 text-xs'>
-                        <p>
-                          {t('Stream Status')}: {t('Error')}
-                        </p>
-                        <p>{other.stream_status.end_reason || 'unknown'}</p>
-                        {(other.stream_status.error_count ?? 0) > 0 && (
-                          <p>
-                            {t('Soft Errors')}:{' '}
-                            {other.stream_status.error_count}
-                          </p>
-                        )}
-                      </div>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span>
+                    <StatusBadge
+                      label={t(successful ? 'Success' : 'Failed')}
+                      variant={successful ? 'success' : 'danger'}
+                      size='sm'
+                      copyable={false}
+                      className='rounded-md'
+                    />
+                  </span>
+                }
+              />
+              {!successful && streamStatus && (
+                <TooltipContent>
+                  <div className='space-y-0.5 text-xs'>
+                    <p>{streamStatus.end_reason || 'unknown'}</p>
+                    {(streamStatus.error_count ?? 0) > 0 && (
+                      <p>
+                        {t('Soft Errors')}: {streamStatus.error_count}
+                      </p>
+                    )}
+                  </div>
+                </TooltipContent>
               )}
-          </div>
+            </Tooltip>
+          </TooltipProvider>
         )
       },
-      size: 112,
+      size: 104,
     },
     {
       id: 'first_token_time',
@@ -648,36 +645,6 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         )
       },
       size: 124,
-    },
-    {
-      id: 'generation_time',
-      header: t('Generation Time'),
-      accessorFn: getGenerationSeconds,
-      cell: ({ row }) => {
-        const log = row.original
-        if (!isTimingLogType(log.type)) return null
-
-        const generationSeconds = getGenerationSeconds(log)
-        if (generationSeconds == null) {
-          return <span className='text-muted-foreground text-xs'>N/A</span>
-        }
-
-        const variant = getResponseTimeColor(
-          generationSeconds,
-          log.completion_tokens
-        )
-        return (
-          <StatusBadge
-            label={formatUseTime(generationSeconds)}
-            variant={variant as StatusBadgeProps['variant']}
-            size='sm'
-            showDot={false}
-            copyable={false}
-            className={cn('rounded-md font-mono', timingBgMap[variant])}
-          />
-        )
-      },
-      size: 112,
     },
     {
       id: 'output_speed',

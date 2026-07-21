@@ -97,7 +97,7 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
 
   return (
     <PageFooterProvider container={footerContainer}>
-      <Main>
+      <Main className='overflow-y-auto overscroll-y-contain sm:overflow-hidden'>
         <div
           className={cn(
             'shrink-0 px-3 sm:px-4',
@@ -148,8 +148,8 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
         <div
           className={
             props.fixedContent
-              ? 'min-h-0 flex-1 overflow-hidden px-3 pt-1 pb-3 sm:px-4 sm:pt-1.5 sm:pb-4'
-              : 'min-h-0 flex-1 overflow-auto px-3 pt-1 pb-3 sm:px-4 sm:pt-1.5 sm:pb-4'
+              ? 'min-h-0 flex-none overflow-visible px-3 pt-1 pb-3 sm:flex-1 sm:overflow-hidden sm:px-4 sm:pt-1.5 sm:pb-4'
+              : 'min-h-0 flex-none overflow-visible px-3 pt-1 pb-3 sm:flex-1 sm:overflow-auto sm:px-4 sm:pt-1.5 sm:pb-4'
           }
         >
           {content}

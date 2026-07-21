@@ -29,6 +29,7 @@ import {
   LayoutDashboard,
   ListTodo,
   MessageSquare,
+  Activity,
   Radio,
   Settings,
   Ticket,
@@ -169,6 +170,11 @@ export function useSidebarData(): SidebarData {
             title: t('Usage Logs'),
             url: '/usage-logs/common',
             icon: FileText,
+          },
+          {
+            title: t('Model Status'),
+            url: '/model-status',
+            icon: Activity,
           },
           {
             title: t('Task Logs'),

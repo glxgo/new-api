@@ -416,6 +416,13 @@ func TokenAuth() func(c *gin.Context) {
 		if err != nil {
 			return
 		}
+		rpmLimit := service.UserRPMLimit(userCache.ConcurrencyLimit)
+		if acquired, _ := service.AcquireUserRPM(token.UserId, rpmLimit); !acquired {
+			abortWithOpenAiMessage(c, http.StatusTooManyRequests,
+				fmt.Sprintf("当前账号每分钟请求数已达到上限（%d RPM），请稍后重试", rpmLimit),
+				types.ErrorCode("user_rpm_exceeded"))
+			return
+		}
 		lease, acquired := service.AcquireUserConcurrency(token.UserId, userCache.ConcurrencyLimit)
 		if !acquired {
 			abortWithOpenAiMessage(c, http.StatusTooManyRequests,

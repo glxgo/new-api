@@ -241,6 +241,7 @@ export type DataTablePageProps<TData> = {
 export function DataTablePage<TData>(props: DataTablePageProps<TData>) {
   const isMobile = useMediaQuery('(max-width: 640px)')
   const showMobile = isMobile && !props.hideMobile
+  const useFixedHeight = props.fixedHeight !== false && !showMobile
 
   const toolbarNode = renderToolbar(props)
   const mobileNode = renderMobile(props, showMobile)
@@ -251,7 +252,7 @@ export function DataTablePage<TData>(props: DataTablePageProps<TData>) {
     <>
       <div
         className={cn(
-          props.fixedHeight !== false
+          useFixedHeight
             ? 'flex h-full min-h-0 flex-col gap-2.5 sm:gap-3'
             : 'space-y-2.5 sm:space-y-3',
           props.className
@@ -324,7 +325,7 @@ function renderMobile<TData>(
     />
   )
 
-  return <div className='min-h-0 flex-1 overflow-y-auto'>{mobileContent}</div>
+  return <div>{mobileContent}</div>
 }
 
 function renderDesktop<TData>(
@@ -340,7 +341,7 @@ function renderDesktop<TData>(
     return (
       <div
         className={cn(
-          fixedHeight && 'min-h-0 flex-1',
+          fixedHeight && 'min-h-0 flex-1 overflow-y-auto',
           'transition-opacity duration-150',
           isFetchingOnly && 'pointer-events-none opacity-60'
         )}

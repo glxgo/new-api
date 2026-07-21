@@ -40,18 +40,21 @@ function UsersContent() {
         <SectionPageLayout.Content>
           <Tabs
             defaultValue='users'
-            className='flex min-h-0 flex-1 flex-col gap-4'
+            className='flex min-h-0 flex-1 flex-col gap-4 sm:h-full'
           >
             <TabsList className='w-fit'>
               <TabsTrigger value='users'>用户列表</TabsTrigger>
               <TabsTrigger value='concurrency'>并发申请</TabsTrigger>
             </TabsList>
-            <TabsContent value='users' className='min-h-0 flex-1'>
+            <TabsContent
+              value='users'
+              className='min-h-0 flex-1 sm:h-full sm:overflow-hidden'
+            >
               <UsersTable />
             </TabsContent>
             <TabsContent
               value='concurrency'
-              className='min-h-0 flex-1 overflow-auto'
+              className='min-h-0 flex-1 overflow-visible sm:h-full sm:overflow-auto'
             >
               <ConcurrencyApplicationsPanel />
             </TabsContent>

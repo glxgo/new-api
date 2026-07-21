@@ -87,6 +87,10 @@ export interface UserProfile {
   concurrency_limit: number
   /** Best-effort current active request count */
   current_concurrency?: number
+  /** Account-wide requests allowed in a rolling minute */
+  rpm_limit?: number
+  /** Best-effort request count in the current rolling minute */
+  current_rpm?: number
 }
 
 export interface ConcurrencyApplication {

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Gauge, Loader2, Send } from 'lucide-react'
+import { Gauge, Loader2, Send, TimerReset } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -20,11 +20,16 @@ import {
   createConcurrencyApplication,
   getSelfConcurrencyApplications,
 } from '../api'
+import { resolveCurrentRpm, resolveRpmLimit } from '../rpm'
 import type { UserProfile } from '../types'
 
-type Props = { profile: UserProfile | null; loading: boolean }
+type Props = {
+  profile: UserProfile | null
+  loading: boolean
+  compact?: boolean
+}
 
-export function ConcurrencyCard({ profile, loading }: Props) {
+export function ConcurrencyCard({ profile, loading, compact = false }: Props) {
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
   const [requestedLimit, setRequestedLimit] = useState(16)
@@ -40,9 +45,10 @@ export function ConcurrencyCard({ profile, loading }: Props) {
   const limit = profile?.concurrency_limit || 8
   const current = profile?.current_concurrency || 0
 
-  useEffect(() => {
+  const openApplication = () => {
     setRequestedLimit(Math.max(limit + 1, limit * 2))
-  }, [limit])
+    setOpen(true)
+  }
 
   const submit = async () => {
     if (requestedLimit <= limit) {
@@ -76,19 +82,25 @@ export function ConcurrencyCard({ profile, loading }: Props) {
 
   return (
     <>
-      <Card className='via-background overflow-hidden border-violet-500/20 bg-gradient-to-br from-violet-500/[0.08] to-cyan-500/[0.06]'>
-        <CardHeader className='pb-3'>
+      <Card className='border-border/70 bg-background/75 overflow-hidden shadow-xs'>
+        <CardHeader className={compact ? 'px-4 pt-4 pb-2' : 'pb-3'}>
           <CardTitle className='flex items-center gap-2 text-base'>
-            <span className='flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/15 text-violet-500'>
+            <span className='bg-muted flex h-8 w-8 items-center justify-center rounded-lg border'>
               <Gauge className='h-4 w-4' />
             </span>
             API 并发额度
           </CardTitle>
         </CardHeader>
-        <CardContent className='space-y-4'>
+        <CardContent className={compact ? 'space-y-3 px-4 pb-4' : 'space-y-4'}>
           <div className='flex items-end justify-between'>
             <div>
-              <div className='text-3xl font-semibold tracking-tight'>
+              <div
+                className={
+                  compact
+                    ? 'text-2xl font-semibold tracking-tight'
+                    : 'text-3xl font-semibold tracking-tight'
+                }
+              >
                 {loading ? '—' : limit}
               </div>
               <div className='text-muted-foreground text-xs'>账号并发上限</div>
@@ -111,7 +123,7 @@ export function ConcurrencyCard({ profile, loading }: Props) {
             <Button
               className='w-full'
               variant='outline'
-              onClick={() => setOpen(true)}
+              onClick={openApplication}
             >
               <Send className='mr-2 h-4 w-4' />
               申请提高并发
@@ -179,5 +191,49 @@ export function ConcurrencyCard({ profile, loading }: Props) {
         </DialogContent>
       </Dialog>
     </>
+  )
+}
+
+export function RpmCard({ profile, loading }: Omit<Props, 'compact'>) {
+  const limit = resolveRpmLimit(profile)
+  const current = resolveCurrentRpm(profile)
+
+  return (
+    <Card className='border-border/70 bg-background/75 overflow-hidden shadow-xs'>
+      <CardHeader className='px-4 pt-4 pb-2'>
+        <CardTitle className='flex items-center gap-2 text-base'>
+          <span className='bg-muted flex h-8 w-8 items-center justify-center rounded-lg border'>
+            <TimerReset className='h-4 w-4' />
+          </span>
+          API 每分钟请求
+        </CardTitle>
+      </CardHeader>
+      <CardContent className='space-y-3 px-4 pb-4'>
+        <div className='flex items-end justify-between'>
+          <div>
+            <div className='text-2xl font-semibold tracking-tight tabular-nums'>
+              {loading ? '—' : limit}
+            </div>
+            <div className='text-muted-foreground text-xs'>账号 RPM 上限</div>
+          </div>
+          <div className='text-right text-sm'>
+            <div className='font-medium tabular-nums'>
+              {current ?? '—'} / {limit}
+            </div>
+            <div className='text-muted-foreground text-xs'>近 60 秒</div>
+          </div>
+        </div>
+        <Progress
+          value={
+            current == null
+              ? 0
+              : Math.min(100, (current / Math.max(1, limit)) * 100)
+          }
+        />
+        <p className='text-muted-foreground text-xs leading-5'>
+          账号共享；上限自动按并发额度的 1.5 倍计算。
+        </p>
+      </CardContent>
+    </Card>
   )
 }
