@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { z } from 'zod'
 import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -61,6 +61,7 @@ interface WithdrawRequestSheetProps {
   // withdrawable balance in quota units
   maxAmount: number
   onSuccess?: () => void
+  commissionMode?: boolean
 }
 
 export function WithdrawRequestSheet({
@@ -69,6 +70,7 @@ export function WithdrawRequestSheet({
   type,
   maxAmount,
   onSuccess,
+  commissionMode = false,
 }: WithdrawRequestSheetProps) {
   const { t } = useTranslation()
   const isPrincipal = type === WITHDRAW_TYPE.PRINCIPAL
@@ -112,12 +114,13 @@ export function WithdrawRequestSheet({
     },
   })
 
-  useEffect(() => {
-    if (open) {
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
       form.reset({ amount: 0, alipay_name: '', alipay_account: '' })
       setWechatPreview('')
     }
-  }, [open, form])
+    onOpenChange(nextOpen)
+  }
 
   const onWechatChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -182,7 +185,7 @@ export function WithdrawRequestSheet({
       })
       if (res.success) {
         toast.success(t('Withdrawal request submitted'))
-        onOpenChange(false)
+        handleOpenChange(false)
         onSuccess?.()
       } else {
         toast.error(res.message || t('Failed to submit withdrawal request'))
@@ -193,17 +196,15 @@ export function WithdrawRequestSheet({
   }
 
   return (
-    <Sheet
-      open={open}
-      onOpenChange={(v) => {
-        onOpenChange(v)
-        if (!v) form.reset()
-      }}
-    >
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent className={sideDrawerContentClassName('sm:max-w-[520px]')}>
         <SheetHeader className={sideDrawerHeaderClassName()}>
           <SheetTitle>
-            {isPrincipal ? t('Withdraw Principal') : t('Withdraw Dividend')}
+            {isPrincipal
+              ? t('Withdraw Principal')
+              : commissionMode
+                ? t('Withdraw Commission')
+                : t('Withdraw Dividend')}
           </SheetTitle>
           <SheetDescription>
             {isPrincipal ? (
@@ -214,7 +215,15 @@ export function WithdrawRequestSheet({
                 天内的金额处于冻结期，不可提现。
               </span>
             ) : (
-              <span>分红余额可提现，超管将线下联系您打款。</span>
+              <span>
+                {commissionMode
+                  ? t(
+                      'Commission balance is withdrawable. The super admin will contact you for payout.'
+                    )
+                  : t(
+                      'Dividend balance is withdrawable. The admin will contact you offline for payout.'
+                    )}
+              </span>
             )}
           </SheetDescription>
         </SheetHeader>

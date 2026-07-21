@@ -33,6 +33,8 @@ export interface AffiliateSummary {
   total_rebate: number // quota 单位
   direct_rate: number // 小数, 0.10 = 10%
   indirect_rate: number
+  order_direct_rate: number
+  rebate_withdrawable: boolean
 }
 
 // 脱敏下级用户(只暴露非隐私字段 + 为我产生的返利)。

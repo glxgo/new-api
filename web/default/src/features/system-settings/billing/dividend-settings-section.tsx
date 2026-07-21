@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { z } from 'zod'
 import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { HandCoins } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
@@ -45,6 +46,8 @@ import { useUpdateOption } from '../hooks/use-update-option'
 const schema = z.object({
   directRate: z.coerce.number().min(0).max(1),
   indirectRate: z.coerce.number().min(0).max(1),
+  agentConsumptionRate: z.coerce.number().min(0).max(1),
+  agentOrderRate: z.coerce.number().min(0).max(1),
   rootDividendRate: z.coerce.number().min(0).max(1),
   adminDirectRate: z.coerce.number().min(0).max(1),
   adminIndirectRate: z.coerce.number().min(0).max(1),
@@ -56,6 +59,8 @@ type Values = z.infer<typeof schema>
 interface DividendSettingsDefaultValues {
   directRate: number
   indirectRate: number
+  agentConsumptionRate: number
+  agentOrderRate: number
   rootDividendRate: number
   adminDirectRate: number
   adminIndirectRate: number
@@ -89,6 +94,16 @@ export function DividendSettingsSection({
       updates.push({
         key: 'AffiliateIndirectRate',
         value: String(values.indirectRate),
+      })
+    if (values.agentConsumptionRate !== defaultValues.agentConsumptionRate)
+      updates.push({
+        key: 'AgentAffiliateDirectRate',
+        value: String(values.agentConsumptionRate),
+      })
+    if (values.agentOrderRate !== defaultValues.agentOrderRate)
+      updates.push({
+        key: 'AgentOrderAffiliateDirectRate',
+        value: String(values.agentOrderRate),
       })
     if (values.rootDividendRate !== defaultValues.rootDividendRate)
       updates.push({
@@ -136,6 +151,88 @@ export function DividendSettingsSection({
             isSaveDisabled={!isDirty}
             saveLabel='Save dividend settings'
           />
+
+          <div className='border-border/70 bg-muted/15 overflow-hidden rounded-xl border'>
+            <div className='flex items-start gap-3 border-b border-dashed px-5 py-4'>
+              <div className='bg-background flex size-9 shrink-0 items-center justify-center rounded-lg border shadow-xs'>
+                <HandCoins className='size-4' />
+              </div>
+              <div>
+                <h3 className='text-sm font-semibold'>
+                  {t('Agent Commission')}
+                </h3>
+                <p className='text-muted-foreground mt-1 text-xs leading-relaxed'>
+                  {t(
+                    'Agents have no admin permissions. Their referral rewards enter a withdrawable commission account.'
+                  )}
+                </p>
+              </div>
+            </div>
+            <div className='grid gap-5 p-5 sm:grid-cols-2'>
+              <FormField
+                control={form.control}
+                name='agentConsumptionRate'
+                render={({ field }) => (
+                  <FormItem className='bg-background rounded-lg border p-4'>
+                    <div className='flex items-center justify-between gap-3'>
+                      <FormLabel>{t('API Consumption Commission')}</FormLabel>
+                      <span className='bg-muted rounded px-2 py-1 font-mono text-[10px]'>
+                        {t('Gross profit × rate')}
+                      </span>
+                    </div>
+                    <FormControl>
+                      <Input
+                        type='number'
+                        step='0.01'
+                        min={0}
+                        max={1}
+                        placeholder='0.20'
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Direct invitee API consumption: share of gross profit (0.20 = 20%)'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name='agentOrderRate'
+                render={({ field }) => (
+                  <FormItem className='bg-background rounded-lg border p-4'>
+                    <div className='flex items-center justify-between gap-3'>
+                      <FormLabel>
+                        {t('Subscription Profit Commission')}
+                      </FormLabel>
+                      <span className='bg-muted rounded px-2 py-1 font-mono text-[10px]'>
+                        {t('Actual profit × rate')}
+                      </span>
+                    </div>
+                    <FormControl>
+                      <Input
+                        type='number'
+                        step='0.01'
+                        min={0}
+                        max={1}
+                        placeholder='0.20'
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Direct invitee subscription: share of actual plan profit at expiry (0.20 = 20%)'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+          </div>
 
           <div className='grid gap-6 sm:grid-cols-2 lg:grid-cols-5'>
             <FormField

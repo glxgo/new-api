@@ -4818,6 +4818,23 @@
     "Dividend Amount": "分润金额",
     "Records": "笔数",
     "After-sales group QR code": "售后群二维码",
-    "Scan to join the after-sales group": "扫码加入售后交流群"
+    "Scan to join the after-sales group": "扫码加入售后交流群",
+    "Agent Commission": "Agent Commission",
+    "Agents have no admin permissions. Their referral rewards enter a withdrawable commission account.": "Agents have no admin permissions. Referral rewards enter a withdrawable commission account.",
+    "API Consumption Commission": "API Consumption Commission",
+    "Gross profit × rate": "Gross profit × rate",
+    "Direct invitee API consumption: share of gross profit (0.20 = 20%)": "Direct invitee API consumption: percentage of gross profit (0.20 = 20%)",
+    "Subscription Profit Commission": "Subscription Profit Commission",
+    "Actual profit × rate": "Actual profit × rate",
+    "Direct invitee subscription: share of actual plan profit at expiry (0.20 = 20%)": "Direct invitee subscriptions: percentage of actual plan profit at expiry (0.20 = 20%)",
+    "Agent commission: direct invitee API consumption pays {{rate}}% of gross profit; subscriptions pay {{orderRate}}% of actual plan profit after expiry; indirect commission remains {{irate}}%.": "Agent commission: direct invitee API consumption pays {{rate}}% of gross profit; subscriptions pay {{orderRate}}% of actual plan profit after expiry; indirect commission remains {{irate}}%.",
+    "Agent commission enters your withdrawable commission account. API consumption is settled T+1; subscription commission is credited after the plan expires and its actual profit is calculated.": "Agent commission enters your withdrawable commission account. API consumption is settled T+1; subscription commission is credited after the plan expires and its actual profit is calculated.",
+    "Withdrawable commission enabled": "Withdrawable commission enabled",
+    "View Commission Account": "View Commission Account",
+    "Commission Account": "Commission Account",
+    "Withdraw Commission": "Withdraw Commission",
+    "Commission balance is withdrawable. The super admin will contact you for payout.": "Commission balance is withdrawable. The super admin will contact you to arrange payout.",
+    "Commission Balance": "Commission Balance",
+    "Total Commission": "Total Commission"
   }
 }

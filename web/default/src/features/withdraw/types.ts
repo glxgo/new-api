@@ -24,7 +24,7 @@ export interface ApiResponse<T = unknown> {
   data?: T
 }
 
-// Withdraw type: 1 = principal (regular user, withdrawable), 2 = dividend (admin/root).
+// Withdraw type: 1 = principal, 2 = commission/dividend (agent/admin/root).
 export const WITHDRAW_TYPE = {
   PRINCIPAL: 1,
   DIVIDEND: 2,

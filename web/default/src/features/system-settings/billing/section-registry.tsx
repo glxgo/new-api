@@ -211,6 +211,8 @@ const BILLING_SECTIONS = [
         defaultValues={{
           directRate: settings.AffiliateDirectRate,
           indirectRate: settings.AffiliateIndirectRate,
+          agentConsumptionRate: settings.AgentAffiliateDirectRate,
+          agentOrderRate: settings.AgentOrderAffiliateDirectRate,
           rootDividendRate: settings.RootDividendRate,
           adminDirectRate: settings.AffiliateAdminDirectRate,
           adminIndirectRate: settings.AffiliateAdminIndirectRate,

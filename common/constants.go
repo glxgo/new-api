@@ -146,18 +146,18 @@ var QuotaForInviter = 0
 var QuotaForInvitee = 0
 
 // 分润系统比例(超管后台「运营设置」可配,见 plan mellow-growing-waterfall.md)
-var AffiliateDirectRate = 0.10   // 拉新返利:直接上级占毛利比例
-var AffiliateIndirectRate = 0.05 // 拉新返利:间接(上上级)占毛利比例
-const AgentAffiliateDirectRate = 0.20
+var AffiliateDirectRate = 0.10      // 拉新返利:直接上级占毛利比例
+var AffiliateIndirectRate = 0.05    // 拉新返利:间接(上上级)占毛利比例
+var AgentAffiliateDirectRate = 0.20 // 代理直接邀新:占 API 消费毛利比例
 
 var RootDividendRate = 0.15           // 超管分红:占所有用户毛利比例(全站利润 15%)
 var AffiliateAdminDirectRate = 0.75   // 管理员分红:直接拉新占毛利比例
 var AffiliateAdminIndirectRate = 0.22 // 管理员分红:间接/三层+拉新占毛利比例
 
 // 订单分润比例(订阅购买订单金额分润, 与毛利比例独立配置, 默认较低留平台利润)
-var OrderAffiliateDirectRate = 0.05   // 拉新返利:直接上级占订单金额比例
-var OrderAffiliateIndirectRate = 0.02 // 拉新返利:间接上级占订单金额比例
-const AgentOrderAffiliateDirectRate = 0.20
+var OrderAffiliateDirectRate = 0.05      // 拉新返利:直接上级占订单金额比例
+var OrderAffiliateIndirectRate = 0.02    // 拉新返利:间接上级占订单金额比例
+var AgentOrderAffiliateDirectRate = 0.20 // 代理直接邀新:占订阅套餐实际利润比例
 
 var OrderRootDividendRate = 0.05           // 超管分红:占订单金额比例
 var OrderAffiliateAdminDirectRate = 0.20   // 管理员分红:直接拉新占订单金额比例
@@ -194,6 +194,19 @@ func OrderAffiliateDirectRateForRole(role int) float64 {
 		return AgentOrderAffiliateDirectRate
 	}
 	return OrderAffiliateDirectRate
+}
+
+// AffiliateRewardIsWithdrawable reports whether referral rewards should enter
+// dividend_balance rather than gift_quota. Agents have no admin permissions,
+// but their commission is withdrawable by business policy.
+func AffiliateRewardIsWithdrawable(role int) bool {
+	return role == RoleAgentUser
+}
+
+// CanWithdrawDividend is intentionally narrower than admin authorization:
+// agents can withdraw commission, but still cannot access any admin route.
+func CanWithdrawDividend(role int) bool {
+	return role == RoleAgentUser || role >= RoleAdminUser
 }
 
 var ChannelDisableThreshold = 5.0

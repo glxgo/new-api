@@ -52,9 +52,10 @@ export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
   const { auth } = useAuthStore()
   const isAdmin = (auth.user?.role ?? 0) >= ROLE.ADMIN
+  const isAgent = (auth.user?.role ?? 0) === ROLE.AGENT
   const isRoot = (auth.user?.role ?? 0) >= ROLE.SUPER_ADMIN
 
-  // Dividend account (personal, but admin+ only).
+  // Withdrawable commission/dividend account (agent and admin+).
   const personalItems: NavItem[] = [
     {
       title: t('Wallet'),
@@ -77,9 +78,9 @@ export function useSidebarData(): SidebarData {
       icon: User,
     },
   ]
-  if (isAdmin) {
+  if (isAgent || isAdmin) {
     personalItems.push({
-      title: t('Dividend Account'),
+      title: isAgent ? t('Commission Account') : t('Dividend Account'),
       url: '/dividend',
       icon: Crown,
     })

@@ -13,4 +13,9 @@ func TestAgentRoleHasNoAdminPrivilegeAndGetsTwentyPercentDirectRebate(t *testing
 	require.Equal(t, AffiliateDirectRate, AffiliateDirectRateForRole(RoleCommonUser))
 	require.Equal(t, 0.20, OrderAffiliateDirectRateForRole(RoleAgentUser))
 	require.Equal(t, OrderAffiliateDirectRate, OrderAffiliateDirectRateForRole(RoleCommonUser))
+	require.True(t, AffiliateRewardIsWithdrawable(RoleAgentUser))
+	require.False(t, AffiliateRewardIsWithdrawable(RoleCommonUser))
+	require.True(t, CanWithdrawDividend(RoleAgentUser))
+	require.True(t, CanWithdrawDividend(RoleAdminUser))
+	require.False(t, CanWithdrawDividend(RoleCommonUser))
 }

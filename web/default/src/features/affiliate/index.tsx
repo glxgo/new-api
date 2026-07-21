@@ -18,16 +18,21 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
+import { ArrowRight, Copy, Gift, HandCoins, Users } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Copy, Gift, Users } from 'lucide-react'
 import { toast } from 'sonner'
-import { SectionPageLayout } from '@/components/layout'
+import dayjs from '@/lib/dayjs'
+import { formatQuota } from '@/lib/format'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Badge } from '@/components/ui/badge'
-import { formatQuota } from '@/lib/format'
-import dayjs from '@/lib/dayjs'
-import { getAffiliateDownline, getAffiliateRebates, getAffiliateSummary } from './api'
+import { SectionPageLayout } from '@/components/layout'
+import {
+  getAffiliateDownline,
+  getAffiliateRebates,
+  getAffiliateSummary,
+} from './api'
 
 const PAGE_SIZE = 10
 
@@ -66,7 +71,9 @@ export function Affiliate() {
 
   return (
     <SectionPageLayout>
-      <SectionPageLayout.Title>{t('Affiliate Program')}</SectionPageLayout.Title>
+      <SectionPageLayout.Title>
+        {t('Affiliate Program')}
+      </SectionPageLayout.Title>
       <SectionPageLayout.Content>
         <div className='mx-auto flex w-full max-w-4xl flex-col gap-4'>
           {/* 邀请规则 + 链接 */}
@@ -76,19 +83,50 @@ export function Affiliate() {
               <h2 className='text-lg font-semibold'>{t('Invitation Rules')}</h2>
             </div>
             <p className='text-muted-foreground mt-2 text-sm leading-relaxed'>
-              {t(
-                'You earn rebates from invitees consumption. Direct invitee: {{rate}}% of gross profit; indirect (their invitee): {{irate}}%.',
-                {
-                  rate: Math.round((s?.direct_rate ?? 0.1) * 100),
-                  irate: Math.round((s?.indirect_rate ?? 0.05) * 100),
-                }
-              )}
+              {s?.rebate_withdrawable
+                ? t(
+                    'Agent commission: direct invitee API consumption pays {{rate}}% of gross profit; subscriptions pay {{orderRate}}% of actual plan profit after expiry; indirect commission remains {{irate}}%.',
+                    {
+                      rate: Math.round((s?.direct_rate ?? 0.2) * 100),
+                      orderRate: Math.round(
+                        (s?.order_direct_rate ?? 0.2) * 100
+                      ),
+                      irate: Math.round((s?.indirect_rate ?? 0.05) * 100),
+                    }
+                  )
+                : t(
+                    'You earn rebates from invitees consumption. Direct invitee: {{rate}}% of gross profit; indirect (their invitee): {{irate}}%.',
+                    {
+                      rate: Math.round((s?.direct_rate ?? 0.1) * 100),
+                      irate: Math.round((s?.indirect_rate ?? 0.05) * 100),
+                    }
+                  )}
             </p>
             <p className='text-muted-foreground mt-1 text-sm'>
-              {t(
-                'Rebates go to your gift balance (usable, not withdrawable). Settled T+1 daily.'
-              )}
+              {s?.rebate_withdrawable
+                ? t(
+                    'Agent commission enters your withdrawable commission account. API consumption is settled T+1; subscription commission is credited after the plan expires and its actual profit is calculated.'
+                  )
+                : t(
+                    'Rebates go to your gift balance (usable, not withdrawable). Settled T+1 daily.'
+                  )}
             </p>
+            {s?.rebate_withdrawable && (
+              <div className='border-border/70 bg-muted/20 mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2.5'>
+                <div className='flex items-center gap-2 text-sm font-medium'>
+                  <HandCoins className='size-4' />
+                  {t('Withdrawable commission enabled')}
+                </div>
+                <Button
+                  size='sm'
+                  variant='outline'
+                  render={<Link to='/dividend' />}
+                >
+                  {t('View Commission Account')}
+                  <ArrowRight className='size-3.5' />
+                </Button>
+              </div>
+            )}
             {s?.aff_link && (
               <div className='mt-3 flex items-center gap-2'>
                 <code className='bg-muted flex-1 truncate rounded px-3 py-2 text-sm'>
@@ -123,7 +161,9 @@ export function Affiliate() {
             <div className='flex items-center justify-between border-b px-4 py-3'>
               <div className='flex items-center gap-2'>
                 <Users className='size-4' />
-                <span className='text-sm font-semibold'>{t('My Downline')}</span>
+                <span className='text-sm font-semibold'>
+                  {t('My Downline')}
+                </span>
               </div>
               <div className='bg-muted inline-flex rounded-lg p-0.5'>
                 <button
@@ -133,7 +173,9 @@ export function Affiliate() {
                     setDlPage(0)
                   }}
                   className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                    layer === 1 ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'
+                    layer === 1
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground'
                   }`}
                 >
                   {t('Direct')}
@@ -145,7 +187,9 @@ export function Affiliate() {
                     setDlPage(0)
                   }}
                   className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                    layer === 2 ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'
+                    layer === 2
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground'
                   }`}
                 >
                   {t('Indirect')}

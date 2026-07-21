@@ -251,9 +251,9 @@ export interface UserWalletData {
   gift_quota?: number
   /** Total used gift quota */
   used_gift_quota?: number
-  /** Dividend balance (admin/root only, withdrawable) */
+  /** Commission/dividend balance (agent/admin/root, withdrawable) */
   dividend_balance?: number
-  /** Cumulative dividends earned (admin/root only, ever-increasing) */
+  /** Cumulative commission/dividends earned (agent/admin/root, ever-increasing) */
   dividend_total?: number
 }
 

@@ -278,6 +278,8 @@ export type BillingSettings = {
   // Rebate/dividend system: referral rates + T+1 settlement (super-admin configurable)
   AffiliateDirectRate: number
   AffiliateIndirectRate: number
+  AgentAffiliateDirectRate: number
+  AgentOrderAffiliateDirectRate: number
   RootDividendRate: number
   AffiliateAdminDirectRate: number
   AffiliateAdminIndirectRate: number

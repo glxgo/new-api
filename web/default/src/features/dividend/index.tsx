@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Crown, HandCoins, TrendingUp } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -25,6 +25,7 @@ import type { AuthUser } from '@/stores/auth-store'
 import { getSelf } from '@/lib/api'
 import dayjs from '@/lib/dayjs'
 import { formatQuota } from '@/lib/format'
+import { ROLE } from '@/lib/roles'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -40,23 +41,19 @@ import {
 export function Dividend() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [user, setUser] = useState<AuthUser | null>(null)
-  const [loading, setLoading] = useState(true)
   const [sheetOpen, setSheetOpen] = useState(false)
 
-  const fetchSelf = useCallback(async () => {
-    setLoading(true)
-    try {
+  const {
+    data: user,
+    isLoading: loading,
+    refetch: refetchSelf,
+  } = useQuery({
+    queryKey: ['dividend-self'],
+    queryFn: async () => {
       const res = await getSelf()
-      if (res.success && res.data) setUser(res.data as AuthUser)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchSelf()
-  }, [fetchSelf])
+      return res.success && res.data ? (res.data as AuthUser) : null
+    },
+  })
 
   const { data: withdraws } = useQuery({
     queryKey: ['my-withdraws'],
@@ -65,110 +62,117 @@ export function Dividend() {
 
   const balance = user?.dividend_balance ?? 0
   const total = user?.dividend_total ?? 0
+  const isAgent = user?.role === ROLE.AGENT
 
   const refreshAll = () => {
-    fetchSelf()
+    void refetchSelf()
     queryClient.invalidateQueries({ queryKey: ['my-withdraws'] })
   }
 
   return (
     <>
-    <SectionPageLayout>
-      <SectionPageLayout.Title>{t('Dividend Account')}</SectionPageLayout.Title>
-      <SectionPageLayout.Content>
-        <div className='mx-auto flex w-full max-w-5xl flex-col gap-4'>
-          <div className='grid gap-4 sm:grid-cols-2'>
-            <StatCard
-              icon={Crown}
-              label={t('Dividend Balance')}
-              value={loading ? null : formatQuota(balance)}
-              desc={t('Withdrawable balance')}
-            />
-            <StatCard
-              icon={TrendingUp}
-              label={t('Total Dividend')}
-              value={loading ? null : formatQuota(total)}
-              desc={t('Cumulative dividends earned')}
-            />
-          </div>
-
-          <div className='flex justify-end'>
-            <Button
-              onClick={() => {
-                if (balance <= 0) {
-                  toast.error('暂无可提现的分红余额')
-                  return
-                }
-                setSheetOpen(true)
-              }}
-              disabled={loading}
-            >
-              <HandCoins className='size-4' /> {t('Withdraw Dividend')}
-            </Button>
-          </div>
-
-          <div className='overflow-hidden rounded-lg border'>
-            <div className='border-b px-4 py-3 text-sm font-semibold'>
-              {t('Withdrawal History')}
+      <SectionPageLayout>
+        <SectionPageLayout.Title>
+          {t(isAgent ? 'Commission Account' : 'Dividend Account')}
+        </SectionPageLayout.Title>
+        <SectionPageLayout.Content>
+          <div className='mx-auto flex w-full max-w-5xl flex-col gap-4'>
+            <div className='grid gap-4 sm:grid-cols-2'>
+              <StatCard
+                icon={Crown}
+                label={t(isAgent ? 'Commission Balance' : 'Dividend Balance')}
+                value={loading ? null : formatQuota(balance)}
+                desc={t('Withdrawable balance')}
+              />
+              <StatCard
+                icon={TrendingUp}
+                label={t(isAgent ? 'Total Commission' : 'Total Dividend')}
+                value={loading ? null : formatQuota(total)}
+                desc={t('Cumulative dividends earned')}
+              />
             </div>
-            <div className='divide-y'>
-              {(withdraws ?? []).length === 0 ? (
-                <div className='text-muted-foreground px-4 py-8 text-center text-sm'>
-                  {t('No withdrawal history')}
-                </div>
-              ) : (
-                (withdraws ?? []).map((w) => (
-                  <div
-                    key={w.id}
-                    className='flex items-center justify-between px-4 py-3 text-sm'
-                  >
-                    <div>
-                      <div className='flex flex-wrap items-center gap-2'>
-                        <Badge
-                          variant={
-                            w.type === WITHDRAW_TYPE.DIVIDEND
-                              ? 'outline'
-                              : 'secondary'
-                          }
-                          className='text-xs'
-                        >
-                          {w.type === WITHDRAW_TYPE.DIVIDEND
-                            ? t('Dividend')
-                            : t('Principal')}
-                        </Badge>
-                        <span className='font-mono'>
-                          {formatQuota(w.amount)}
-                        </span>
-                        <span className='text-muted-foreground text-xs'>
-                          ({t('actual')} {formatQuota(w.actual_amount)})
-                        </span>
-                      </div>
-                      <div className='text-muted-foreground mt-0.5 text-xs'>
-                        {dayjs(w.created_at * 1000).format('YYYY-MM-DD HH:mm')}
-                      </div>
-                      {w.status === WITHDRAW_STATUS.REJECTED && w.remark && (
-                        <div className='text-rose-600 mt-1 text-xs'>
-                          {t('Reject Reason')}：{w.remark}
-                        </div>
-                      )}
-                    </div>
-                    <StatusBadge status={w.status} t={t} />
+
+            <div className='flex justify-end'>
+              <Button
+                onClick={() => {
+                  if (balance <= 0) {
+                    toast.error('暂无可提现的分红余额')
+                    return
+                  }
+                  setSheetOpen(true)
+                }}
+                disabled={loading}
+              >
+                <HandCoins className='size-4' />{' '}
+                {t(isAgent ? 'Withdraw Commission' : 'Withdraw Dividend')}
+              </Button>
+            </div>
+
+            <div className='overflow-hidden rounded-lg border'>
+              <div className='border-b px-4 py-3 text-sm font-semibold'>
+                {t('Withdrawal History')}
+              </div>
+              <div className='divide-y'>
+                {(withdraws ?? []).length === 0 ? (
+                  <div className='text-muted-foreground px-4 py-8 text-center text-sm'>
+                    {t('No withdrawal history')}
                   </div>
-                ))
-              )}
+                ) : (
+                  (withdraws ?? []).map((w) => (
+                    <div
+                      key={w.id}
+                      className='flex items-center justify-between px-4 py-3 text-sm'
+                    >
+                      <div>
+                        <div className='flex flex-wrap items-center gap-2'>
+                          <Badge
+                            variant={
+                              w.type === WITHDRAW_TYPE.DIVIDEND
+                                ? 'outline'
+                                : 'secondary'
+                            }
+                            className='text-xs'
+                          >
+                            {w.type === WITHDRAW_TYPE.DIVIDEND
+                              ? t('Dividend')
+                              : t('Principal')}
+                          </Badge>
+                          <span className='font-mono'>
+                            {formatQuota(w.amount)}
+                          </span>
+                          <span className='text-muted-foreground text-xs'>
+                            ({t('actual')} {formatQuota(w.actual_amount)})
+                          </span>
+                        </div>
+                        <div className='text-muted-foreground mt-0.5 text-xs'>
+                          {dayjs(w.created_at * 1000).format(
+                            'YYYY-MM-DD HH:mm'
+                          )}
+                        </div>
+                        {w.status === WITHDRAW_STATUS.REJECTED && w.remark && (
+                          <div className='mt-1 text-xs text-rose-600'>
+                            {t('Reject Reason')}：{w.remark}
+                          </div>
+                        )}
+                      </div>
+                      <StatusBadge status={w.status} t={t} />
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      </SectionPageLayout.Content>
-    </SectionPageLayout>
+        </SectionPageLayout.Content>
+      </SectionPageLayout>
 
-    <WithdrawRequestSheet
-      open={sheetOpen}
-      onOpenChange={setSheetOpen}
-      type={WITHDRAW_TYPE.DIVIDEND}
-      maxAmount={balance}
-      onSuccess={refreshAll}
-    />
+      <WithdrawRequestSheet
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        type={WITHDRAW_TYPE.DIVIDEND}
+        maxAmount={balance}
+        onSuccess={refreshAll}
+        commissionMode={isAgent}
+      />
     </>
   )
 }

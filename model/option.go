@@ -142,6 +142,7 @@ func InitOptionMap() {
 	common.OptionMap["AffiliateAdminIndirectRate"] = strconv.FormatFloat(common.AffiliateAdminIndirectRate, 'f', -1, 64)
 	common.OptionMap["OrderAffiliateDirectRate"] = strconv.FormatFloat(common.OrderAffiliateDirectRate, 'f', -1, 64)
 	common.OptionMap["OrderAffiliateIndirectRate"] = strconv.FormatFloat(common.OrderAffiliateIndirectRate, 'f', -1, 64)
+	initAgentCommissionOptionMap()
 	common.OptionMap["OrderRootDividendRate"] = strconv.FormatFloat(common.OrderRootDividendRate, 'f', -1, 64)
 	common.OptionMap["OrderAffiliateAdminDirectRate"] = strconv.FormatFloat(common.OrderAffiliateAdminDirectRate, 'f', -1, 64)
 	common.OptionMap["OrderAffiliateAdminIndirectRate"] = strconv.FormatFloat(common.OrderAffiliateAdminIndirectRate, 'f', -1, 64)
@@ -203,6 +204,11 @@ func InitOptionMap() {
 	common.OptionMapRWMutex.Unlock()
 	loadOptionsFromDatabase()
 	migrateGroupModelPricingV1()
+}
+
+func initAgentCommissionOptionMap() {
+	common.OptionMap["AgentAffiliateDirectRate"] = strconv.FormatFloat(common.AgentAffiliateDirectRate, 'f', -1, 64)
+	common.OptionMap["AgentOrderAffiliateDirectRate"] = strconv.FormatFloat(common.AgentOrderAffiliateDirectRate, 'f', -1, 64)
 }
 
 func loadOptionsFromDatabase() {
@@ -556,6 +562,8 @@ func updateOptionMap(key string, value string) (err error) {
 		common.AffiliateDirectRate, _ = strconv.ParseFloat(value, 64)
 	case "AffiliateIndirectRate":
 		common.AffiliateIndirectRate, _ = strconv.ParseFloat(value, 64)
+	case "AgentAffiliateDirectRate":
+		common.AgentAffiliateDirectRate, _ = strconv.ParseFloat(value, 64)
 	case "RootDividendRate":
 		common.RootDividendRate, _ = strconv.ParseFloat(value, 64)
 	case "AffiliateAdminDirectRate":
@@ -566,6 +574,8 @@ func updateOptionMap(key string, value string) (err error) {
 		common.OrderAffiliateDirectRate, _ = strconv.ParseFloat(value, 64)
 	case "OrderAffiliateIndirectRate":
 		common.OrderAffiliateIndirectRate, _ = strconv.ParseFloat(value, 64)
+	case "AgentOrderAffiliateDirectRate":
+		common.AgentOrderAffiliateDirectRate, _ = strconv.ParseFloat(value, 64)
 	case "OrderRootDividendRate":
 		common.OrderRootDividendRate, _ = strconv.ParseFloat(value, 64)
 	case "OrderAffiliateAdminDirectRate":

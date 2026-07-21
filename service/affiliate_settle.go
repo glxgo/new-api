@@ -52,8 +52,8 @@ func RunDailySettle(batchId string, dayStart, dayEnd int64) error {
 	dAdminIndirect := decimal.NewFromFloat(common.AffiliateAdminIndirectRate) // 管理员间接/三层+拉新分红
 	root := model.GetRootUser()
 
-	accumGift := map[int]int{}     // userId -> 赠金累加(拉新返利)
-	accumDividend := map[int]int{} // userId -> 分红累加(管理员/超管)
+	accumGift := map[int]int{}     // userId -> 普通用户赠金返利
+	accumDividend := map[int]int{} // userId -> 代理可提佣金 / 管理员与超管分红
 	var records []*model.DividendRecord
 	totalGross, logCount := 0, 0
 
@@ -90,14 +90,22 @@ func RunDailySettle(batchId string, dayStart, dayEnd int64) error {
 		if inv := getUser(log.InviterIdSnap); inv != nil && inv.Role < common.RoleAdminUser {
 			dDirect := decimal.NewFromFloat(common.AffiliateDirectRateForRole(inv.Role))
 			if amt := int(dGross.Mul(dDirect).Round(0).IntPart()); amt > 0 {
-				accumGift[inv.Id] += amt
+				if common.AffiliateRewardIsWithdrawable(inv.Role) {
+					accumDividend[inv.Id] += amt
+				} else {
+					accumGift[inv.Id] += amt
+				}
 				records = append(records, &model.DividendRecord{BatchId: batchId, UserId: inv.Id, SourceUserId: log.UserId, LogId: log.Id, Type: model.DividendTypeDirect, GrossProfit: gross, Amount: amt, CreatedAt: common.GetTimestamp()})
 			}
 		}
 		// 拉新返利 - 间接上级
 		if inv2 := getUser(log.Inviter2IdSnap); inv2 != nil && inv2.Role < common.RoleAdminUser {
 			if amt := int(dGross.Mul(dIndirect).Round(0).IntPart()); amt > 0 {
-				accumGift[inv2.Id] += amt
+				if common.AffiliateRewardIsWithdrawable(inv2.Role) {
+					accumDividend[inv2.Id] += amt
+				} else {
+					accumGift[inv2.Id] += amt
+				}
 				records = append(records, &model.DividendRecord{BatchId: batchId, UserId: inv2.Id, SourceUserId: log.UserId, LogId: log.Id, Type: model.DividendTypeIndirect, GrossProfit: gross, Amount: amt, CreatedAt: common.GetTimestamp()})
 			}
 		}
@@ -157,7 +165,7 @@ func RunDailySettle(batchId string, dayStart, dayEnd int64) error {
 		}
 	}
 
-	// 3. 发放(赠金进 gift_quota, 分红进 dividend_balance + dividend_total)
+	// 3. 发放(普通返利进 gift_quota; 代理佣金和管理分红进 dividend_balance + dividend_total)
 	for uid, amt := range accumGift {
 		if amt > 0 {
 			if err := model.IncreaseUserGiftQuota(uid, amt, false); err != nil {

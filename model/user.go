@@ -1093,7 +1093,7 @@ func decreaseUserGiftQuota(id int, quota int) (err error) {
 	return err
 }
 
-// IncreaseUserDividend 增加用户分红余额(可提) + 累计分红(只增)。管理员/超管 T+1 结算发放用。
+// IncreaseUserDividend 增加用户分红/佣金余额(可提) + 累计金额(只增)。代理、管理员和超管结算发放用。
 // 不更新 Redis 缓存(dividend_balance 非消费热路径, 预扣不读它)。立即落库。
 func IncreaseUserDividend(id int, amount int) (err error) {
 	if amount < 0 {

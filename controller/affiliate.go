@@ -46,13 +46,15 @@ func GetAffiliateSummary(c *gin.Context) {
 	}
 
 	common.ApiSuccess(c, gin.H{
-		"aff_code":       user.AffCode,
-		"aff_link":       affLink,
-		"direct_count":   directCount,
-		"indirect_count": indirectCount,
-		"total_rebate":   totalRebate,
-		"direct_rate":    common.AffiliateDirectRateForRole(user.Role),
-		"indirect_rate":  common.AffiliateIndirectRate,
+		"aff_code":            user.AffCode,
+		"aff_link":            affLink,
+		"direct_count":        directCount,
+		"indirect_count":      indirectCount,
+		"total_rebate":        totalRebate,
+		"direct_rate":         common.AffiliateDirectRateForRole(user.Role),
+		"indirect_rate":       common.AffiliateIndirectRate,
+		"order_direct_rate":   common.OrderAffiliateDirectRateForRole(user.Role),
+		"rebate_withdrawable": common.AffiliateRewardIsWithdrawable(user.Role),
 	})
 }
 

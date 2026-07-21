@@ -13,7 +13,7 @@ import (
 
 // 提现配置(后续可改 option 可配, 先用常量)
 const (
-	withdrawFeeRate       = 0.026      // 手续费 2.6%(由支付平台收取)
+	withdrawFeeRate       = 0.026         // 手续费 2.6%(由支付平台收取)
 	withdrawFreezeSeconds = 7 * 24 * 3600 // 充值冻结期 7 天(本金提现: 7 天内成功充值不可提)
 	withdrawNotifyEmail   = "246907434@qq.com"
 )
@@ -23,12 +23,12 @@ type requestWithdrawReq struct {
 	Amount        int    `json:"amount"`         // 提现金额(quota 单位)
 	AlipayName    string `json:"alipay_name"`    // 本金提现必填
 	AlipayAccount string `json:"alipay_account"` // 本金提现必填
-	WechatQrcode  string `json:"wechat_qrcode"` // base64, 备用
+	WechatQrcode  string `json:"wechat_qrcode"`  // base64, 备用
 }
 
 // RequestWithdraw 用户提现申请(本金/分红统一入口)。
 // 本金(Type=1): 普通用户, 必填支付宝姓名/账户(+微信码备用), 校验充值冻结期(7 天内成功充值不可提)。
-// 分红(Type=2): 管理员/超管, 不填收款信息(超管线下联系打款)。申请后冻结余额, 进超管审核队列。
+// 分红/佣金(Type=2): 代理/管理员/超管, 不填收款信息(超管线下联系打款)。申请后冻结余额, 进超管审核队列。
 func RequestWithdraw(c *gin.Context) {
 	var req requestWithdrawReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -50,11 +50,11 @@ func RequestWithdraw(c *gin.Context) {
 	}
 
 	w := model.Withdraw{
-		UserId:       userId,
-		Type:         req.Type,
-		Amount:       req.Amount,
-		Fee:          model.CalcWithdrawFee(req.Amount, withdrawFeeRate),
-		Status:       model.WithdrawStatusPending,
+		UserId: userId,
+		Type:   req.Type,
+		Amount: req.Amount,
+		Fee:    model.CalcWithdrawFee(req.Amount, withdrawFeeRate),
+		Status: model.WithdrawStatusPending,
 	}
 	if w.Fee >= req.Amount {
 		common.ApiErrorMsg(c, "提现金额不足以抵扣手续费")
@@ -84,9 +84,9 @@ func RequestWithdraw(c *gin.Context) {
 			return
 		}
 	} else if req.Type == model.WithdrawTypeDividend {
-		// 分红提现(管理员/超管), 不填收款信息
-		if role < common.RoleAdminUser {
-			common.ApiErrorMsg(c, "仅管理员/超管可提现分红")
+		// 分红/佣金提现(代理/管理员/超管), 不填收款信息
+		if !common.CanWithdrawDividend(role) {
+			common.ApiErrorMsg(c, "仅代理、管理员或超管可提现佣金/分红")
 			return
 		}
 		if req.Amount > user.DividendBalance {

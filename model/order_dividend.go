@@ -9,8 +9,9 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// SettleOrderDividend 订阅购买订单成功后, 按订单金额一次性分润给推荐人/管理员/超管。
-// base = orderQuota(订单金额, quota 单位); 与消费分润(T+1 按 gross)独立, 用 OrderXxxRate 比例。
+// SettleOrderDividend 按上层已计算好的可分润基数，一次性分润给推荐人/管理员/超管。
+// 当前唯一调用方是订阅到期结算：base = 套餐实际利润(售价 - 渠道成本, quota 单位)。
+// 它与 API 消费分润(T+1 按 gross)独立，使用 OrderXxxRate 比例。
 // 幂等: sourceRef(如订单号)去重, 防 webhook 重放/兑换码重试重复发放。
 // 兑换码兑换订阅不调本函数(用户要求兑换码不计入分润)。
 // 放 model 包(model/subscription.go 直接调), 避免 model→service 循环依赖。
@@ -75,14 +76,22 @@ func SettleOrderDividend(buyerUserId int, orderQuota int64, sourceRef string) {
 	if inv := getUser(inviterId); inv != nil && inv.Role < common.RoleAdminUser {
 		dDirect := decimal.NewFromFloat(common.OrderAffiliateDirectRateForRole(inv.Role))
 		if amt := int(dBase.Mul(dDirect).Round(0).IntPart()); amt > 0 {
-			accumGift[inv.Id] += amt
+			if common.AffiliateRewardIsWithdrawable(inv.Role) {
+				accumDividend[inv.Id] += amt
+			} else {
+				accumGift[inv.Id] += amt
+			}
 			records = append(records, &DividendRecord{BatchId: batchId, UserId: inv.Id, SourceUserId: buyerUserId, Type: DividendTypeDirect, GrossProfit: int(orderQuota), Amount: amt, SourceRef: sourceRef, CreatedAt: now})
 		}
 	}
 	// 间接上级(普通用户)
 	if inv2 := getUser(inviter2Id); inv2 != nil && inv2.Role < common.RoleAdminUser {
 		if amt := int(dBase.Mul(dIndirect).Round(0).IntPart()); amt > 0 {
-			accumGift[inv2.Id] += amt
+			if common.AffiliateRewardIsWithdrawable(inv2.Role) {
+				accumDividend[inv2.Id] += amt
+			} else {
+				accumGift[inv2.Id] += amt
+			}
 			records = append(records, &DividendRecord{BatchId: batchId, UserId: inv2.Id, SourceUserId: buyerUserId, Type: DividendTypeIndirect, GrossProfit: int(orderQuota), Amount: amt, SourceRef: sourceRef, CreatedAt: now})
 		}
 	}
