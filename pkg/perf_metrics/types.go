@@ -28,6 +28,8 @@ type QueryParams struct {
 
 type BucketPoint struct {
 	Ts           int64   `json:"ts"`
+	RequestCount int64   `json:"request_count"`
+	SuccessCount int64   `json:"success_count"`
 	AvgTtftMs    int64   `json:"avg_ttft_ms"`
 	AvgLatencyMs int64   `json:"avg_latency_ms"`
 	SuccessRate  float64 `json:"success_rate"`
@@ -64,17 +66,53 @@ type SummaryAllResult struct {
 	Models []ModelSummary `json:"models"`
 }
 
-// GroupCacheSummary 单个分组的缓存命中率汇总（数据看板缓存率卡片用）
+// GroupCacheSummary keeps its historical name for API compatibility, but now
+// carries the complete group-level health summary used by both dashboard and
+// model-status views.
 type GroupCacheSummary struct {
-	Group        string  `json:"group"`
-	CacheRate    float64 `json:"cache_rate"`
-	RequestCount int64   `json:"request_count"`
-	CacheTokens  int64   `json:"cache_tokens"`
-	PromptTokens int64   `json:"prompt_tokens"`
+	Group        string             `json:"group"`
+	AvgTtftMs    int64              `json:"avg_ttft_ms"`
+	AvgLatencyMs int64              `json:"avg_latency_ms"`
+	SuccessRate  float64            `json:"success_rate"`
+	AvgTps       float64            `json:"avg_tps"`
+	CacheRate    float64            `json:"cache_rate"`
+	RequestCount int64              `json:"request_count"`
+	SuccessCount int64              `json:"success_count"`
+	CacheTokens  int64              `json:"cache_tokens"`
+	PromptTokens int64              `json:"prompt_tokens"`
+	Series       []BucketPoint      `json:"series"`
+	Probe        *GroupProbeSummary `json:"probe,omitempty"`
+}
+
+type ProbeSeriesPoint struct {
+	Ts           int64   `json:"ts"`
+	ProbeCount   int64   `json:"probe_count"`
+	SuccessCount int64   `json:"success_count"`
+	SuccessRate  float64 `json:"success_rate"`
+	AvgLatencyMs int64   `json:"avg_latency_ms"`
+	AvgTtftMs    int64   `json:"avg_ttft_ms"`
+}
+
+type GroupProbeSummary struct {
+	Status            string             `json:"status"`
+	TotalChannels     int                `json:"total_channels"`
+	CheckedChannels   int                `json:"checked_channels"`
+	HealthyChannels   int                `json:"healthy_channels"`
+	DegradedChannels  int                `json:"degraded_channels"`
+	UnhealthyChannels int                `json:"unhealthy_channels"`
+	SuccessRate       float64            `json:"success_rate"`
+	AvgLatencyMs      int64              `json:"avg_latency_ms"`
+	AvgTtftMs         int64              `json:"avg_ttft_ms"`
+	LastProbeTs       int64              `json:"last_probe_ts"`
+	LastSuccessTs     int64              `json:"last_success_ts"`
+	LastErrorCategory string             `json:"last_error_category,omitempty"`
+	LastErrorCode     string             `json:"last_error_code,omitempty"`
+	Series            []ProbeSeriesPoint `json:"series"`
 }
 
 type GroupSummaryAllResult struct {
-	Groups []GroupCacheSummary `json:"groups"`
+	Groups          []GroupCacheSummary `json:"groups"`
+	AvailableGroups []string            `json:"available_groups,omitempty"`
 }
 
 type bucketKey struct {

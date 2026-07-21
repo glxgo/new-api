@@ -18,6 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 export type PerformanceSeriesPoint = {
   ts: number
+  request_count?: number
+  success_count?: number
   avg_ttft_ms: number
   avg_latency_ms: number
   success_rate: number
@@ -64,10 +66,43 @@ export type PerfSummaryAllData = {
 
 export type GroupCacheSummary = {
   group: string
+  avg_ttft_ms?: number
+  avg_latency_ms?: number
+  success_rate?: number
+  avg_tps?: number
   cache_rate: number
   request_count: number
+  success_count?: number
   cache_tokens: number
   prompt_tokens: number
+  series?: PerformanceSeriesPoint[]
+  probe?: GroupProbeSummary
+}
+
+export type ProbeSeriesPoint = {
+  ts: number
+  probe_count: number
+  success_count: number
+  success_rate: number
+  avg_latency_ms: number
+  avg_ttft_ms: number
+}
+
+export type GroupProbeSummary = {
+  status: 'healthy' | 'degraded' | 'unhealthy' | 'unknown'
+  total_channels: number
+  checked_channels: number
+  healthy_channels: number
+  degraded_channels: number
+  unhealthy_channels: number
+  success_rate: number
+  avg_latency_ms: number
+  avg_ttft_ms: number
+  last_probe_ts: number
+  last_success_ts: number
+  last_error_category?: string
+  last_error_code?: string
+  series: ProbeSeriesPoint[]
 }
 
 export type GroupSummaryAllData = {
@@ -75,5 +110,6 @@ export type GroupSummaryAllData = {
   message?: string
   data: {
     groups: GroupCacheSummary[]
+    available_groups?: string[]
   }
 }

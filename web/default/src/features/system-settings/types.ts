@@ -300,6 +300,9 @@ export type OperationsSettings = {
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.auto_test_channel_ids': string
+  'monitor_setting.channel_canary_enabled': boolean
+  'monitor_setting.channel_canary_minutes': number
+  'monitor_setting.channel_canary_channel_ids': string
   SMTPServer: string
   SMTPPort: string
   SMTPAccount: string

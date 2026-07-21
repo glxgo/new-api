@@ -17,14 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useMemo, useRef } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import * as z from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { parseHttpStatusCodeRules } from '@/lib/http-status-code-rules'
-import { getChannels } from '@/features/channels/api'
 import {
   Form,
   FormControl,
@@ -37,6 +36,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { getChannels } from '@/features/channels/api'
 import {
   SettingsForm,
   SettingsSwitchContent,
@@ -71,6 +71,12 @@ const monitoringSchema = z
         .int()
         .min(1, 'Interval must be at least 1 minute'),
       auto_test_channel_ids: z.array(z.number()),
+      channel_canary_enabled: z.boolean(),
+      channel_canary_minutes: z.coerce
+        .number()
+        .int()
+        .min(1, 'Interval must be at least 1 minute'),
+      channel_canary_channel_ids: z.array(z.number()),
     }),
   })
   .superRefine((values, ctx) => {
@@ -116,6 +122,9 @@ type MonitoringSettingsSectionProps = {
     'monitor_setting.auto_test_channel_enabled': boolean
     'monitor_setting.auto_test_channel_minutes': number
     'monitor_setting.auto_test_channel_ids': string
+    'monitor_setting.channel_canary_enabled': boolean
+    'monitor_setting.channel_canary_minutes': number
+    'monitor_setting.channel_canary_channel_ids': string
   }
 }
 
@@ -153,6 +162,9 @@ type NormalizedMonitoringValues = {
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.auto_test_channel_ids': string
+  'monitor_setting.channel_canary_enabled': boolean
+  'monitor_setting.channel_canary_minutes': number
+  'monitor_setting.channel_canary_channel_ids': string
 }
 
 const buildFormDefaults = (
@@ -174,6 +186,11 @@ const buildFormDefaults = (
       defaults['monitor_setting.auto_test_channel_minutes'],
     auto_test_channel_ids: parseIdsArray(
       defaults['monitor_setting.auto_test_channel_ids']
+    ),
+    channel_canary_enabled: defaults['monitor_setting.channel_canary_enabled'],
+    channel_canary_minutes: defaults['monitor_setting.channel_canary_minutes'],
+    channel_canary_channel_ids: parseIdsArray(
+      defaults['monitor_setting.channel_canary_channel_ids']
     ),
   },
 })
@@ -201,6 +218,13 @@ const normalizeDefaults = (
   'monitor_setting.auto_test_channel_ids': stringifyIdsArray(
     parseIdsArray(defaults['monitor_setting.auto_test_channel_ids'])
   ),
+  'monitor_setting.channel_canary_enabled':
+    defaults['monitor_setting.channel_canary_enabled'],
+  'monitor_setting.channel_canary_minutes':
+    defaults['monitor_setting.channel_canary_minutes'],
+  'monitor_setting.channel_canary_channel_ids': stringifyIdsArray(
+    parseIdsArray(defaults['monitor_setting.channel_canary_channel_ids'])
+  ),
 })
 
 const normalizeFormValues = (
@@ -225,6 +249,13 @@ const normalizeFormValues = (
     values.monitor_setting.auto_test_channel_minutes,
   'monitor_setting.auto_test_channel_ids': stringifyIdsArray(
     values.monitor_setting.auto_test_channel_ids
+  ),
+  'monitor_setting.channel_canary_enabled':
+    values.monitor_setting.channel_canary_enabled,
+  'monitor_setting.channel_canary_minutes':
+    values.monitor_setting.channel_canary_minutes,
+  'monitor_setting.channel_canary_channel_ids': stringifyIdsArray(
+    values.monitor_setting.channel_canary_channel_ids
   ),
 })
 
@@ -314,7 +345,7 @@ export function MonitoringSettingsSection({
                   <SettingsSwitchContent>
                     <FormLabel>{t('Scheduled channel tests')}</FormLabel>
                     <FormDescription>
-                      {t('Automatically probe all channels in the background')}
+                      旧版定时测试流程，可能继续触发自动禁用或自动启用规则
                     </FormDescription>
                   </SettingsSwitchContent>
                   <FormControl>
@@ -370,6 +401,80 @@ export function MonitoringSettingsSection({
               </FormItem>
             )}
           />
+
+          <div className='bg-muted/10 space-y-5 rounded-xl border p-4'>
+            <div>
+              <div className='text-sm font-semibold'>渠道金丝雀探测</div>
+              <p className='text-muted-foreground mt-1 text-xs leading-5'>
+                独立低频检查渠道。连续 3 次失败才标记异常，连续 2
+                次成功才恢复；只记录和告警，绝不自动禁用渠道，也不改变路由优先级。
+              </p>
+            </div>
+
+            <div className='grid gap-6 md:grid-cols-2'>
+              <FormField
+                control={form.control}
+                name='monitor_setting.channel_canary_enabled'
+                render={({ field }) => (
+                  <SettingsSwitchItem>
+                    <SettingsSwitchContent>
+                      <FormLabel>启用独立探测</FormLabel>
+                      <FormDescription>
+                        每轮按顺序探测，避免并发探测给上游带来压力
+                      </FormDescription>
+                    </SettingsSwitchContent>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </SettingsSwitchItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='monitor_setting.channel_canary_minutes'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>探测间隔（分钟）</FormLabel>
+                    <FormControl>
+                      <Input
+                        type='number'
+                        min={1}
+                        step={1}
+                        {...safeNumberFieldProps(field)}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      默认每 5 分钟探测一次，每个渠道最长等待 30 秒
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <FormField
+              control={form.control}
+              name='monitor_setting.channel_canary_channel_ids'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>金丝雀探测渠道</FormLabel>
+                  <ChannelMultiSelect
+                    channels={channelOptions}
+                    selectedIds={field.value ?? []}
+                    onChange={field.onChange}
+                  />
+                  <FormDescription>
+                    留空会探测全部已启用渠道；被手动或自动禁用的渠道不会探测
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
 
           <div className='grid gap-6 md:grid-cols-2'>
             <FormField

@@ -233,7 +233,9 @@ func QuerySummaryAll(hours int, groups []string) (SummaryAllResult, error) {
 	return SummaryAllResult{Models: models}, nil
 }
 
-// QueryGroupSummaryAll 按分组聚合所有模型的缓存命中数据，用于数据看板缓存率卡片
+// QueryGroupSummaryAll aggregates every model into one health timeline per
+// user-facing group. The response remains backward compatible with the cache
+// summary consumer while exposing latency, TTFT, TPS and availability.
 func QueryGroupSummaryAll(hours int, groups []string) (GroupSummaryAllResult, error) {
 	if hours <= 0 {
 		hours = 24
@@ -245,19 +247,24 @@ func QueryGroupSummaryAll(hours int, groups []string) (GroupSummaryAllResult, er
 	startTs := endTs - int64(hours)*3600
 	allowedGroups := allowedGroupSet(groups)
 
-	rows, err := model.GetPerfMetricsGroupSummaryAll(startTs, endTs, groups)
+	rows, err := model.GetPerfMetricsGroupBuckets(startTs, endTs, groups)
 	if err != nil {
 		return GroupSummaryAllResult{}, err
 	}
 
-	totals := map[string]counters{}
+	merged := map[bucketKey]counters{}
 	for _, row := range rows {
-		totals[row.Group] = counters{
-			requestCount: row.RequestCount,
-			successCount: row.SuccessCount,
-			cacheTokens:  row.CacheTokens,
-			promptTokens: row.PromptTokens,
-		}
+		mergeCounters(merged, bucketKey{group: row.Group, bucketTs: row.BucketTs}, counters{
+			requestCount:   row.RequestCount,
+			successCount:   row.SuccessCount,
+			totalLatencyMs: row.TotalLatencyMs,
+			ttftSumMs:      row.TtftSumMs,
+			ttftCount:      row.TtftCount,
+			outputTokens:   row.OutputTokens,
+			generationMs:   row.GenerationMs,
+			cacheTokens:    row.CacheTokens,
+			promptTokens:   row.PromptTokens,
+		})
 	}
 
 	hotBuckets.Range(func(key, value any) bool {
@@ -274,33 +281,69 @@ func QueryGroupSummaryAll(hours int, groups []string) (GroupSummaryAllResult, er
 		if snap.requestCount == 0 {
 			return true
 		}
-		cur := totals[k.group]
-		cur.requestCount += snap.requestCount
-		cur.successCount += snap.successCount
-		cur.cacheTokens += snap.cacheTokens
-		cur.promptTokens += snap.promptTokens
-		totals[k.group] = cur
+		mergeCounters(merged, bucketKey{group: k.group, bucketTs: k.bucketTs}, snap)
 		return true
 	})
 
-	groupList := make([]GroupCacheSummary, 0, len(totals))
-	for name, total := range totals {
-		if total.requestCount == 0 {
+	result := buildGroupSummaryResult(merged)
+	result.AvailableGroups = append([]string(nil), groups...)
+	sort.Strings(result.AvailableGroups)
+	return result, nil
+}
+
+func buildGroupSummaryResult(merged map[bucketKey]counters) GroupSummaryAllResult {
+	groupBuckets := map[string]map[int64]counters{}
+	for key, value := range merged {
+		if value.requestCount == 0 {
 			continue
+		}
+		if groupBuckets[key.group] == nil {
+			groupBuckets[key.group] = map[int64]counters{}
+		}
+		groupBuckets[key.group][key.bucketTs] = value
+	}
+
+	groupList := make([]GroupCacheSummary, 0, len(groupBuckets))
+	for name, buckets := range groupBuckets {
+		timestamps := make([]int64, 0, len(buckets))
+		for ts := range buckets {
+			timestamps = append(timestamps, ts)
+		}
+		sort.Slice(timestamps, func(i, j int) bool { return timestamps[i] < timestamps[j] })
+		total := counters{}
+		series := make([]BucketPoint, 0, len(timestamps))
+		for _, ts := range timestamps {
+			value := buckets[ts]
+			total.requestCount += value.requestCount
+			total.successCount += value.successCount
+			total.totalLatencyMs += value.totalLatencyMs
+			total.ttftSumMs += value.ttftSumMs
+			total.ttftCount += value.ttftCount
+			total.outputTokens += value.outputTokens
+			total.generationMs += value.generationMs
+			total.cacheTokens += value.cacheTokens
+			total.promptTokens += value.promptTokens
+			series = append(series, bucketPoint(ts, value))
 		}
 		groupList = append(groupList, GroupCacheSummary{
 			Group:        name,
-			CacheRate:    math.Round(cacheRate(total)*100) / 100,
+			AvgTtftMs:    avg(total.ttftSumMs, total.ttftCount),
+			AvgLatencyMs: avg(total.totalLatencyMs, total.successCount),
+			SuccessRate:  successRate(total),
+			AvgTps:       avgTps(total),
+			CacheRate:    cacheRate(total),
 			RequestCount: total.requestCount,
+			SuccessCount: total.successCount,
 			CacheTokens:  total.cacheTokens,
 			PromptTokens: total.promptTokens,
+			Series:       series,
 		})
 	}
 	sort.Slice(groupList, func(i, j int) bool {
 		return groupList[i].RequestCount > groupList[j].RequestCount
 	})
 
-	return GroupSummaryAllResult{Groups: groupList}, nil
+	return GroupSummaryAllResult{Groups: groupList}
 }
 
 func allowedGroupSet(groups []string) map[string]struct{} {
@@ -405,6 +448,8 @@ func buildQueryResult(modelName string, merged map[bucketKey]counters) QueryResu
 func bucketPoint(ts int64, value counters) BucketPoint {
 	return BucketPoint{
 		Ts:           ts,
+		RequestCount: value.requestCount,
+		SuccessCount: value.successCount,
 		AvgTtftMs:    avg(value.ttftSumMs, value.ttftCount),
 		AvgLatencyMs: avg(value.totalLatencyMs, value.successCount),
 		SuccessRate:  successRate(value),

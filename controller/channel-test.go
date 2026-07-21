@@ -2,6 +2,7 @@ package controller
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,6 +42,16 @@ type testResult struct {
 	context     *gin.Context
 	localErr    error
 	newAPIError *types.NewAPIError
+	model       string
+	latencyMs   int64
+	ttftMs      int64
+	hasTtft     bool
+	httpStatus  int
+}
+
+type channelTestOptions struct {
+	recordConsumeLog bool
+	timeout          time.Duration
 }
 
 func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointType string) string {
@@ -75,7 +86,27 @@ func resolveChannelTestUserID(c *gin.Context) (int, error) {
 }
 
 func testChannel(channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool) testResult {
+	return testChannelWithOptions(channel, testUserID, testModel, endpointType, isStream, channelTestOptions{
+		recordConsumeLog: true,
+	})
+}
+
+func testChannelWithOptions(channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool, options channelTestOptions) (result testResult) {
 	tik := time.Now()
+	var info *relaycommon.RelayInfo
+	defer func() {
+		result.model = testModel
+		result.latencyMs = time.Since(tik).Milliseconds()
+		if info != nil && info.HasSendResponse() && !info.UpstreamStartTime.IsZero() {
+			result.ttftMs = info.FirstResponseTime.Sub(info.UpstreamStartTime).Milliseconds()
+			if result.ttftMs >= 0 {
+				result.hasTtft = true
+			}
+		}
+		if result.httpStatus == 0 && result.newAPIError != nil {
+			result.httpStatus = result.newAPIError.StatusCode
+		}
+	}()
 	var unsupportedTestChannelTypes = []int{
 		constant.ChannelTypeMidjourney,
 		constant.ChannelTypeMidjourneyPlus,
@@ -159,6 +190,11 @@ func testChannel(channel *model.Channel, testUserID int, testModel string, endpo
 		Body:   nil,
 		Header: make(http.Header),
 	}
+	if options.timeout > 0 {
+		requestContext, cancel := context.WithTimeout(context.Background(), options.timeout)
+		defer cancel()
+		c.Request = c.Request.WithContext(requestContext)
+	}
 
 	cache, err := model.GetUserCache(testUserID)
 	if err != nil {
@@ -238,7 +274,7 @@ func testChannel(channel *model.Channel, testUserID int, testModel string, endpo
 
 	request := buildTestRequest(testModel, endpointType, channel, isStream)
 
-	info, err := relaycommon.GenRelayInfo(c, relayFormat, request, nil)
+	info, err = relaycommon.GenRelayInfo(c, relayFormat, request, nil)
 
 	if err != nil {
 		return testResult{
@@ -459,6 +495,7 @@ func testChannel(channel *model.Channel, testUserID int, testModel string, endpo
 				context:     c,
 				localErr:    err,
 				newAPIError: types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError),
+				httpStatus:  httpResp.StatusCode,
 			}
 		}
 	}
@@ -478,8 +515,8 @@ func testChannel(channel *model.Channel, testUserID int, testModel string, endpo
 			newAPIError: types.NewOpenAIError(usageErr, types.ErrorCodeBadResponseBody, http.StatusInternalServerError),
 		}
 	}
-	result := w.Result()
-	respBody, err := readTestResponseBody(result.Body, isStream)
+	recordedResponse := w.Result()
+	respBody, err := readTestResponseBody(recordedResponse.Body, isStream)
 	if err != nil {
 		return testResult{
 			context:     c,
@@ -501,20 +538,24 @@ func testChannel(channel *model.Channel, testUserID int, testModel string, endpo
 	milliseconds := tok.Sub(tik).Milliseconds()
 	consumedTime := float64(milliseconds) / 1000.0
 	other := buildTestLogOther(c, info, priceData, usage, tieredResult)
-	model.RecordConsumeLog(c, testUserID, model.RecordConsumeLogParams{
-		ChannelId:        channel.Id,
-		PromptTokens:     usage.PromptTokens,
-		CompletionTokens: usage.CompletionTokens,
-		ModelName:        info.OriginModelName,
-		TokenName:        "模型测试",
-		Quota:            quota,
-		Content:          "模型测试",
-		UseTimeSeconds:   int(consumedTime),
-		IsStream:         info.IsStream,
-		Group:            info.UsingGroup,
-		Other:            other,
-	})
-	common.SysLog(fmt.Sprintf("testing channel #%d, response: \n%s", channel.Id, string(respBody)))
+	if options.recordConsumeLog {
+		model.RecordConsumeLog(c, testUserID, model.RecordConsumeLogParams{
+			ChannelId:        channel.Id,
+			PromptTokens:     usage.PromptTokens,
+			CompletionTokens: usage.CompletionTokens,
+			ModelName:        info.OriginModelName,
+			TokenName:        "模型测试",
+			Quota:            quota,
+			Content:          "模型测试",
+			UseTimeSeconds:   int(consumedTime),
+			IsStream:         info.IsStream,
+			Group:            info.UsingGroup,
+			Other:            other,
+		})
+	}
+	if options.recordConsumeLog {
+		common.SysLog(fmt.Sprintf("testing channel #%d, response: \n%s", channel.Id, string(respBody)))
+	}
 	return testResult{
 		context:     c,
 		localErr:    nil,

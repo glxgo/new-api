@@ -366,6 +366,15 @@ func GetAllChannels(startIdx int, num int, selectAll bool, idSort bool, sortOpti
 	return channels, err
 }
 
+func GetAllChannelsWithoutKey() ([]*Channel, error) {
+	var channels []*Channel
+	err := DB.Omit("key").Order(clause.OrderByColumn{
+		Column: clause.Column{Name: "priority"},
+		Desc:   true,
+	}).Find(&channels).Error
+	return channels, err
+}
+
 func GetChannelsByTag(tag string, idSort bool, selectAll bool, sortOptions ...ChannelSortOptions) ([]*Channel, error) {
 	var channels []*Channel
 	order := resolveChannelSortOptions(idSort, sortOptions)

@@ -23,10 +23,10 @@ import { WorkerSettingsSection } from '../integrations/worker-settings-section'
 import { LogSettingsSection } from '../maintenance/log-settings-section'
 import { PerformanceSection } from '../maintenance/performance-section'
 import { UpdateCheckerSection } from '../maintenance/update-checker-section'
-import { TutorialSection } from './tutorial-section'
-import { TopNavOrderSection } from './top-nav-order-section'
 import type { OperationsSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { TopNavOrderSection } from './top-nav-order-section'
+import { TutorialSection } from './tutorial-section'
 
 const OPERATIONS_SECTIONS = [
   {
@@ -63,6 +63,12 @@ const OPERATIONS_SECTIONS = [
             settings['monitor_setting.auto_test_channel_minutes'],
           'monitor_setting.auto_test_channel_ids':
             settings['monitor_setting.auto_test_channel_ids'],
+          'monitor_setting.channel_canary_enabled':
+            settings['monitor_setting.channel_canary_enabled'],
+          'monitor_setting.channel_canary_minutes':
+            settings['monitor_setting.channel_canary_minutes'],
+          'monitor_setting.channel_canary_channel_ids':
+            settings['monitor_setting.channel_canary_channel_ids'],
         }}
       />
     ),
