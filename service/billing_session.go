@@ -25,13 +25,13 @@ import (
 type BillingSession struct {
 	relayInfo        *relaycommon.RelayInfo
 	funding          FundingSource
-	preConsumedQuota int  // 实际预扣额度（信任用户可能为 0）
-	tokenConsumed    int  // 令牌额度实际扣减量
-	extraReserved    int  // 发送前补充预扣的额度（订阅退款时需要单独回滚）
-	trusted          bool // 是否命中信任额度旁路
-	fundingSettled   bool // funding.Settle 已成功，资金来源已提交
-	settled          bool // Settle 全部完成（资金 + 令牌）
-	refunded         bool // Refund 已调用
+	preConsumedQuota int            // 实际预扣额度（信任用户可能为 0）
+	tokenConsumed    int            // 令牌额度实际扣减量
+	extraReserved    int            // 发送前补充预扣的额度（订阅退款时需要单独回滚）
+	trusted          bool           // 是否命中信任额度旁路
+	fundingSettled   bool           // funding.Settle 已成功，资金来源已提交
+	settled          bool           // Settle 全部完成（资金 + 令牌）
+	refunded         bool           // Refund 已调用
 	reserves         []reserveSplit // 钱包路径每次 reserve 实际扣减的 (gift,principal)，栈式精确回滚(阶段2b)
 	mu               sync.Mutex
 }
@@ -134,6 +134,30 @@ func (s *BillingSession) NeedsRefund() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.needsRefundLocked()
+}
+
+// LifecycleState returns a compact, lock-protected snapshot for operational
+// terminal records. It intentionally describes the in-process billing state;
+// refund_requested means the asynchronous refund job has been accepted, not
+// that every backing-store write has already completed.
+func (s *BillingSession) LifecycleState() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	switch {
+	case s.settled:
+		return "settled"
+	case s.refunded:
+		return "refund_requested"
+	case s.fundingSettled:
+		return "funding_settled"
+	case s.trusted:
+		return "trusted"
+	case s.preConsumedQuota > 0 || s.tokenConsumed > 0:
+		return "preconsumed"
+	default:
+		return "initialized"
+	}
 }
 
 func (s *BillingSession) needsRefundLocked() bool {
