@@ -600,7 +600,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
             <DetailRow label={t('Retry Chain')} value={channelChain} mono />
           )}
 
-          {props.isAdmin && props.log.user_concurrency_limit > 0 && (
+          {props.log.user_concurrency_limit > 0 && (
             <DetailRow
               label='并发快照'
               value={`${props.log.user_concurrency} / ${props.log.user_concurrency_limit}`}
@@ -608,7 +608,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
             />
           )}
 
-          {props.isAdmin && props.log.user_rpm_limit > 0 && (
+          {props.log.user_rpm_limit > 0 && (
             <DetailRow
               label='RPM 快照'
               value={`${props.log.user_rpm} / ${props.log.user_rpm_limit}`}

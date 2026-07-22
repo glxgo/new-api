@@ -98,6 +98,34 @@ function parseIonetMeta(otherInfo: string | null | undefined): null | {
   return null
 }
 
+function getCapacityBarColor(current: number, limit: number): string {
+  if (limit <= 0) return 'bg-sky-500'
+  const ratio = current / limit
+  if (ratio >= 1) return 'bg-rose-500'
+  if (ratio >= 0.8) return 'bg-amber-500'
+  return 'bg-emerald-500'
+}
+
+function renderCapacityMetric(label: string, current: number, limit: number) {
+  const percentage =
+    limit > 0 ? Math.min(100, (current / limit) * 100) : current > 0 ? 100 : 0
+
+  return (
+    <div className='grid grid-cols-[2.5rem_3.75rem_minmax(2.5rem,1fr)] items-center gap-1.5 text-[11px]'>
+      <span className='text-muted-foreground font-medium'>{label}</span>
+      <span className='text-right font-mono font-semibold tabular-nums'>
+        {current}/{limit > 0 ? limit : '∞'}
+      </span>
+      <span className='bg-muted h-1 overflow-hidden rounded-full'>
+        <span
+          className={`block h-full rounded-full transition-[width] duration-300 ${getCapacityBarColor(current, limit)}`}
+          style={{ width: `${percentage}%` }}
+        />
+      </span>
+    </div>
+  )
+}
+
 /**
  * Upstream update tags (+N / -N) shown on channel name for model-fetchable channels
  */
@@ -924,6 +952,52 @@ export function useChannelsColumns(): ColumnDef<Channel>[] {
       meta: { mobileHidden: true },
       cell: ({ row }) => <WeightCell channel={row.original} />,
       size: 90,
+      enableSorting: false,
+    },
+
+    // Live channel capacity
+    {
+      id: 'capacity',
+      header: '并发 / RPM',
+      cell: ({ row }) => {
+        const channel = row.original
+        if (isTagAggregateRow(channel)) {
+          return (
+            <span className='text-muted-foreground text-xs'>
+              展开查看子渠道
+            </span>
+          )
+        }
+
+        return (
+          <TooltipProvider delay={300}>
+            <Tooltip>
+              <TooltipTrigger
+                render={<div className='w-[164px] cursor-help space-y-1.5' />}
+              >
+                {renderCapacityMetric(
+                  '并发',
+                  channel.current_concurrency ?? 0,
+                  channel.concurrency_limit ?? 0
+                )}
+                {renderCapacityMetric(
+                  'RPM',
+                  channel.current_rpm ?? 0,
+                  channel.rpm_limit ?? 0
+                )}
+              </TooltipTrigger>
+              <TooltipContent>
+                <div className='space-y-1 text-xs'>
+                  <p>当前执行中的上游请求 / 渠道并发上限</p>
+                  <p>最近滚动 60 秒请求数 / 渠道 RPM 上限</p>
+                  <p className='text-muted-foreground'>∞ 表示只统计，不限制</p>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )
+      },
+      size: 188,
       enableSorting: false,
     },
 

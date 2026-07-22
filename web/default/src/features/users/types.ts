@@ -60,8 +60,10 @@ export const userSchema = z.object({
   DeletedAt: z.any().nullable().optional(),
   remark: z.string().optional(),
   concurrency_limit: z.number().default(8),
+  concurrency_limit_override: z.boolean().default(false),
   current_concurrency: z.number().default(0),
   rpm_limit: z.number().default(12),
+  rpm_limit_override: z.boolean().default(false),
   current_rpm: z.number().default(0),
 })
 export type User = z.infer<typeof userSchema>
@@ -113,6 +115,9 @@ export interface UserFormData {
   group?: string // Only used when updating user
   remark?: string // Only used when updating user
   concurrency_limit?: number
+  concurrency_limit_override?: boolean
+  rpm_limit?: number
+  rpm_limit_override?: boolean
 }
 
 export type ManageUserAction =

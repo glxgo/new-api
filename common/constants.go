@@ -144,6 +144,26 @@ var TelegramBotName = ""
 var QuotaForNewUser = 0
 var QuotaForInviter = 0
 var QuotaForInvitee = 0
+var DefaultUserConcurrencyLimit = 8
+var DefaultUserRPMLimit = 12
+
+func GetDefaultUserConcurrencyLimit() int {
+	OptionMapRWMutex.RLock()
+	defer OptionMapRWMutex.RUnlock()
+	if DefaultUserConcurrencyLimit > 0 {
+		return DefaultUserConcurrencyLimit
+	}
+	return 8
+}
+
+func GetDefaultUserRPMLimit() int {
+	OptionMapRWMutex.RLock()
+	defer OptionMapRWMutex.RUnlock()
+	if DefaultUserRPMLimit > 0 {
+		return DefaultUserRPMLimit
+	}
+	return 12
+}
 
 // 分润系统比例(超管后台「运营设置」可配,见 plan mellow-growing-waterfall.md)
 var AffiliateDirectRate = 0.10      // 拉新返利:直接上级占毛利比例

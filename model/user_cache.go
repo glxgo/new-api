@@ -15,15 +15,35 @@ import (
 
 // UserBase struct remains the same as it represents the cached data structure
 type UserBase struct {
-	Id               int    `json:"id"`
-	Group            string `json:"group"`
-	Email            string `json:"email"`
-	Quota            int    `json:"quota"`
-	GiftQuota        int    `json:"gift_quota"`
-	Status           int    `json:"status"`
-	Username         string `json:"username"`
-	Setting          string `json:"setting"`
-	ConcurrencyLimit int    `json:"concurrency_limit"`
+	Id                       int    `json:"id"`
+	Group                    string `json:"group"`
+	Email                    string `json:"email"`
+	Quota                    int    `json:"quota"`
+	GiftQuota                int    `json:"gift_quota"`
+	Status                   int    `json:"status"`
+	Username                 string `json:"username"`
+	Setting                  string `json:"setting"`
+	ConcurrencyLimit         int    `json:"concurrency_limit"`
+	ConcurrencyLimitOverride bool   `json:"concurrency_limit_override"`
+	RPMLimit                 int    `json:"rpm_limit"`
+	RPMLimitOverride         bool   `json:"rpm_limit_override"`
+	CapacityPolicyVersion    int    `json:"capacity_policy_version"`
+}
+
+const userCapacityPolicyVersion = 1
+
+func (user *UserBase) EffectiveConcurrencyLimit() int {
+	if user != nil && user.ConcurrencyLimitOverride && user.ConcurrencyLimit > 0 {
+		return user.ConcurrencyLimit
+	}
+	return common.GetDefaultUserConcurrencyLimit()
+}
+
+func (user *UserBase) EffectiveRPMLimit() int {
+	if user != nil && user.RPMLimitOverride && user.RPMLimit > 0 {
+		return user.RPMLimit
+	}
+	return common.GetDefaultUserRPMLimit()
 }
 
 func (user *UserBase) WriteContext(c *gin.Context) {
@@ -33,7 +53,8 @@ func (user *UserBase) WriteContext(c *gin.Context) {
 	common.SetContextKey(c, constant.ContextKeyUserEmail, user.Email)
 	common.SetContextKey(c, constant.ContextKeyUserName, user.Username)
 	common.SetContextKey(c, constant.ContextKeyUserSetting, user.GetSetting())
-	c.Set("user_concurrency_limit", user.ConcurrencyLimit)
+	c.Set("user_concurrency_limit", user.EffectiveConcurrencyLimit())
+	c.Set("user_rpm_limit", user.EffectiveRPMLimit())
 }
 
 func (user *UserBase) GetSetting() dto.UserSetting {
@@ -109,15 +130,19 @@ func GetUserCache(userId int) (userCache *UserBase, err error) {
 
 	// Create cache object from user data
 	userCache = &UserBase{
-		Id:               user.Id,
-		Group:            user.Group,
-		Quota:            user.Quota,
-		GiftQuota:        user.GiftQuota,
-		Status:           user.Status,
-		Username:         user.Username,
-		Setting:          user.Setting,
-		Email:            user.Email,
-		ConcurrencyLimit: user.ConcurrencyLimit,
+		Id:                       user.Id,
+		Group:                    user.Group,
+		Quota:                    user.Quota,
+		GiftQuota:                user.GiftQuota,
+		Status:                   user.Status,
+		Username:                 user.Username,
+		Setting:                  user.Setting,
+		Email:                    user.Email,
+		ConcurrencyLimit:         user.ConcurrencyLimit,
+		ConcurrencyLimitOverride: user.ConcurrencyLimitOverride,
+		RPMLimit:                 user.RPMLimit,
+		RPMLimitOverride:         user.RPMLimitOverride,
+		CapacityPolicyVersion:    userCapacityPolicyVersion,
 	}
 
 	return userCache, nil
@@ -132,6 +157,9 @@ func cacheGetUserBase(userId int) (*UserBase, error) {
 	err := common.RedisHGetObj(getUserCacheKey(userId), &userCache)
 	if err != nil {
 		return nil, err
+	}
+	if userCache.CapacityPolicyVersion != userCapacityPolicyVersion {
+		return nil, fmt.Errorf("stale user capacity cache")
 	}
 	return &userCache, nil
 }

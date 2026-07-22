@@ -25,6 +25,8 @@ import {
 } from './section-registry.tsx'
 
 const defaultSecuritySettings: SecuritySettings = {
+  DefaultUserConcurrencyLimit: 8,
+  DefaultUserRPMLimit: 12,
   ModelRequestRateLimitEnabled: false,
   ModelRequestRateLimitCount: 0,
   ModelRequestRateLimitSuccessCount: 1000,

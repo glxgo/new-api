@@ -34,7 +34,7 @@ func nextChannelRPMRequestId() string {
 // window. A rejected acquisition does not consume a slot.
 func AcquireChannelRPM(channelId, limit int) (bool, int) {
 	if limit <= 0 {
-		return true, 0
+		limit = unlimitedChannelTrackingLimit
 	}
 	key := channelRPMKey(channelId)
 	if common.RedisEnabled && common.RDB != nil {
@@ -86,13 +86,17 @@ func GetChannelRPM(channelId int) int {
 			return int(countCmd.Val())
 		}
 	}
+	return getLocalChannelRPMCount(channelId, time.Now())
+}
+
+func getLocalChannelRPMCount(channelId int, now time.Time) int {
 	localChannelRPM.Lock()
 	defer localChannelRPM.Unlock()
 	bucket := localChannelRPM.buckets[channelId]
 	if bucket == nil {
 		return 0
 	}
-	cutoff := time.Now().Add(-channelRPMWindow)
+	cutoff := now.Add(-channelRPMWindow)
 	kept := bucket.requests[:0]
 	for _, requestedAt := range bucket.requests {
 		if requestedAt.After(cutoff) {

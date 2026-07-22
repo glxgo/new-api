@@ -42,7 +42,8 @@ func CreateConcurrencyApplication(userId, requestedLimit int, reason, contact st
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userId).Error; err != nil {
 			return err
 		}
-		if requestedLimit <= user.ConcurrencyLimit {
+		currentLimit := user.EffectiveConcurrencyLimit()
+		if requestedLimit <= currentLimit {
 			return errors.New("requested concurrency must be greater than current limit")
 		}
 		var count int64
@@ -56,7 +57,7 @@ func CreateConcurrencyApplication(userId, requestedLimit int, reason, contact st
 		}
 		application = &ConcurrencyApplication{
 			UserId:         userId,
-			CurrentLimit:   user.ConcurrencyLimit,
+			CurrentLimit:   currentLimit,
 			RequestedLimit: requestedLimit,
 			Reason:         reason,
 			Contact:        contact,
@@ -105,7 +106,10 @@ func ReviewConcurrencyApplication(id, reviewerId int, approve bool, approvedLimi
 				return errors.New("approved concurrency is out of range")
 			}
 			if err := tx.Model(&User{}).Where("id = ?", application.UserId).
-				Update("concurrency_limit", approvedLimit).Error; err != nil {
+				Updates(map[string]interface{}{
+					"concurrency_limit":          approvedLimit,
+					"concurrency_limit_override": true,
+				}).Error; err != nil {
 				return err
 			}
 		}

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -135,6 +136,8 @@ func InitOptionMap() {
 	common.OptionMap["QuotaForNewUser"] = strconv.Itoa(common.QuotaForNewUser)
 	common.OptionMap["QuotaForInviter"] = strconv.Itoa(common.QuotaForInviter)
 	common.OptionMap["QuotaForInvitee"] = strconv.Itoa(common.QuotaForInvitee)
+	common.OptionMap["DefaultUserConcurrencyLimit"] = strconv.Itoa(common.DefaultUserConcurrencyLimit)
+	common.OptionMap["DefaultUserRPMLimit"] = strconv.Itoa(common.DefaultUserRPMLimit)
 	common.OptionMap["AffiliateDirectRate"] = strconv.FormatFloat(common.AffiliateDirectRate, 'f', -1, 64)
 	common.OptionMap["AffiliateIndirectRate"] = strconv.FormatFloat(common.AffiliateIndirectRate, 'f', -1, 64)
 	common.OptionMap["RootDividendRate"] = strconv.FormatFloat(common.RootDividendRate, 'f', -1, 64)
@@ -558,6 +561,18 @@ func updateOptionMap(key string, value string) (err error) {
 		common.QuotaForInviter, _ = strconv.Atoi(value)
 	case "QuotaForInvitee":
 		common.QuotaForInvitee, _ = strconv.Atoi(value)
+	case "DefaultUserConcurrencyLimit":
+		parsed, parseErr := strconv.Atoi(value)
+		if parseErr != nil || parsed < 1 || parsed > 10000 {
+			return fmt.Errorf("invalid default user concurrency limit")
+		}
+		common.DefaultUserConcurrencyLimit = parsed
+	case "DefaultUserRPMLimit":
+		parsed, parseErr := strconv.Atoi(value)
+		if parseErr != nil || parsed < 1 || parsed > 10000000 {
+			return fmt.Errorf("invalid default user RPM limit")
+		}
+		common.DefaultUserRPMLimit = parsed
 	case "AffiliateDirectRate":
 		common.AffiliateDirectRate, _ = strconv.ParseFloat(value, 64)
 	case "AffiliateIndirectRate":

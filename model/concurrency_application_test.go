@@ -35,4 +35,5 @@ func TestConcurrencyApplicationLifecycle(t *testing.T) {
 	var refreshed User
 	require.NoError(t, db.First(&refreshed, user.Id).Error)
 	require.Equal(t, 12, refreshed.ConcurrencyLimit)
+	require.True(t, refreshed.ConcurrencyLimitOverride)
 }

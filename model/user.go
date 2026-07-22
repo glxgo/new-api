@@ -22,62 +22,99 @@ const UserNameMaxLength = 20
 // User if you add sensitive fields, don't forget to clean them in setupLogin function.
 // Otherwise, the sensitive information will be saved on local storage in plain text!
 type User struct {
-	Id                 int            `json:"id"`
-	Username           string         `json:"username" gorm:"unique;index" validate:"max=20"`
-	Password           string         `json:"password" gorm:"not null;" validate:"min=8,max=20"`
-	OriginalPassword   string         `json:"original_password" gorm:"-:all"` // this field is only for Password change verification, don't save it to database!
-	DisplayName        string         `json:"display_name" gorm:"index" validate:"max=20"`
-	Role               int            `json:"role" gorm:"type:int;default:1"`   // admin, common
-	Status             int            `json:"status" gorm:"type:int;default:1"` // enabled, disabled
-	Email              string         `json:"email" gorm:"index" validate:"max=50"`
-	GitHubId           string         `json:"github_id" gorm:"column:github_id;index"`
-	DiscordId          string         `json:"discord_id" gorm:"column:discord_id;index"`
-	OidcId             string         `json:"oidc_id" gorm:"column:oidc_id;index"`
-	WeChatId           string         `json:"wechat_id" gorm:"column:wechat_id;index"`
-	TelegramId         string         `json:"telegram_id" gorm:"column:telegram_id;index"`
-	VerificationCode   string         `json:"verification_code" gorm:"-:all"`                         // this field is only for Email verification, don't save it to database!
-	AccessToken        *string        `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
-	Quota              int            `json:"quota" gorm:"type:int;default:0"`
-	UsedQuota          int            `json:"used_quota" gorm:"type:int;default:0;column:used_quota"`             // used quota
-	GiftQuota          int            `json:"gift_quota" gorm:"type:int;default:0;column:gift_quota"`             // 赠金池余额(不可提现,不产利润)
-	UsedGiftQuota      int            `json:"used_gift_quota" gorm:"type:int;default:0;column:used_gift_quota"`   // 赠金历史消耗
-	DividendBalance    int            `json:"dividend_balance" gorm:"type:int;default:0;column:dividend_balance"` // 分红可提余额(管理员/超管)
-	DividendTotal      int            `json:"dividend_total" gorm:"type:int;default:0;column:dividend_total"`     // 累计分红(只增不减)
-	FrozenQuota        int            `json:"frozen_quota" gorm:"type:int;default:0;column:frozen_quota"`         // 提现冻结的本金
-	FrozenDividend     int            `json:"frozen_dividend" gorm:"type:int;default:0;column:frozen_dividend"`   // 提现冻结的分红
-	DividendRate       float64        `json:"dividend_rate" gorm:"column:dividend_rate;default:0"`                // 仅管理员:超管设的分红比例 0~0.75
-	RequestCount       int            `json:"request_count" gorm:"type:int;default:0;"`                           // request number
-	Group              string         `json:"group" gorm:"type:varchar(64);default:'default'"`
-	AffCode            string         `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
-	AffCount           int            `json:"aff_count" gorm:"type:int;default:0;column:aff_count"`
-	AffQuota           int            `json:"aff_quota" gorm:"type:int;default:0;column:aff_quota"`           // 邀请剩余额度
-	AffHistoryQuota    int            `json:"aff_history_quota" gorm:"type:int;default:0;column:aff_history"` // 邀请历史额度
-	InviterId          int            `json:"inviter_id" gorm:"type:int;column:inviter_id;index"`
-	AffAdminId         int            `json:"aff_admin_id" gorm:"type:int;column:aff_admin_id;index"` // 注册时固化的树顶管理员(管理员分红用)
-	DeletedAt          gorm.DeletedAt `gorm:"index"`
-	LinuxDOId          string         `json:"linux_do_id" gorm:"column:linux_do_id;index"`
-	Setting            string         `json:"setting" gorm:"type:text;column:setting"`
-	Remark             string         `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
-	StripeCustomer     string         `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
-	CreatedAt          int64          `json:"created_at" gorm:"autoCreateTime;column:created_at"`
-	LastLoginAt        int64          `json:"last_login_at" gorm:"default:0;column:last_login_at"`
-	ConcurrencyLimit   int            `json:"concurrency_limit" gorm:"not null;default:8;column:concurrency_limit"`
-	CurrentConcurrency int            `json:"current_concurrency" gorm:"-:all"`
-	RPMLimit           int            `json:"rpm_limit" gorm:"-:all"`
-	CurrentRPM         int            `json:"current_rpm" gorm:"-:all"`
+	Id                       int            `json:"id"`
+	Username                 string         `json:"username" gorm:"unique;index" validate:"max=20"`
+	Password                 string         `json:"password" gorm:"not null;" validate:"min=8,max=20"`
+	OriginalPassword         string         `json:"original_password" gorm:"-:all"` // this field is only for Password change verification, don't save it to database!
+	DisplayName              string         `json:"display_name" gorm:"index" validate:"max=20"`
+	Role                     int            `json:"role" gorm:"type:int;default:1"`   // admin, common
+	Status                   int            `json:"status" gorm:"type:int;default:1"` // enabled, disabled
+	Email                    string         `json:"email" gorm:"index" validate:"max=50"`
+	GitHubId                 string         `json:"github_id" gorm:"column:github_id;index"`
+	DiscordId                string         `json:"discord_id" gorm:"column:discord_id;index"`
+	OidcId                   string         `json:"oidc_id" gorm:"column:oidc_id;index"`
+	WeChatId                 string         `json:"wechat_id" gorm:"column:wechat_id;index"`
+	TelegramId               string         `json:"telegram_id" gorm:"column:telegram_id;index"`
+	VerificationCode         string         `json:"verification_code" gorm:"-:all"`                         // this field is only for Email verification, don't save it to database!
+	AccessToken              *string        `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
+	Quota                    int            `json:"quota" gorm:"type:int;default:0"`
+	UsedQuota                int            `json:"used_quota" gorm:"type:int;default:0;column:used_quota"`             // used quota
+	GiftQuota                int            `json:"gift_quota" gorm:"type:int;default:0;column:gift_quota"`             // 赠金池余额(不可提现,不产利润)
+	UsedGiftQuota            int            `json:"used_gift_quota" gorm:"type:int;default:0;column:used_gift_quota"`   // 赠金历史消耗
+	DividendBalance          int            `json:"dividend_balance" gorm:"type:int;default:0;column:dividend_balance"` // 分红可提余额(管理员/超管)
+	DividendTotal            int            `json:"dividend_total" gorm:"type:int;default:0;column:dividend_total"`     // 累计分红(只增不减)
+	FrozenQuota              int            `json:"frozen_quota" gorm:"type:int;default:0;column:frozen_quota"`         // 提现冻结的本金
+	FrozenDividend           int            `json:"frozen_dividend" gorm:"type:int;default:0;column:frozen_dividend"`   // 提现冻结的分红
+	DividendRate             float64        `json:"dividend_rate" gorm:"column:dividend_rate;default:0"`                // 仅管理员:超管设的分红比例 0~0.75
+	RequestCount             int            `json:"request_count" gorm:"type:int;default:0;"`                           // request number
+	Group                    string         `json:"group" gorm:"type:varchar(64);default:'default'"`
+	AffCode                  string         `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
+	AffCount                 int            `json:"aff_count" gorm:"type:int;default:0;column:aff_count"`
+	AffQuota                 int            `json:"aff_quota" gorm:"type:int;default:0;column:aff_quota"`           // 邀请剩余额度
+	AffHistoryQuota          int            `json:"aff_history_quota" gorm:"type:int;default:0;column:aff_history"` // 邀请历史额度
+	InviterId                int            `json:"inviter_id" gorm:"type:int;column:inviter_id;index"`
+	AffAdminId               int            `json:"aff_admin_id" gorm:"type:int;column:aff_admin_id;index"` // 注册时固化的树顶管理员(管理员分红用)
+	DeletedAt                gorm.DeletedAt `gorm:"index"`
+	LinuxDOId                string         `json:"linux_do_id" gorm:"column:linux_do_id;index"`
+	Setting                  string         `json:"setting" gorm:"type:text;column:setting"`
+	Remark                   string         `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
+	StripeCustomer           string         `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
+	CreatedAt                int64          `json:"created_at" gorm:"autoCreateTime;column:created_at"`
+	LastLoginAt              int64          `json:"last_login_at" gorm:"default:0;column:last_login_at"`
+	ConcurrencyLimit         int            `json:"concurrency_limit" gorm:"not null;default:8;column:concurrency_limit"`
+	ConcurrencyLimitOverride bool           `json:"concurrency_limit_override" gorm:"not null;default:false;column:concurrency_limit_override"`
+	CurrentConcurrency       int            `json:"current_concurrency" gorm:"-:all"`
+	RPMLimit                 int            `json:"rpm_limit" gorm:"not null;default:12;column:rpm_limit"`
+	RPMLimitOverride         bool           `json:"rpm_limit_override" gorm:"not null;default:false;column:rpm_limit_override"`
+	CurrentRPM               int            `json:"current_rpm" gorm:"-:all"`
+}
+
+func (user *User) EffectiveConcurrencyLimit() int {
+	if user != nil && user.ConcurrencyLimitOverride && user.ConcurrencyLimit > 0 {
+		return user.ConcurrencyLimit
+	}
+	return common.GetDefaultUserConcurrencyLimit()
+}
+
+func (user *User) EffectiveRPMLimit() int {
+	if user != nil && user.RPMLimitOverride && user.RPMLimit > 0 {
+		return user.RPMLimit
+	}
+	return common.GetDefaultUserRPMLimit()
+}
+
+func (user *User) ApplyEffectiveCapacityLimits() {
+	if user == nil {
+		return
+	}
+	user.ConcurrencyLimit = user.EffectiveConcurrencyLimit()
+	user.RPMLimit = user.EffectiveRPMLimit()
+}
+
+func (user *User) prepareInheritedCapacityLimits() {
+	if !user.ConcurrencyLimitOverride {
+		user.ConcurrencyLimit = common.GetDefaultUserConcurrencyLimit()
+	}
+	if !user.RPMLimitOverride {
+		user.RPMLimit = common.GetDefaultUserRPMLimit()
+	}
 }
 
 func (user *User) ToBaseUser() *UserBase {
 	cache := &UserBase{
-		Id:               user.Id,
-		Group:            user.Group,
-		Quota:            user.Quota,
-		GiftQuota:        user.GiftQuota,
-		Status:           user.Status,
-		Username:         user.Username,
-		Setting:          user.Setting,
-		Email:            user.Email,
-		ConcurrencyLimit: user.ConcurrencyLimit,
+		Id:                       user.Id,
+		Group:                    user.Group,
+		Quota:                    user.Quota,
+		GiftQuota:                user.GiftQuota,
+		Status:                   user.Status,
+		Username:                 user.Username,
+		Setting:                  user.Setting,
+		Email:                    user.Email,
+		ConcurrencyLimit:         user.ConcurrencyLimit,
+		ConcurrencyLimitOverride: user.ConcurrencyLimitOverride,
+		RPMLimit:                 user.RPMLimit,
+		RPMLimitOverride:         user.RPMLimitOverride,
+		CapacityPolicyVersion:    userCapacityPolicyVersion,
 	}
 	return cache
 }
@@ -235,6 +272,9 @@ func GetAllUsers(pageInfo *common.PageInfo) (users []*User, total int64, err err
 	if err = tx.Commit().Error; err != nil {
 		return nil, 0, err
 	}
+	for _, user := range users {
+		user.ApplyEffectiveCapacityLimits()
+	}
 
 	return users, total, nil
 }
@@ -303,6 +343,9 @@ func SearchUsers(keyword string, group string, role *int, status *int, startIdx 
 	if err = tx.Commit().Error; err != nil {
 		return nil, 0, err
 	}
+	for _, user := range users {
+		user.ApplyEffectiveCapacityLimits()
+	}
 
 	return users, total, nil
 }
@@ -317,6 +360,9 @@ func GetUserById(id int, selectAll bool) (*User, error) {
 		err = DB.First(&user, "id = ?", id).Error
 	} else {
 		err = DB.Omit("password").First(&user, "id = ?", id).Error
+	}
+	if err == nil {
+		user.ApplyEffectiveCapacityLimits()
 	}
 	return &user, err
 }
@@ -430,6 +476,7 @@ func (user *User) Insert(inviterId int) error {
 		}
 	}
 	user.Quota = common.QuotaForNewUser
+	user.prepareInheritedCapacityLimits()
 	//user.SetAccessToken(common.GetUUID())
 	user.AffCode = common.GetRandomString(4)
 
@@ -490,6 +537,7 @@ func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
 		}
 	}
 	user.Quota = common.QuotaForNewUser
+	user.prepareInheritedCapacityLimits()
 	user.AffCode = common.GetRandomString(4)
 
 	// 初始化用户设置
@@ -574,7 +622,14 @@ func (user *User) Update(updatePassword bool) error {
 	return updateUserCache(*user)
 }
 
-func (user *User) Edit(updatePassword bool) error {
+type UserCapacityLimitUpdate struct {
+	ConcurrencyLimit         *int
+	ConcurrencyLimitOverride *bool
+	RPMLimit                 *int
+	RPMLimitOverride         *bool
+}
+
+func (user *User) Edit(updatePassword bool, capacity UserCapacityLimitUpdate) error {
 	var err error
 	if updatePassword {
 		user.Password, err = common.Password2Hash(user.Password)
@@ -590,8 +645,35 @@ func (user *User) Edit(updatePassword bool) error {
 		"group":        newUser.Group,
 		"remark":       newUser.Remark,
 	}
-	if newUser.ConcurrencyLimit > 0 {
-		updates["concurrency_limit"] = newUser.ConcurrencyLimit
+	if capacity.ConcurrencyLimitOverride != nil {
+		updates["concurrency_limit_override"] = *capacity.ConcurrencyLimitOverride
+		if *capacity.ConcurrencyLimitOverride {
+			if capacity.ConcurrencyLimit == nil {
+				return errors.New("concurrency limit is required for an override")
+			}
+			updates["concurrency_limit"] = *capacity.ConcurrencyLimit
+		} else {
+			updates["concurrency_limit"] = common.GetDefaultUserConcurrencyLimit()
+		}
+	} else if capacity.ConcurrencyLimit != nil {
+		// Compatibility with clients released before inheritance controls:
+		// supplying a limit means the administrator explicitly set it.
+		updates["concurrency_limit"] = *capacity.ConcurrencyLimit
+		updates["concurrency_limit_override"] = true
+	}
+	if capacity.RPMLimitOverride != nil {
+		updates["rpm_limit_override"] = *capacity.RPMLimitOverride
+		if *capacity.RPMLimitOverride {
+			if capacity.RPMLimit == nil {
+				return errors.New("RPM limit is required for an override")
+			}
+			updates["rpm_limit"] = *capacity.RPMLimit
+		} else {
+			updates["rpm_limit"] = common.GetDefaultUserRPMLimit()
+		}
+	} else if capacity.RPMLimit != nil {
+		updates["rpm_limit"] = *capacity.RPMLimit
+		updates["rpm_limit_override"] = true
 	}
 	if updatePassword {
 		updates["password"] = newUser.Password
@@ -602,8 +684,9 @@ func (user *User) Edit(updatePassword bool) error {
 		return err
 	}
 
-	// Update cache
-	return updateUserCache(*user)
+	// Deleting the cache is safer than reusing the pre-update object and makes
+	// the next request load both capacity override flags atomically.
+	return invalidateUserCache(user.Id)
 }
 
 func (user *User) ClearBinding(bindingType string) error {

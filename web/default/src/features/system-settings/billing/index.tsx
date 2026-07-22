@@ -110,6 +110,8 @@ const defaultBillingSettings: BillingSettings = {
   'checkin_setting.max_quota': 10000,
   AffiliateDirectRate: 0.1,
   AffiliateIndirectRate: 0.05,
+  AgentAffiliateDirectRate: 0.2,
+  AgentOrderAffiliateDirectRate: 0.2,
   RootDividendRate: 0.1,
   AffiliateAdminDirectRate: 0.75,
   AffiliateAdminIndirectRate: 0.22,

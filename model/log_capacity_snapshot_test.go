@@ -35,3 +35,30 @@ func TestRecordConsumeLogPersistsUserCapacitySnapshot(t *testing.T) {
 	require.Equal(t, 7, log.UserRPM)
 	require.Equal(t, 12, log.UserRPMLimit)
 }
+
+func TestFormatUserLogsKeepsUserCapacitySnapshot(t *testing.T) {
+	logs := []*Log{{
+		Id:                   99,
+		ChannelName:          "admin-only-channel",
+		UserConcurrency:      3,
+		UserConcurrencyLimit: 8,
+		UserRPM:              7,
+		UserRPMLimit:         12,
+		Other:                `{"admin_info":{"channel":8},"audit_info":{"operator":1},"stream_status":"completed","safe":"visible"}`,
+	}}
+
+	formatUserLogs(logs, 10)
+
+	require.Equal(t, 11, logs[0].Id)
+	require.Empty(t, logs[0].ChannelName)
+	require.Equal(t, 3, logs[0].UserConcurrency)
+	require.Equal(t, 8, logs[0].UserConcurrencyLimit)
+	require.Equal(t, 7, logs[0].UserRPM)
+	require.Equal(t, 12, logs[0].UserRPMLimit)
+	other, err := common.StrToMap(logs[0].Other)
+	require.NoError(t, err)
+	require.Equal(t, "visible", other["safe"])
+	require.NotContains(t, other, "admin_info")
+	require.NotContains(t, other, "audit_info")
+	require.NotContains(t, other, "stream_status")
+}

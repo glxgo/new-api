@@ -18,12 +18,7 @@ export function resolveRpmLimit(profile: RpmProfile | null | undefined) {
     return Math.ceil(profile!.rpm_limit!)
   }
 
-  const concurrency =
-    Number.isFinite(profile?.concurrency_limit) &&
-    (profile?.concurrency_limit ?? 0) > 0
-      ? profile!.concurrency_limit!
-      : 8
-  return Math.ceil(concurrency * 1.5)
+  return 12
 }
 
 export function resolveCurrentRpm(

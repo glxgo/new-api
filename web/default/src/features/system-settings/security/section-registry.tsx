@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { AccountCapacitySection } from '../request-limits/account-capacity-section'
 import { RateLimitSection } from '../request-limits/rate-limit-section'
 import { SensitiveWordsSection } from '../request-limits/sensitive-words-section'
 import { SSRFSection } from '../request-limits/ssrf-section'
@@ -23,6 +24,18 @@ import type { SecuritySettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
 
 const SECURITY_SECTIONS = [
+  {
+    id: 'account-capacity',
+    titleKey: '账号容量',
+    build: (settings: SecuritySettings) => (
+      <AccountCapacitySection
+        defaultValues={{
+          DefaultUserConcurrencyLimit: settings.DefaultUserConcurrencyLimit,
+          DefaultUserRPMLimit: settings.DefaultUserRPMLimit,
+        }}
+      />
+    ),
+  },
   {
     id: 'rate-limit',
     titleKey: 'Rate Limiting',
@@ -86,7 +99,7 @@ const securityRegistry = createSectionRegistry<
   SecuritySettings
 >({
   sections: SECURITY_SECTIONS,
-  defaultSection: 'rate-limit',
+  defaultSection: 'account-capacity',
   basePath: '/system-settings/security',
   urlStyle: 'path',
 })

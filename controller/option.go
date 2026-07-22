@@ -149,6 +149,20 @@ func UpdateOption(c *gin.Context) {
 			return
 		}
 	}
+	if option.Key == "DefaultUserConcurrencyLimit" {
+		value, parseErr := strconv.Atoi(option.Value.(string))
+		if parseErr != nil || value < 1 || value > 10000 {
+			common.ApiErrorMsg(c, "默认用户并发上限必须在 1-10000 之间")
+			return
+		}
+	}
+	if option.Key == "DefaultUserRPMLimit" {
+		value, parseErr := strconv.Atoi(option.Value.(string))
+		if parseErr != nil || value < 1 || value > 10000000 {
+			common.ApiErrorMsg(c, "默认用户 RPM 上限必须在 1-10000000 之间")
+			return
+		}
+	}
 	switch option.Key {
 	case "GitHubOAuthEnabled":
 		if option.Value == "true" && common.GitHubClientId == "" {

@@ -85,10 +85,14 @@ export interface UserProfile {
   linux_do_id?: string
   /** Maximum simultaneously active API requests for this account */
   concurrency_limit: number
+  /** Whether the account keeps an administrator-set concurrency limit */
+  concurrency_limit_override?: boolean
   /** Best-effort current active request count */
   current_concurrency?: number
   /** Account-wide requests allowed in a rolling minute */
   rpm_limit?: number
+  /** Whether the account keeps an administrator-set RPM limit */
+  rpm_limit_override?: boolean
   /** Best-effort request count in the current rolling minute */
   current_rpm?: number
 }

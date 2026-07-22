@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"os"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -30,12 +31,27 @@ func setupRedisChannelRPMIntegrationTest(t *testing.T) (*redis.Client, int) {
 	common.RedisEnabled, common.RDB = true, client
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		_ = client.Del(ctx, channelRPMKey(channelId)).Err()
+		_ = client.Del(ctx, channelRPMKey(channelId), "concurrency:channel:"+strconv.Itoa(channelId)).Err()
 		cancel()
 		common.RedisEnabled, common.RDB = oldRedisEnabled, oldRDB
 		_ = client.Close()
 	})
 	return client, channelId
+}
+
+func TestRedisUnlimitedChannelCapacityIsStillObservable(t *testing.T) {
+	_, channelId := setupRedisChannelRPMIntegrationTest(t)
+	first, acquired, reason := AcquireChannelCapacity(channelId, 0, 0)
+	require.True(t, acquired)
+	require.Equal(t, ChannelCapacityAvailable, reason)
+	second, acquired, reason := AcquireChannelCapacity(channelId, 0, 0)
+	require.True(t, acquired)
+	require.Equal(t, ChannelCapacityAvailable, reason)
+	t.Cleanup(first.Release)
+	t.Cleanup(second.Release)
+
+	snapshot := GetChannelCapacitySnapshots([]int{channelId})[channelId]
+	require.Equal(t, ChannelCapacitySnapshot{CurrentConcurrency: 2, CurrentRPM: 2}, snapshot)
 }
 
 func TestRedisChannelRPMAcquireIsAtomic(t *testing.T) {

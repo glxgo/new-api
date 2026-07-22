@@ -20,14 +20,6 @@ func withLocalUserRPMLimiter(t *testing.T) {
 	})
 }
 
-func TestUserRPMLimitRoundsHalfUp(t *testing.T) {
-	require.Equal(t, 0, UserRPMLimit(0))
-	require.Equal(t, 2, UserRPMLimit(1))
-	require.Equal(t, 3, UserRPMLimit(2))
-	require.Equal(t, 5, UserRPMLimit(3))
-	require.Equal(t, 12, UserRPMLimit(8))
-}
-
 func TestLocalUserRPMLimitAndRollingExpiry(t *testing.T) {
 	withLocalUserRPMLimiter(t)
 	start := time.Unix(1_000, 0)

@@ -54,6 +54,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import {
   SideDrawerSection,
@@ -126,6 +127,8 @@ export function UsersMutateDrawer({
   const tokensOnly = currencyMeta.kind === 'tokens'
 
   const currentQuotaRaw = form.watch('quota_dollars') || 0
+  const customConcurrency = form.watch('concurrency_limit_override')
+  const customRPM = form.watch('rpm_limit_override')
 
   const onSubmit = async (data: UserFormValues) => {
     if (!isUpdate) {
@@ -401,30 +404,107 @@ export function UsersMutateDrawer({
                     )}
                   />
 
-                  <FormField
-                    control={form.control}
-                    name='concurrency_limit'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>账号并发上限</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='number'
-                            min={1}
-                            max={10000}
-                            value={field.value}
-                            onChange={(event) =>
-                              field.onChange(Number(event.target.value))
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          同一时刻允许执行的 API 请求数；新注册用户默认为 8。
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  <div className='grid gap-3 sm:grid-cols-2'>
+                    <div className='border-border/70 bg-muted/15 space-y-3 rounded-xl border p-3.5'>
+                      <FormField
+                        control={form.control}
+                        name='concurrency_limit_override'
+                        render={({ field }) => (
+                          <FormItem className='flex items-start justify-between gap-3'>
+                            <div className='space-y-1'>
+                              <FormLabel>单独设置并发</FormLabel>
+                              <FormDescription>
+                                关闭时跟随全局默认值
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name='concurrency_limit'
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>并发上限</FormLabel>
+                            <FormControl>
+                              <Input
+                                type='number'
+                                min={1}
+                                max={10000}
+                                disabled={!customConcurrency}
+                                value={field.value}
+                                onChange={(event) =>
+                                  field.onChange(Number(event.target.value))
+                                }
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              {customConcurrency
+                                ? '只对这个账号生效'
+                                : `当前继承值：${field.value}`}
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <div className='border-border/70 bg-muted/15 space-y-3 rounded-xl border p-3.5'>
+                      <FormField
+                        control={form.control}
+                        name='rpm_limit_override'
+                        render={({ field }) => (
+                          <FormItem className='flex items-start justify-between gap-3'>
+                            <div className='space-y-1'>
+                              <FormLabel>单独设置 RPM</FormLabel>
+                              <FormDescription>
+                                与并发上限完全独立
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name='rpm_limit'
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>每分钟请求上限</FormLabel>
+                            <FormControl>
+                              <Input
+                                type='number'
+                                min={1}
+                                max={10000000}
+                                disabled={!customRPM}
+                                value={field.value}
+                                onChange={(event) =>
+                                  field.onChange(Number(event.target.value))
+                                }
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              {customRPM
+                                ? '只对这个账号生效'
+                                : `当前继承值：${field.value}`}
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
 
                   <FormField
                     control={form.control}

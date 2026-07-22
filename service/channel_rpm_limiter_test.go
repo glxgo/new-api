@@ -86,10 +86,18 @@ func TestAcquireChannelCapacityUsesEitherLimitAndReleasesRejectedLease(t *testin
 
 func TestAcquireChannelCapacityZeroLimitsAreUnlimited(t *testing.T) {
 	withLocalChannelCapacity(t)
-	for i := 0; i < 100; i++ {
-		lease, acquired, reason := AcquireChannelCapacity(8, 0, 0)
-		require.True(t, acquired)
-		require.Equal(t, ChannelCapacityAvailable, reason)
-		lease.Release()
-	}
+	first, acquired, reason := AcquireChannelCapacity(8, 0, 0)
+	require.True(t, acquired)
+	require.Equal(t, ChannelCapacityAvailable, reason)
+	second, acquired, reason := AcquireChannelCapacity(8, 0, 0)
+	require.True(t, acquired)
+	require.Equal(t, ChannelCapacityAvailable, reason)
+
+	snapshot := GetChannelCapacitySnapshots([]int{8, 8, 0})[8]
+	require.Equal(t, ChannelCapacitySnapshot{CurrentConcurrency: 2, CurrentRPM: 2}, snapshot)
+
+	first.Release()
+	second.Release()
+	require.Equal(t, 0, GetChannelConcurrency(8))
+	require.Equal(t, 2, GetChannelRPM(8))
 }

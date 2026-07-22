@@ -132,8 +132,6 @@ export function UsersTable() {
       }
     },
     placeholderData: (previousData) => previousData,
-    refetchInterval: 5000,
-    refetchIntervalInBackground: false,
   })
 
   const users = data?.items || []

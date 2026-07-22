@@ -34,6 +34,9 @@ export const userFormSchema = z.object({
   group: z.string().optional(),
   remark: z.string().optional(),
   concurrency_limit: z.number().int().min(1).max(10000),
+  concurrency_limit_override: z.boolean(),
+  rpm_limit: z.number().int().min(1).max(10000000),
+  rpm_limit_override: z.boolean(),
 })
 
 export type UserFormValues = z.infer<typeof userFormSchema>
@@ -51,6 +54,9 @@ export const USER_FORM_DEFAULT_VALUES: UserFormValues = {
   group: DEFAULT_GROUP,
   remark: '',
   concurrency_limit: 8,
+  concurrency_limit_override: false,
+  rpm_limit: 12,
+  rpm_limit_override: false,
 }
 
 // ============================================================================
@@ -78,6 +84,9 @@ export function transformFormDataToPayload(
     payload.group = data.group
     payload.remark = data.remark || undefined
     payload.concurrency_limit = data.concurrency_limit
+    payload.concurrency_limit_override = data.concurrency_limit_override
+    payload.rpm_limit = data.rpm_limit
+    payload.rpm_limit_override = data.rpm_limit_override
     payload.id = userId
   }
 
@@ -97,5 +106,8 @@ export function transformUserToFormDefaults(user: User): UserFormValues {
     group: user.group || DEFAULT_GROUP,
     remark: user.remark || '',
     concurrency_limit: user.concurrency_limit || 8,
+    concurrency_limit_override: user.concurrency_limit_override,
+    rpm_limit: user.rpm_limit || 12,
+    rpm_limit_override: user.rpm_limit_override,
   }
 }

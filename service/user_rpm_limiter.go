@@ -44,15 +44,6 @@ var localUserRPM = struct {
 	buckets map[int]*localRPMBucket
 }{buckets: make(map[int]*localRPMBucket)}
 
-// UserRPMLimit derives the account request-per-minute limit from its
-// concurrency limit. Integer arithmetic rounds halves upward.
-func UserRPMLimit(concurrencyLimit int) int {
-	if concurrencyLimit <= 0 {
-		return 0
-	}
-	return (concurrencyLimit*3 + 1) / 2
-}
-
 func userRPMKey(userId int) string {
 	return "rate_limit:user_rpm:" + strconv.Itoa(userId)
 }

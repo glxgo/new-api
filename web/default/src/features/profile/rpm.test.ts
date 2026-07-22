@@ -7,9 +7,9 @@ describe('resolveRpmLimit', () => {
     assert.equal(resolveRpmLimit({ concurrency_limit: 8, rpm_limit: 20 }), 20)
   })
 
-  test('derives the real limit from concurrency for an older backend', () => {
-    assert.equal(resolveRpmLimit({ concurrency_limit: 1000 }), 1500)
-    assert.equal(resolveRpmLimit({ concurrency_limit: 9 }), 14)
+  test('uses an independent compatibility default for an older backend', () => {
+    assert.equal(resolveRpmLimit({ concurrency_limit: 1000 }), 12)
+    assert.equal(resolveRpmLimit({ concurrency_limit: 9 }), 12)
   })
 })
 

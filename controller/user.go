@@ -284,8 +284,6 @@ func GetAllUsers(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	populateUserCapacity(users)
-
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(users)
 
@@ -314,8 +312,6 @@ func SearchUsers(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	populateUserCapacity(users)
-
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(users)
 	common.ApiSuccess(c, pageInfo)
@@ -340,7 +336,6 @@ func populateUserCapacity(users []*model.User) {
 		}
 		snapshot := snapshots[user.Id]
 		user.CurrentConcurrency = snapshot.CurrentConcurrency
-		user.RPMLimit = service.UserRPMLimit(user.ConcurrencyLimit)
 		user.CurrentRPM = snapshot.CurrentRPM
 	}
 }
@@ -488,40 +483,42 @@ func GetSelf(c *gin.Context) {
 
 	// 构建响应数据，包含用户信息和权限
 	responseData := map[string]interface{}{
-		"id":                  user.Id,
-		"username":            user.Username,
-		"display_name":        user.DisplayName,
-		"role":                user.Role,
-		"status":              user.Status,
-		"email":               user.Email,
-		"github_id":           user.GitHubId,
-		"discord_id":          user.DiscordId,
-		"oidc_id":             user.OidcId,
-		"wechat_id":           user.WeChatId,
-		"telegram_id":         user.TelegramId,
-		"group":               user.Group,
-		"quota":               getSelfQuotaForResponse(c, user),
-		"used_quota":          user.UsedQuota,
-		"request_count":       user.RequestCount,
-		"aff_code":            user.AffCode,
-		"aff_count":           user.AffCount,
-		"aff_quota":           user.AffQuota,
-		"aff_history_quota":   user.AffHistoryQuota,
-		"inviter_id":          user.InviterId,
-		"gift_quota":          user.GiftQuota,
-		"used_gift_quota":     user.UsedGiftQuota,
-		"dividend_balance":    user.DividendBalance,
-		"dividend_total":      user.DividendTotal,
-		"aff_admin_id":        user.AffAdminId,
-		"linux_do_id":         user.LinuxDOId,
-		"setting":             user.Setting,
-		"stripe_customer":     user.StripeCustomer,
-		"sidebar_modules":     userSetting.SidebarModules, // 正确提取sidebar_modules字段
-		"permissions":         permissions,                // 新增权限字段
-		"concurrency_limit":   user.ConcurrencyLimit,
-		"current_concurrency": service.GetUserConcurrency(user.Id),
-		"rpm_limit":           service.UserRPMLimit(user.ConcurrencyLimit),
-		"current_rpm":         service.GetUserRPM(user.Id),
+		"id":                         user.Id,
+		"username":                   user.Username,
+		"display_name":               user.DisplayName,
+		"role":                       user.Role,
+		"status":                     user.Status,
+		"email":                      user.Email,
+		"github_id":                  user.GitHubId,
+		"discord_id":                 user.DiscordId,
+		"oidc_id":                    user.OidcId,
+		"wechat_id":                  user.WeChatId,
+		"telegram_id":                user.TelegramId,
+		"group":                      user.Group,
+		"quota":                      getSelfQuotaForResponse(c, user),
+		"used_quota":                 user.UsedQuota,
+		"request_count":              user.RequestCount,
+		"aff_code":                   user.AffCode,
+		"aff_count":                  user.AffCount,
+		"aff_quota":                  user.AffQuota,
+		"aff_history_quota":          user.AffHistoryQuota,
+		"inviter_id":                 user.InviterId,
+		"gift_quota":                 user.GiftQuota,
+		"used_gift_quota":            user.UsedGiftQuota,
+		"dividend_balance":           user.DividendBalance,
+		"dividend_total":             user.DividendTotal,
+		"aff_admin_id":               user.AffAdminId,
+		"linux_do_id":                user.LinuxDOId,
+		"setting":                    user.Setting,
+		"stripe_customer":            user.StripeCustomer,
+		"sidebar_modules":            userSetting.SidebarModules, // 正确提取sidebar_modules字段
+		"permissions":                permissions,                // 新增权限字段
+		"concurrency_limit":          user.EffectiveConcurrencyLimit(),
+		"concurrency_limit_override": user.ConcurrencyLimitOverride,
+		"current_concurrency":        service.GetUserConcurrency(user.Id),
+		"rpm_limit":                  user.EffectiveRPMLimit(),
+		"rpm_limit_override":         user.RPMLimitOverride,
+		"current_rpm":                service.GetUserRPM(user.Id),
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -695,9 +692,18 @@ func GetUserCacheRate(c *gin.Context) {
 	})
 }
 
+type updateUserRequest struct {
+	model.User
+	ConcurrencyLimit         *int  `json:"concurrency_limit"`
+	ConcurrencyLimitOverride *bool `json:"concurrency_limit_override"`
+	RPMLimit                 *int  `json:"rpm_limit"`
+	RPMLimitOverride         *bool `json:"rpm_limit_override"`
+}
+
 func UpdateUser(c *gin.Context) {
-	var updatedUser model.User
-	err := json.NewDecoder(c.Request.Body).Decode(&updatedUser)
+	var request updateUserRequest
+	err := common.DecodeJson(c.Request.Body, &request)
+	updatedUser := request.User
 	if err != nil || updatedUser.Id == 0 {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
@@ -709,8 +715,20 @@ func UpdateUser(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": err.Error()})
 		return
 	}
-	if updatedUser.ConcurrencyLimit < 0 || updatedUser.ConcurrencyLimit > 10000 {
+	if request.ConcurrencyLimit != nil && (*request.ConcurrencyLimit < 1 || *request.ConcurrencyLimit > 10000) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "用户并发上限必须在 1-10000 之间"})
+		return
+	}
+	if request.ConcurrencyLimitOverride != nil && *request.ConcurrencyLimitOverride && request.ConcurrencyLimit == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "单独设置并发时必须填写并发上限"})
+		return
+	}
+	if request.RPMLimit != nil && (*request.RPMLimit < 1 || *request.RPMLimit > 10000000) {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "用户 RPM 上限必须在 1-10000000 之间"})
+		return
+	}
+	if request.RPMLimitOverride != nil && *request.RPMLimitOverride && request.RPMLimit == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "单独设置 RPM 时必须填写 RPM 上限"})
 		return
 	}
 	originUser, err := model.GetUserById(updatedUser.Id, false)
@@ -731,7 +749,12 @@ func UpdateUser(c *gin.Context) {
 		updatedUser.Password = "" // rollback to what it should be
 	}
 	updatePassword := updatedUser.Password != ""
-	if err := updatedUser.Edit(updatePassword); err != nil {
+	if err := updatedUser.Edit(updatePassword, model.UserCapacityLimitUpdate{
+		ConcurrencyLimit:         request.ConcurrencyLimit,
+		ConcurrencyLimitOverride: request.ConcurrencyLimitOverride,
+		RPMLimit:                 request.RPMLimit,
+		RPMLimitOverride:         request.RPMLimitOverride,
+	}); err != nil {
 		common.ApiError(c, err)
 		return
 	}

@@ -47,36 +47,6 @@ function getQuotaProgressColor(percentage: number): string {
   return '[&_[data-slot=progress-indicator]]:bg-emerald-500'
 }
 
-function getCapacityBarColor(current: number, limit: number): string {
-  if (limit <= 0) return 'bg-muted-foreground/35'
-  const ratio = current / limit
-  if (ratio >= 1) return 'bg-rose-500'
-  if (ratio >= 0.8) return 'bg-amber-500'
-  return 'bg-emerald-500'
-}
-
-function renderCapacityMetric(label: string, current: number, limit: number) {
-  const percentage = limit > 0 ? Math.min(100, (current / limit) * 100) : 0
-
-  return (
-    <div className='grid grid-cols-[2.5rem_3.5rem_minmax(2.5rem,1fr)] items-center gap-1.5 text-[11px]'>
-      <span className='text-muted-foreground font-medium'>{label}</span>
-      <span className='text-right font-mono font-semibold tabular-nums'>
-        {current}/{limit > 0 ? limit : '∞'}
-      </span>
-      <span className='bg-muted h-1 overflow-hidden rounded-full'>
-        <span
-          className={cn(
-            'block h-full rounded-full transition-[width] duration-300',
-            getCapacityBarColor(current, limit)
-          )}
-          style={{ width: `${percentage}%` }}
-        />
-      </span>
-    </div>
-  )
-}
-
 export function useUsersColumns(): ColumnDef<User>[] {
   const { t } = useTranslation()
   return [
@@ -191,39 +161,6 @@ export function useUsersColumns(): ColumnDef<User>[] {
       enableSorting: false,
       size: 120,
       meta: { mobileBadge: true },
-    },
-    {
-      id: 'capacity',
-      header: '并发 / RPM',
-      cell: ({ row }) => {
-        const user = row.original
-        return (
-          <Tooltip>
-            <TooltipTrigger
-              render={<div className='w-[156px] cursor-help space-y-1.5' />}
-            >
-              {renderCapacityMetric(
-                '并发',
-                user.current_concurrency ?? 0,
-                user.concurrency_limit ?? 8
-              )}
-              {renderCapacityMetric(
-                'RPM',
-                user.current_rpm ?? 0,
-                user.rpm_limit ?? 12
-              )}
-            </TooltipTrigger>
-            <TooltipContent>
-              <div className='space-y-1 text-xs'>
-                <p>当前执行中的 API 请求 / 账号并发上限</p>
-                <p>最近滚动 60 秒请求数 / 账号 RPM 上限</p>
-              </div>
-            </TooltipContent>
-          </Tooltip>
-        )
-      },
-      size: 180,
-      enableSorting: false,
     },
     {
       id: 'quota',
