@@ -21,10 +21,11 @@ func TestRecordStreamTerminalEventIsIdempotent(t *testing.T) {
 	}
 
 	first := &StreamTerminalEvent{
-		RequestId:         "req-terminal-1",
-		TerminalStatus:    "failed",
-		EndReason:         "eof",
-		ResponseCompleted: false,
+		RequestId:        "req-terminal-1",
+		IngressRequestId: "edge-terminal-1",
+		AffinityKeyFp:    "89abcdef",
+		TerminalStatus:   "failed",
+		EndReason:        "eof",
 	}
 	if err = RecordStreamTerminalEvent(first); err != nil {
 		t.Fatalf("record first event: %v", err)
@@ -50,5 +51,8 @@ func TestRecordStreamTerminalEventIsIdempotent(t *testing.T) {
 	}
 	if got.TerminalStatus != "failed" || got.EndReason != "eof" {
 		t.Fatalf("duplicate overwrote terminal event: %#v", got)
+	}
+	if got.IngressRequestId != first.IngressRequestId || got.AffinityKeyFp != first.AffinityKeyFp {
+		t.Fatalf("correlation fields not persisted: %#v", got)
 	}
 }

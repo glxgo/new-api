@@ -10,15 +10,18 @@ import (
 type StreamTerminalEvent struct {
 	Id                int    `json:"id" gorm:"primaryKey"`
 	RequestId         string `json:"request_id" gorm:"type:varchar(64);uniqueIndex:idx_stream_terminal_request_id"`
+	IngressRequestId  string `json:"ingress_request_id" gorm:"type:varchar(64);index:idx_stream_terminal_ingress_request_id"`
 	UpstreamRequestId string `json:"upstream_request_id" gorm:"type:varchar(128);index"`
 	CreatedAt         int64  `json:"created_at" gorm:"bigint;index:idx_stream_terminal_created_at"`
-	StartedAt         int64  `json:"started_at" gorm:"bigint"`
+	StartedAt         int64  `json:"started_at" gorm:"bigint;index:idx_stream_terminal_affinity_started,priority:2"`
 	DurationMs        int64  `json:"duration_ms" gorm:"bigint;default:0"`
 	UserId            int    `json:"user_id" gorm:"index:idx_stream_terminal_user_created,priority:1"`
 	TokenId           int    `json:"token_id" gorm:"index"`
 	ChannelId         int    `json:"channel_id" gorm:"index:idx_stream_terminal_channel_created,priority:1"`
 	ModelName         string `json:"model_name" gorm:"size:128;index"`
 	Group             string `json:"group" gorm:"column:group;size:64"`
+	AffinityRuleName  string `json:"affinity_rule_name" gorm:"size:128"`
+	AffinityKeyFp     string `json:"affinity_key_fp" gorm:"size:40;index:idx_stream_terminal_affinity_started,priority:1"`
 	RequestHost       string `json:"request_host" gorm:"size:255;index"`
 	RequestPath       string `json:"request_path" gorm:"size:255;index"`
 	TerminalStatus    string `json:"terminal_status" gorm:"size:32;index:idx_stream_terminal_status_created,priority:1"`

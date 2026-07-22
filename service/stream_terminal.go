@@ -17,6 +17,8 @@ import (
 
 const maxStreamTerminalErrorRunes = 2048
 
+const ingressRequestIDHeader = "X-Request-ID"
+
 type billingLifecycleReporter interface {
 	LifecycleState() string
 }
@@ -139,8 +141,15 @@ func buildResponsesStreamTerminalEvent(c *gin.Context, info *relaycommon.RelayIn
 	if info.ChannelMeta != nil {
 		channelID = info.ChannelId
 	}
+	affinityRuleName := ""
+	affinityKeyFp := ""
+	if affinity, ok := GetChannelAffinityStatsContext(c); ok {
+		affinityRuleName = affinity.RuleName
+		affinityKeyFp = affinity.KeyFingerprint
+	}
 	event := &model.StreamTerminalEvent{
 		RequestId:         requestID,
+		IngressRequestId:  normalizeIngressRequestID(c.Request.Header.Get(ingressRequestIDHeader)),
 		UpstreamRequestId: c.GetString(common.UpstreamRequestIdKey),
 		CreatedAt:         now.Unix(),
 		StartedAt:         startedAt.Unix(),
@@ -150,6 +159,8 @@ func buildResponsesStreamTerminalEvent(c *gin.Context, info *relaycommon.RelayIn
 		ChannelId:         channelID,
 		ModelName:         info.OriginModelName,
 		Group:             info.UsingGroup,
+		AffinityRuleName:  affinityRuleName,
+		AffinityKeyFp:     affinityKeyFp,
 		RequestHost:       c.Request.Host,
 		RequestPath:       path,
 		TerminalStatus:    terminalStatus,
@@ -172,6 +183,26 @@ func buildResponsesStreamTerminalEvent(c *gin.Context, info *relaycommon.RelayIn
 		event.ErrorCode = string(apiErr.GetErrorCode())
 	}
 	return event
+}
+
+func normalizeIngressRequestID(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > 64 {
+		return ""
+	}
+	for i := 0; i < len(value); i++ {
+		ch := value[i]
+		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') {
+			continue
+		}
+		switch ch {
+		case '-', '_', '.', ':':
+			continue
+		default:
+			return ""
+		}
+	}
+	return value
 }
 
 func truncateRunes(value string, max int) string {

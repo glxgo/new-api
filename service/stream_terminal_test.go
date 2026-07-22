@@ -20,12 +20,19 @@ func TestBuildResponsesStreamTerminalEventCompleted(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("POST", "https://token.stellaisle.com/v1/responses", nil)
+	c.Request.Header.Set(ingressRequestIDHeader, "edge-abc_123")
 	completedContext, cancelCompleted := context.WithCancel(c.Request.Context())
 	cancelCompleted()
 	c.Request = c.Request.WithContext(completedContext)
 	c.Set(common.RequestIdKey, "req-completed")
 	c.Set(common.UpstreamRequestIdKey, "upstream-1")
 	c.Set("use_channel", []string{"8", "31"})
+	setChannelAffinityContext(c, channelAffinityMeta{
+		CacheKey:       "new-api:channel_affinity:v1:test",
+		TTLSeconds:     3600,
+		RuleName:       "codex cli trace",
+		KeyFingerprint: "89abcdef",
+	})
 	started := time.Unix(100, 0)
 	common.SetContextKey(c, constant.ContextKeyRequestStartTime, started)
 	c.Status(200)
@@ -57,6 +64,30 @@ func TestBuildResponsesStreamTerminalEventCompleted(t *testing.T) {
 	}
 	if event.UsedChannels != "8,31" || event.DurationMs != 3000 || event.ResponseBytes == 0 {
 		t.Fatalf("unexpected diagnostics: %#v", event)
+	}
+	if event.IngressRequestId != "edge-abc_123" || event.AffinityRuleName != "codex cli trace" || event.AffinityKeyFp != "89abcdef" {
+		t.Fatalf("unexpected correlation diagnostics: %#v", event)
+	}
+}
+
+func TestNormalizeIngressRequestID(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "nginx id", value: "0123456789abcdef0123456789abcdef", want: "0123456789abcdef0123456789abcdef"},
+		{name: "trim safe id", value: "  edge.req_1:retry-2  ", want: "edge.req_1:retry-2"},
+		{name: "reject whitespace", value: "edge request", want: ""},
+		{name: "reject control", value: "edge\nrequest", want: ""},
+		{name: "reject oversized", value: string(make([]byte, 65)), want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizeIngressRequestID(tt.value); got != tt.want {
+				t.Fatalf("normalizeIngressRequestID(%q) = %q, want %q", tt.value, got, tt.want)
+			}
+		})
 	}
 }
 
