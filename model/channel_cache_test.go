@@ -51,7 +51,7 @@ func TestGetRandomSatisfiedChannelExcludesPreviouslyUsedChannels(t *testing.T) {
 	}
 }
 
-func TestGetRandomSatisfiedChannelStartsWithFirstConfiguredChannel(t *testing.T) {
+func TestGetRandomSatisfiedChannelUsesPositiveWeightInsteadOfFirstChannel(t *testing.T) {
 	originalMemoryCacheEnabled := common.MemoryCacheEnabled
 	originalGroupChannels := group2model2channels
 	originalChannels := channelsIDM
@@ -90,7 +90,43 @@ func TestGetRandomSatisfiedChannelStartsWithFirstConfiguredChannel(t *testing.T)
 	if channel == nil {
 		t.Fatal("expected the first configured channel, got nil")
 	}
-	if channel.Id != 8 {
-		t.Fatalf("expected first configured channel #8 regardless of weight, got #%d", channel.Id)
+	if channel.Id != 24 {
+		t.Fatalf("expected positive-weight channel #24 instead of zero-weight channel #8, got #%d", channel.Id)
+	}
+}
+
+func TestGetRandomSatisfiedChannelDropsToNextPriorityAfterErrorRetry(t *testing.T) {
+	originalMemoryCacheEnabled := common.MemoryCacheEnabled
+	originalGroupChannels := group2model2channels
+	originalChannels := channelsIDM
+	t.Cleanup(func() {
+		common.MemoryCacheEnabled = originalMemoryCacheEnabled
+		channelSyncLock.Lock()
+		group2model2channels = originalGroupChannels
+		channelsIDM = originalChannels
+		channelSyncLock.Unlock()
+	})
+
+	highPriority := int64(80)
+	lowPriority := int64(70)
+	weight := uint(1)
+	common.MemoryCacheEnabled = true
+	channelSyncLock.Lock()
+	group2model2channels = map[string]map[string][]int{
+		"plan": {"gpt-test": {8, 31, 32}},
+	}
+	channelsIDM = map[int]*Channel{
+		8:  {Id: 8, Priority: &highPriority, Weight: &weight},
+		31: {Id: 31, Priority: &highPriority, Weight: &weight},
+		32: {Id: 32, Priority: &lowPriority, Weight: &weight},
+	}
+	channelSyncLock.Unlock()
+
+	channel, err := GetRandomSatisfiedChannel("plan", "gpt-test", 1, types.RelayFormatOpenAI, map[int]struct{}{8: {}})
+	if err != nil {
+		t.Fatalf("select lower-priority retry channel: %v", err)
+	}
+	if channel == nil || channel.Id != 32 {
+		t.Fatalf("expected retry after high-priority failure to use lower-priority channel #32, got %#v", channel)
 	}
 }

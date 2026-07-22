@@ -45,18 +45,21 @@ func TestRedisConcurrencyAcquireIsAtomic(t *testing.T) {
 	const limit = 8
 	var wg sync.WaitGroup
 	leases := make(chan *ConcurrencyLease, 64)
+	counts := make(chan int, 64)
 	for i := 0; i < 64; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			lease, ok := acquireConcurrencySlotWithTiming(key, limit, 10*time.Second, 2*time.Second)
+			lease, ok, current := acquireConcurrencySlotWithTimingAndCount(key, limit, 10*time.Second, 2*time.Second)
 			if ok {
 				leases <- lease
+				counts <- current
 			}
 		}()
 	}
 	wg.Wait()
 	close(leases)
+	close(counts)
 
 	acquired := make([]*ConcurrencyLease, 0, limit)
 	for lease := range leases {
@@ -68,6 +71,13 @@ func TestRedisConcurrencyAcquireIsAtomic(t *testing.T) {
 		}
 	})
 	require.Len(t, acquired, limit)
+	seenCounts := make(map[int]bool, limit)
+	for current := range counts {
+		seenCounts[current] = true
+	}
+	for current := 1; current <= limit; current++ {
+		require.True(t, seenCounts[current], "atomic admission count %d should be returned once", current)
+	}
 	require.EqualValues(t, limit, client.ZCard(context.Background(), key).Val())
 
 	for _, lease := range acquired {

@@ -215,12 +215,11 @@ func GetChannel(group string, model string, retry int, relayFormat types.RelayFo
 			abilities = preferred
 		}
 	}
-	channel := Channel{}
-	if len(abilities) > 0 {
-		channel.Id = abilities[0].ChannelId
-	} else {
+	selectedAbility := selectWeightedAbility(abilities)
+	if selectedAbility == nil {
 		return nil, nil
 	}
+	channel := Channel{Id: selectedAbility.ChannelId}
 	err = DB.First(&channel, "id = ?", channel.Id).Error
 	return &channel, err
 }

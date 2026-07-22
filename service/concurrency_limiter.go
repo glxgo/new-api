@@ -30,14 +30,15 @@ redis.call('ZREMRANGEBYSCORE', key, '-inf', now - ttl_seconds)
 if redis.call('ZSCORE', key, request_id) then
   redis.call('ZADD', key, now, request_id)
   redis.call('EXPIRE', key, ttl_seconds)
-  return 1
+  return {1, redis.call('ZCARD', key)}
 end
-if redis.call('ZCARD', key) >= max_concurrency then
-  return 0
+local current = redis.call('ZCARD', key)
+if current >= max_concurrency then
+  return {0, current}
 end
 redis.call('ZADD', key, now, request_id)
 redis.call('EXPIRE', key, ttl_seconds)
-return 1
+return {1, current + 1}
 `
 
 var renewConcurrencyScript = `
@@ -183,12 +184,18 @@ func nextConcurrencyRequestId() string {
 }
 
 func acquireConcurrencySlot(key string, limit int) (*ConcurrencyLease, bool) {
-	return acquireConcurrencySlotWithTiming(key, limit, concurrencySlotTTL, concurrencySlotHeartbeatInterval)
+	lease, acquired, _ := acquireConcurrencySlotWithTimingAndCount(key, limit, concurrencySlotTTL, concurrencySlotHeartbeatInterval)
+	return lease, acquired
 }
 
 func acquireConcurrencySlotWithTiming(key string, limit int, ttl, heartbeatInterval time.Duration) (*ConcurrencyLease, bool) {
+	lease, acquired, _ := acquireConcurrencySlotWithTimingAndCount(key, limit, ttl, heartbeatInterval)
+	return lease, acquired
+}
+
+func acquireConcurrencySlotWithTimingAndCount(key string, limit int, ttl, heartbeatInterval time.Duration) (*ConcurrencyLease, bool, int) {
 	if limit <= 0 {
-		return &ConcurrencyLease{}, true
+		return &ConcurrencyLease{}, true, 0
 	}
 	if ttl <= 0 {
 		ttl = concurrencySlotTTL
@@ -202,13 +209,13 @@ func acquireConcurrencySlotWithTiming(key string, limit int, ttl, heartbeatInter
 	requestId := nextConcurrencyRequestId()
 	if common.RedisEnabled && common.RDB != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		result, err := common.RDB.Eval(ctx, acquireConcurrencyScript, []string{key}, limit, concurrencyTTLSeconds(ttl), requestId).Int()
+		result, err := common.RDB.Eval(ctx, acquireConcurrencyScript, []string{key}, limit, concurrencyTTLSeconds(ttl), requestId).Int64Slice()
 		cancel()
-		if err == nil {
-			if result == 1 {
-				return newConcurrencyLease(key, requestId, true, ttl, heartbeatInterval), true
+		if err == nil && len(result) == 2 {
+			if result[0] == 1 {
+				return newConcurrencyLease(key, requestId, true, ttl, heartbeatInterval), true, int(result[1])
 			}
-			return nil, false
+			return nil, false, int(result[1])
 		}
 		// Availability is preferable to rejecting every request during a Redis
 		// incident. The per-process fallback still prevents local overload.
@@ -217,7 +224,7 @@ func acquireConcurrencySlotWithTiming(key string, limit int, ttl, heartbeatInter
 	return acquireLocalConcurrencySlot(key, limit, requestId, ttl, heartbeatInterval)
 }
 
-func acquireLocalConcurrencySlot(key string, limit int, requestId string, ttl, heartbeatInterval time.Duration) (*ConcurrencyLease, bool) {
+func acquireLocalConcurrencySlot(key string, limit int, requestId string, ttl, heartbeatInterval time.Duration) (*ConcurrencyLease, bool, int) {
 	now := time.Now()
 	localConcurrency.Lock()
 	defer localConcurrency.Unlock()
@@ -232,14 +239,18 @@ func acquireLocalConcurrencySlot(key string, limit int, requestId string, ttl, h
 		}
 	}
 	if len(bucket.members) >= limit {
-		return nil, false
+		return nil, false, len(bucket.members)
 	}
 	bucket.members[requestId] = now
-	return newConcurrencyLease(key, requestId, false, ttl, heartbeatInterval), true
+	return newConcurrencyLease(key, requestId, false, ttl, heartbeatInterval), true, len(bucket.members)
 }
 
 func AcquireUserConcurrency(userId, limit int) (*ConcurrencyLease, bool) {
 	return acquireConcurrencySlot("concurrency:user:"+strconv.Itoa(userId), limit)
+}
+
+func AcquireUserConcurrencyWithCount(userId, limit int) (*ConcurrencyLease, bool, int) {
+	return acquireConcurrencySlotWithTimingAndCount("concurrency:user:"+strconv.Itoa(userId), limit, concurrencySlotTTL, concurrencySlotHeartbeatInterval)
 }
 
 func AcquireChannelConcurrency(channelId, limit int) (*ConcurrencyLease, bool) {
@@ -259,13 +270,16 @@ func getConcurrencyCount(key string) int {
 			return int(countCmd.Val())
 		}
 	}
+	return getLocalConcurrencyCount(key, time.Now())
+}
+
+func getLocalConcurrencyCount(key string, now time.Time) int {
 	localConcurrency.Lock()
 	defer localConcurrency.Unlock()
 	bucket := localConcurrency.buckets[key]
 	if bucket == nil {
 		return 0
 	}
-	now := time.Now()
 	for member, acquiredAt := range bucket.members {
 		if now.Sub(acquiredAt) >= concurrencySlotTTL {
 			delete(bucket.members, member)

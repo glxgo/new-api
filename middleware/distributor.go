@@ -451,6 +451,7 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	common.SetContextKey(c, constant.ContextKeyChannelModelMapping, channel.GetModelMapping())
 	common.SetContextKey(c, constant.ContextKeyChannelStatusCodeMapping, channel.GetStatusCodeMapping())
 	c.Set("channel_concurrency_limit", channel.ConcurrencyLimit)
+	c.Set("channel_rpm_limit", channel.RPMLimit)
 
 	key, index, newAPIError := channel.GetNextEnabledKey()
 	if newAPIError != nil {

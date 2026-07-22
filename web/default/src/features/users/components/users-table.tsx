@@ -79,6 +79,8 @@ export function UsersTable() {
     (columnFilters.find((filter) => filter.id === 'role')?.value as
       | string[]
       | undefined) ?? []
+  const statusFilterValue = statusFilter[0] ?? ''
+  const roleFilterValue = roleFilter[0] ?? ''
   const groupFilter =
     (columnFilters.find((filter) => filter.id === 'group')?.value as string) ??
     ''
@@ -90,15 +92,17 @@ export function UsersTable() {
       pagination.pageIndex + 1,
       pagination.pageSize,
       globalFilter,
-      statusFilter,
-      roleFilter,
+      statusFilterValue,
+      roleFilterValue,
       groupFilter,
       refreshTrigger,
     ],
     queryFn: async () => {
       const hasFilter = globalFilter?.trim()
       const hasColumnFilter =
-        statusFilter.length > 0 || roleFilter.length > 0 || Boolean(groupFilter)
+        Boolean(statusFilterValue) ||
+        Boolean(roleFilterValue) ||
+        Boolean(groupFilter)
       const params = {
         p: pagination.pageIndex + 1,
         page_size: pagination.pageSize,
@@ -109,8 +113,8 @@ export function UsersTable() {
           ? await searchUsers({
               ...params,
               keyword: globalFilter,
-              status: statusFilter[0] ?? '',
-              role: roleFilter[0] ?? '',
+              status: statusFilterValue,
+              role: roleFilterValue,
               group: groupFilter,
             })
           : await getUsers(params)
@@ -128,6 +132,8 @@ export function UsersTable() {
       }
     },
     placeholderData: (previousData) => previousData,
+    refetchInterval: 5000,
+    refetchIntervalInBackground: false,
   })
 
   const users = data?.items || []

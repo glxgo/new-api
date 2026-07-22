@@ -463,6 +463,9 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 	if channel.ConcurrencyLimit < 0 || channel.ConcurrencyLimit > 100000 {
 		return fmt.Errorf("渠道并发上限必须在 0-100000 之间，0 表示不限制")
 	}
+	if channel.RPMLimit < 0 || channel.RPMLimit > 10000000 {
+		return fmt.Errorf("渠道 RPM 上限必须在 0-10000000 之间，0 表示不限制")
+	}
 	// 校验 channel settings
 	if err := channel.ValidateSettings(); err != nil {
 		return fmt.Errorf("渠道额外设置[channel setting] 格式错误：%s", err.Error())
@@ -892,8 +895,10 @@ func DeleteChannelBatch(c *gin.Context) {
 
 type PatchChannel struct {
 	model.Channel
-	MultiKeyMode *string `json:"multi_key_mode"`
-	KeyMode      *string `json:"key_mode"` // 多key模式下密钥覆盖或者追加
+	MultiKeyMode     *string `json:"multi_key_mode"`
+	KeyMode          *string `json:"key_mode"` // 多key模式下密钥覆盖或者追加
+	ConcurrencyLimit *int    `json:"concurrency_limit"`
+	RPMLimit         *int    `json:"rpm_limit"`
 }
 
 func UpdateChannel(c *gin.Context) {
@@ -904,14 +909,6 @@ func UpdateChannel(c *gin.Context) {
 		return
 	}
 
-	// 使用统一的校验函数
-	if err := validateChannel(&channel.Channel, false); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
-		return
-	}
 	// Preserve existing ChannelInfo to ensure multi-key channels keep correct state even if the client does not send ChannelInfo in the request.
 	originChannel, err := model.GetChannelById(channel.Id, true)
 	if err != nil {
@@ -924,6 +921,26 @@ func UpdateChannel(c *gin.Context) {
 
 	// Always copy the original ChannelInfo so that fields like IsMultiKey and MultiKeySize are retained.
 	channel.ChannelInfo = originChannel.ChannelInfo
+	requestedConcurrencyLimit := originChannel.ConcurrencyLimit
+	if channel.ConcurrencyLimit != nil {
+		requestedConcurrencyLimit = *channel.ConcurrencyLimit
+	}
+	requestedRPMLimit := originChannel.RPMLimit
+	if channel.RPMLimit != nil {
+		requestedRPMLimit = *channel.RPMLimit
+	}
+	channel.Channel.ConcurrencyLimit = requestedConcurrencyLimit
+	channel.Channel.RPMLimit = requestedRPMLimit
+
+	// 使用统一的校验函数。容量字段先与数据库原值合并，保证旧版管理端
+	// 未发送新字段时不会把已有上限意外清零。
+	if err := validateChannel(&channel.Channel, false); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
 
 	// If the request explicitly specifies a new MultiKeyMode, apply it on top of the original info.
 	if channel.MultiKeyMode != nil && *channel.MultiKeyMode != "" {
@@ -1010,18 +1027,23 @@ func UpdateChannel(c *gin.Context) {
 			// 覆盖模式：直接使用新密钥（默认行为，不需要特殊处理）
 		}
 	}
-	requestedConcurrencyLimit := channel.ConcurrencyLimit
 	err = channel.Update()
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	if err := model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).
-		Update("concurrency_limit", requestedConcurrencyLimit).Error; err != nil {
+		Updates(map[string]interface{}{
+			"concurrency_limit": requestedConcurrencyLimit,
+			"rpm_limit":         requestedRPMLimit,
+		}).Error; err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	channel.ConcurrencyLimit = requestedConcurrencyLimit
+	channel.Channel.ConcurrencyLimit = requestedConcurrencyLimit
+	channel.Channel.RPMLimit = requestedRPMLimit
+	channel.ConcurrencyLimit = &requestedConcurrencyLimit
+	channel.RPMLimit = &requestedRPMLimit
 	model.InitChannelCache()
 	service.ResetProxyClientCache()
 	// 记录变更的字段名（语言无关的字段标识），密钥仅记录"已更换"绝不记录内容。
@@ -1043,6 +1065,12 @@ func UpdateChannel(c *gin.Context) {
 	}
 	if channel.Key != "" && channel.Key != originChannel.Key {
 		changedFields = append(changedFields, "key")
+	}
+	if requestedConcurrencyLimit != originChannel.ConcurrencyLimit {
+		changedFields = append(changedFields, "concurrency_limit")
+	}
+	if requestedRPMLimit != originChannel.RPMLimit {
+		changedFields = append(changedFields, "rpm_limit")
 	}
 	recordManageAudit(c, "channel.update", map[string]interface{}{
 		"id":             channel.Id,

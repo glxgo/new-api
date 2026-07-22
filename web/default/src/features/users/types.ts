@@ -60,6 +60,9 @@ export const userSchema = z.object({
   DeletedAt: z.any().nullable().optional(),
   remark: z.string().optional(),
   concurrency_limit: z.number().default(8),
+  current_concurrency: z.number().default(0),
+  rpm_limit: z.number().default(12),
+  current_rpm: z.number().default(0),
 })
 export type User = z.infer<typeof userSchema>
 

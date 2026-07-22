@@ -417,19 +417,24 @@ func TokenAuth() func(c *gin.Context) {
 			return
 		}
 		rpmLimit := service.UserRPMLimit(userCache.ConcurrencyLimit)
-		if acquired, _ := service.AcquireUserRPM(token.UserId, rpmLimit); !acquired {
+		rpmAcquired, currentRPM := service.AcquireUserRPM(token.UserId, rpmLimit)
+		if !rpmAcquired {
 			abortWithOpenAiMessage(c, http.StatusTooManyRequests,
 				fmt.Sprintf("当前账号每分钟请求数已达到上限（%d RPM），请稍后重试", rpmLimit),
 				types.ErrorCode("user_rpm_exceeded"))
 			return
 		}
-		lease, acquired := service.AcquireUserConcurrency(token.UserId, userCache.ConcurrencyLimit)
+		lease, acquired, currentConcurrency := service.AcquireUserConcurrencyWithCount(token.UserId, userCache.ConcurrencyLimit)
 		if !acquired {
 			abortWithOpenAiMessage(c, http.StatusTooManyRequests,
 				fmt.Sprintf("当前账号并发已达到上限（%d），请等待正在执行的请求完成后重试", userCache.ConcurrencyLimit),
 				types.ErrorCode("user_concurrency_exceeded"))
 			return
 		}
+		common.SetContextKey(c, constant.ContextKeyUserConcurrency, currentConcurrency)
+		common.SetContextKey(c, constant.ContextKeyUserConcurrencyLimit, userCache.ConcurrencyLimit)
+		common.SetContextKey(c, constant.ContextKeyUserRPM, currentRPM)
+		common.SetContextKey(c, constant.ContextKeyUserRPMLimit, rpmLimit)
 		defer lease.Release()
 		c.Next()
 	}

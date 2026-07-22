@@ -492,6 +492,46 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             </button>
           )
         },
+      },
+      {
+        id: 'capacity_snapshot',
+        header: '负载快照',
+        cell: ({ row }) => {
+          const log = row.original
+          const hasSnapshot =
+            log.user_concurrency_limit > 0 || log.user_rpm_limit > 0
+
+          if (!hasSnapshot) {
+            return <span className='text-muted-foreground/50 text-xs'>—</span>
+          }
+
+          return (
+            <TooltipProvider delay={300}>
+              <Tooltip>
+                <TooltipTrigger
+                  render={<div className='flex min-w-[112px] flex-col gap-1' />}
+                >
+                  <div className='flex items-center justify-between gap-2 font-mono text-[11px] tabular-nums'>
+                    <span className='text-muted-foreground'>并发</span>
+                    <span className='font-medium'>
+                      {log.user_concurrency}/{log.user_concurrency_limit}
+                    </span>
+                  </div>
+                  <div className='flex items-center justify-between gap-2 font-mono text-[11px] tabular-nums'>
+                    <span className='text-muted-foreground'>RPM</span>
+                    <span className='font-medium'>
+                      {log.user_rpm}/{log.user_rpm_limit}
+                    </span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side='top'>
+                  请求通过账号限流时的实时值，包含当前请求
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )
+        },
+        size: 132,
       }
     )
   }

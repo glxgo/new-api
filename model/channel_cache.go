@@ -197,10 +197,10 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, relayForma
 		}
 	}
 
-	// New conversations always start from the first configured candidate.
-	// Retries exclude already-used channel IDs, so the next call naturally
-	// advances to the next candidate without introducing cross-request state.
-	return targetChannels[0], nil
+	// Distribute new conversations within the selected priority tier by weight.
+	// Conversation affinity keeps later requests on the successful channel;
+	// retries and capacity skips exclude candidates only for the current request.
+	return selectWeightedChannel(targetChannels), nil
 }
 
 func CacheGetChannel(id int) (*Channel, error) {

@@ -25,6 +25,28 @@ func TestLocalConcurrencyLimitAndRelease(t *testing.T) {
 	second.Release()
 }
 
+func TestLocalUserConcurrencyReturnsAdmissionCount(t *testing.T) {
+	oldRedisEnabled, oldRDB := common.RedisEnabled, common.RDB
+	common.RedisEnabled, common.RDB = false, nil
+	defer func() { common.RedisEnabled, common.RDB = oldRedisEnabled, oldRDB }()
+	resetLocalConcurrencyForTest()
+
+	first, ok, current := AcquireUserConcurrencyWithCount(17, 2)
+	require.True(t, ok)
+	require.Equal(t, 1, current)
+	t.Cleanup(first.Release)
+
+	second, ok, current := AcquireUserConcurrencyWithCount(17, 2)
+	require.True(t, ok)
+	require.Equal(t, 2, current)
+	t.Cleanup(second.Release)
+
+	third, ok, current := AcquireUserConcurrencyWithCount(17, 2)
+	require.False(t, ok)
+	require.Nil(t, third)
+	require.Equal(t, 2, current)
+}
+
 func TestLocalConcurrencyAcquireIsAtomic(t *testing.T) {
 	oldRedisEnabled, oldRDB := common.RedisEnabled, common.RDB
 	common.RedisEnabled, common.RDB = false, nil

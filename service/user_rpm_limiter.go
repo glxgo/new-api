@@ -17,7 +17,7 @@ const userRPMWindow = time.Minute
 
 var userRPMSequence atomic.Uint64
 
-var acquireUserRPMScript = `
+var acquireRollingRPMScript = `
 local key = KEYS[1]
 local max_requests = tonumber(ARGV[1])
 local window_ms = tonumber(ARGV[2])
@@ -71,7 +71,7 @@ func AcquireUserRPM(userId, limit int) (bool, int) {
 	key := userRPMKey(userId)
 	if common.RedisEnabled && common.RDB != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		result, err := common.RDB.Eval(ctx, acquireUserRPMScript, []string{key}, limit, userRPMWindow.Milliseconds(), nextUserRPMRequestId()).Int64Slice()
+		result, err := common.RDB.Eval(ctx, acquireRollingRPMScript, []string{key}, limit, userRPMWindow.Milliseconds(), nextUserRPMRequestId()).Int64Slice()
 		cancel()
 		if err == nil && len(result) == 2 {
 			return result[0] == 1, int(result[1])
@@ -118,13 +118,17 @@ func GetUserRPM(userId int) int {
 			return int(countCmd.Val())
 		}
 	}
+	return getLocalUserRPMCount(userId, time.Now())
+}
+
+func getLocalUserRPMCount(userId int, now time.Time) int {
 	localUserRPM.Lock()
 	defer localUserRPM.Unlock()
 	bucket := localUserRPM.buckets[userId]
 	if bucket == nil {
 		return 0
 	}
-	cutoff := time.Now().Add(-userRPMWindow)
+	cutoff := now.Add(-userRPMWindow)
 	kept := bucket.requests[:0]
 	for _, requestedAt := range bucket.requests {
 		if requestedAt.After(cutoff) {

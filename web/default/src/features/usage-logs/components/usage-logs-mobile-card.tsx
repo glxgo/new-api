@@ -212,6 +212,7 @@ function CommonLogsCard<TData>({
           primaryOnly
         />
         <SummaryField label={t('User')} cell={cells.get('user')} primaryOnly />
+        <SummaryField label='负载快照' cell={cells.get('capacity_snapshot')} />
         <SummaryField
           label={t('Token')}
           cell={cells.get('token_name')}

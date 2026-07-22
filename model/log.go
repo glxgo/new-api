@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/types"
 
@@ -32,28 +33,32 @@ func applyExplicitLogTextFilter(tx *gorm.DB, column string, value string) (*gorm
 }
 
 type Log struct {
-	Id                int    `json:"id" gorm:"index:idx_created_at_id,priority:2;index:idx_user_id_id,priority:2"`
-	UserId            int    `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1"`
-	CreatedAt         int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:1;index:idx_created_at_type"`
-	Type              int    `json:"type" gorm:"index:idx_created_at_type"`
-	Content           string `json:"content"`
-	Username          string `json:"username" gorm:"index;index:index_username_model_name,priority:2;default:''"`
-	TokenName         string `json:"token_name" gorm:"index;default:''"`
-	ModelName         string `json:"model_name" gorm:"index;index:index_username_model_name,priority:1;default:''"`
-	Quota             int    `json:"quota" gorm:"default:0"`
-	PromptTokens      int    `json:"prompt_tokens" gorm:"default:0"`
-	CacheTokens       int    `json:"cache_tokens" gorm:"default:0"` // prompt cache 命中 token(个人缓存率用)
-	CompletionTokens  int    `json:"completion_tokens" gorm:"default:0"`
-	UseTime           int    `json:"use_time" gorm:"default:0"`
-	IsStream          bool   `json:"is_stream"`
-	ChannelId         int    `json:"channel" gorm:"index"`
-	ChannelName       string `json:"channel_name" gorm:"->"`
-	TokenId           int    `json:"token_id" gorm:"default:0;index"`
-	Group             string `json:"group" gorm:"index"`
-	Ip                string `json:"ip" gorm:"index;default:''"`
-	RequestId         string `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
-	UpstreamRequestId string `json:"upstream_request_id,omitempty" gorm:"type:varchar(128);index:idx_logs_upstream_request_id;default:''"`
-	Other             string `json:"other"`
+	Id                   int    `json:"id" gorm:"index:idx_created_at_id,priority:2;index:idx_user_id_id,priority:2"`
+	UserId               int    `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1"`
+	CreatedAt            int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:1;index:idx_created_at_type"`
+	Type                 int    `json:"type" gorm:"index:idx_created_at_type"`
+	Content              string `json:"content"`
+	Username             string `json:"username" gorm:"index;index:index_username_model_name,priority:2;default:''"`
+	TokenName            string `json:"token_name" gorm:"index;default:''"`
+	ModelName            string `json:"model_name" gorm:"index;index:index_username_model_name,priority:1;default:''"`
+	Quota                int    `json:"quota" gorm:"default:0"`
+	PromptTokens         int    `json:"prompt_tokens" gorm:"default:0"`
+	CacheTokens          int    `json:"cache_tokens" gorm:"default:0"` // prompt cache 命中 token(个人缓存率用)
+	CompletionTokens     int    `json:"completion_tokens" gorm:"default:0"`
+	UseTime              int    `json:"use_time" gorm:"default:0"`
+	IsStream             bool   `json:"is_stream"`
+	ChannelId            int    `json:"channel" gorm:"index"`
+	ChannelName          string `json:"channel_name" gorm:"->"`
+	TokenId              int    `json:"token_id" gorm:"default:0;index"`
+	Group                string `json:"group" gorm:"index"`
+	Ip                   string `json:"ip" gorm:"index;default:''"`
+	RequestId            string `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
+	UpstreamRequestId    string `json:"upstream_request_id,omitempty" gorm:"type:varchar(128);index:idx_logs_upstream_request_id;default:''"`
+	UserConcurrency      int    `json:"user_concurrency" gorm:"default:0;column:user_concurrency"`
+	UserConcurrencyLimit int    `json:"user_concurrency_limit" gorm:"default:0;column:user_concurrency_limit"`
+	UserRPM              int    `json:"user_rpm" gorm:"default:0;column:user_rpm"`
+	UserRPMLimit         int    `json:"user_rpm_limit" gorm:"default:0;column:user_rpm_limit"`
+	Other                string `json:"other"`
 	// 分润系统字段(T+1结算用)
 	Cost           int    `json:"cost" gorm:"default:0"`                                   // 该请求成本(quota单位,平台付上游)
 	PaidQuota      int    `json:"paid_quota" gorm:"default:0;column:paid_quota"`           // 本金分摊
@@ -276,9 +281,13 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 			}
 			return ""
 		}(),
-		RequestId:         requestId,
-		UpstreamRequestId: upstreamRequestId,
-		Other:             otherStr,
+		RequestId:            requestId,
+		UpstreamRequestId:    upstreamRequestId,
+		UserConcurrency:      common.GetContextKeyInt(c, constant.ContextKeyUserConcurrency),
+		UserConcurrencyLimit: common.GetContextKeyInt(c, constant.ContextKeyUserConcurrencyLimit),
+		UserRPM:              common.GetContextKeyInt(c, constant.ContextKeyUserRPM),
+		UserRPMLimit:         common.GetContextKeyInt(c, constant.ContextKeyUserRPMLimit),
+		Other:                otherStr,
 	}
 	err := LOG_DB.Create(log).Error
 	if err != nil {
@@ -354,10 +363,14 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 			}
 			return ""
 		}(),
-		RequestId:         requestId,
-		UpstreamRequestId: upstreamRequestId,
-		Other:             otherStr,
-		BillingSource:     params.BillingSource,
+		RequestId:            requestId,
+		UpstreamRequestId:    upstreamRequestId,
+		UserConcurrency:      common.GetContextKeyInt(c, constant.ContextKeyUserConcurrency),
+		UserConcurrencyLimit: common.GetContextKeyInt(c, constant.ContextKeyUserConcurrencyLimit),
+		UserRPM:              common.GetContextKeyInt(c, constant.ContextKeyUserRPM),
+		UserRPMLimit:         common.GetContextKeyInt(c, constant.ContextKeyUserRPMLimit),
+		Other:                otherStr,
+		BillingSource:        params.BillingSource,
 	}
 	err := LOG_DB.Create(log).Error
 	if err != nil {

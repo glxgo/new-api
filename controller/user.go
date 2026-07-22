@@ -284,6 +284,7 @@ func GetAllUsers(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	populateUserCapacity(users)
 
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(users)
@@ -313,6 +314,7 @@ func SearchUsers(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	populateUserCapacity(users)
 
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(users)
@@ -322,6 +324,25 @@ func SearchUsers(c *gin.Context) {
 
 func canManageTargetRole(myRole int, targetRole int) bool {
 	return myRole == common.RoleRootUser || myRole > targetRole
+}
+
+func populateUserCapacity(users []*model.User) {
+	userIds := make([]int, 0, len(users))
+	for _, user := range users {
+		if user != nil {
+			userIds = append(userIds, user.Id)
+		}
+	}
+	snapshots := service.GetUserCapacitySnapshots(userIds)
+	for _, user := range users {
+		if user == nil {
+			continue
+		}
+		snapshot := snapshots[user.Id]
+		user.CurrentConcurrency = snapshot.CurrentConcurrency
+		user.RPMLimit = service.UserRPMLimit(user.ConcurrencyLimit)
+		user.CurrentRPM = snapshot.CurrentRPM
+	}
 }
 
 func GetUser(c *gin.Context) {
@@ -340,6 +361,7 @@ func GetUser(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserNoPermissionSameLevel)
 		return
 	}
+	populateUserCapacity([]*model.User{user})
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

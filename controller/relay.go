@@ -196,7 +196,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
 		relayInfo.RetryIndex = retryParam.GetRetry()
-		channel, channelLease, channelErr := getChannelWithConcurrency(c, relayInfo, retryParam)
+		channel, channelLease, channelErr := getChannelWithCapacity(c, relayInfo, retryParam)
 		if channelErr != nil {
 			logger.LogError(c, channelErr.Error())
 			if lastRetryChannelError != nil && lastRetryAPIError != nil {
@@ -330,6 +330,7 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 			Name:             c.GetString("channel_name"),
 			AutoBan:          &autoBanInt,
 			ConcurrencyLimit: c.GetInt("channel_concurrency_limit"),
+			RPMLimit:         c.GetInt("channel_rpm_limit"),
 		}, nil
 	}
 	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
@@ -341,9 +342,19 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 	}
 	if channel == nil {
 		if len(c.GetStringSlice("capacity_skipped_channel")) > 0 {
+			capacityName := "并发"
+			capacityCode := types.ErrorCode("channel_concurrency_exceeded")
+			if c.GetBool("channel_rpm_capacity_skipped") {
+				capacityName = "RPM"
+				capacityCode = types.ErrorCode("channel_rpm_exceeded")
+			}
+			if c.GetBool("channel_concurrency_capacity_skipped") && c.GetBool("channel_rpm_capacity_skipped") {
+				capacityName = "并发或 RPM"
+				capacityCode = types.ErrorCode("channel_capacity_exceeded")
+			}
 			return nil, types.NewErrorWithStatusCode(
-				fmt.Errorf("分组 %s 下模型 %s 的渠道并发均已达到上限", selectGroup, info.OriginModelName),
-				types.ErrorCode("channel_concurrency_exceeded"), http.StatusTooManyRequests,
+				fmt.Errorf("分组 %s 下模型 %s 的渠道 %s 均已达到上限", selectGroup, info.OriginModelName, capacityName),
+				capacityCode, http.StatusTooManyRequests,
 				types.ErrOptionWithSkipRetry())
 		}
 		return nil, types.NewError(fmt.Errorf("分组 %s 下模型 %s 的可用渠道不存在（retry）", selectGroup, info.OriginModelName), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
@@ -356,26 +367,37 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 	return channel, nil
 }
 
-func addCapacitySkippedChannel(c *gin.Context, channelId int) {
+func addCapacitySkippedChannel(c *gin.Context, channelId int, reason service.ChannelCapacityReason) {
 	skipped := c.GetStringSlice("capacity_skipped_channel")
 	skipped = append(skipped, strconv.Itoa(channelId))
 	c.Set("capacity_skipped_channel", skipped)
+	if reason == service.ChannelCapacityConcurrencyFull {
+		c.Set("channel_concurrency_capacity_skipped", true)
+	}
+	if reason == service.ChannelCapacityRPMFull {
+		c.Set("channel_rpm_capacity_skipped", true)
+	}
 }
 
-// getChannelWithConcurrency reserves a channel slot before sending upstream.
-// Full channels are skipped only for this request and never marked unhealthy.
-func getChannelWithConcurrency(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service.RetryParam) (*model.Channel, *service.ConcurrencyLease, *types.NewAPIError) {
+// getChannelWithCapacity reserves both concurrency and rolling-minute RPM
+// capacity before sending upstream. Full channels are skipped only for this
+// request and are never marked unhealthy.
+func getChannelWithCapacity(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service.RetryParam) (*model.Channel, *service.ConcurrencyLease, *types.NewAPIError) {
 	for {
 		channel, channelErr := getChannel(c, info, retryParam)
 		if channelErr != nil {
 			return nil, nil, channelErr
 		}
-		lease, acquired := service.AcquireChannelConcurrency(channel.Id, channel.ConcurrencyLimit)
+		lease, acquired, reason := service.AcquireChannelCapacity(channel.Id, channel.ConcurrencyLimit, channel.RPMLimit)
 		if acquired {
 			return channel, lease, nil
 		}
-		addCapacitySkippedChannel(c, channel.Id)
-		logger.LogInfo(c, fmt.Sprintf("渠道 #%d 并发已满（%d），本次请求无感切换同组其他渠道", channel.Id, channel.ConcurrencyLimit))
+		addCapacitySkippedChannel(c, channel.Id, reason)
+		if reason == service.ChannelCapacityRPMFull {
+			logger.LogInfo(c, fmt.Sprintf("渠道 #%d RPM 已满（%d），本次请求无感切换同组其他渠道", channel.Id, channel.RPMLimit))
+		} else {
+			logger.LogInfo(c, fmt.Sprintf("渠道 #%d 并发已满（%d），本次请求无感切换同组其他渠道", channel.Id, channel.ConcurrencyLimit))
+		}
 	}
 }
 
@@ -497,7 +519,7 @@ func RelayMidjourney(c *gin.Context) {
 			Ctx: c, TokenGroup: relayInfo.TokenGroup, ModelName: relayInfo.OriginModelName,
 			Retry: common.GetPointer(0), RelayFormat: relayInfo.RelayFormat,
 		}
-		channel, channelLease, channelErr := getChannelWithConcurrency(c, relayInfo, retryParam)
+		channel, channelLease, channelErr := getChannelWithCapacity(c, relayInfo, retryParam)
 		if channelErr != nil {
 			c.JSON(channelErr.StatusCode, gin.H{"description": channelErr.Error(), "type": "upstream_error", "code": 30})
 			return
@@ -612,14 +634,21 @@ func RelayTask(c *gin.Context) {
 				}
 			}
 			var acquired bool
-			channelLease, acquired = service.AcquireChannelConcurrency(channel.Id, channel.ConcurrencyLimit)
+			var capacityReason service.ChannelCapacityReason
+			channelLease, acquired, capacityReason = service.AcquireChannelCapacity(channel.Id, channel.ConcurrencyLimit, channel.RPMLimit)
 			if !acquired {
-				taskErr = service.TaskErrorWrapperLocal(errors.New("指定渠道并发已达到上限"), "channel_concurrency_exceeded", http.StatusTooManyRequests)
+				message := "指定渠道并发已达到上限"
+				code := "channel_concurrency_exceeded"
+				if capacityReason == service.ChannelCapacityRPMFull {
+					message = "指定渠道 RPM 已达到上限"
+					code = "channel_rpm_exceeded"
+				}
+				taskErr = service.TaskErrorWrapperLocal(errors.New(message), code, http.StatusTooManyRequests)
 				break
 			}
 		} else {
 			var channelErr *types.NewAPIError
-			channel, channelLease, channelErr = getChannelWithConcurrency(c, relayInfo, retryParam)
+			channel, channelLease, channelErr = getChannelWithCapacity(c, relayInfo, retryParam)
 			if channelErr != nil {
 				logger.LogError(c, channelErr.Error())
 				taskErr = service.TaskErrorWrapperLocal(channelErr.Err, "get_channel_failed", http.StatusInternalServerError)
