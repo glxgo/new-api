@@ -33,6 +33,14 @@ func appendRequestPath(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, other
 	}
 }
 
+func relayFirstTokenDurationMs(relayInfo *relaycommon.RelayInfo) float64 {
+	startTime := relayInfo.UpstreamStartTime
+	if startTime.IsZero() {
+		startTime = relayInfo.StartTime
+	}
+	return float64(relayInfo.FirstResponseTime.Sub(startTime).Milliseconds())
+}
+
 func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, modelRatio, groupRatio, completionRatio float64,
 	cacheTokens int, cacheRatio float64, modelPrice float64, userGroupRatio float64) map[string]interface{} {
 	other := make(map[string]interface{})
@@ -43,7 +51,11 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	other["cache_ratio"] = cacheRatio
 	other["model_price"] = modelPrice
 	other["user_group_ratio"] = userGroupRatio
+	// Keep the original request-ingress timing for generation-speed compatibility.
 	other["frt"] = float64(relayInfo.FirstResponseTime.UnixMilli() - relayInfo.StartTime.UnixMilli())
+	// User-facing first-token latency excludes local admission/routing and stops
+	// as soon as this server receives the first valid upstream response event.
+	other["upstream_frt"] = relayFirstTokenDurationMs(relayInfo)
 	if relayInfo.ReasoningEffort != "" {
 		other["reasoning_effort"] = relayInfo.ReasoningEffort
 	}

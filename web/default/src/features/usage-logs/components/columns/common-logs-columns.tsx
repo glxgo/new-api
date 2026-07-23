@@ -48,6 +48,7 @@ import {
   isViolationFeeLog,
   renderAuditContent,
 } from '../../lib/format'
+import { resolveFirstTokenMs } from '../../lib/timing'
 import {
   isDisplayableLogType,
   isTimingLogType,
@@ -108,17 +109,23 @@ const timingBgMap: Record<string, string> = {
 }
 
 function getFirstTokenSeconds(log: UsageLog): number | null {
-  const frt = parseLogOther(log.other)?.frt
-  return frt != null && frt > 0 ? frt / 1000 : null
+  const firstTokenMs = resolveFirstTokenMs(parseLogOther(log.other))
+  return firstTokenMs != null ? firstTokenMs / 1000 : null
 }
 
 function getGenerationSeconds(log: UsageLog): number | null {
   if (log.use_time <= 0) return null
   if (!log.is_stream) return log.use_time
 
-  const firstTokenSeconds = getFirstTokenSeconds(log)
-  if (firstTokenSeconds == null) return null
-  return Math.max(0, log.use_time - firstTokenSeconds)
+  const requestFirstTokenMs = parseLogOther(log.other)?.frt
+  if (
+    requestFirstTokenMs == null ||
+    !Number.isFinite(requestFirstTokenMs) ||
+    requestFirstTokenMs <= 0
+  ) {
+    return null
+  }
+  return Math.max(0, log.use_time - requestFirstTokenMs / 1000)
 }
 
 function getOutputSpeed(log: UsageLog): number | null {

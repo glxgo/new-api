@@ -156,7 +156,10 @@ export interface LogOtherData {
   upstream_model_name?: string
   audio_ratio?: number
   audio_completion_ratio?: number
+  // Request ingress to first upstream event; retained for generation timing.
   frt?: number
+  // Final upstream request start to this server receiving its first valid event.
+  upstream_frt?: number
   // Tiered (expression-based) billing fields, set by backend when
   // billing_mode === 'tiered_expr'. expr_b64 is the base64-encoded billing
   // expression and matched_tier is the label of the tier that fired.

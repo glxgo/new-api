@@ -48,7 +48,11 @@ import {
   probeLabel,
   probeTone,
 } from './probe'
-import { availabilityBarClass } from './visuals'
+import {
+  availabilityBarClass,
+  HEALTHY_AVAILABILITY_THRESHOLD,
+  UNSTABLE_AVAILABILITY_THRESHOLD,
+} from './visuals'
 
 type HealthTone = 'healthy' | 'unstable' | 'critical' | 'empty'
 
@@ -61,8 +65,10 @@ const TIME_RANGES = [
 function healthTone(summary?: GroupCacheSummary): HealthTone {
   if (!summary?.request_count || !hasCompleteHealthMetrics(summary))
     return 'empty'
-  if ((summary.success_rate ?? 0) >= 99) return 'healthy'
-  if ((summary.success_rate ?? 0) >= 95) return 'unstable'
+  if ((summary.success_rate ?? 0) >= HEALTHY_AVAILABILITY_THRESHOLD)
+    return 'healthy'
+  if ((summary.success_rate ?? 0) >= UNSTABLE_AVAILABILITY_THRESHOLD)
+    return 'unstable'
   return 'critical'
 }
 

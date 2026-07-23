@@ -708,7 +708,7 @@ export const getLogsColumns = ({
             <>
               <Space>
                 {renderUseTime(text, t)}
-                {renderFirstUseTime(other?.frt, t)}
+                {renderFirstUseTime(other?.upstream_frt ?? other?.frt, t)}
                 {renderIsStream(record.is_stream, t, other?.stream_status)}
               </Space>
             </>

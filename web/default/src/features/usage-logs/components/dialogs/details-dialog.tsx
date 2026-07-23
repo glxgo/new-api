@@ -54,6 +54,7 @@ import {
   getResponseTimeColor,
   renderAuditContent,
 } from '../../lib/format'
+import { resolveFirstTokenMs } from '../../lib/timing'
 import {
   getLogTypeConfig,
   isPerCallBilling,
@@ -409,6 +410,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
   const details = props.log.content ?? ''
   const other = parseLogOther(props.log.other)
+  const firstTokenMs = resolveFirstTokenMs(other)
   const typeConfig = getLogTypeConfig(props.log.type)
 
   const isViolation = isViolationFeeLog(other)
@@ -657,21 +659,19 @@ export function DetailsDialog(props: DetailsDialogProps) {
                   )}
                 >
                   {formatUseTime(props.log.use_time)}
-                  {props.log.is_stream &&
-                    other?.frt != null &&
-                    other.frt > 0 && (
-                      <span
-                        className={cn(
-                          'font-normal',
-                          timingTextColorClass(
-                            getFirstResponseTimeColor(other.frt / 1000)
-                          )
-                        )}
-                      >
-                        {' '}
-                        (FRT: {formatUseTime(other.frt / 1000)})
-                      </span>
-                    )}
+                  {props.log.is_stream && firstTokenMs != null && (
+                    <span
+                      className={cn(
+                        'font-normal',
+                        timingTextColorClass(
+                          getFirstResponseTimeColor(firstTokenMs / 1000)
+                        )
+                      )}
+                    >
+                      {' '}
+                      (FRT: {formatUseTime(firstTokenMs / 1000)})
+                    </span>
+                  )}
                 </span>
               }
             />
