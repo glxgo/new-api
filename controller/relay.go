@@ -386,6 +386,16 @@ func addCapacitySkippedChannel(c *gin.Context, channelId int, reason service.Cha
 	}
 }
 
+func setChannelCapacityLogSnapshot(c *gin.Context, channel *model.Channel, snapshot service.ChannelCapacitySnapshot) {
+	if c == nil || channel == nil {
+		return
+	}
+	c.Set("channel_current_concurrency", snapshot.CurrentConcurrency)
+	c.Set("channel_current_rpm", snapshot.CurrentRPM)
+	c.Set("channel_concurrency_limit", channel.ConcurrencyLimit)
+	c.Set("channel_rpm_limit", channel.RPMLimit)
+}
+
 // getChannelWithCapacity reserves both concurrency and rolling-minute RPM
 // capacity before sending upstream. Full channels are skipped only for this
 // request and are never marked unhealthy.
@@ -395,8 +405,9 @@ func getChannelWithCapacity(c *gin.Context, info *relaycommon.RelayInfo, retryPa
 		if channelErr != nil {
 			return nil, nil, channelErr
 		}
-		lease, acquired, reason := service.AcquireChannelCapacity(channel.Id, channel.ConcurrencyLimit, channel.RPMLimit)
+		lease, acquired, reason, snapshot := service.AcquireChannelCapacityWithSnapshot(channel.Id, channel.ConcurrencyLimit, channel.RPMLimit)
 		if acquired {
+			setChannelCapacityLogSnapshot(c, channel, snapshot)
 			return channel, lease, nil
 		}
 		addCapacitySkippedChannel(c, channel.Id, reason)
@@ -642,7 +653,8 @@ func RelayTask(c *gin.Context) {
 			}
 			var acquired bool
 			var capacityReason service.ChannelCapacityReason
-			channelLease, acquired, capacityReason = service.AcquireChannelCapacity(channel.Id, channel.ConcurrencyLimit, channel.RPMLimit)
+			var capacitySnapshot service.ChannelCapacitySnapshot
+			channelLease, acquired, capacityReason, capacitySnapshot = service.AcquireChannelCapacityWithSnapshot(channel.Id, channel.ConcurrencyLimit, channel.RPMLimit)
 			if !acquired {
 				message := "指定渠道并发已达到上限"
 				code := "channel_concurrency_exceeded"
@@ -653,6 +665,7 @@ func RelayTask(c *gin.Context) {
 				taskErr = service.TaskErrorWrapperLocal(errors.New(message), code, http.StatusTooManyRequests)
 				break
 			}
+			setChannelCapacityLogSnapshot(c, channel, capacitySnapshot)
 		} else {
 			var channelErr *types.NewAPIError
 			channel, channelLease, channelErr = getChannelWithCapacity(c, relayInfo, retryParam)

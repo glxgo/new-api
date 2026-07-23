@@ -254,10 +254,20 @@ func AcquireUserConcurrencyWithCount(userId, limit int) (*ConcurrencyLease, bool
 }
 
 func AcquireChannelConcurrency(channelId, limit int) (*ConcurrencyLease, bool) {
+	lease, acquired, _ := AcquireChannelConcurrencyWithCount(channelId, limit)
+	return lease, acquired
+}
+
+func AcquireChannelConcurrencyWithCount(channelId, limit int) (*ConcurrencyLease, bool, int) {
 	if limit <= 0 {
 		limit = unlimitedChannelTrackingLimit
 	}
-	return acquireConcurrencySlot("concurrency:channel:"+strconv.Itoa(channelId), limit)
+	return acquireConcurrencySlotWithTimingAndCount(
+		"concurrency:channel:"+strconv.Itoa(channelId),
+		limit,
+		concurrencySlotTTL,
+		concurrencySlotHeartbeatInterval,
+	)
 }
 
 func getConcurrencyCount(key string) int {

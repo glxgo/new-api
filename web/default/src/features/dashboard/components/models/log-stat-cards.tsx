@@ -23,6 +23,7 @@ import { computeTimeRange } from '@/lib/time'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getUserQuotaDates } from '@/features/dashboard/api'
 import { useModelStatCardsConfig } from '@/features/dashboard/hooks/use-dashboard-config'
+import { useDashboardTraffic } from '@/features/dashboard/hooks/use-dashboard-traffic'
 import {
   buildQueryParams,
   calculateDashboardStats,
@@ -62,6 +63,7 @@ export function LogStatCards(props: LogStatCardsProps) {
   const [timeRangeMinutes, setTimeRangeMinutes] = useState(0)
 
   const { filters, onDataUpdate } = props
+  const trafficQuery = useDashboardTraffic(filters, isAdmin)
 
   useEffect(() => {
     const abortController = new AbortController()
@@ -107,9 +109,11 @@ export function LogStatCards(props: LogStatCardsProps) {
     rpm: stats?.totalCount ?? 0,
     quota: stats?.totalQuota ?? 0,
     tpm: stats?.totalTokens ?? 0,
+    avgRpm: trafficQuery.data?.summary.avg_rpm ?? 0,
   }
 
   const items = statCardsConfig.map((config) => ({
+    key: config.key,
     title: config.title,
     value:
       config.key === 'quota'
@@ -127,7 +131,7 @@ export function LogStatCards(props: LogStatCardsProps) {
         return (
           <div
             key={it.title}
-            className='group rounded-xl border border-border bg-card p-4 shadow-sm transition-all duration-300 hover:scale-[1.03] hover:shadow-md'
+            className='group border-border bg-card rounded-xl border p-4 shadow-sm transition-all duration-300 hover:scale-[1.03] hover:shadow-md'
           >
             <div className='flex items-center gap-2'>
               <Icon className='text-muted-foreground/70 size-3.5 shrink-0' />
@@ -136,9 +140,9 @@ export function LogStatCards(props: LogStatCardsProps) {
               </div>
             </div>
 
-            {loading ? (
+            {loading || (it.key === 'avgRpm' && trafficQuery.isLoading) ? (
               <Skeleton className='mt-2 h-7 w-24' />
-            ) : error ? (
+            ) : error || (it.key === 'avgRpm' && trafficQuery.isError) ? (
               <div className='text-muted-foreground mt-2 font-mono text-lg font-bold tracking-tight tabular-nums sm:text-2xl'>
                 --
               </div>
@@ -149,7 +153,7 @@ export function LogStatCards(props: LogStatCardsProps) {
             )}
 
             {/* 能量条：默认 50%，hover 充到 80%（模仿 suning dashboard）*/}
-            <div className='mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted'>
+            <div className='bg-muted mt-3 h-1.5 w-full overflow-hidden rounded-full'>
               <div
                 className={`h-full w-full origin-left scale-x-50 rounded-full bg-gradient-to-r ${accent} transition-transform duration-500 ease-out group-hover:scale-x-[0.8]`}
               />

@@ -71,6 +71,12 @@ const LazyPerformanceOverview = lazy(() =>
   }))
 )
 
+const LazyTrafficLoadPanel = lazy(() =>
+  import('./components/models/traffic-load-panel').then((m) => ({
+    default: m.TrafficLoadPanel,
+  }))
+)
+
 const LazyUserCharts = lazy(() =>
   import('./components/users/user-charts').then((m) => ({
     default: m.UserCharts,
@@ -261,6 +267,14 @@ export function Dashboard() {
                   </Suspense>
                 </FadeIn>
               )}
+              <FadeIn delay={0.08}>
+                <Suspense fallback={<ModelChartsFallback />}>
+                  <LazyTrafficLoadPanel
+                    filters={modelFilters}
+                    isAdmin={isAdmin}
+                  />
+                </Suspense>
+              </FadeIn>
               <FadeIn delay={0.1}>
                 <Suspense fallback={<ModelChartsFallback />}>
                   <LazyConsumptionDistributionChart

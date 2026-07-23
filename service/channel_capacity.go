@@ -90,14 +90,24 @@ func GetChannelCapacitySnapshots(channelIds []int) map[int]ChannelCapacitySnapsh
 // acquired first; if RPM is already full, its lease is immediately released
 // so a skipped channel never leaks an active slot.
 func AcquireChannelCapacity(channelId, concurrencyLimit, rpmLimit int) (*ConcurrencyLease, bool, ChannelCapacityReason) {
-	lease, acquired := AcquireChannelConcurrency(channelId, concurrencyLimit)
+	lease, acquired, reason, _ := AcquireChannelCapacityWithSnapshot(channelId, concurrencyLimit, rpmLimit)
+	return lease, acquired, reason
+}
+
+func AcquireChannelCapacityWithSnapshot(
+	channelId, concurrencyLimit, rpmLimit int,
+) (*ConcurrencyLease, bool, ChannelCapacityReason, ChannelCapacitySnapshot) {
+	lease, acquired, currentConcurrency := AcquireChannelConcurrencyWithCount(channelId, concurrencyLimit)
+	snapshot := ChannelCapacitySnapshot{CurrentConcurrency: currentConcurrency}
 	if !acquired {
-		return nil, false, ChannelCapacityConcurrencyFull
+		snapshot.CurrentRPM = GetChannelRPM(channelId)
+		return nil, false, ChannelCapacityConcurrencyFull, snapshot
 	}
-	rpmAcquired, _ := AcquireChannelRPM(channelId, rpmLimit)
+	rpmAcquired, currentRPM := AcquireChannelRPM(channelId, rpmLimit)
+	snapshot.CurrentRPM = currentRPM
 	if !rpmAcquired {
 		lease.Release()
-		return nil, false, ChannelCapacityRPMFull
+		return nil, false, ChannelCapacityRPMFull, snapshot
 	}
-	return lease, true, ChannelCapacityAvailable
+	return lease, true, ChannelCapacityAvailable, snapshot
 }

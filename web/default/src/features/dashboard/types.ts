@@ -33,6 +33,34 @@ export interface QuotaDataItem {
   quota?: number
 }
 
+export interface DashboardTrafficSummary {
+  request_count: number
+  active_minutes: number
+  avg_rpm: number
+  peak_rpm: number
+  avg_concurrency: number
+  peak_concurrency: number
+  billed_quota: number
+  cost_quota: number
+}
+
+export interface DashboardTrafficDaily extends DashboardTrafficSummary {
+  day_start: number
+}
+
+export interface DashboardChannelTraffic {
+  channel_id: number
+  channel_name: string
+  summary: DashboardTrafficSummary
+  daily: DashboardTrafficDaily[]
+}
+
+export interface DashboardTrafficResult {
+  summary: DashboardTrafficSummary
+  daily: DashboardTrafficDaily[]
+  channels?: DashboardChannelTraffic[]
+}
+
 // ============================================================================
 // Uptime Monitoring Types
 // ============================================================================

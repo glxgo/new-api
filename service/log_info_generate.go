@@ -84,6 +84,14 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 
 	AppendChannelAffinityAdminInfo(ctx, adminInfo)
 	AppendChannelRetryAttemptsAdminInfo(ctx, adminInfo)
+	if currentConcurrency, exists := ctx.Get("channel_current_concurrency"); exists {
+		adminInfo["channel_capacity"] = map[string]interface{}{
+			"current_concurrency": currentConcurrency,
+			"concurrency_limit":   ctx.GetInt("channel_concurrency_limit"),
+			"current_rpm":         ctx.GetInt("channel_current_rpm"),
+			"rpm_limit":           ctx.GetInt("channel_rpm_limit"),
+		}
+	}
 
 	other["admin_info"] = adminInfo
 	appendRequestPath(ctx, relayInfo, other)
