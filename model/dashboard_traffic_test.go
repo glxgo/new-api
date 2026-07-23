@@ -38,3 +38,8 @@ func TestGetDashboardTrafficRecordsUsesSuccessfulConsumeLogsOnly(t *testing.T) {
 	require.Equal(t, 120, records[0].Quota)
 	require.Equal(t, 50, records[0].Cost)
 }
+
+func TestDashboardTrafficIndexesSupportAdminAndUserRanges(t *testing.T) {
+	require.True(t, LOG_DB.Migrator().HasIndex(&Log{}, "idx_type_created_at"))
+	require.True(t, LOG_DB.Migrator().HasIndex(&Log{}, "idx_user_type_created_at"))
+}

@@ -357,11 +357,28 @@ func QueryGroupSummaryByChannels(hours int, scopes []GroupChannelScope) (GroupSu
 	if err != nil {
 		return GroupSummaryAllResult{}, err
 	}
+	groups := make([]string, 0, len(scopes))
+	for _, scope := range scopes {
+		if scope.Group != "" {
+			groups = append(groups, scope.Group)
+		}
+	}
+	legacyRows, err := model.GetPerfMetricsGroupBuckets(startTs, endTs, groups)
+	if err != nil {
+		return GroupSummaryAllResult{}, err
+	}
 
 	hot := make(map[channelBucketKey]counters)
+	allowedChannels := make(map[int]struct{}, len(channelIds))
+	for _, channelId := range channelIds {
+		allowedChannels[channelId] = struct{}{}
+	}
 	channelHotBuckets.Range(func(key, value any) bool {
 		k := key.(channelBucketKey)
 		if k.bucketTs < startTs || k.bucketTs > endTs {
+			return true
+		}
+		if _, ok := allowedChannels[k.channelId]; !ok {
 			return true
 		}
 		snap := value.(*atomicBucket).snapshot()
@@ -370,7 +387,7 @@ func QueryGroupSummaryByChannels(hours int, scopes []GroupChannelScope) (GroupSu
 		}
 		return true
 	})
-	return buildChannelScopedGroupSummary(scopes, rows, hot), nil
+	return buildChannelScopedGroupSummary(scopes, rows, hot, legacyRows), nil
 }
 
 func channelIdsFromScopes(scopes []GroupChannelScope) []int {
@@ -396,6 +413,7 @@ func buildChannelScopedGroupSummary(
 	scopes []GroupChannelScope,
 	rows []model.ChannelPerfMetric,
 	hot map[channelBucketKey]counters,
+	legacyRows []model.PerfMetricGroupBucket,
 ) GroupSummaryAllResult {
 	type modelChannelKey struct {
 		model     string
@@ -427,8 +445,16 @@ func buildChannelScopedGroupSummary(
 	}
 
 	merged := make(map[bucketKey]counters)
+	channelCutoverTs := int64(0)
 	mergeIntoGroups := func(modelName string, channelId int, bucketTs int64, value counters) {
-		for _, group := range groupsByModelChannel[modelChannelKey{model: modelName, channelId: channelId}] {
+		groups := groupsByModelChannel[modelChannelKey{model: modelName, channelId: channelId}]
+		if len(groups) == 0 {
+			return
+		}
+		if channelCutoverTs == 0 || bucketTs < channelCutoverTs {
+			channelCutoverTs = bucketTs
+		}
+		for _, group := range groups {
 			mergeCounters(merged, bucketKey{group: group, bucketTs: bucketTs}, value)
 		}
 	}
@@ -447,6 +473,30 @@ func buildChannelScopedGroupSummary(
 	}
 	for key, value := range hot {
 		mergeIntoGroups(key.model, key.channelId, key.bucketTs, value)
+	}
+	// Channel metrics only exist after the channel-scoped rollout. Preserve the
+	// legacy group history before that first channel bucket, but never project
+	// it to other groups because the original channel identity was not stored.
+	// Buckets at/after the cutover use channel data exclusively to avoid double
+	// counting and to keep disabled/unmonitored channels out of public health.
+	for _, row := range legacyRows {
+		if _, visible := availableSet[row.Group]; !visible {
+			continue
+		}
+		if channelCutoverTs > 0 && row.BucketTs >= channelCutoverTs {
+			continue
+		}
+		mergeCounters(merged, bucketKey{group: row.Group, bucketTs: row.BucketTs}, counters{
+			requestCount:   row.RequestCount,
+			successCount:   row.SuccessCount,
+			totalLatencyMs: row.TotalLatencyMs,
+			ttftSumMs:      row.TtftSumMs,
+			ttftCount:      row.TtftCount,
+			outputTokens:   row.OutputTokens,
+			generationMs:   row.GenerationMs,
+			cacheTokens:    row.CacheTokens,
+			promptTokens:   row.PromptTokens,
+		})
 	}
 
 	result := buildGroupSummaryResult(merged)

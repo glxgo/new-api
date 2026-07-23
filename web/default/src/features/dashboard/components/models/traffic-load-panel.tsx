@@ -1,7 +1,9 @@
-import type { ComponentType } from 'react'
+import { useMemo, useState, type ComponentType } from 'react'
 import {
   Activity,
   BarChart3,
+  ChevronLeft,
+  ChevronRight,
   Coins,
   Gauge,
   Layers3,
@@ -9,6 +11,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { formatNumber, formatQuota } from '@/lib/format'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -24,7 +27,22 @@ import type {
   DashboardChannelTraffic,
   DashboardFilters,
   DashboardTrafficDaily,
+  DashboardTrafficSummary,
 } from '@/features/dashboard/types'
+
+const DAILY_PAGE_SIZE = 7
+const EMPTY_DAILY: DashboardTrafficDaily[] = []
+const EMPTY_CHANNELS: DashboardChannelTraffic[] = []
+const EMPTY_TRAFFIC_SUMMARY: DashboardTrafficSummary = {
+  request_count: 0,
+  active_minutes: 0,
+  avg_rpm: 0,
+  peak_rpm: 0,
+  avg_concurrency: 0,
+  peak_concurrency: 0,
+  billed_quota: 0,
+  cost_quota: 0,
+}
 
 type TrafficLoadPanelProps = {
   filters?: DashboardFilters
@@ -91,57 +109,128 @@ function LoadMetricCard(props: {
   )
 }
 
-function DailyLoadTable(props: { daily: DashboardTrafficDaily[] }) {
+function useDailyPagination(daily: DashboardTrafficDaily[]) {
+  const [page, setPage] = useState(0)
+  const orderedDaily = useMemo(
+    () => [...daily].sort((a, b) => b.day_start - a.day_start),
+    [daily]
+  )
+  const pageCount = Math.max(
+    1,
+    Math.ceil(orderedDaily.length / DAILY_PAGE_SIZE)
+  )
+  const currentPage = Math.min(page, pageCount - 1)
+
+  return {
+    page: currentPage,
+    pageCount,
+    setPage,
+    rows: orderedDaily.slice(
+      currentPage * DAILY_PAGE_SIZE,
+      (currentPage + 1) * DAILY_PAGE_SIZE
+    ),
+  }
+}
+
+function DailyTablePager(props: {
+  page: number
+  pageCount: number
+  onPageChange: (page: number) => void
+}) {
   const { t } = useTranslation()
+  if (props.pageCount <= 1) return null
+
   return (
-    <div className='overflow-x-auto rounded-xl border'>
-      <Table className='min-w-[720px]'>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t('Date')}</TableHead>
-            <TableHead className='text-right'>{t('Average RPM')}</TableHead>
-            <TableHead className='text-right'>{t('Peak RPM')}</TableHead>
-            <TableHead className='text-right'>
-              {t('Average concurrency')}
-            </TableHead>
-            <TableHead className='text-right'>
-              {t('Peak concurrency')}
-            </TableHead>
-            <TableHead className='text-right'>
-              {t('Successful requests')}
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {props.daily.map((day) => (
-            <TableRow key={day.day_start}>
-              <TableCell className='font-medium'>
-                {formatDay(day.day_start)}
-              </TableCell>
-              <TableCell className='text-right font-mono tabular-nums'>
-                {metric(day.avg_rpm)}
-              </TableCell>
-              <TableCell className='text-right font-mono tabular-nums'>
-                {formatNumber(day.peak_rpm)}
-              </TableCell>
-              <TableCell className='text-right font-mono tabular-nums'>
-                {metric(day.avg_concurrency)}
-              </TableCell>
-              <TableCell className='text-right font-mono tabular-nums'>
-                {formatNumber(day.peak_concurrency)}
-              </TableCell>
-              <TableCell className='text-right font-mono tabular-nums'>
-                {formatNumber(day.request_count)}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+    <div className='flex items-center justify-end gap-2'>
+      <Button
+        type='button'
+        variant='outline'
+        size='icon-sm'
+        aria-label={t('Previous page')}
+        disabled={props.page <= 0}
+        onClick={() => props.onPageChange(props.page - 1)}
+      >
+        <ChevronLeft />
+      </Button>
+      <span className='text-muted-foreground min-w-14 text-center text-xs font-medium tabular-nums'>
+        {props.page + 1} / {props.pageCount}
+      </span>
+      <Button
+        type='button'
+        variant='outline'
+        size='icon-sm'
+        aria-label={t('Next page')}
+        disabled={props.page >= props.pageCount - 1}
+        onClick={() => props.onPageChange(props.page + 1)}
+      >
+        <ChevronRight />
+      </Button>
     </div>
   )
 }
 
-function AdminChannelTable(props: { channels: DashboardChannelTraffic[] }) {
+function DailyLoadTable(props: { daily: DashboardTrafficDaily[] }) {
+  const { t } = useTranslation()
+  const pagination = useDailyPagination(props.daily)
+  return (
+    <div className='space-y-3'>
+      <div className='overflow-x-auto rounded-xl border'>
+        <Table className='min-w-[720px]'>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t('Date')}</TableHead>
+              <TableHead className='text-right'>{t('Average RPM')}</TableHead>
+              <TableHead className='text-right'>{t('Peak RPM')}</TableHead>
+              <TableHead className='text-right'>
+                {t('Average concurrency')}
+              </TableHead>
+              <TableHead className='text-right'>
+                {t('Peak concurrency')}
+              </TableHead>
+              <TableHead className='text-right'>
+                {t('Successful requests')}
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {pagination.rows.map((day) => (
+              <TableRow key={day.day_start}>
+                <TableCell className='font-medium'>
+                  {formatDay(day.day_start)}
+                </TableCell>
+                <TableCell className='text-right font-mono tabular-nums'>
+                  {metric(day.avg_rpm)}
+                </TableCell>
+                <TableCell className='text-right font-mono tabular-nums'>
+                  {formatNumber(day.peak_rpm)}
+                </TableCell>
+                <TableCell className='text-right font-mono tabular-nums'>
+                  {metric(day.avg_concurrency)}
+                </TableCell>
+                <TableCell className='text-right font-mono tabular-nums'>
+                  {formatNumber(day.peak_concurrency)}
+                </TableCell>
+                <TableCell className='text-right font-mono tabular-nums'>
+                  {formatNumber(day.request_count)}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      <DailyTablePager
+        page={pagination.page}
+        pageCount={pagination.pageCount}
+        onPageChange={pagination.setPage}
+      />
+    </div>
+  )
+}
+
+function AdminChannelTable(props: {
+  channels: DashboardChannelTraffic[]
+  dayStart: number | null
+}) {
   const { t } = useTranslation()
   return (
     <div className='overflow-x-auto rounded-xl border'>
@@ -162,36 +251,82 @@ function AdminChannelTable(props: { channels: DashboardChannelTraffic[] }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {props.channels.map((channel) => (
-            <TableRow key={channel.channel_id}>
-              <TableCell>
-                <div className='font-medium'>{channel.channel_name}</div>
-                <div className='text-muted-foreground text-[11px]'>
-                  #{channel.channel_id}
-                </div>
-              </TableCell>
-              <TableCell className='text-right font-mono tabular-nums'>
-                {formatQuota(channel.summary.billed_quota)}
-              </TableCell>
-              <TableCell className='text-muted-foreground text-right font-mono tabular-nums'>
-                {formatQuota(channel.summary.cost_quota)}
-              </TableCell>
-              <TableCell className='text-right font-mono tabular-nums'>
-                {metric(channel.summary.avg_rpm)}
-              </TableCell>
-              <TableCell className='text-right font-mono tabular-nums'>
-                {formatNumber(channel.summary.peak_rpm)}
-              </TableCell>
-              <TableCell className='text-right font-mono tabular-nums'>
-                {metric(channel.summary.avg_concurrency)}
-              </TableCell>
-              <TableCell className='text-right font-mono tabular-nums'>
-                {formatNumber(channel.summary.peak_concurrency)}
-              </TableCell>
-            </TableRow>
-          ))}
+          {props.channels.map((channel) => {
+            const summary =
+              props.dayStart === null
+                ? channel.summary
+                : (channel.daily.find(
+                    (day) => day.day_start === props.dayStart
+                  ) ?? EMPTY_TRAFFIC_SUMMARY)
+            return (
+              <TableRow key={channel.channel_id}>
+                <TableCell>
+                  <div className='font-medium'>{channel.channel_name}</div>
+                  <div className='text-muted-foreground text-[11px]'>
+                    #{channel.channel_id}
+                  </div>
+                </TableCell>
+                <TableCell className='text-right font-mono tabular-nums'>
+                  {formatQuota(summary.billed_quota)}
+                </TableCell>
+                <TableCell className='text-muted-foreground text-right font-mono tabular-nums'>
+                  {formatQuota(summary.cost_quota)}
+                </TableCell>
+                <TableCell className='text-right font-mono tabular-nums'>
+                  {metric(summary.avg_rpm)}
+                </TableCell>
+                <TableCell className='text-right font-mono tabular-nums'>
+                  {formatNumber(summary.peak_rpm)}
+                </TableCell>
+                <TableCell className='text-right font-mono tabular-nums'>
+                  {metric(summary.avg_concurrency)}
+                </TableCell>
+                <TableCell className='text-right font-mono tabular-nums'>
+                  {formatNumber(summary.peak_concurrency)}
+                </TableCell>
+              </TableRow>
+            )
+          })}
         </TableBody>
       </Table>
+    </div>
+  )
+}
+
+function ChannelPeriodButtons(props: {
+  days: DashboardTrafficDaily[]
+  selectedDay: number | null
+  onSelect: (dayStart: number | null) => void
+}) {
+  const { t } = useTranslation()
+  const orderedDays = useMemo(
+    () => [...props.days].sort((a, b) => b.day_start - a.day_start),
+    [props.days]
+  )
+
+  return (
+    <div className='flex gap-2 overflow-x-auto pb-1'>
+      <Button
+        type='button'
+        variant={props.selectedDay === null ? 'default' : 'outline'}
+        size='sm'
+        aria-pressed={props.selectedDay === null}
+        onClick={() => props.onSelect(null)}
+      >
+        {t('Overview')}
+      </Button>
+      {orderedDays.map((day) => (
+        <Button
+          key={day.day_start}
+          type='button'
+          variant={props.selectedDay === day.day_start ? 'default' : 'outline'}
+          size='sm'
+          aria-pressed={props.selectedDay === day.day_start}
+          onClick={() => props.onSelect(day.day_start)}
+        >
+          {formatDay(day.day_start)}
+        </Button>
+      ))}
     </div>
   )
 }
@@ -201,6 +336,7 @@ function DailyChannelSpend(props: {
   days: DashboardTrafficDaily[]
 }) {
   const { t } = useTranslation()
+  const pagination = useDailyPagination(props.days)
   const dailyByChannel = new Map(
     props.channels.map((channel) => [
       channel.channel_id,
@@ -208,50 +344,57 @@ function DailyChannelSpend(props: {
     ])
   )
   return (
-    <div className='overflow-x-auto rounded-xl border'>
-      <Table className='min-w-max'>
-        <TableHeader>
-          <TableRow>
-            <TableHead className='bg-card sticky left-0 z-10'>
-              {t('Date')}
-            </TableHead>
-            {props.channels.map((channel) => (
-              <TableHead
-                key={channel.channel_id}
-                className='min-w-32 text-right'
-              >
-                <span className='block max-w-40 truncate'>
-                  {channel.channel_name}
-                </span>
-                <span className='text-muted-foreground font-normal'>
-                  #{channel.channel_id}
-                </span>
+    <div className='space-y-3'>
+      <div className='overflow-x-auto rounded-xl border'>
+        <Table className='min-w-max'>
+          <TableHeader>
+            <TableRow>
+              <TableHead className='bg-card sticky left-0 z-10'>
+                {t('Date')}
               </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {props.days.map((day) => (
-            <TableRow key={day.day_start}>
-              <TableCell className='bg-card sticky left-0 z-10 font-medium'>
-                {formatDay(day.day_start)}
-              </TableCell>
               {props.channels.map((channel) => (
-                <TableCell
+                <TableHead
                   key={channel.channel_id}
-                  className='text-right font-mono tabular-nums'
+                  className='min-w-32 text-right'
                 >
-                  {formatQuota(
-                    dailyByChannel
-                      .get(channel.channel_id)
-                      ?.get(day.day_start) ?? 0
-                  )}
-                </TableCell>
+                  <span className='block max-w-40 truncate'>
+                    {channel.channel_name}
+                  </span>
+                  <span className='text-muted-foreground font-normal'>
+                    #{channel.channel_id}
+                  </span>
+                </TableHead>
               ))}
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {pagination.rows.map((day) => (
+              <TableRow key={day.day_start}>
+                <TableCell className='bg-card sticky left-0 z-10 font-medium'>
+                  {formatDay(day.day_start)}
+                </TableCell>
+                {props.channels.map((channel) => (
+                  <TableCell
+                    key={channel.channel_id}
+                    className='text-right font-mono tabular-nums'
+                  >
+                    {formatQuota(
+                      dailyByChannel
+                        .get(channel.channel_id)
+                        ?.get(day.day_start) ?? 0
+                    )}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      <DailyTablePager
+        page={pagination.page}
+        pageCount={pagination.pageCount}
+        onPageChange={pagination.setPage}
+      />
     </div>
   )
 }
@@ -261,8 +404,16 @@ export function TrafficLoadPanel(props: TrafficLoadPanelProps) {
   const query = useDashboardTraffic(props.filters, props.isAdmin)
   const data = query.data
   const summary = data?.summary
-  const daily = data?.daily ?? []
-  const channels = data?.channels ?? []
+  const daily = data?.daily ?? EMPTY_DAILY
+  const channels = data?.channels ?? EMPTY_CHANNELS
+  const [selectedChannelDay, setSelectedChannelDay] = useState<number | null>(
+    null
+  )
+  const visibleChannelDay =
+    selectedChannelDay !== null &&
+    daily.some((day) => day.day_start === selectedChannelDay)
+      ? selectedChannelDay
+      : null
 
   if (query.isLoading) {
     return (
@@ -349,7 +500,12 @@ export function TrafficLoadPanel(props: TrafficLoadPanelProps) {
           )}
           contentClassName='space-y-4'
         >
-          <AdminChannelTable channels={channels} />
+          <ChannelPeriodButtons
+            days={daily}
+            selectedDay={visibleChannelDay}
+            onSelect={setSelectedChannelDay}
+          />
+          <AdminChannelTable channels={channels} dayStart={visibleChannelDay} />
         </PanelWrapper>
       )}
 
@@ -364,6 +520,7 @@ export function TrafficLoadPanel(props: TrafficLoadPanelProps) {
           description={t(
             'Billed consumption amount by completion date and final channel'
           )}
+          contentClassName='space-y-4'
         >
           <DailyChannelSpend channels={channels} days={daily} />
         </PanelWrapper>

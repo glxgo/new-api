@@ -21,7 +21,9 @@ func GetDashboardTrafficRecords(userId int, startTime, endTime int64) ([]Dashboa
 	if userId > 0 {
 		tx = tx.Where("user_id = ?", userId)
 	}
-	err := tx.Order("created_at ASC").Scan(&records).Error
+	// Aggregation sorts interval boundaries itself and does not depend on row
+	// order. Avoiding ORDER BY prevents a large filesort for admin-wide ranges.
+	err := tx.Scan(&records).Error
 	return records, err
 }
 
