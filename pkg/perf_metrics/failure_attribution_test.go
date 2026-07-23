@@ -76,10 +76,22 @@ func TestClassifyRelayFailure(t *testing.T) {
 			apiErr: types.WithOpenAIError(types.OpenAIError{Code: "invalid_prompt", Type: "invalid_request_error", Message: "bad prompt"}, http.StatusBadGateway),
 			want:   FailureSourceUser,
 		},
+		{
+			name:   "invalid encrypted content is session state",
+			apiErr: types.WithOpenAIError(types.OpenAIError{Code: "invalid_encrypted_content", Type: "invalid_request_error", Message: "cannot decrypt"}, http.StatusBadGateway),
+			want:   FailureSourceSession,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Equal(t, tt.want, ClassifyRelayFailure(tt.apiErr, tt.clientCanceled))
 		})
 	}
+}
+
+func TestInvalidEncryptedContentDoesNotAffectModelHealth(t *testing.T) {
+	apiErr := types.WithOpenAIError(types.OpenAIError{
+		Code: "invalid_encrypted_content", Type: "invalid_request_error", Message: "cannot decrypt",
+	}, http.StatusBadGateway)
+	require.False(t, ShouldRecordRelayFailure(apiErr, false))
 }

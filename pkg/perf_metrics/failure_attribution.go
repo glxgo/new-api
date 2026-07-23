@@ -13,6 +13,7 @@ const (
 	FailureSourceNone     FailureSource = ""
 	FailureSourceClient   FailureSource = "client"
 	FailureSourceUser     FailureSource = "user"
+	FailureSourceSession  FailureSource = "session"
 	FailureSourceChannel  FailureSource = "channel"
 	FailureSourceUpstream FailureSource = "upstream"
 	FailureSourceService  FailureSource = "service"
@@ -59,6 +60,11 @@ func ClassifyRelayFailure(apiError *types.NewAPIError, clientCanceled bool) Fail
 		"input_too_long", "content_policy_violation", "content_filter",
 		"max_output_tokens":
 		return FailureSourceUser
+	case "invalid_encrypted_content":
+		// Encrypted Responses state can become unusable after a stale client
+		// replay or an affinity-breaking move between upstream accounts. It is
+		// a conversation-state incompatibility, not a model availability signal.
+		return FailureSourceSession
 	}
 	if strings.HasPrefix(code, "upstream:") {
 		return FailureSourceUpstream
