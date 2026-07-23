@@ -100,6 +100,12 @@ func GetAllEnableAbilities() []Ability {
 	return abilities
 }
 
+func GetAllEnableAbilitiesWithError() ([]Ability, error) {
+	var abilities []Ability
+	err := DB.Find(&abilities, "enabled = ?", true).Error
+	return abilities, err
+}
+
 func getPriority(group string, model string, retry int) (int, error) {
 
 	var priorities []int

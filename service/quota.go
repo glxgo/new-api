@@ -407,10 +407,15 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		Other:            other,
 		BillingSource:    relayInfo.BillingSource,
 	})
+	healthKey := ""
+	if affinity, ok := GetChannelAffinityStatsContext(ctx); ok {
+		healthKey = affinity.KeyFingerprint
+	}
 	gopool.Go(func() {
-		perfmetrics.RecordRelaySample(relayInfo, true, int64(usage.CompletionTokens),
+		perfmetrics.RecordRelaySampleWithHealthKey(relayInfo, true, int64(usage.CompletionTokens),
 			int64(normalizedCacheHitTokens(usage)),
-			int64(usage.PromptTokens))
+			int64(usage.PromptTokens),
+			healthKey)
 	})
 }
 

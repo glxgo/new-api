@@ -70,6 +70,10 @@ const (
 	// ContextKeyLanguage stores the user's language preference for i18n
 	ContextKeyLanguage ContextKey = "language"
 	ContextKeyIsStream ContextKey = "is_stream"
+	// ContextKeyRelayErrorAlreadyStreamed prevents the controller from
+	// appending a JSON error after an upstream terminal SSE event was already
+	// forwarded to the client.
+	ContextKeyRelayErrorAlreadyStreamed ContextKey = "relay_error_already_streamed"
 
 	// ContextKeyAuditLogged marks that the current request has already recorded
 	// a manage/operation audit log inside the handler. When set, the admin-audit

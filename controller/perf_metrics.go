@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -48,7 +49,15 @@ func GetPerfMetricsGroupSummary(c *gin.Context) {
 	}
 
 	activeGroups := visibleStatusGroups()
-	result, err := perfmetrics.QueryGroupSummaryAll(hours, activeGroups)
+	scopes, err := loadPerfMetricChannelScopes(activeGroups)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+	result, err := perfmetrics.QueryGroupSummaryByChannels(hours, scopes)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -84,6 +93,96 @@ func GetPerfMetricsGroupSummary(c *gin.Context) {
 		"success": true,
 		"data":    result,
 	})
+}
+
+func loadPerfMetricChannelScopes(activeGroups []string) ([]perfmetrics.GroupChannelScope, error) {
+	channels, err := model.GetAllChannelsWithoutKey()
+	if err != nil {
+		return nil, err
+	}
+	abilities, err := model.GetAllEnableAbilitiesWithError()
+	if err != nil {
+		return nil, err
+	}
+	return buildPerfMetricChannelScopes(
+		activeGroups,
+		channels,
+		abilities,
+		operation_setting.GetMonitorSetting(),
+	), nil
+}
+
+func buildPerfMetricChannelScopes(
+	activeGroups []string,
+	channels []*model.Channel,
+	abilities []model.Ability,
+	settings *operation_setting.MonitorSetting,
+) []perfmetrics.GroupChannelScope {
+	activeGroupSet := make(map[string]struct{}, len(activeGroups))
+	channelSets := make(map[string]map[string]map[int]struct{}, len(activeGroups))
+	for _, group := range activeGroups {
+		if group == "" {
+			continue
+		}
+		activeGroupSet[group] = struct{}{}
+		channelSets[group] = make(map[string]map[int]struct{})
+	}
+
+	selectedIds := []int(nil)
+	if settings != nil {
+		selectedIds = settings.ChannelCanaryChannelIds
+	}
+	eligibleChannels := make(map[int]struct{})
+	for _, channel := range channels {
+		if channel == nil || channel.Status != common.ChannelStatusEnabled {
+			continue
+		}
+		if len(selectedIds) > 0 && !lo.Contains(selectedIds, channel.Id) {
+			continue
+		}
+		eligibleChannels[channel.Id] = struct{}{}
+	}
+
+	add := func(group string, ability model.Ability) {
+		if _, ok := channelSets[group][ability.Model]; !ok {
+			channelSets[group][ability.Model] = make(map[int]struct{})
+		}
+		channelSets[group][ability.Model][ability.ChannelId] = struct{}{}
+	}
+	for _, ability := range abilities {
+		if !ability.Enabled || ability.Model == "" {
+			continue
+		}
+		if _, ok := eligibleChannels[ability.ChannelId]; !ok {
+			continue
+		}
+		if _, ok := activeGroupSet[ability.Group]; !ok {
+			continue
+		}
+		add(ability.Group, ability)
+		if _, autoVisible := activeGroupSet["auto"]; autoVisible && ability.Group != "auto" {
+			add("auto", ability)
+		}
+	}
+
+	scopes := make([]perfmetrics.GroupChannelScope, 0, len(channelSets))
+	for group, models := range channelSets {
+		modelChannels := make(map[string][]int, len(models))
+		for modelName, channelSet := range models {
+			channelIds := make([]int, 0, len(channelSet))
+			for channelId := range channelSet {
+				channelIds = append(channelIds, channelId)
+			}
+			sort.Ints(channelIds)
+			modelChannels[modelName] = channelIds
+		}
+		scopes = append(scopes, perfmetrics.GroupChannelScope{
+			Group:         group,
+			ModelChannels: modelChannels,
+		})
+	}
+	sort.Slice(scopes, func(i, j int) bool { return scopes[i].Group < scopes[j].Group })
+	return scopes
 }
 
 func GetPerfMetrics(c *gin.Context) {

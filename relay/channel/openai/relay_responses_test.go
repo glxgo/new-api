@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	appconstant "github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -69,4 +70,57 @@ func TestOaiResponsesStreamHandler_PrematureEOFIsIncomplete(t *testing.T) {
 	require.Equal(t, http.StatusBadGateway, apiErr.StatusCode)
 	require.NotNil(t, info.StreamStatus)
 	require.Equal(t, relaycommon.StreamEndReasonEOF, info.StreamStatus.EndReason)
+}
+
+func TestOaiResponsesStreamHandler_ResponseFailedPreservesUpstreamCause(t *testing.T) {
+	c, info, resp := newResponsesStreamTest(t,
+		"data: {\"type\":\"response.failed\",\"response\":{\"id\":\"resp_failed_1\",\"status\":\"failed\",\"error\":{\"type\":\"server_error\",\"code\":\"server_error\",\"message\":\"upstream exploded\"}}}\n\n")
+
+	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
+
+	require.Nil(t, usage)
+	require.NotNil(t, apiErr)
+	require.Equal(t, types.ErrorCode("server_error"), apiErr.GetErrorCode())
+	require.Equal(t, http.StatusBadGateway, apiErr.StatusCode)
+	require.True(t, types.IsSkipRetryError(apiErr))
+	require.True(t, common.GetContextKeyBool(c, appconstant.ContextKeyRelayErrorAlreadyStreamed))
+	require.NotNil(t, info.StreamStatus)
+	require.Equal(t, relaycommon.StreamEndReasonHandlerStop, info.StreamStatus.EndReason)
+	terminal := info.StreamStatus.UpstreamTerminalSnapshot()
+	require.Equal(t, "response.failed", terminal.EventType)
+	require.Equal(t, "resp_failed_1", terminal.ResponseID)
+	require.Equal(t, "failed", terminal.ResponseStatus)
+	require.Equal(t, "server_error", terminal.ErrorCode)
+	require.Equal(t, "upstream exploded", terminal.ErrorMessage)
+}
+
+func TestOaiResponsesStreamHandler_ResponseIncompleteCapturesReason(t *testing.T) {
+	c, info, resp := newResponsesStreamTest(t,
+		"data: {\"type\":\"response.incomplete\",\"response\":{\"id\":\"resp_incomplete_1\",\"status\":\"incomplete\",\"incomplete_details\":{\"reason\":\"max_output_tokens\"}}}\n\n")
+
+	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
+
+	require.Nil(t, usage)
+	require.NotNil(t, apiErr)
+	require.Equal(t, types.ErrorCode("upstream:response_incomplete:max_output_tokens"), apiErr.GetErrorCode())
+	require.True(t, types.IsSkipRetryError(apiErr))
+	terminal := info.StreamStatus.UpstreamTerminalSnapshot()
+	require.Equal(t, "response.incomplete", terminal.EventType)
+	require.Equal(t, "incomplete", terminal.ResponseStatus)
+	require.Equal(t, "max_output_tokens", terminal.IncompleteReason)
+}
+
+func TestOaiResponsesStreamHandler_TopLevelResponseError(t *testing.T) {
+	c, info, resp := newResponsesStreamTest(t,
+		"data: {\"type\":\"response.error\",\"error\":{\"type\":\"invalid_request_error\",\"code\":\"invalid_prompt\",\"message\":\"bad prompt\"}}\n\n")
+
+	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
+
+	require.Nil(t, usage)
+	require.NotNil(t, apiErr)
+	require.Equal(t, types.ErrorCode("invalid_prompt"), apiErr.GetErrorCode())
+	terminal := info.StreamStatus.UpstreamTerminalSnapshot()
+	require.Equal(t, "response.error", terminal.EventType)
+	require.Equal(t, "invalid_prompt", terminal.ErrorCode)
+	require.Equal(t, "bad prompt", terminal.ErrorMessage)
 }

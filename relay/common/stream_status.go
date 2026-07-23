@@ -28,14 +28,43 @@ type StreamErrorEntry struct {
 	Timestamp time.Time
 }
 
-type StreamStatus struct {
-	EndReason  StreamEndReason
-	EndError   error
-	endOnce    sync.Once
+type UpstreamTerminal struct {
+	EventType        string
+	HTTPStatus       int
+	ResponseID       string
+	ResponseStatus   string
+	ErrorCode        string
+	ErrorMessage     string
+	IncompleteReason string
+}
 
-	mu         sync.Mutex
-	Errors     []StreamErrorEntry
-	ErrorCount int
+type StreamStatus struct {
+	EndReason StreamEndReason
+	EndError  error
+	endOnce   sync.Once
+
+	mu               sync.Mutex
+	Errors           []StreamErrorEntry
+	ErrorCount       int
+	upstreamTerminal UpstreamTerminal
+}
+
+func (s *StreamStatus) SetUpstreamTerminal(terminal UpstreamTerminal) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.upstreamTerminal = terminal
+	s.mu.Unlock()
+}
+
+func (s *StreamStatus) UpstreamTerminalSnapshot() UpstreamTerminal {
+	if s == nil {
+		return UpstreamTerminal{}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.upstreamTerminal
 }
 
 func NewStreamStatus() *StreamStatus {

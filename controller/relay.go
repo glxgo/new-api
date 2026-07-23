@@ -91,6 +91,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if newAPIError != nil {
 			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
+			if common.GetContextKeyBool(c, constant.ContextKeyRelayErrorAlreadyStreamed) {
+				return
+			}
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
 				helper.WssError(c, ws, newAPIError.ToOpenAIError())
@@ -268,9 +271,13 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		retryLogStr := fmt.Sprintf("重试：%s", strings.Trim(strings.Join(strings.Fields(fmt.Sprint(useChannel)), "->"), "[]"))
 		logger.LogInfo(c, retryLogStr)
 	}
-	if newAPIError != nil {
+	if perfmetrics.ShouldRecordRelayFailure(newAPIError, isClientRequestCanceled(c)) {
+		healthKey := ""
+		if affinity, ok := service.GetChannelAffinityStatsContext(c); ok {
+			healthKey = affinity.KeyFingerprint
+		}
 		gopool.Go(func() {
-			perfmetrics.RecordRelaySample(relayInfo, false, 0, 0, 0)
+			perfmetrics.RecordRelaySampleWithHealthKey(relayInfo, false, 0, 0, 0, healthKey)
 		})
 	}
 }

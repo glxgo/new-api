@@ -115,6 +115,18 @@ func appendStreamStatus(relayInfo *relaycommon.RelayInfo, other map[string]inter
 		"status":     status,
 		"end_reason": string(ss.EndReason),
 	}
+	upstreamTerminal := ss.UpstreamTerminalSnapshot()
+	if upstreamTerminal.EventType != "" {
+		streamInfo["upstream_terminal_event"] = upstreamTerminal.EventType
+		streamInfo["upstream_http_status"] = upstreamTerminal.HTTPStatus
+		streamInfo["upstream_response_status"] = upstreamTerminal.ResponseStatus
+		streamInfo["upstream_response_id"] = upstreamTerminal.ResponseID
+		streamInfo["upstream_error_code"] = upstreamTerminal.ErrorCode
+		streamInfo["incomplete_reason"] = upstreamTerminal.IncompleteReason
+		if upstreamTerminal.ErrorMessage != "" {
+			streamInfo["upstream_error_message"] = common.LocalLogPreview(common.MaskSensitiveInfo(upstreamTerminal.ErrorMessage))
+		}
+	}
 	if ss.EndError != nil {
 		streamInfo["end_error"] = ss.EndError.Error()
 	}

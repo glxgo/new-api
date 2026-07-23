@@ -60,6 +60,8 @@ const (
 	ErrorCodeChannelInvalidKey            ErrorCode = "channel:invalid_key"
 	ErrorCodeChannelResponseTimeExceeded  ErrorCode = "channel:response_time_exceeded"
 	ErrorCodeChannelIncompleteStream      ErrorCode = "channel:incomplete_stream"
+	ErrorCodeUpstreamResponseFailed       ErrorCode = "upstream:response_failed"
+	ErrorCodeUpstreamResponseIncomplete   ErrorCode = "upstream:response_incomplete"
 
 	// client request error
 	ErrorCodeReadRequestBodyFailed ErrorCode = "read_request_body_failed"

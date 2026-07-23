@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +16,8 @@ import (
 )
 
 var hotBuckets sync.Map
+var channelHotBuckets sync.Map
+var channelHealthDedup sync.Map
 
 // seriesSchema is a stable client cache/schema marker. Do not change it when
 // hiding fields or making response-only privacy hardening changes.
@@ -25,6 +28,10 @@ func Init() {
 }
 
 func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens, cacheTokens, promptTokens int64) {
+	RecordRelaySampleWithHealthKey(info, success, outputTokens, cacheTokens, promptTokens, "")
+}
+
+func RecordRelaySampleWithHealthKey(info *relaycommon.RelayInfo, success bool, outputTokens, cacheTokens, promptTokens int64, healthKey string) {
 	if info == nil {
 		return
 	}
@@ -47,9 +54,15 @@ func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens, 
 	if generationMs <= 0 {
 		generationMs = latencyMs
 	}
+	channelId := 0
+	if info.ChannelMeta != nil {
+		channelId = info.ChannelMeta.ChannelId
+	}
 	Record(Sample{
 		Model:        info.OriginModelName,
 		Group:        info.UsingGroup,
+		ChannelId:    channelId,
+		HealthKey:    healthKey,
 		LatencyMs:    latencyMs,
 		TtftMs:       ttftMs,
 		HasTtft:      hasTtft,
@@ -81,6 +94,40 @@ func Record(sample Sample) {
 	actual, _ := hotBuckets.LoadOrStore(key, &atomicBucket{})
 	actual.(*atomicBucket).add(sample)
 	recordRedis(key, sample)
+	if sample.ChannelId > 0 && shouldRecordChannelHealthSample(sample, key.bucketTs) {
+		channelKey := channelBucketKey{
+			model:     sample.Model,
+			channelId: sample.ChannelId,
+			bucketTs:  key.bucketTs,
+		}
+		channelActual, _ := channelHotBuckets.LoadOrStore(channelKey, &atomicBucket{})
+		channelActual.(*atomicBucket).add(sample)
+	}
+}
+
+func shouldRecordChannelHealthSample(sample Sample, bucketTs int64) bool {
+	healthKey := strings.TrimSpace(sample.HealthKey)
+	if healthKey == "" {
+		return true
+	}
+	key := channelHealthDedupKey{
+		model:     sample.Model,
+		bucketTs:  bucketTs,
+		healthKey: healthKey,
+		success:   sample.Success,
+	}
+	_, loaded := channelHealthDedup.LoadOrStore(key, struct{}{})
+	return !loaded
+}
+
+func cleanupChannelHealthDedupBefore(bucketTs int64) {
+	channelHealthDedup.Range(func(rawKey, _ any) bool {
+		key := rawKey.(channelHealthDedupKey)
+		if key.bucketTs < bucketTs {
+			channelHealthDedup.Delete(rawKey)
+		}
+		return true
+	})
 }
 
 func Query(params QueryParams) (QueryResult, error) {
@@ -289,6 +336,135 @@ func QueryGroupSummaryAll(hours int, groups []string) (GroupSummaryAllResult, er
 	result.AvailableGroups = append([]string(nil), groups...)
 	sort.Strings(result.AvailableGroups)
 	return result, nil
+}
+
+// QueryGroupSummaryByChannels projects real relay measurements from final
+// upstream channels onto every group/model ability that can use those
+// channels. This means traffic submitted through one group can keep another
+// group's status current when both groups share the same channel.
+func QueryGroupSummaryByChannels(hours int, scopes []GroupChannelScope) (GroupSummaryAllResult, error) {
+	if hours <= 0 {
+		hours = 24
+	}
+	if hours > 24*30 {
+		hours = 24 * 30
+	}
+	endTs := time.Now().Unix()
+	startTs := endTs - int64(hours)*3600
+	channelIds := channelIdsFromScopes(scopes)
+
+	rows, err := model.GetChannelPerfMetrics(startTs, endTs, channelIds)
+	if err != nil {
+		return GroupSummaryAllResult{}, err
+	}
+
+	hot := make(map[channelBucketKey]counters)
+	channelHotBuckets.Range(func(key, value any) bool {
+		k := key.(channelBucketKey)
+		if k.bucketTs < startTs || k.bucketTs > endTs {
+			return true
+		}
+		snap := value.(*atomicBucket).snapshot()
+		if snap.requestCount > 0 {
+			hot[k] = snap
+		}
+		return true
+	})
+	return buildChannelScopedGroupSummary(scopes, rows, hot), nil
+}
+
+func channelIdsFromScopes(scopes []GroupChannelScope) []int {
+	channelSet := make(map[int]struct{})
+	for _, scope := range scopes {
+		for _, channelIds := range scope.ModelChannels {
+			for _, channelId := range channelIds {
+				if channelId > 0 {
+					channelSet[channelId] = struct{}{}
+				}
+			}
+		}
+	}
+	channelIds := make([]int, 0, len(channelSet))
+	for channelId := range channelSet {
+		channelIds = append(channelIds, channelId)
+	}
+	sort.Ints(channelIds)
+	return channelIds
+}
+
+func buildChannelScopedGroupSummary(
+	scopes []GroupChannelScope,
+	rows []model.ChannelPerfMetric,
+	hot map[channelBucketKey]counters,
+) GroupSummaryAllResult {
+	type modelChannelKey struct {
+		model     string
+		channelId int
+	}
+	groupsByModelChannel := make(map[modelChannelKey][]string)
+	availableSet := make(map[string]struct{}, len(scopes))
+	for _, scope := range scopes {
+		if scope.Group == "" {
+			continue
+		}
+		availableSet[scope.Group] = struct{}{}
+		for modelName, channelIds := range scope.ModelChannels {
+			seenChannels := make(map[int]struct{}, len(channelIds))
+			for _, channelId := range channelIds {
+				if channelId <= 0 {
+					continue
+				}
+				if _, duplicate := seenChannels[channelId]; duplicate {
+					continue
+				}
+				seenChannels[channelId] = struct{}{}
+				key := modelChannelKey{model: modelName, channelId: channelId}
+				if !containsString(groupsByModelChannel[key], scope.Group) {
+					groupsByModelChannel[key] = append(groupsByModelChannel[key], scope.Group)
+				}
+			}
+		}
+	}
+
+	merged := make(map[bucketKey]counters)
+	mergeIntoGroups := func(modelName string, channelId int, bucketTs int64, value counters) {
+		for _, group := range groupsByModelChannel[modelChannelKey{model: modelName, channelId: channelId}] {
+			mergeCounters(merged, bucketKey{group: group, bucketTs: bucketTs}, value)
+		}
+	}
+	for _, row := range rows {
+		mergeIntoGroups(row.ModelName, row.ChannelId, row.BucketTs, counters{
+			requestCount:   row.RequestCount,
+			successCount:   row.SuccessCount,
+			totalLatencyMs: row.TotalLatencyMs,
+			ttftSumMs:      row.TtftSumMs,
+			ttftCount:      row.TtftCount,
+			outputTokens:   row.OutputTokens,
+			generationMs:   row.GenerationMs,
+			cacheTokens:    row.CacheTokens,
+			promptTokens:   row.PromptTokens,
+		})
+	}
+	for key, value := range hot {
+		mergeIntoGroups(key.model, key.channelId, key.bucketTs, value)
+	}
+
+	result := buildGroupSummaryResult(merged)
+	result.AvailableGroups = make([]string, 0, len(availableSet))
+	for group := range availableSet {
+		result.AvailableGroups = append(result.AvailableGroups, group)
+	}
+	sort.Strings(result.AvailableGroups)
+	return result
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func buildGroupSummaryResult(merged map[bucketKey]counters) GroupSummaryAllResult {

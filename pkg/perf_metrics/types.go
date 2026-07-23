@@ -10,6 +10,8 @@ type Store interface {
 type Sample struct {
 	Model        string
 	Group        string
+	ChannelId    int
+	HealthKey    string
 	LatencyMs    int64
 	TtftMs       int64
 	HasTtft      bool
@@ -115,10 +117,31 @@ type GroupSummaryAllResult struct {
 	AvailableGroups []string            `json:"available_groups,omitempty"`
 }
 
+// GroupChannelScope describes which final channels may serve each public model
+// in a user-facing group. A channel may intentionally appear in several scopes
+// when groups share the same upstream capacity.
+type GroupChannelScope struct {
+	Group         string
+	ModelChannels map[string][]int
+}
+
 type bucketKey struct {
 	model    string
 	group    string
 	bucketTs int64
+}
+
+type channelBucketKey struct {
+	model     string
+	channelId int
+	bucketTs  int64
+}
+
+type channelHealthDedupKey struct {
+	model     string
+	bucketTs  int64
+	healthKey string
+	success   bool
 }
 
 type counters struct {

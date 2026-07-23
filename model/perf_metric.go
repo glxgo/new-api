@@ -29,6 +29,73 @@ func (PerfMetric) TableName() string {
 	return "perf_metrics"
 }
 
+// ChannelPerfMetric stores conversation-weighted health measurements keyed by
+// the final upstream channel. Raw request-volume measurements remain in
+// PerfMetric, while affinity-identifiable retries are deduplicated before they
+// reach this table so one bad conversation cannot dominate public health.
+type ChannelPerfMetric struct {
+	Id             int    `json:"id" gorm:"primaryKey"`
+	ModelName      string `json:"model_name" gorm:"size:128;uniqueIndex:idx_channel_perf_model_channel_bucket,priority:1"`
+	ChannelId      int    `json:"channel_id" gorm:"uniqueIndex:idx_channel_perf_model_channel_bucket,priority:2;index:idx_channel_perf_channel"`
+	BucketTs       int64  `json:"bucket_ts" gorm:"uniqueIndex:idx_channel_perf_model_channel_bucket,priority:3;index:idx_channel_perf_bucket_ts"`
+	RequestCount   int64  `json:"-" gorm:"default:0"`
+	SuccessCount   int64  `json:"-" gorm:"default:0"`
+	TotalLatencyMs int64  `json:"-" gorm:"default:0"`
+	TtftSumMs      int64  `json:"-" gorm:"default:0"`
+	TtftCount      int64  `json:"-" gorm:"default:0"`
+	OutputTokens   int64  `json:"-" gorm:"default:0"`
+	GenerationMs   int64  `json:"-" gorm:"default:0"`
+	CacheTokens    int64  `json:"-" gorm:"default:0"`
+	PromptTokens   int64  `json:"-" gorm:"default:0"`
+}
+
+func (ChannelPerfMetric) TableName() string {
+	return "channel_perf_metrics"
+}
+
+func UpsertChannelPerfMetric(metric *ChannelPerfMetric) error {
+	if metric == nil || metric.ChannelId <= 0 || metric.RequestCount == 0 {
+		return nil
+	}
+	return DB.Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "model_name"},
+			{Name: "channel_id"},
+			{Name: "bucket_ts"},
+		},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"request_count":    gorm.Expr("channel_perf_metrics.request_count + ?", metric.RequestCount),
+			"success_count":    gorm.Expr("channel_perf_metrics.success_count + ?", metric.SuccessCount),
+			"total_latency_ms": gorm.Expr("channel_perf_metrics.total_latency_ms + ?", metric.TotalLatencyMs),
+			"ttft_sum_ms":      gorm.Expr("channel_perf_metrics.ttft_sum_ms + ?", metric.TtftSumMs),
+			"ttft_count":       gorm.Expr("channel_perf_metrics.ttft_count + ?", metric.TtftCount),
+			"output_tokens":    gorm.Expr("channel_perf_metrics.output_tokens + ?", metric.OutputTokens),
+			"generation_ms":    gorm.Expr("channel_perf_metrics.generation_ms + ?", metric.GenerationMs),
+			"cache_tokens":     gorm.Expr("channel_perf_metrics.cache_tokens + ?", metric.CacheTokens),
+			"prompt_tokens":    gorm.Expr("channel_perf_metrics.prompt_tokens + ?", metric.PromptTokens),
+		}),
+	}).Create(metric).Error
+}
+
+func GetChannelPerfMetrics(startTs int64, endTs int64, channelIds []int) ([]ChannelPerfMetric, error) {
+	var metrics []ChannelPerfMetric
+	if len(channelIds) == 0 {
+		return metrics, nil
+	}
+	err := DB.Model(&ChannelPerfMetric{}).
+		Where("bucket_ts >= ? AND bucket_ts <= ? AND channel_id IN ?", startTs, endTs, channelIds).
+		Order("bucket_ts ASC").
+		Find(&metrics).Error
+	return metrics, err
+}
+
+func DeleteChannelPerfMetricsBefore(cutoffTs int64) error {
+	if cutoffTs <= 0 {
+		return nil
+	}
+	return DB.Where("bucket_ts < ?", cutoffTs).Delete(&ChannelPerfMetric{}).Error
+}
+
 func UpsertPerfMetric(metric *PerfMetric) error {
 	if metric == nil || metric.RequestCount == 0 {
 		return nil

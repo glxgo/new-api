@@ -1,12 +1,15 @@
 package openai
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -78,6 +81,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 
 	var usage = &dto.Usage{}
 	var responseTextBuilder strings.Builder
+	var streamErr *types.NewAPIError
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 
@@ -92,6 +96,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		switch streamResponse.Type {
 		case "response.completed":
 			if streamResponse.Response != nil {
+				recordResponsesUpstreamTerminal(info, resp.StatusCode, streamResponse)
 				if streamResponse.Response.Usage != nil {
 					if streamResponse.Response.Usage.InputTokens != 0 {
 						usage.PromptTokens = streamResponse.Response.Usage.InputTokens
@@ -113,6 +118,16 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 				}
 			}
 			sr.Done()
+		case "response.failed", "response.error":
+			recordResponsesUpstreamTerminal(info, resp.StatusCode, streamResponse)
+			streamErr = responsesTerminalError(streamResponse, types.ErrorCodeUpstreamResponseFailed)
+			common.SetContextKey(c, constant.ContextKeyRelayErrorAlreadyStreamed, true)
+			sr.Stop(streamErr)
+		case "response.incomplete":
+			recordResponsesUpstreamTerminal(info, resp.StatusCode, streamResponse)
+			streamErr = responsesTerminalError(streamResponse, types.ErrorCodeUpstreamResponseIncomplete)
+			common.SetContextKey(c, constant.ContextKeyRelayErrorAlreadyStreamed, true)
+			sr.Stop(streamErr)
 		case "response.output_text.delta":
 			// 处理输出文本
 			responseTextBuilder.WriteString(streamResponse.Delta)
@@ -130,6 +145,12 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			}
 		}
 	})
+
+	if streamErr != nil {
+		service.PreventChannelAffinityRecord(c)
+		service.ClearCurrentChannelAffinityCache(c)
+		return nil, streamErr
+	}
 
 	if info.StreamStatus == nil || info.StreamStatus.EndReason != relaycommon.StreamEndReasonDone {
 		streamSummary := "status unavailable"
@@ -172,4 +193,85 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 
 	return usage, nil
+}
+
+func recordResponsesUpstreamTerminal(info *relaycommon.RelayInfo, upstreamHTTPStatus int, streamResponse dto.ResponsesStreamResponse) {
+	if info == nil || info.StreamStatus == nil {
+		return
+	}
+	terminal := relaycommon.UpstreamTerminal{
+		EventType:  streamResponse.Type,
+		HTTPStatus: upstreamHTTPStatus,
+	}
+	if streamResponse.Response != nil {
+		terminal.ResponseID = streamResponse.Response.ID
+		terminal.ResponseStatus = jsonRawString(streamResponse.Response.Status)
+		if streamResponse.Response.IncompleteDetails != nil {
+			terminal.IncompleteReason = strings.TrimSpace(streamResponse.Response.IncompleteDetails.Reason)
+			if terminal.IncompleteReason == "" {
+				terminal.IncompleteReason = strings.TrimSpace(streamResponse.Response.IncompleteDetails.Reasoning)
+			}
+		}
+		if oaiErr := streamResponse.Response.GetOpenAIError(); oaiErr != nil {
+			terminal.ErrorCode = fmt.Sprintf("%v", oaiErr.Code)
+			terminal.ErrorMessage = oaiErr.Message
+		}
+	}
+	if terminal.ErrorCode == "" || terminal.ErrorMessage == "" {
+		if oaiErr := dto.GetOpenAIError(streamResponse.Error); oaiErr != nil {
+			if terminal.ErrorCode == "" {
+				terminal.ErrorCode = fmt.Sprintf("%v", oaiErr.Code)
+			}
+			if terminal.ErrorMessage == "" {
+				terminal.ErrorMessage = oaiErr.Message
+			}
+		}
+	}
+	info.StreamStatus.SetUpstreamTerminal(terminal)
+}
+
+func responsesTerminalError(streamResponse dto.ResponsesStreamResponse, fallbackCode types.ErrorCode) *types.NewAPIError {
+	var oaiErr *types.OpenAIError
+	if streamResponse.Response != nil {
+		oaiErr = streamResponse.Response.GetOpenAIError()
+	}
+	if oaiErr == nil {
+		oaiErr = dto.GetOpenAIError(streamResponse.Error)
+	}
+	if oaiErr != nil {
+		if strings.TrimSpace(fmt.Sprintf("%v", oaiErr.Code)) == "" {
+			oaiErr.Code = fallbackCode
+		}
+		if oaiErr.Message == "" {
+			oaiErr.Message = fmt.Sprintf("upstream Responses terminal event: %s", streamResponse.Type)
+		}
+		return types.WithOpenAIError(*oaiErr, http.StatusBadGateway, types.ErrOptionWithSkipRetry())
+	}
+
+	code := fallbackCode
+	message := fmt.Sprintf("upstream Responses terminal event: %s", streamResponse.Type)
+	if streamResponse.Response != nil && streamResponse.Response.IncompleteDetails != nil {
+		reason := strings.TrimSpace(streamResponse.Response.IncompleteDetails.Reason)
+		if reason == "" {
+			reason = strings.TrimSpace(streamResponse.Response.IncompleteDetails.Reasoning)
+		}
+		if reason != "" {
+			if fallbackCode == types.ErrorCodeUpstreamResponseIncomplete {
+				code = types.ErrorCode(string(fallbackCode) + ":" + reason)
+			}
+			message += ", reason=" + reason
+		}
+	}
+	return types.NewOpenAIError(errors.New(message), code, http.StatusBadGateway, types.ErrOptionWithSkipRetry())
+}
+
+func jsonRawString(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err == nil {
+		return value
+	}
+	return strings.TrimSpace(string(raw))
 }

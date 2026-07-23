@@ -117,6 +117,53 @@ func TestBuildResponsesStreamTerminalEventClientGone(t *testing.T) {
 	}
 }
 
+func TestBuildResponsesStreamTerminalEventUpstreamFailed(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "https://token.stellaisle.com/v1/responses", nil)
+	c.Set(common.RequestIdKey, "req-upstream-failed")
+	status := relaycommon.NewStreamStatus()
+	status.SetUpstreamTerminal(relaycommon.UpstreamTerminal{
+		EventType:      "response.failed",
+		HTTPStatus:     200,
+		ResponseID:     "resp_failed_1",
+		ResponseStatus: "failed",
+		ErrorCode:      "server_error",
+		ErrorMessage:   "upstream failed at https://api.example.com/v1/responses",
+	})
+	status.SetEndReason(relaycommon.StreamEndReasonHandlerStop, errors.New("upstream failed"))
+	info := &relaycommon.RelayInfo{
+		RequestId:               "req-upstream-failed",
+		IsStream:                true,
+		StreamStatus:            status,
+		UpstreamRequestBodySize: 826000,
+	}
+	apiErr := types.WithOpenAIError(types.OpenAIError{
+		Type: "server_error", Code: "server_error", Message: "upstream failed",
+	}, 502)
+
+	event := buildResponsesStreamTerminalEvent(c, info, apiErr, time.Now())
+	if event == nil {
+		t.Fatal("event is nil")
+	}
+	if event.TerminalStatus != "upstream_failed" || event.UpstreamTerminalEvent != "response.failed" {
+		t.Fatalf("unexpected terminal classification: %#v", event)
+	}
+	if event.UpstreamHttpStatus != 200 || event.UpstreamResponseId != "resp_failed_1" || event.UpstreamResponseStatus != "failed" {
+		t.Fatalf("unexpected upstream terminal metadata: %#v", event)
+	}
+	if event.UpstreamErrorCode != "server_error" || event.UpstreamRequestBodyBytes != 826000 {
+		t.Fatalf("unexpected upstream diagnostics: %#v", event)
+	}
+	if event.FailureSource != "upstream" {
+		t.Fatalf("unexpected failure source: %#v", event)
+	}
+	if event.UpstreamErrorMessage == "upstream failed at https://api.example.com/v1/responses" {
+		t.Fatalf("upstream error message was not masked: %#v", event)
+	}
+}
+
 func TestBillingSessionLifecycleState(t *testing.T) {
 	session := &BillingSession{}
 	if got := session.LifecycleState(); got != "initialized" {

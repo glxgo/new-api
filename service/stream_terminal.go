@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
 
@@ -107,6 +108,10 @@ func buildResponsesStreamTerminalEvent(c *gin.Context, info *relaycommon.RelayIn
 		responseCompleted = info.StreamStatus.EndReason == relaycommon.StreamEndReasonDone
 		clientGone = info.StreamStatus.EndReason == relaycommon.StreamEndReasonClientGone
 	}
+	upstreamTerminal := relaycommon.UpstreamTerminal{}
+	if info.StreamStatus != nil {
+		upstreamTerminal = info.StreamStatus.UpstreamTerminalSnapshot()
+	}
 	// net/http cancels the request context when a successfully completed
 	// handler returns as well. Treat it as client_gone only while the stream is
 	// still incomplete; response.completed is authoritative for Responses.
@@ -127,6 +132,10 @@ func buildResponsesStreamTerminalEvent(c *gin.Context, info *relaycommon.RelayIn
 		clientGone = false
 	case clientGone:
 		terminalStatus = "client_gone"
+	case upstreamTerminal.EventType == "response.incomplete":
+		terminalStatus = "incomplete"
+	case upstreamTerminal.EventType == "response.failed" || upstreamTerminal.EventType == "response.error":
+		terminalStatus = "upstream_failed"
 	}
 
 	billingState := "none"
@@ -148,35 +157,44 @@ func buildResponsesStreamTerminalEvent(c *gin.Context, info *relaycommon.RelayIn
 		affinityKeyFp = affinity.KeyFingerprint
 	}
 	event := &model.StreamTerminalEvent{
-		RequestId:         requestID,
-		IngressRequestId:  normalizeIngressRequestID(c.Request.Header.Get(ingressRequestIDHeader)),
-		UpstreamRequestId: c.GetString(common.UpstreamRequestIdKey),
-		CreatedAt:         now.Unix(),
-		StartedAt:         startedAt.Unix(),
-		DurationMs:        duration.Milliseconds(),
-		UserId:            info.UserId,
-		TokenId:           info.TokenId,
-		ChannelId:         channelID,
-		ModelName:         info.OriginModelName,
-		Group:             info.UsingGroup,
-		AffinityRuleName:  affinityRuleName,
-		AffinityKeyFp:     affinityKeyFp,
-		RequestHost:       c.Request.Host,
-		RequestPath:       path,
-		TerminalStatus:    terminalStatus,
-		EndReason:         endReason,
-		EndError:          truncateRunes(common.MaskSensitiveInfo(endError), maxStreamTerminalErrorRunes),
-		HttpStatus:        actualStatus,
-		IntendedStatus:    intendedStatus,
-		ResponseBytes:     responseBytes,
-		ReceivedEvents:    info.ReceivedResponseCount,
-		SoftErrorCount:    softErrorCount,
-		ResponseCompleted: responseCompleted,
-		ClientGone:        clientGone,
-		BillingSource:     info.BillingSource,
-		BillingState:      billingState,
-		PreConsumedQuota:  info.FinalPreConsumedQuota,
-		UsedChannels:      strings.Join(c.GetStringSlice("use_channel"), ","),
+		RequestId:                requestID,
+		IngressRequestId:         normalizeIngressRequestID(c.Request.Header.Get(ingressRequestIDHeader)),
+		UpstreamRequestId:        c.GetString(common.UpstreamRequestIdKey),
+		UpstreamResponseId:       upstreamTerminal.ResponseID,
+		CreatedAt:                now.Unix(),
+		StartedAt:                startedAt.Unix(),
+		DurationMs:               duration.Milliseconds(),
+		UserId:                   info.UserId,
+		TokenId:                  info.TokenId,
+		ChannelId:                channelID,
+		ModelName:                info.OriginModelName,
+		Group:                    info.UsingGroup,
+		AffinityRuleName:         affinityRuleName,
+		AffinityKeyFp:            affinityKeyFp,
+		RequestHost:              c.Request.Host,
+		RequestPath:              path,
+		TerminalStatus:           terminalStatus,
+		EndReason:                endReason,
+		EndError:                 truncateRunes(common.MaskSensitiveInfo(endError), maxStreamTerminalErrorRunes),
+		FailureSource:            string(perfmetrics.ClassifyRelayFailure(apiErr, clientGone)),
+		UpstreamTerminalEvent:    upstreamTerminal.EventType,
+		UpstreamHttpStatus:       upstreamTerminal.HTTPStatus,
+		UpstreamResponseStatus:   upstreamTerminal.ResponseStatus,
+		UpstreamErrorCode:        truncateRunes(upstreamTerminal.ErrorCode, 128),
+		UpstreamErrorMessage:     truncateRunes(common.MaskSensitiveInfo(upstreamTerminal.ErrorMessage), 512),
+		IncompleteReason:         truncateRunes(upstreamTerminal.IncompleteReason, 128),
+		UpstreamRequestBodyBytes: info.UpstreamRequestBodySize,
+		HttpStatus:               actualStatus,
+		IntendedStatus:           intendedStatus,
+		ResponseBytes:            responseBytes,
+		ReceivedEvents:           info.ReceivedResponseCount,
+		SoftErrorCount:           softErrorCount,
+		ResponseCompleted:        responseCompleted,
+		ClientGone:               clientGone,
+		BillingSource:            info.BillingSource,
+		BillingState:             billingState,
+		PreConsumedQuota:         info.FinalPreConsumedQuota,
+		UsedChannels:             strings.Join(c.GetStringSlice("use_channel"), ","),
 	}
 	if apiErr != nil {
 		event.ErrorType = string(apiErr.GetErrorType())

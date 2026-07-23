@@ -234,7 +234,7 @@ function GroupHealthCard({
             </h2>
           </div>
           <p className='text-muted-foreground mt-1.5 line-clamp-1 text-xs'>
-            {description || `该分组最近${rangeName}的真实请求表现`}
+            {description || `该分组关联渠道最近${rangeName}的真实请求表现`}
           </p>
         </div>
         <div className='shrink-0 text-right'>
@@ -278,7 +278,7 @@ function GroupHealthCard({
         <div className='flex items-end justify-between gap-4'>
           <div>
             <p className='text-muted-foreground text-[10px] tracking-[0.12em] uppercase'>
-              真实请求可用率
+              渠道真实请求可用率
             </p>
             <p className='mt-1 font-mono text-3xl font-semibold tracking-tight tabular-nums'>
               {requestCount && hasHealth
@@ -411,14 +411,14 @@ export function ModelStatus() {
         <SectionPageLayout.Title>{t('Model Status')}</SectionPageLayout.Title>
         <SectionPageLayout.Description>
           按分组并排查看最近{activeRange.label}
-          的真实请求表现与独立渠道探测，探测结果不参与渠道禁用。
+          的关联渠道真实请求表现与独立渠道探测，共用渠道的真实样本会同步计入对应分组，探测结果不参与渠道禁用。
         </SectionPageLayout.Description>
         <SectionPageLayout.Content>
           <div className='space-y-5'>
             <div className='flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between'>
               <div className='text-muted-foreground flex items-center gap-2 text-xs'>
                 <Activity className='text-foreground size-4' />
-                数据每分钟更新，来自真实转发请求
+                数据每分钟更新；可识别的同会话重复结果会在统计桶内去重
               </div>
               <div className='flex w-full flex-col gap-2 sm:flex-row lg:w-auto'>
                 {isAdmin ? (

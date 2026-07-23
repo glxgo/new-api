@@ -21,11 +21,15 @@ func TestRecordStreamTerminalEventIsIdempotent(t *testing.T) {
 	}
 
 	first := &StreamTerminalEvent{
-		RequestId:        "req-terminal-1",
-		IngressRequestId: "edge-terminal-1",
-		AffinityKeyFp:    "89abcdef",
-		TerminalStatus:   "failed",
-		EndReason:        "eof",
+		RequestId:             "req-terminal-1",
+		IngressRequestId:      "edge-terminal-1",
+		AffinityKeyFp:         "89abcdef",
+		TerminalStatus:        "failed",
+		EndReason:             "eof",
+		FailureSource:         "upstream",
+		UpstreamTerminalEvent: "response.failed",
+		UpstreamResponseId:    "resp_failed_1",
+		UpstreamErrorCode:     "server_error",
 	}
 	if err = RecordStreamTerminalEvent(first); err != nil {
 		t.Fatalf("record first event: %v", err)
@@ -54,5 +58,11 @@ func TestRecordStreamTerminalEventIsIdempotent(t *testing.T) {
 	}
 	if got.IngressRequestId != first.IngressRequestId || got.AffinityKeyFp != first.AffinityKeyFp {
 		t.Fatalf("correlation fields not persisted: %#v", got)
+	}
+	if got.FailureSource != first.FailureSource ||
+		got.UpstreamTerminalEvent != first.UpstreamTerminalEvent ||
+		got.UpstreamResponseId != first.UpstreamResponseId ||
+		got.UpstreamErrorCode != first.UpstreamErrorCode {
+		t.Fatalf("upstream terminal fields not persisted: %#v", got)
 	}
 }
