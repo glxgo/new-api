@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const rechargeCapacityMigrationKey = "RechargeCapacityCreditsMigratedV1"
+const rechargeCapacityMigrationKey = "RechargeCapacityCreditsMigratedV2"
 
 type RechargeCapacityTier struct {
 	MinimumCents     int64 `json:"minimum_cents"`
@@ -271,10 +271,10 @@ func parseHistoricalAdminRechargeCents(log Log) int64 {
 	return amount.Mul(decimal.NewFromInt(100)).Round(0).IntPart()
 }
 
-// MigrateRechargeCapacityCreditsV1 backfills successful paid top-ups and the
-// structured administrator quota-add audit records. The ledger uniqueness
-// makes a restart during migration safe.
-func MigrateRechargeCapacityCreditsV1() error {
+// MigrateRechargeCapacityCreditsV2 backfills successful paid top-ups,
+// externally paid subscription orders, and structured administrator quota-add
+// audit records. The ledger uniqueness makes a restart during migration safe.
+func MigrateRechargeCapacityCreditsV2() error {
 	if !common.IsMasterNode {
 		return nil
 	}
@@ -285,6 +285,10 @@ func MigrateRechargeCapacityCreditsV1() error {
 
 	var topUps []TopUp
 	if err := DB.Where("status = ? AND money > 0", common.TopUpStatusSuccess).Find(&topUps).Error; err != nil {
+		return err
+	}
+	var subscriptionOrders []SubscriptionOrder
+	if err := DB.Where("status = ? AND money > 0", common.TopUpStatusSuccess).Find(&subscriptionOrders).Error; err != nil {
 		return err
 	}
 	var logs []Log
@@ -306,6 +310,30 @@ func MigrateRechargeCapacityCreditsV1() error {
 				continue
 			}
 			if _, err := RecordTopUpRechargeCreditTx(tx, &topUps[i]); err != nil {
+				return err
+			}
+		}
+		for i := range subscriptionOrders {
+			order := &subscriptionOrders[i]
+			if strings.EqualFold(order.PaymentProvider, PaymentProviderBalance) ||
+				strings.EqualFold(order.PaymentMethod, PaymentMethodBalance) {
+				continue
+			}
+			var userCount int64
+			if err := tx.Model(&User{}).Where("id = ?", order.UserId).Count(&userCount).Error; err != nil {
+				return err
+			}
+			if userCount == 0 {
+				continue
+			}
+			if _, err := RecordRechargeCreditTx(
+				tx,
+				order.UserId,
+				MoneyToRechargeCents(order.Money),
+				"topup",
+				order.TradeNo,
+				order.CompleteTime,
+			); err != nil {
 				return err
 			}
 		}

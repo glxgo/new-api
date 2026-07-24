@@ -304,7 +304,7 @@ func InitResources() error {
 	if err != nil {
 		return err
 	}
-	if err = model.MigrateRechargeCapacityCreditsV1(); err != nil {
+	if err = model.MigrateRechargeCapacityCreditsV2(); err != nil {
 		return err
 	}
 

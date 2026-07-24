@@ -138,3 +138,71 @@ func TestEpayCompletionCreditsQuotaAndCapacityOnce(t *testing.T) {
 	require.Equal(t, firstQuota, stored.Quota)
 	require.EqualValues(t, 950, stored.RechargeTotalCents)
 }
+
+func TestRechargeCapacityMigrationBackfillsExternalSubscriptionsOnly(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(
+		&User{},
+		&TopUp{},
+		&SubscriptionOrder{},
+		&RechargeCredit{},
+		&Log{},
+		&Option{},
+	))
+	oldDB := DB
+	oldLogDB := LOG_DB
+	oldMaster := common.IsMasterNode
+	DB = db
+	LOG_DB = db
+	common.IsMasterNode = true
+	t.Cleanup(func() {
+		DB = oldDB
+		LOG_DB = oldLogDB
+		common.IsMasterNode = oldMaster
+	})
+
+	user := User{Username: "migration-user", Password: "hashed-password", AffCode: "rcc4"}
+	require.NoError(t, db.Create(&user).Error)
+	require.NoError(t, db.Create(&TopUp{
+		UserId:  user.Id,
+		Money:   10,
+		TradeNo: "shared-order",
+		Status:  common.TopUpStatusSuccess,
+	}).Error)
+	require.NoError(t, db.Create(&SubscriptionOrder{
+		UserId:          user.Id,
+		Money:           10,
+		TradeNo:         "shared-order",
+		PaymentMethod:   "alipay",
+		PaymentProvider: PaymentProviderEpay,
+		Status:          common.TopUpStatusSuccess,
+	}).Error)
+	require.NoError(t, db.Create(&SubscriptionOrder{
+		UserId:          user.Id,
+		Money:           20,
+		TradeNo:         "subscription-only",
+		PaymentMethod:   "alipay",
+		PaymentProvider: PaymentProviderEpay,
+		Status:          common.TopUpStatusSuccess,
+	}).Error)
+	require.NoError(t, db.Create(&SubscriptionOrder{
+		UserId:          user.Id,
+		Money:           30,
+		TradeNo:         "balance-order",
+		PaymentMethod:   PaymentMethodBalance,
+		PaymentProvider: PaymentProviderBalance,
+		Status:          common.TopUpStatusSuccess,
+	}).Error)
+
+	require.NoError(t, MigrateRechargeCapacityCreditsV2())
+	require.NoError(t, MigrateRechargeCapacityCreditsV2())
+
+	var stored User
+	require.NoError(t, db.First(&stored, user.Id).Error)
+	require.EqualValues(t, 3000, stored.RechargeTotalCents)
+
+	var count int64
+	require.NoError(t, db.Model(&RechargeCredit{}).Count(&count).Error)
+	require.EqualValues(t, 2, count)
+}
