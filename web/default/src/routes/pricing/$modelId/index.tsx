@@ -37,7 +37,7 @@ const modelDetailsSearchSchema = z.object({
 
 export const Route = createFileRoute('/pricing/$modelId/')({
   validateSearch: modelDetailsSearchSchema,
-  beforeLoad: async ({ location }) => {
+  beforeLoad: async ({ context, location }) => {
     const access = await getFreshModuleAccess('pricing')
     if (!access.enabled) {
       throw redirect({ to: '/' })
@@ -51,6 +51,11 @@ export const Route = createFileRoute('/pricing/$modelId/')({
         })
       }
     }
+    void import('@/features/pricing/queries')
+      .then(({ pricingQueryOptions }) =>
+        context.queryClient.prefetchQuery(pricingQueryOptions)
+      )
+      .catch(() => undefined)
   },
   component: ModelDetails,
 })

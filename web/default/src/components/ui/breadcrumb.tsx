@@ -22,7 +22,7 @@ import { useRender } from '@base-ui/react/use-render'
 import {
   ArrowRight01Icon,
   MoreHorizontalCircle01Icon,
-} from '@hugeicons/core-free-icons'
+} from '@hugeicons/core-free-icons/dist/esm/index'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { cn } from '@/lib/utils'
 

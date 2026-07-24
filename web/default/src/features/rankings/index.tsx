@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { useStatus } from '@/hooks/use-status'
@@ -24,14 +24,23 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { PublicLayout } from '@/components/layout'
 import { PageTransition } from '@/components/page-transition'
 import {
-  MarketShareSection,
-  ModelsSection,
   OpenRouterInsightsSection,
   PulseSection,
   RankingsHero,
 } from './components'
 import { useRankings } from './hooks/use-rankings'
 import type { RankingPeriod } from './types'
+
+const LazyModelsSection = lazy(() =>
+  import('./components/models-section').then((module) => ({
+    default: module.ModelsSection,
+  }))
+)
+const LazyMarketShareSection = lazy(() =>
+  import('./components/market-share-section').then((module) => ({
+    default: module.MarketShareSection,
+  }))
+)
 
 const VALID_PERIODS: RankingPeriod[] = ['today', 'week', 'month', 'year', 'all']
 
@@ -112,17 +121,19 @@ export function Rankings() {
             />
           ) : (
             <>
-              <ModelsSection
-                history={snapshot.models_history}
-                rows={snapshot.models}
-                historyPeriod={modelsHistoryPeriod}
-              />
+              <Suspense fallback={<RankingChartsLoading />}>
+                <LazyModelsSection
+                  history={snapshot.models_history}
+                  rows={snapshot.models}
+                  historyPeriod={modelsHistoryPeriod}
+                />
 
-              <MarketShareSection
-                history={snapshot.vendor_share_history}
-                rows={snapshot.vendors}
-                period={displayPeriod}
-              />
+                <LazyMarketShareSection
+                  history={snapshot.vendor_share_history}
+                  rows={snapshot.vendors}
+                  period={displayPeriod}
+                />
+              </Suspense>
 
               <PulseSection
                 movers={snapshot.top_movers}
@@ -140,6 +151,15 @@ export function Rankings() {
         </PageTransition>
       </div>
     </PublicLayout>
+  )
+}
+
+function RankingChartsLoading() {
+  return (
+    <>
+      <Skeleton className='h-[420px] w-full rounded-xl' />
+      <Skeleton className='h-[360px] w-full rounded-xl' />
+    </>
   )
 }
 

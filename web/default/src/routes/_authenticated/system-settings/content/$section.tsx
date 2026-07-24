@@ -21,7 +21,7 @@ import { ContentSettings } from '@/features/system-settings/content'
 import {
   CONTENT_DEFAULT_SECTION,
   CONTENT_SECTION_IDS,
-} from '@/features/system-settings/content/section-registry.tsx'
+} from '@/features/system-settings/content/section-meta'
 
 export const Route = createFileRoute(
   '/_authenticated/system-settings/content/$section'

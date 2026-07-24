@@ -26,7 +26,7 @@ import {
   Tick02Icon,
   ArrowUp01Icon,
   ArrowDown01Icon,
-} from '@hugeicons/core-free-icons'
+} from '@hugeicons/core-free-icons/dist/esm/index'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { cn } from '@/lib/utils'
 

@@ -43,5 +43,38 @@ export const Route = createFileRoute('/_authenticated/channels/')({
     }
   },
   validateSearch: channelsSearchSchema,
+  loaderDeps: ({ search }) => search,
+  loader: ({ context, deps }) => {
+    void import('@/features/channels/lib/channel-queries')
+      .then(
+        ({
+          channelGroupsQueryOptions,
+          channelListQueryOptions,
+          firstActiveFilter,
+          firstActiveNumberFilter,
+          getDefaultChannelPageSize,
+          readChannelListPreferences,
+        }) => {
+          const preferences = readChannelListPreferences()
+          const pageSize = deps.pageSize ?? getDefaultChannelPageSize()
+
+          void context.queryClient.prefetchQuery(
+            channelListQueryOptions({
+              keyword: deps.filter || undefined,
+              model: deps.model || undefined,
+              group: firstActiveFilter(deps.group),
+              status: firstActiveFilter(deps.status),
+              type: firstActiveNumberFilter(deps.type),
+              tag_mode: preferences.tagMode,
+              id_sort: preferences.idSort,
+              p: deps.page ?? 1,
+              page_size: pageSize,
+            })
+          )
+          void context.queryClient.prefetchQuery(channelGroupsQueryOptions)
+        }
+      )
+      .catch(() => undefined)
+  },
   component: Channels,
 })

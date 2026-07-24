@@ -19,7 +19,10 @@ For commercial licensing, please contact support@quantumnous.com
 'use client'
 
 import * as React from 'react'
-import { SearchIcon, Tick02Icon } from '@hugeicons/core-free-icons'
+import {
+  SearchIcon,
+  Tick02Icon,
+} from '@hugeicons/core-free-icons/dist/esm/index'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Command as CommandPrimitive } from 'cmdk'
 import { cn } from '@/lib/utils'

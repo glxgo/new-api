@@ -36,15 +36,17 @@ import {
   useDebouncedColumnFilter,
   useDataTable,
 } from '@/components/data-table'
-import { getChannels, searchChannels, getGroups } from '../api'
 import {
   DEFAULT_PAGE_SIZE,
   CHANNEL_STATUS,
   CHANNEL_STATUS_OPTIONS,
 } from '../constants'
 import {
-  channelsQueryKeys,
   aggregateChannelsByTag,
+  channelGroupsQueryOptions,
+  channelListQueryOptions,
+  firstActiveFilter,
+  firstActiveNumberFilter,
   isTagAggregateRow,
   getChannelTypeIcon,
   getChannelTypeLabel,
@@ -73,7 +75,7 @@ function isDisabledChannelRow(channel: Channel) {
 
 export function ChannelsTable() {
   const { t } = useTranslation()
-  const { enableTagMode, idSort } = useChannels()
+  const { enableTagMode, idSort, open, upstream } = useChannels()
   const isMobile = useMediaQuery('(max-width: 640px)')
 
   // Table state
@@ -126,9 +128,6 @@ export function ChannelsTable() {
     onColumnFiltersChange,
   })
 
-  // Determine whether to use search or regular list API
-  const shouldSearch = Boolean(globalFilter?.trim() || modelFilter.trim())
-
   const sortParams = useMemo(() => {
     const activeSort = sorting[0]
     if (
@@ -155,10 +154,7 @@ export function ChannelsTable() {
   }
 
   // Fetch groups for filter
-  const { data: groupsData } = useQuery({
-    queryKey: ['groups'],
-    queryFn: getGroups,
-  })
+  const { data: groupsData } = useQuery(channelGroupsQueryOptions)
 
   const groupOptions = useMemo(
     () =>
@@ -170,76 +166,21 @@ export function ChannelsTable() {
   )
 
   // Fetch channels data
-  // eslint-disable-next-line @tanstack/query/exhaustive-deps
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: channelsQueryKeys.list({
+    ...channelListQueryOptions({
       keyword: globalFilter,
       model: modelFilter,
-      group:
-        groupFilter.length > 0 && !groupFilter.includes('all')
-          ? groupFilter[0]
-          : undefined,
-      status:
-        statusFilter.length > 0 && !statusFilter.includes('all')
-          ? statusFilter[0]
-          : undefined,
-      type:
-        typeFilter.length > 0 && !typeFilter.includes('all')
-          ? Number(typeFilter[0])
-          : undefined,
+      group: firstActiveFilter(groupFilter),
+      status: firstActiveFilter(statusFilter),
+      type: firstActiveNumberFilter(typeFilter),
       tag_mode: enableTagMode,
       id_sort: idSort,
       ...sortParams,
       p: pagination.pageIndex + 1,
       page_size: pagination.pageSize,
     }),
-    queryFn: async () => {
-      if (shouldSearch) {
-        return searchChannels({
-          keyword: globalFilter,
-          model: modelFilter,
-          group:
-            groupFilter.length > 0 && !groupFilter.includes('all')
-              ? groupFilter[0]
-              : undefined,
-          status:
-            statusFilter.length > 0 && !statusFilter.includes('all')
-              ? statusFilter[0]
-              : undefined,
-          type:
-            typeFilter.length > 0 && !typeFilter.includes('all')
-              ? Number(typeFilter[0])
-              : undefined,
-          tag_mode: enableTagMode,
-          id_sort: idSort,
-          ...sortParams,
-          p: pagination.pageIndex + 1,
-          page_size: pagination.pageSize,
-        })
-      } else {
-        return getChannels({
-          group:
-            groupFilter.length > 0 && !groupFilter.includes('all')
-              ? groupFilter[0]
-              : undefined,
-          status:
-            statusFilter.length > 0 && !statusFilter.includes('all')
-              ? statusFilter[0]
-              : undefined,
-          type:
-            typeFilter.length > 0 && !typeFilter.includes('all')
-              ? Number(typeFilter[0])
-              : undefined,
-          tag_mode: enableTagMode,
-          id_sort: idSort,
-          ...sortParams,
-          p: pagination.pageIndex + 1,
-          page_size: pagination.pageSize,
-        })
-      }
-    },
     placeholderData: (previousData) => previousData,
-    refetchInterval: 10000,
+    refetchInterval: open === null && !upstream.showModal ? 30_000 : false,
     refetchIntervalInBackground: false,
   })
 

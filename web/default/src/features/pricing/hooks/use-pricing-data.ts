@@ -19,16 +19,12 @@ For commercial licensing, please contact support@quantumnous.com
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useStatus } from '@/hooks/use-status'
-import { getPricing } from '../api'
+import { pricingQueryOptions } from '../queries'
 
 export function usePricingData() {
   const { status } = useStatus()
 
-  const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['pricing'],
-    queryFn: getPricing,
-    staleTime: 5 * 60 * 1000,
-  })
+  const { data, isLoading, error, refetch } = useQuery(pricingQueryOptions)
 
   // Ensure rates never reach zero to prevent division errors
   const priceRate = useMemo(

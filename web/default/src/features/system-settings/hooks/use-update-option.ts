@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
 import { toast } from 'sonner'
+import { invalidateSharedStatus } from '@/lib/status-resource'
 import { updateSystemOption } from '../api'
 import type { UpdateOptionRequest } from '../types'
 
@@ -53,6 +54,7 @@ export function useUpdateOption() {
 
         // If updating frontend-display-related config, also refresh status
         if (STATUS_RELATED_KEYS.includes(variables.key)) {
+          invalidateSharedStatus()
           queryClient.invalidateQueries({ queryKey: ['status'] })
           try {
             window.localStorage.removeItem('status')

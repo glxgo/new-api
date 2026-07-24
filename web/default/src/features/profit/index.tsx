@@ -16,15 +16,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useMemo, useState } from 'react'
+import { lazy, Suspense, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { SectionPageLayout } from '@/components/layout'
 import dayjs from '@/lib/dayjs'
+import { Skeleton } from '@/components/ui/skeleton'
+import { SectionPageLayout } from '@/components/layout'
 import { getProfitSummary } from './api'
-import { ProfitStatCards } from './components/profit-stat-cards'
-import { ProfitChart } from './components/profit-chart'
 import { DividendRecordsTable } from './components/dividend-records-table'
+import { ProfitStatCards } from './components/profit-stat-cards'
+
+const LazyProfitChart = lazy(() =>
+  import('./components/profit-chart').then((module) => ({
+    default: module.ProfitChart,
+  }))
+)
 
 type RangeKey = 'month' | 'last_month' | 'last_week' | 'all'
 
@@ -62,7 +68,7 @@ export function Profit() {
   const { start, end } = useMemo(() => rangeToTimes(range), [range])
 
   const { data: summary, isLoading } = useQuery({
-    queryKey: ['profit-summary', range],
+    queryKey: ['profit-summary', range, start, end],
     queryFn: async () => {
       const res = await getProfitSummary(start, end)
       if (!res.success || !res.data) {
@@ -101,7 +107,11 @@ export function Profit() {
             </div>
           </div>
           <ProfitStatCards summary={summary ?? null} loading={isLoading} />
-          <ProfitChart summary={summary ?? null} loading={isLoading} />
+          <Suspense
+            fallback={<Skeleton className='h-[320px] w-full rounded-lg' />}
+          >
+            <LazyProfitChart summary={summary ?? null} loading={isLoading} />
+          </Suspense>
           <div className='overflow-hidden rounded-lg border'>
             <div className='border-b px-4 py-3 text-sm font-semibold'>
               {t('Dividend Records')}

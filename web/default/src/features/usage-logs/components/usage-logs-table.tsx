@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
 import { type ColumnDef } from '@tanstack/react-table'
@@ -30,13 +31,9 @@ import {
   DataTableRow,
   useDataTable,
 } from '@/components/data-table'
-import {
-  DEFAULT_LOGS_DATA,
-  LOG_TYPE_ALL_VALUE,
-  LOG_TYPE_ENUM,
-} from '../constants'
+import { LOG_TYPE_ALL_VALUE, LOG_TYPE_ENUM } from '../constants'
 import { useColumnsByCategory } from '../lib/columns'
-import { fetchLogsByCategory } from '../lib/utils'
+import { usageLogsQueryOptions } from '../lib/queries'
 import type { LogCategory } from '../types'
 import { CommonLogsFilterBar } from './common-logs-filter-bar'
 import { CommonLogsStats } from './common-logs-stats'
@@ -103,34 +100,19 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
     ],
   })
 
-  const { data, isLoading, isFetching } = useQuery({
-    queryKey: [
-      'logs',
+  const {
+    data: queryResult,
+    isLoading,
+    isFetching,
+  } = useQuery({
+    ...usageLogsQueryOptions({
       logCategory,
       isAdmin,
-      pagination.pageIndex + 1,
-      pagination.pageSize,
-      columnFilters,
+      page: pagination.pageIndex + 1,
+      pageSize: pagination.pageSize,
       searchParams,
-      t,
-    ],
-    queryFn: async () => {
-      const result = await fetchLogsByCategory({
-        logCategory,
-        isAdmin,
-        page: pagination.pageIndex + 1,
-        pageSize: pagination.pageSize,
-        searchParams,
-        columnFilters,
-      })
-
-      if (!result?.success) {
-        toast.error(result?.message || t('Failed to load logs'))
-        return DEFAULT_LOGS_DATA
-      }
-
-      return result.data || DEFAULT_LOGS_DATA
-    },
+      columnFilters,
+    }),
     placeholderData: (previousData, previousQuery) => {
       if (previousQuery?.queryKey[1] === logCategory) {
         return previousData
@@ -138,6 +120,18 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
       return undefined
     },
   })
+
+  useEffect(() => {
+    if (queryResult?.errorMessage) {
+      toast.error(
+        queryResult.errorMessage === 'Failed to load logs'
+          ? t('Failed to load logs')
+          : queryResult.errorMessage
+      )
+    }
+  }, [queryResult?.errorMessage, t])
+
+  const data = queryResult?.data
 
   const logs = data?.items || []
   const columns = useColumnsByCategory(logCategory, isAdmin)
@@ -161,7 +155,12 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
 
   return (
     <div className='flex h-full min-h-0 flex-col gap-3'>
-      {isCommon && <CommonLogsStats totalCount={data?.total || 0} />}
+      {isCommon && (
+        <CommonLogsStats
+          enabled={!isLoading && !isFetching}
+          totalCount={data?.total || 0}
+        />
+      )}
       <div className='min-h-0 flex-1'>
         <DataTablePage
           table={table}

@@ -38,19 +38,7 @@ import {
 } from '../api'
 import { CHANNEL_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
 import type { ChannelTestResponse, CopyChannelParams } from '../types'
-
-// ============================================================================
-// Query Keys
-// ============================================================================
-
-export const channelsQueryKeys = {
-  all: ['channels'] as const,
-  lists: () => [...channelsQueryKeys.all, 'list'] as const,
-  list: (params: Record<string, unknown>) =>
-    [...channelsQueryKeys.lists(), params] as const,
-  details: () => [...channelsQueryKeys.all, 'detail'] as const,
-  detail: (id: number) => [...channelsQueryKeys.details(), id] as const,
-}
+import { channelsQueryKeys } from './channel-queries'
 
 function getChannelTestResponseTime(
   response: ChannelTestResponse

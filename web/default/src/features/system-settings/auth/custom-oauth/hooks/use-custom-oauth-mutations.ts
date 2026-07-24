@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
 import { toast } from 'sonner'
+import { invalidateSharedStatus } from '@/lib/status-resource'
 import {
   createCustomOAuthProvider,
   updateCustomOAuthProvider,
@@ -32,6 +33,7 @@ function useInvalidateOnSuccess() {
   return {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['custom-oauth-providers'] })
+      invalidateSharedStatus()
       queryClient.invalidateQueries({ queryKey: ['status'] })
     },
   }

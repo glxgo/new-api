@@ -18,14 +18,124 @@ For commercial licensing, please contact support@quantumnous.com
 */
 /**
  * LobeHub Icon Loader
- * Dynamically load and render icons from @lobehub/icons
+ * Resolve and render the provider icons used by this application without
+ * importing the package-wide icon barrel.
  *
  * Supports:
  * - Basic: "OpenAI", "OpenAI.Color"
  * - Chained properties: "OpenAI.Avatar.type={'platform'}"
  * - Size parameter: getLobeIcon("OpenAI", 20)
  */
-import * as LobeIcons from '@lobehub/icons'
+import Ai360 from '@lobehub/icons/es/Ai360'
+import Aws from '@lobehub/icons/es/Aws'
+import Azure from '@lobehub/icons/es/Azure'
+import AzureAI from '@lobehub/icons/es/AzureAI'
+import Baidu from '@lobehub/icons/es/Baidu'
+import Claude from '@lobehub/icons/es/Claude'
+import Cloudflare from '@lobehub/icons/es/Cloudflare'
+import Cohere from '@lobehub/icons/es/Cohere'
+import Coze from '@lobehub/icons/es/Coze'
+import DeepSeek from '@lobehub/icons/es/DeepSeek'
+import Dify from '@lobehub/icons/es/Dify'
+import Doubao from '@lobehub/icons/es/Doubao'
+import FastGPT from '@lobehub/icons/es/FastGPT'
+import Gemini from '@lobehub/icons/es/Gemini'
+import GithubCopilot from '@lobehub/icons/es/GithubCopilot'
+import Google from '@lobehub/icons/es/Google'
+import Grok from '@lobehub/icons/es/Grok'
+import Hunyuan from '@lobehub/icons/es/Hunyuan'
+import Jimeng from '@lobehub/icons/es/Jimeng'
+import Jina from '@lobehub/icons/es/Jina'
+import Kling from '@lobehub/icons/es/Kling'
+import Meta from '@lobehub/icons/es/Meta'
+import Midjourney from '@lobehub/icons/es/Midjourney'
+import Minimax from '@lobehub/icons/es/Minimax'
+import Mistral from '@lobehub/icons/es/Mistral'
+import Moonshot from '@lobehub/icons/es/Moonshot'
+import Ollama from '@lobehub/icons/es/Ollama'
+import OpenAI from '@lobehub/icons/es/OpenAI'
+import OpenCode from '@lobehub/icons/es/OpenCode'
+import OpenRouter from '@lobehub/icons/es/OpenRouter'
+import Perplexity from '@lobehub/icons/es/Perplexity'
+import Qwen from '@lobehub/icons/es/Qwen'
+import Replicate from '@lobehub/icons/es/Replicate'
+import SiliconCloud from '@lobehub/icons/es/SiliconCloud'
+import Spark from '@lobehub/icons/es/Spark'
+import Suno from '@lobehub/icons/es/Suno'
+import Venice from '@lobehub/icons/es/Venice'
+import Vidu from '@lobehub/icons/es/Vidu'
+import Volcengine from '@lobehub/icons/es/Volcengine'
+import Wenxin from '@lobehub/icons/es/Wenxin'
+import XAI from '@lobehub/icons/es/XAI'
+import Xinference from '@lobehub/icons/es/Xinference'
+import Yi from '@lobehub/icons/es/Yi'
+import Zhipu from '@lobehub/icons/es/Zhipu'
+
+const LOBE_ICONS = {
+  Ai360,
+  Aws,
+  Azure,
+  AzureAI,
+  Baidu,
+  Claude,
+  Cloudflare,
+  Cohere,
+  Coze,
+  DeepSeek,
+  Dify,
+  Doubao,
+  FastGPT,
+  Gemini,
+  GithubCopilot,
+  Google,
+  Grok,
+  Hunyuan,
+  Jina,
+  Jimeng,
+  Kling,
+  Meta,
+  Midjourney,
+  Minimax,
+  Mistral,
+  Moonshot,
+  Ollama,
+  OpenAI,
+  OpenCode,
+  OpenRouter,
+  Perplexity,
+  Qwen,
+  Replicate,
+  SiliconCloud,
+  Spark,
+  Suno,
+  Venice,
+  Vidu,
+  Volcengine,
+  Wenxin,
+  XAI,
+  Xinference,
+  Yi,
+  Zhipu,
+} as const
+
+const LOBE_ICON_ALIASES: Record<string, keyof typeof LOBE_ICONS> = {
+  anthropic: 'Claude',
+  minimax: 'Minimax',
+  veniceai: 'Venice',
+}
+
+function resolveBaseIcon(baseKey: string): unknown {
+  const exact = LOBE_ICONS[baseKey as keyof typeof LOBE_ICONS]
+  if (exact) return exact
+
+  const canonicalKey =
+    LOBE_ICON_ALIASES[baseKey.toLowerCase()] ??
+    (Object.keys(LOBE_ICONS).find(
+      (key) => key.toLowerCase() === baseKey.toLowerCase()
+    ) as keyof typeof LOBE_ICONS | undefined)
+
+  return canonicalKey ? LOBE_ICONS[canonicalKey] : undefined
+}
 
 /**
  * Parse a property value from string to appropriate type
@@ -102,7 +212,7 @@ export function getLobeIcon(
   // Parse component path and chained properties
   const segments = trimmedName.split('.')
   const baseKey = segments[0]
-  const BaseIcon = (LobeIcons as Record<string, unknown>)[baseKey] as
+  const BaseIcon = resolveBaseIcon(baseKey) as
     | Record<string, unknown>
     | undefined
 
@@ -115,7 +225,7 @@ export function getLobeIcon(
     >
     propStartIndex = 2
   } else {
-    IconComponent = (LobeIcons as Record<string, unknown>)[baseKey] as
+    IconComponent = BaseIcon as
       | React.ComponentType<Record<string, unknown>>
       | undefined
     propStartIndex = segments.length > 1 && /^[A-Z]/.test(segments[1]) ? 2 : 1
@@ -174,7 +284,7 @@ export function getLobeIconWithFallback(
   for (const name of iconNames) {
     if (!name || !name.trim()) continue
     const baseKey = name.trim().split('.')[0]
-    if ((LobeIcons as Record<string, unknown>)[baseKey]) {
+    if (resolveBaseIcon(baseKey)) {
       return getLobeIcon(name, size)
     }
   }

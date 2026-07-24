@@ -18,7 +18,10 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import * as React from 'react'
 import { Menu as MenuPrimitive } from '@base-ui/react/menu'
-import { ArrowRight01Icon, Tick02Icon } from '@hugeicons/core-free-icons'
+import {
+  ArrowRight01Icon,
+  Tick02Icon,
+} from '@hugeicons/core-free-icons/dist/esm/index'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { cn } from '@/lib/utils'
 import {

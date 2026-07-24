@@ -57,6 +57,7 @@ function StatCard(props: {
 }
 
 interface CommonLogsStatsProps {
+  enabled: boolean
   totalCount: number
 }
 
@@ -66,8 +67,9 @@ export function CommonLogsStats(props: CommonLogsStatsProps) {
   const searchParams = route.useSearch()
   const { sensitiveVisible } = useUsageLogsContext()
 
-  const { data: stats, isLoading } = useQuery({
+  const { data: stats, isPending } = useQuery({
     queryKey: ['usage-logs-stats', isAdmin, searchParams],
+    enabled: props.enabled,
     queryFn: async () => {
       const params = buildApiParams({
         page: 1,
@@ -85,10 +87,11 @@ export function CommonLogsStats(props: CommonLogsStatsProps) {
         ? result.data || DEFAULT_LOG_STATS
         : DEFAULT_LOG_STATS
     },
-    placeholderData: (previousData) => previousData,
+    staleTime: 10_000,
+    refetchOnWindowFocus: false,
   })
 
-  if (isLoading) {
+  if (!props.enabled || isPending) {
     return (
       <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4'>
         {Array.from({ length: 4 }).map((_, index) => (

@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useMemo } from 'react'
+import { lazy, Suspense, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { ArrowLeft, Code2, HeartPulse, Info, Timer } from 'lucide-react'
@@ -64,10 +64,20 @@ import type {
   TokenUnit,
 } from '../types'
 import { DynamicPricingBreakdown } from './dynamic-pricing-breakdown'
-import { ModelDetailsApi, ModelDetailsProviderInfo } from './model-details-api'
 import { ModalityIcons } from './model-details-modalities'
-import { ModelDetailsPerformance } from './model-details-performance'
+import { ModelDetailsProviderInfo } from './model-details-provider-info'
 import { ModelDetailsQuickStats } from './model-details-quick-stats'
+
+const LazyModelDetailsApi = lazy(() =>
+  import('./model-details-api').then((module) => ({
+    default: module.ModelDetailsApi,
+  }))
+)
+const LazyModelDetailsPerformance = lazy(() =>
+  import('./model-details-performance').then((module) => ({
+    default: module.ModelDetailsPerformance,
+  }))
+)
 
 // ----------------------------------------------------------------------------
 // Local UI helpers
@@ -900,6 +910,7 @@ export interface ModelDetailsContentProps {
 
 export function ModelDetailsContent(props: ModelDetailsContentProps) {
   const { t } = useTranslation()
+  const [activeTab, setActiveTab] = useState<TabValue>('overview')
   const showRechargePrice = props.showRechargePrice ?? false
   const metadata = useMemo(() => inferModelMetadata(props.model), [props.model])
 
@@ -911,7 +922,11 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
     <div className='@container/details space-y-4'>
       <ModelHeader model={props.model} />
 
-      <Tabs defaultValue='overview' className='gap-4'>
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as TabValue)}
+        className='gap-4'
+      >
         <TabsList className='bg-muted/60 grid w-full grid-cols-3 gap-1 rounded-lg p-1 group-data-horizontal/tabs:h-auto'>
           {TAB_VALUES.map((value) => {
             const Icon = TAB_META[value].icon
@@ -967,16 +982,33 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
         </TabsContent>
 
         <TabsContent value='performance' className='outline-none'>
-          <ModelDetailsPerformance model={props.model} />
+          {activeTab === 'performance' && (
+            <Suspense fallback={<DetailsTabFallback />}>
+              <LazyModelDetailsPerformance model={props.model} />
+            </Suspense>
+          )}
         </TabsContent>
 
         <TabsContent value='api' className='outline-none'>
-          <ModelDetailsApi
-            model={props.model}
-            endpointMap={props.endpointMap}
-          />
+          {activeTab === 'api' && (
+            <Suspense fallback={<DetailsTabFallback />}>
+              <LazyModelDetailsApi
+                model={props.model}
+                endpointMap={props.endpointMap}
+              />
+            </Suspense>
+          )}
         </TabsContent>
       </Tabs>
+    </div>
+  )
+}
+
+function DetailsTabFallback() {
+  return (
+    <div className='space-y-3'>
+      <Skeleton className='h-24 w-full rounded-xl' />
+      <Skeleton className='h-48 w-full rounded-xl' />
     </div>
   )
 }

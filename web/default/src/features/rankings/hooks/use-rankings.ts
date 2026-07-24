@@ -16,18 +16,24 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQuery } from '@tanstack/react-query'
+import { queryOptions, useQuery } from '@tanstack/react-query'
 import { getRankings } from '../api'
 import type { RankingPeriod } from '../types'
 
 const RANKINGS_REFRESH_INTERVAL_MS = 60 * 60 * 1000
 const RANKINGS_QUERY_VERSION = 4
 
-export function useRankings(period: RankingPeriod) {
-  return useQuery({
+export function rankingsQueryOptions(period: RankingPeriod) {
+  return queryOptions({
     queryKey: ['rankings', RANKINGS_QUERY_VERSION, period],
     queryFn: () => getRankings(period),
     staleTime: RANKINGS_REFRESH_INTERVAL_MS,
+  })
+}
+
+export function useRankings(period: RankingPeriod) {
+  return useQuery({
+    ...rankingsQueryOptions(period),
     refetchInterval: RANKINGS_REFRESH_INTERVAL_MS,
   })
 }

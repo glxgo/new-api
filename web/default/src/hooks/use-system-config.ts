@@ -26,6 +26,7 @@ import {
 } from '@/stores/system-config-store'
 import { DEFAULT_SYSTEM_NAME, DEFAULT_LOGO } from '@/lib/constants'
 import { applyFaviconToDom } from '@/lib/dom-utils'
+import { getSharedStatus } from '@/lib/status-resource'
 
 interface UseSystemConfigOptions {
   /** Automatically fetch config from backend (use only in root component) */
@@ -101,15 +102,13 @@ export function mapStatusDataToConfig(
   }
 }
 
-// Fetch system config from API
+// Fetch system config through the shared status resource so root, navigation,
+// and route guards reuse one in-flight request and one short-lived result.
 async function fetchSystemConfig(): Promise<Partial<SystemConfig>> {
-  const response = await fetch('/api/status')
-  if (!response.ok) throw new Error('Failed to fetch status')
-
-  const data: StatusApiResponse = await response.json()
-  if (!data.success) throw new Error('API returned error')
-
-  return mapStatusDataToConfig(data.data)
+  const status = await getSharedStatus()
+  return mapStatusDataToConfig(
+    (status ?? undefined) as StatusApiResponse['data'] | undefined
+  )
 }
 
 // Preload image and return cleanup function

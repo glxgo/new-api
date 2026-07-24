@@ -21,7 +21,7 @@ import { AuthSettings } from '@/features/system-settings/auth'
 import {
   AUTH_DEFAULT_SECTION,
   AUTH_SECTION_IDS,
-} from '@/features/system-settings/auth/section-registry.tsx'
+} from '@/features/system-settings/auth/section-meta'
 
 export const Route = createFileRoute(
   '/_authenticated/system-settings/auth/$section'

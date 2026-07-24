@@ -18,11 +18,14 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import z from 'zod'
 import { createFileRoute, redirect } from '@tanstack/react-router'
+import { useAuthStore } from '@/stores/auth-store'
+import { ROLE } from '@/lib/roles'
 import { UsageLogs } from '@/features/usage-logs'
 import {
   isUsageLogsSectionId,
   USAGE_LOGS_DEFAULT_SECTION,
 } from '@/features/usage-logs/section-registry'
+import type { LogCategory } from '@/features/usage-logs/types'
 
 const logTypeValues = ['0', '1', '2', '3', '4', '5', '6'] as const
 const logTypeSearchSchema = z
@@ -73,5 +76,23 @@ export const Route = createFileRoute('/_authenticated/usage-logs/$section')({
     }
   },
   validateSearch: usageLogsSearchSchema,
+  loaderDeps: ({ search }) => search,
+  loader: ({ context, deps, params }) => {
+    const user = useAuthStore.getState().auth.user
+    void import('@/features/usage-logs/lib/queries')
+      .then(({ getDefaultUsageLogsPageSize, usageLogsQueryOptions }) =>
+        context.queryClient.prefetchQuery(
+          usageLogsQueryOptions({
+            logCategory: params.section as LogCategory,
+            isAdmin: (user?.role ?? 0) >= ROLE.ADMIN,
+            page: deps.page ?? 1,
+            pageSize: deps.pageSize ?? getDefaultUsageLogsPageSize(),
+            searchParams: deps,
+            columnFilters: [],
+          })
+        )
+      )
+      .catch(() => undefined)
+  },
   component: UsageLogs,
 })

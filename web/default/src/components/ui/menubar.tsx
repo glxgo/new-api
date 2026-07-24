@@ -21,7 +21,7 @@ For commercial licensing, please contact support@quantumnous.com
 import * as React from 'react'
 import { Menu as MenuPrimitive } from '@base-ui/react/menu'
 import { Menubar as MenubarPrimitive } from '@base-ui/react/menubar'
-import { Tick02Icon } from '@hugeicons/core-free-icons'
+import { Tick02Icon } from '@hugeicons/core-free-icons/dist/esm/index'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { cn } from '@/lib/utils'
 import {

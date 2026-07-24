@@ -21,7 +21,7 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
   ArrowDownIcon,
-} from '@hugeicons/core-free-icons'
+} from '@hugeicons/core-free-icons/dist/esm/index'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   DayPicker,

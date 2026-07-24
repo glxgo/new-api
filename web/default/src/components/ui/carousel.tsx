@@ -19,7 +19,10 @@ For commercial licensing, please contact support@quantumnous.com
 'use client'
 
 import * as React from 'react'
-import { ArrowLeft01Icon, ArrowRight01Icon } from '@hugeicons/core-free-icons'
+import {
+  ArrowLeft01Icon,
+  ArrowRight01Icon,
+} from '@hugeicons/core-free-icons/dist/esm/index'
 import { HugeiconsIcon } from '@hugeicons/react'
 import useEmblaCarousel, {
   type UseEmblaCarouselType,

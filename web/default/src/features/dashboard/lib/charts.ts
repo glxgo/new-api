@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { dataScheme as vchartDefaultDataScheme } from '@visactor/vchart/esm/theme/color-scheme/builtin/default'
 import { getCurrencyDisplay } from '@/lib/currency'
 import { formatChartTime, type TimeGranularity } from '@/lib/time'
 import { MAX_CHART_TREND_POINTS } from '@/features/dashboard/constants'
@@ -46,6 +45,19 @@ const THEME_CHART_COLOR_VARIABLES = [
   '--chart-5',
 ] as const
 
+const FALLBACK_CHART_COLORS = [
+  '#1664FF',
+  '#1AC6FF',
+  '#FF8A00',
+  '#3CC780',
+  '#7442D4',
+  '#FFC400',
+  '#304D77',
+  '#B48DEB',
+  '#009488',
+  '#FF7DDA',
+] as const
+
 function getThemeChartColors(themeKey?: string): string[] {
   if (typeof document === 'undefined') return []
   void themeKey
@@ -69,12 +81,10 @@ function getVChartDefaultColors(domainLength: number, themeKey?: string) {
     )
   }
 
-  const scheme =
-    vchartDefaultDataScheme.find(
-      (item) => !item.maxDomainLength || domainLength <= item.maxDomainLength
-    ) ?? vchartDefaultDataScheme[vchartDefaultDataScheme.length - 1]
-
-  return scheme.scheme
+  return Array.from(
+    { length: Math.max(domainLength, FALLBACK_CHART_COLORS.length) },
+    (_, index) => FALLBACK_CHART_COLORS[index % FALLBACK_CHART_COLORS.length]
+  )
 }
 
 function renderQuotaCompat(rawQuota: number, digits = 4): string {

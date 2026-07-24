@@ -31,7 +31,7 @@ const rankingsSearchSchema = z.object({
 
 export const Route = createFileRoute('/rankings/')({
   validateSearch: rankingsSearchSchema,
-  beforeLoad: async ({ location }) => {
+  beforeLoad: async ({ context, location, search }) => {
     const access = await getFreshModuleAccess('rankings')
     if (!access.enabled) {
       throw redirect({ to: '/' })
@@ -45,6 +45,13 @@ export const Route = createFileRoute('/rankings/')({
         })
       }
     }
+    void import('@/features/rankings/hooks/use-rankings')
+      .then(({ rankingsQueryOptions }) =>
+        context.queryClient.prefetchQuery(
+          rankingsQueryOptions(search.period ?? 'week')
+        )
+      )
+      .catch(() => undefined)
   },
   component: Rankings,
 })

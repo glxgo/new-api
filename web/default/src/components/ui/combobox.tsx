@@ -22,7 +22,7 @@ import {
   ArrowDown01Icon,
   Cancel01Icon,
   Tick02Icon,
-} from '@hugeicons/core-free-icons'
+} from '@hugeicons/core-free-icons/dist/esm/index'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'

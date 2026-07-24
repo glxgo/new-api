@@ -24,6 +24,7 @@ import { ClaudeSettingsCard } from './claude-settings-card'
 import { GeminiSettingsCard } from './gemini-settings-card'
 import { GlobalSettingsCard } from './global-settings-card'
 import { GrokSettingsCard } from './grok-settings-card'
+import { MODELS_DEFAULT_SECTION, type ModelSectionId } from './section-meta'
 
 function formatJsonForEditor(value: string, fallback: string) {
   const raw = (value ?? '').toString().trim()
@@ -156,17 +157,14 @@ const MODELS_SECTIONS = [
   },
 ] as const
 
-export type ModelSectionId = (typeof MODELS_SECTIONS)[number]['id']
-
 const modelsRegistry = createSectionRegistry<ModelSectionId, ModelSettings>({
   sections: MODELS_SECTIONS,
-  defaultSection: 'global',
+  defaultSection: MODELS_DEFAULT_SECTION,
   basePath: '/system-settings/models',
   urlStyle: 'path',
 })
 
-export const MODELS_SECTION_IDS = modelsRegistry.sectionIds
-export const MODELS_DEFAULT_SECTION = modelsRegistry.defaultSection
+export { MODELS_DEFAULT_SECTION, MODELS_SECTION_IDS } from './section-meta'
 export const getModelsSectionNavItems = modelsRegistry.getSectionNavItems
 export const getModelsSectionContent = modelsRegistry.getSectionContent
 export const getModelsSectionMeta = modelsRegistry.getSectionMeta

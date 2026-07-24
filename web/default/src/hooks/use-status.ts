@@ -18,28 +18,20 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { useSystemConfigStore } from '@/stores/system-config-store'
-import { getStatus } from '@/lib/api'
+import { getSharedStatus, readCachedStatus } from '@/lib/status-resource'
 import type { SystemStatus } from '@/features/auth/types'
 import { mapStatusDataToConfig } from './use-system-config'
 
 // Get initial cache from localStorage
 function getInitialStatus(): SystemStatus | undefined {
-  try {
-    if (typeof window !== 'undefined') {
-      const saved = window.localStorage.getItem('status')
-      return saved ? (JSON.parse(saved) as SystemStatus) : undefined
-    }
-  } catch {
-    /* empty */
-  }
-  return undefined
+  return (readCachedStatus() as SystemStatus | null) ?? undefined
 }
 
 export function useStatus() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['status'],
     queryFn: async () => {
-      const status = await getStatus()
+      const status = await getSharedStatus()
       try {
         if (status) {
           const { setConfig } = useSystemConfigStore.getState()
@@ -53,14 +45,6 @@ export function useStatus() {
             err
           )
         }
-      }
-      // Save to localStorage
-      try {
-        if (typeof window !== 'undefined' && status) {
-          window.localStorage.setItem('status', JSON.stringify(status))
-        }
-      } catch {
-        /* empty */
       }
       return status as SystemStatus | null
     },

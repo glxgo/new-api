@@ -16,15 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useMemo } from 'react'
+import { lazy, Suspense, useCallback, useMemo } from 'react'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { useSidebarConfig } from '@/hooks/use-sidebar-config'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { EditorialFeatureStrip, SectionPageLayout } from '@/components/layout'
 import type { NavGroup } from '@/components/layout/types'
-import { CacheStatsDialog } from '@/features/system-settings/general/channel-affinity/cache-stats-dialog'
-import { UserInfoDialog } from './components/dialogs/user-info-dialog'
 import {
   UsageLogsProvider,
   useUsageLogsContext,
@@ -38,6 +36,16 @@ import {
 
 const route = getRouteApi('/_authenticated/usage-logs/$section')
 const TASK_LOG_SECTIONS = ['drawing', 'task'] as const
+const CacheStatsDialog = lazy(() =>
+  import('@/features/system-settings/general/channel-affinity/cache-stats-dialog').then(
+    (module) => ({ default: module.CacheStatsDialog })
+  )
+)
+const UserInfoDialog = lazy(() =>
+  import('./components/dialogs/user-info-dialog').then((module) => ({
+    default: module.UserInfoDialog,
+  }))
+)
 
 const SECTION_META: Record<UsageLogsSectionId, { titleKey: string }> = {
   common: {
@@ -144,29 +152,33 @@ function UsageLogsContent() {
         </SectionPageLayout.Content>
       </SectionPageLayout>
 
-      <UserInfoDialog
-        userId={selectedUserId}
-        open={userInfoDialogOpen}
-        onOpenChange={setUserInfoDialogOpen}
-      />
+      {selectedUserId !== null && (
+        <Suspense fallback={null}>
+          <UserInfoDialog
+            userId={selectedUserId}
+            open={userInfoDialogOpen}
+            onOpenChange={setUserInfoDialogOpen}
+          />
+        </Suspense>
+      )}
 
-      <CacheStatsDialog
-        open={affinityDialogOpen}
-        onOpenChange={setAffinityDialogOpen}
-        target={
-          affinityTarget
-            ? {
-                rule_name: affinityTarget.rule_name || '',
-                using_group:
-                  affinityTarget.using_group ||
-                  affinityTarget.selected_group ||
-                  '',
-                key_hint: affinityTarget.key_hint || '',
-                key_fp: affinityTarget.key_fp || '',
-              }
-            : null
-        }
-      />
+      {affinityTarget !== null && (
+        <Suspense fallback={null}>
+          <CacheStatsDialog
+            open={affinityDialogOpen}
+            onOpenChange={setAffinityDialogOpen}
+            target={{
+              rule_name: affinityTarget.rule_name || '',
+              using_group:
+                affinityTarget.using_group ||
+                affinityTarget.selected_group ||
+                '',
+              key_hint: affinityTarget.key_hint || '',
+              key_fp: affinityTarget.key_fp || '',
+            }}
+          />
+        </Suspense>
+      )}
     </>
   )
 }

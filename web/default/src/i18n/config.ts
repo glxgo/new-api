@@ -16,30 +16,54 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import i18n from 'i18next'
+import i18n, { type BackendModule, type ReadCallback } from 'i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
 import { initReactI18next } from 'react-i18next'
-import en from './locales/en.json'
-import fr from './locales/fr.json'
-import ja from './locales/ja.json'
-import ru from './locales/ru.json'
-import vi from './locales/vi.json'
-import zh from './locales/zh.json'
+import {
+  normalizeInterfaceLanguage,
+  type InterfaceLanguageCode,
+} from './languages'
 
-export const resources = {
-  en,
-  zh,
-  fr,
-  ru,
-  ja,
-  vi,
-} as const
+const languageLoaders = {
+  en: () => import('./locales/en.json'),
+  zh: () => import('./locales/zh.json'),
+  fr: () => import('./locales/fr.json'),
+  ru: () => import('./locales/ru.json'),
+  ja: () => import('./locales/ja.json'),
+  vi: () => import('./locales/vi.json'),
+} satisfies Record<InterfaceLanguageCode, () => Promise<unknown>>
 
-i18n
+const lazyTranslationsBackend: BackendModule = {
+  type: 'backend',
+  init: () => undefined,
+  read(language: string, _namespace: string, callback: ReadCallback) {
+    const normalized = normalizeInterfaceLanguage(
+      language
+    ) as InterfaceLanguageCode
+
+    languageLoaders[normalized]()
+      .then((module) => {
+        const resources = (
+          module as {
+            default: { translation: Record<string, unknown> }
+          }
+        ).default
+        callback(null, resources.translation)
+      })
+      .catch((error: unknown) => {
+        callback(
+          error instanceof Error ? error : new Error(String(error)),
+          null
+        )
+      })
+  },
+}
+
+export const i18nReady = i18n
   .use(LanguageDetector)
+  .use(lazyTranslationsBackend)
   .use(initReactI18next)
   .init({
-    resources,
     fallbackLng: 'en',
     supportedLngs: ['en', 'zh', 'fr', 'ru', 'ja', 'vi'],
     load: 'languageOnly', // Convert zh-CN -> zh

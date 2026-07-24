@@ -21,7 +21,7 @@ For commercial licensing, please contact support@quantumnous.com
 import * as React from 'react'
 import { mergeProps } from '@base-ui/react/merge-props'
 import { useRender } from '@base-ui/react/use-render'
-import { SidebarLeftIcon } from '@hugeicons/core-free-icons'
+import { SidebarLeftIcon } from '@hugeicons/core-free-icons/dist/esm/index'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'

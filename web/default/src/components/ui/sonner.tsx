@@ -24,7 +24,7 @@ import {
   Alert02Icon,
   MultiplicationSignCircleIcon,
   Loading03Icon,
-} from '@hugeicons/core-free-icons'
+} from '@hugeicons/core-free-icons/dist/esm/index'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Toaster as Sonner, type ToasterProps } from 'sonner'
 import { useTheme } from '@/context/theme-provider'

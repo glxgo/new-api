@@ -28,16 +28,16 @@ import { RouterProvider, createRouter } from '@tanstack/react-router'
 import i18next from 'i18next'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/auth-store'
-import { getStatus } from '@/lib/api'
 import { installBuildMetadata } from '@/lib/build-metadata'
 import '@/lib/dayjs'
 import { applyFaviconToDom } from '@/lib/dom-utils'
 import { initializeFrontendCache } from '@/lib/frontend-cache'
 import { handleServerError } from '@/lib/handle-server-error'
+import { getSharedStatus, readCachedStatus } from '@/lib/status-resource'
 import { DirectionProvider } from './context/direction-provider'
 import { FontProvider } from './context/font-provider'
 import { ThemeProvider } from './context/theme-provider'
-import './i18n/config'
+import { i18nReady } from './i18n/config'
 // Generated Routes
 import { routeTree } from './routeTree.gen'
 // Styles
@@ -126,25 +126,19 @@ const rootElement = document.getElementById('root')!
     }
     // Cache-first
     try {
-      const saved = localStorage.getItem('status')
-      if (saved) {
-        const s = JSON.parse(saved)
-        if (s?.system_name) apply(s.system_name)
-        if (s?.logo) applyFaviconToDom(s.logo)
+      const s = readCachedStatus()
+      if (s) {
+        if (typeof s.system_name === 'string') apply(s.system_name)
+        if (typeof s.logo === 'string') applyFaviconToDom(s.logo)
       }
     } catch {
       /* empty */
     }
     // Background refresh
-    getStatus()
+    getSharedStatus()
       .then((s) => {
         if (s?.system_name) {
           apply(s.system_name as string)
-          try {
-            localStorage.setItem('status', JSON.stringify(s))
-          } catch {
-            /* empty */
-          }
         }
         if (s?.logo) applyFaviconToDom(s.logo as string)
       })
@@ -155,7 +149,16 @@ const rootElement = document.getElementById('root')!
     /* empty */
   }
 })()
-if (!rootElement.innerHTML) {
+async function renderApp() {
+  try {
+    await i18nReady
+  } catch {
+    // i18next retains its fallback behavior; do not leave the application blank
+    // if a locale chunk is unavailable during a transient network failure.
+  }
+
+  if (rootElement.innerHTML) return
+
   const root = ReactDOM.createRoot(rootElement)
   root.render(
     <StrictMode>
@@ -171,3 +174,5 @@ if (!rootElement.innerHTML) {
     </StrictMode>
   )
 }
+
+void renderApp()

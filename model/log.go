@@ -15,6 +15,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/bytedance/gopkg/util/gopool"
+	"github.com/samber/hot"
+	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 )
 
@@ -579,7 +581,70 @@ type Stat struct {
 	Tpm   int `json:"tpm"`
 }
 
+const (
+	logStatCacheCapacity = 1024
+	logStatCacheTTL      = 5 * time.Second
+)
+
+var (
+	logStatCache = hot.NewHotCache[string, Stat](hot.LRU, logStatCacheCapacity).
+			WithTTL(logStatCacheTTL).
+			WithJanitor().
+			Build()
+	logStatQueryGroup singleflight.Group
+)
+
 func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string) (stat Stat, err error) {
+	cacheEndTimestamp := endTimestamp
+	if endTimestamp >= time.Now().Unix() {
+		// The log UI deliberately sends a future upper bound for its live
+		// window. Future bounds are equivalent until the short cache expires,
+		// so normalize them to let nearby requests share the same aggregate.
+		cacheEndTimestamp = 0
+	}
+	cacheKey := fmt.Sprintf(
+		"%p|%d|%d|%d|%q|%q|%q|%d|%q",
+		LOG_DB,
+		logType,
+		startTimestamp,
+		cacheEndTimestamp,
+		modelName,
+		username,
+		tokenName,
+		channel,
+		group,
+	)
+	if cached, found := logStatCache.MustGet(cacheKey); found {
+		return cached, nil
+	}
+
+	value, err, _ := logStatQueryGroup.Do(cacheKey, func() (any, error) {
+		if cached, found := logStatCache.MustGet(cacheKey); found {
+			return cached, nil
+		}
+
+		queried, queryErr := queryUsedQuota(
+			startTimestamp,
+			endTimestamp,
+			modelName,
+			username,
+			tokenName,
+			channel,
+			group,
+		)
+		if queryErr != nil {
+			return Stat{}, queryErr
+		}
+		logStatCache.SetWithTTL(cacheKey, queried, logStatCacheTTL)
+		return queried, nil
+	})
+	if err != nil {
+		return stat, err
+	}
+	return value.(Stat), nil
+}
+
+func queryUsedQuota(startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string) (stat Stat, err error) {
 	tx := LOG_DB.Table("logs").Select("sum(quota) quota")
 
 	// 为rpm和tpm创建单独的查询
