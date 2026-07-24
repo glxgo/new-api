@@ -164,8 +164,25 @@ func RecordRechargeCreditTx(tx *gorm.DB, userId int, amountCents int64, sourceTy
 	if update.Error != nil {
 		return false, update.Error
 	}
-	if update.RowsAffected != 1 {
-		return false, fmt.Errorf("user %d not found for recharge credit", userId)
+	if update.RowsAffected == 0 {
+		var user User
+		if err := tx.Select("id", "recharge_total_cents").Where("id = ?", userId).First(&user).Error; err != nil {
+			return false, fmt.Errorf("user %d not found for recharge credit: %w", userId, err)
+		}
+		var ledgerTotal int64
+		if err := tx.Model(&RechargeCredit{}).
+			Where("user_id = ?", userId).
+			Select("COALESCE(SUM(amount_cents), 0)").
+			Scan(&ledgerTotal).Error; err != nil {
+			return false, err
+		}
+		if user.RechargeTotalCents != ledgerTotal {
+			if err := tx.Model(&User{}).
+				Where("id = ?", userId).
+				Update("recharge_total_cents", ledgerTotal).Error; err != nil {
+				return false, err
+			}
+		}
 	}
 	return true, nil
 }
