@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const rechargeCapacityMigrationKey = "RechargeCapacityCreditsMigratedV2"
+const rechargeCapacityMigrationKey = "RechargeCapacityCreditsMigratedV3"
 
 type RechargeCapacityTier struct {
 	MinimumCents     int64 `json:"minimum_cents"`
@@ -271,10 +271,10 @@ func parseHistoricalAdminRechargeCents(log Log) int64 {
 	return amount.Mul(decimal.NewFromInt(100)).Round(0).IntPart()
 }
 
-// MigrateRechargeCapacityCreditsV2 backfills successful paid top-ups,
+// MigrateRechargeCapacityCreditsV3 backfills successful paid top-ups,
 // externally paid subscription orders, and structured administrator quota-add
 // audit records. The ledger uniqueness makes a restart during migration safe.
-func MigrateRechargeCapacityCreditsV2() error {
+func MigrateRechargeCapacityCreditsV3() error {
 	if !common.IsMasterNode {
 		return nil
 	}
@@ -287,8 +287,23 @@ func MigrateRechargeCapacityCreditsV2() error {
 	if err := DB.Where("status = ? AND money > 0", common.TopUpStatusSuccess).Find(&topUps).Error; err != nil {
 		return err
 	}
-	var subscriptionOrders []SubscriptionOrder
-	if err := DB.Where("status = ? AND money > 0", common.TopUpStatusSuccess).Find(&subscriptionOrders).Error; err != nil {
+	type missingPaidSubscription struct {
+		UserId       int
+		Money        float64
+		TradeNo      string
+		CompleteTime int64
+	}
+	var missingSubscriptions []missingPaidSubscription
+	if err := DB.
+		Table("subscription_orders AS o").
+		Select("o.user_id, o.money, o.trade_no, o.complete_time").
+		Joins("JOIN users AS u ON u.id = o.user_id").
+		Joins("LEFT JOIN recharge_credits AS r ON r.source_type = ? AND r.source_ref = TRIM(o.trade_no)", "topup").
+		Where("o.status = ? AND o.money > 0", common.TopUpStatusSuccess).
+		Where("LOWER(TRIM(COALESCE(o.payment_provider, ''))) <> ?", PaymentProviderBalance).
+		Where("LOWER(TRIM(COALESCE(o.payment_method, ''))) <> ?", PaymentMethodBalance).
+		Where("r.id IS NULL").
+		Scan(&missingSubscriptions).Error; err != nil {
 		return err
 	}
 	var logs []Log
@@ -313,19 +328,8 @@ func MigrateRechargeCapacityCreditsV2() error {
 				return err
 			}
 		}
-		for i := range subscriptionOrders {
-			order := &subscriptionOrders[i]
-			if strings.EqualFold(order.PaymentProvider, PaymentProviderBalance) ||
-				strings.EqualFold(order.PaymentMethod, PaymentMethodBalance) {
-				continue
-			}
-			var userCount int64
-			if err := tx.Model(&User{}).Where("id = ?", order.UserId).Count(&userCount).Error; err != nil {
-				return err
-			}
-			if userCount == 0 {
-				continue
-			}
+		for i := range missingSubscriptions {
+			order := &missingSubscriptions[i]
 			if _, err := RecordRechargeCreditTx(
 				tx,
 				order.UserId,

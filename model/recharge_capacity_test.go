@@ -195,8 +195,8 @@ func TestRechargeCapacityMigrationBackfillsExternalSubscriptionsOnly(t *testing.
 		Status:          common.TopUpStatusSuccess,
 	}).Error)
 
-	require.NoError(t, MigrateRechargeCapacityCreditsV2())
-	require.NoError(t, MigrateRechargeCapacityCreditsV2())
+	require.NoError(t, MigrateRechargeCapacityCreditsV3())
+	require.NoError(t, MigrateRechargeCapacityCreditsV3())
 
 	var stored User
 	require.NoError(t, db.First(&stored, user.Id).Error)
