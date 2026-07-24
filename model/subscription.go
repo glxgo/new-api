@@ -589,6 +589,16 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if err := upsertSubscriptionTopUpTx(tx, &order); err != nil {
 			return err
 		}
+		if _, err := RecordRechargeCreditTx(
+			tx,
+			order.UserId,
+			MoneyToRechargeCents(order.Money),
+			"topup",
+			order.TradeNo,
+			common.GetTimestamp(),
+		); err != nil {
+			return err
+		}
 		order.Status = common.TopUpStatusSuccess
 		order.CompleteTime = common.GetTimestamp()
 		if providerPayload != "" {
@@ -613,6 +623,7 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		_ = UpdateUserGroupCache(logUserId, upgradeGroup)
 	}
 	if logUserId > 0 {
+		_ = InvalidateUserCache(logUserId)
 		msg := fmt.Sprintf("订阅购买成功，套餐: %s，支付金额: %.2f，支付方式: %s", logPlanTitle, logMoney, logPaymentMethod)
 		RecordLog(logUserId, LogTypeTopup, msg)
 	}

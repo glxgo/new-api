@@ -65,6 +65,10 @@ export const userSchema = z.object({
   rpm_limit: z.number().default(12),
   rpm_limit_override: z.boolean().default(false),
   current_rpm: z.number().default(0),
+  recharge_total_cents: z.number().default(0),
+  security_strike_count: z.number().default(0),
+  security_suspended_until: z.number().default(0),
+  security_permanent_ban: z.boolean().default(false),
 })
 export type User = z.infer<typeof userSchema>
 
@@ -128,6 +132,7 @@ export type ManageUserAction =
   | 'enable'
   | 'disable'
   | 'delete'
+  | 'reset_security'
   | 'add_quota'
 
 export type QuotaAdjustMode = 'add' | 'subtract' | 'override'

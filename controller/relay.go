@@ -271,6 +271,20 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		retryLogStr := fmt.Sprintf("重试：%s", strings.Trim(strings.Join(strings.Fields(fmt.Sprint(useChannel)), "->"), "[]"))
 		logger.LogInfo(c, retryLogStr)
 	}
+	if service.IsCyberPolicyError(newAPIError) {
+		enforcement, enforcementErr := service.EnforceCyberPolicyViolation(c, relayInfo, newAPIError)
+		if enforcementErr != nil {
+			logger.LogError(c, "failed to enforce cyber policy restriction: "+enforcementErr.Error())
+		} else if enforcement.StrikeNumber > 0 &&
+			!common.GetContextKeyBool(c, constant.ContextKeyRelayErrorAlreadyStreamed) {
+			newAPIError = types.NewOpenAIError(
+				errors.New(service.CyberPolicyUserMessage(enforcement)),
+				types.ErrorCode(model.UserSecurityRuleCyberPolicy),
+				http.StatusBadGateway,
+				types.ErrOptionWithSkipRetry(),
+			)
+		}
+	}
 	if perfmetrics.ShouldRecordRelayFailure(newAPIError, isClientRequestCanceled(c)) {
 		healthKey := ""
 		if affinity, ok := service.GetChannelAffinityStatsContext(c); ok {
@@ -449,6 +463,9 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 		return true
 	}
 	if operation_setting.IsAlwaysSkipRetryCode(openaiErr.GetErrorCode()) {
+		return false
+	}
+	if service.IsCyberPolicyError(openaiErr) {
 		return false
 	}
 	return operation_setting.ShouldRetryByStatusCode(code)

@@ -3,6 +3,7 @@ package operation_setting
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -84,4 +85,8 @@ func TestIsAlwaysSkipRetryStatusCode(t *testing.T) {
 	require.True(t, IsAlwaysSkipRetryStatusCode(504))
 	require.True(t, IsAlwaysSkipRetryStatusCode(524))
 	require.False(t, IsAlwaysSkipRetryStatusCode(500))
+}
+
+func TestCyberPolicyAlwaysSkipsRetry(t *testing.T) {
+	require.True(t, IsAlwaysSkipRetryCode(types.ErrorCode("cyber_policy")))
 }

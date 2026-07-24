@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
@@ -480,6 +481,8 @@ func GetSelf(c *gin.Context) {
 
 	// 获取用户设置并提取sidebar_modules
 	userSetting := user.GetSetting()
+	effectiveConcurrency := user.EffectiveConcurrencyLimit()
+	effectiveRPM := user.EffectiveRPMLimit()
 
 	// 构建响应数据，包含用户信息和权限
 	responseData := map[string]interface{}{
@@ -513,12 +516,22 @@ func GetSelf(c *gin.Context) {
 		"stripe_customer":            user.StripeCustomer,
 		"sidebar_modules":            userSetting.SidebarModules, // 正确提取sidebar_modules字段
 		"permissions":                permissions,                // 新增权限字段
-		"concurrency_limit":          user.EffectiveConcurrencyLimit(),
+		"concurrency_limit":          effectiveConcurrency,
 		"concurrency_limit_override": user.ConcurrencyLimitOverride,
 		"current_concurrency":        service.GetUserConcurrency(user.Id),
-		"rpm_limit":                  user.EffectiveRPMLimit(),
+		"rpm_limit":                  effectiveRPM,
 		"rpm_limit_override":         user.RPMLimitOverride,
 		"current_rpm":                service.GetUserRPM(user.Id),
+		"recharge_capacity": model.BuildRechargeCapacityProgress(
+			user.RechargeTotalCents,
+			effectiveConcurrency,
+			effectiveRPM,
+		),
+		"security_strike_count":    user.SecurityStrikeCount,
+		"security_suspended_until": user.SecuritySuspendedUntil,
+		"security_permanent_ban":   user.SecurityPermanentBan,
+		"security_restriction_active": user.SecurityPermanentBan ||
+			user.SecuritySuspendedUntil > time.Now().Unix(),
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -1130,6 +1143,20 @@ func ManageUser(c *gin.Context) {
 			return
 		}
 		user.Role = common.RoleCommonUser
+	case "reset_security":
+		if err := model.ResetUserSecurityRestriction(user.Id); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		recordManageAuditFor(c, user.Id, "user.security_reset", map[string]interface{}{
+			"username": user.Username,
+			"id":       user.Id,
+		})
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "",
+		})
+		return
 	case "add_quota":
 		switch req.Mode {
 		case "add":
@@ -1137,7 +1164,16 @@ func ManageUser(c *gin.Context) {
 				common.ApiErrorI18n(c, i18n.MsgUserQuotaChangeZero)
 				return
 			}
-			if err := model.IncreaseUserQuota(user.Id, req.Value, true); err != nil {
+			sourceRef := c.GetString(common.RequestIdKey)
+			if sourceRef == "" {
+				sourceRef = fmt.Sprintf("admin-%d-user-%d-%d", c.GetInt("id"), user.Id, time.Now().UnixNano())
+			}
+			if err := model.IncreaseUserQuotaWithRechargeCredit(
+				user.Id,
+				req.Value,
+				model.QuotaToRechargeCents(req.Value),
+				sourceRef,
+			); err != nil {
 				common.ApiError(c, err)
 				return
 			}

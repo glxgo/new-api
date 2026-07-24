@@ -30,6 +30,7 @@ const ACTION_MESSAGES: Record<ManageUserAction, string> = {
   set_agent: 'User set as agent successfully',
   remove_agent: 'Agent role removed successfully',
   delete: 'User deleted successfully',
+  reset_security: 'Security restriction cleared successfully',
   add_quota: 'Quota adjusted successfully',
 }
 

@@ -30,6 +30,7 @@ const SECURITY_SECTIONS = [
     build: (settings: SecuritySettings) => (
       <AccountCapacitySection
         defaultValues={{
+          RechargeCapacityEnabled: settings.RechargeCapacityEnabled,
           DefaultUserConcurrencyLimit: settings.DefaultUserConcurrencyLimit,
           DefaultUserRPMLimit: settings.DefaultUserRPMLimit,
         }}

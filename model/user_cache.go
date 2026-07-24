@@ -27,14 +27,21 @@ type UserBase struct {
 	ConcurrencyLimitOverride bool   `json:"concurrency_limit_override"`
 	RPMLimit                 int    `json:"rpm_limit"`
 	RPMLimitOverride         bool   `json:"rpm_limit_override"`
+	RechargeTotalCents       int64  `json:"recharge_total_cents"`
+	SecurityStrikeCount      int    `json:"security_strike_count"`
+	SecuritySuspendedUntil   int64  `json:"security_suspended_until"`
+	SecurityPermanentBan     bool   `json:"security_permanent_ban"`
 	CapacityPolicyVersion    int    `json:"capacity_policy_version"`
 }
 
-const userCapacityPolicyVersion = 1
+const userCapacityPolicyVersion = 2
 
 func (user *UserBase) EffectiveConcurrencyLimit() int {
 	if user != nil && user.ConcurrencyLimitOverride && user.ConcurrencyLimit > 0 {
 		return user.ConcurrencyLimit
+	}
+	if user != nil && common.RechargeCapacityEnabled {
+		return RechargeCapacityForCents(user.RechargeTotalCents).ConcurrencyLimit
 	}
 	return common.GetDefaultUserConcurrencyLimit()
 }
@@ -42,6 +49,9 @@ func (user *UserBase) EffectiveConcurrencyLimit() int {
 func (user *UserBase) EffectiveRPMLimit() int {
 	if user != nil && user.RPMLimitOverride && user.RPMLimit > 0 {
 		return user.RPMLimit
+	}
+	if user != nil && common.RechargeCapacityEnabled {
+		return RechargeCapacityForCents(user.RechargeTotalCents).RPMLimit
 	}
 	return common.GetDefaultUserRPMLimit()
 }
@@ -142,6 +152,10 @@ func GetUserCache(userId int) (userCache *UserBase, err error) {
 		ConcurrencyLimitOverride: user.ConcurrencyLimitOverride,
 		RPMLimit:                 user.RPMLimit,
 		RPMLimitOverride:         user.RPMLimitOverride,
+		RechargeTotalCents:       user.RechargeTotalCents,
+		SecurityStrikeCount:      user.SecurityStrikeCount,
+		SecuritySuspendedUntil:   user.SecuritySuspendedUntil,
+		SecurityPermanentBan:     user.SecurityPermanentBan,
 		CapacityPolicyVersion:    userCapacityPolicyVersion,
 	}
 

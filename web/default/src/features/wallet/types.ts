@@ -255,6 +255,31 @@ export interface UserWalletData {
   dividend_balance?: number
   /** Cumulative commission/dividends earned (agent/admin/root, ever-increasing) */
   dividend_total?: number
+  /** Recharge-based API capacity and progress */
+  recharge_capacity?: RechargeCapacityProgress
+  security_strike_count?: number
+  security_suspended_until?: number
+  security_permanent_ban?: boolean
+  security_restriction_active?: boolean
+}
+
+export interface RechargeCapacityTier {
+  minimum_cents: number
+  maximum_cents: number
+  concurrency_limit: number
+  rpm_limit: number
+}
+
+export interface RechargeCapacityProgress {
+  enabled: boolean
+  total_cents: number
+  current_tier: RechargeCapacityTier
+  next_tier?: RechargeCapacityTier
+  remaining_cents: number
+  progress: number
+  tiers: RechargeCapacityTier[]
+  concurrency_limit: number
+  rpm_limit: number
 }
 
 /**

@@ -31,6 +31,7 @@ import {
   ShieldAlert,
   Link2,
   CreditCard,
+  RotateCcw,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -69,6 +70,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const [resetTwoFAOpen, setResetTwoFAOpen] = useState(false)
   const [bindingDialogOpen, setBindingDialogOpen] = useState(false)
   const [subscriptionsDialogOpen, setSubscriptionsDialogOpen] = useState(false)
+  const [resetSecurityOpen, setResetSecurityOpen] = useState(false)
 
   const handleEdit = () => {
     setCurrentRow(user)
@@ -240,6 +242,22 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
             </DropdownMenuShortcut>
           </DropdownMenuItem>
 
+          {(user.security_strike_count > 0 ||
+            user.security_suspended_until > 0 ||
+            user.security_permanent_ban) && (
+            <DropdownMenuItem
+              onSelect={(event) => {
+                event.preventDefault()
+                setResetSecurityOpen(true)
+              }}
+            >
+              {t('Clear Security Restriction')}
+              <DropdownMenuShortcut>
+                <RotateCcw size={16} />
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
+          )}
+
           <DropdownMenuSeparator />
 
           <DropdownMenuItem
@@ -299,6 +317,21 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         desc={`Reset 2FA for ${user.username}? The user must set up 2FA again to continue using it.`}
         confirmText='Reset 2FA'
         handleConfirm={handleResetTwoFA}
+      />
+
+      <ConfirmDialog
+        open={resetSecurityOpen}
+        onOpenChange={setResetSecurityOpen}
+        title={t('Clear Security Restriction')}
+        desc={t(
+          'Clear the automatic API restriction and reset the effective warning count for {{username}}? Audit records will be retained.',
+          { username: user.username }
+        )}
+        confirmText={t('Clear Restriction')}
+        handleConfirm={async () => {
+          await handleManage('reset_security')
+          setResetSecurityOpen(false)
+        }}
       />
 
       <UserBindingDialog

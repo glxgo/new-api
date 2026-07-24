@@ -146,6 +146,7 @@ var QuotaForInviter = 0
 var QuotaForInvitee = 0
 var DefaultUserConcurrencyLimit = 8
 var DefaultUserRPMLimit = 12
+var RechargeCapacityEnabled = true
 
 func GetDefaultUserConcurrencyLimit() int {
 	OptionMapRWMutex.RLock()

@@ -138,6 +138,7 @@ func InitOptionMap() {
 	common.OptionMap["QuotaForInvitee"] = strconv.Itoa(common.QuotaForInvitee)
 	common.OptionMap["DefaultUserConcurrencyLimit"] = strconv.Itoa(common.DefaultUserConcurrencyLimit)
 	common.OptionMap["DefaultUserRPMLimit"] = strconv.Itoa(common.DefaultUserRPMLimit)
+	common.OptionMap["RechargeCapacityEnabled"] = strconv.FormatBool(common.RechargeCapacityEnabled)
 	common.OptionMap["AffiliateDirectRate"] = strconv.FormatFloat(common.AffiliateDirectRate, 'f', -1, 64)
 	common.OptionMap["AffiliateIndirectRate"] = strconv.FormatFloat(common.AffiliateIndirectRate, 'f', -1, 64)
 	common.OptionMap["RootDividendRate"] = strconv.FormatFloat(common.RootDividendRate, 'f', -1, 64)
@@ -419,6 +420,8 @@ func updateOptionMap(key string, value string) (err error) {
 			setting.DefaultUseAutoGroup = boolValue
 		case "ExposeRatioEnabled":
 			ratio_setting.SetExposeRatioEnabled(boolValue)
+		case "RechargeCapacityEnabled":
+			common.RechargeCapacityEnabled = boolValue
 		}
 	}
 	switch key {

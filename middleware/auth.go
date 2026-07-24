@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -379,6 +380,30 @@ func TokenAuth() func(c *gin.Context) {
 			common.SysLog(fmt.Sprintf("TokenAuth GetUserCache error for user %d: %v", token.UserId, err))
 			abortWithOpenAiMessage(c, http.StatusInternalServerError,
 				common.TranslateMessage(c, i18n.MsgDatabaseError))
+			return
+		}
+		if userCache.SecurityPermanentBan {
+			abortWithOpenAiMessage(
+				c,
+				http.StatusForbidden,
+				fmt.Sprintf("检测到多次违反平台安全使用规则的请求，API 服务已被永久封禁（累计 %d 次有效警告）。如需申诉请联系管理员。", userCache.SecurityStrikeCount),
+				types.ErrorCode("user_security_permanently_banned"),
+			)
+			return
+		}
+		now := time.Now().Unix()
+		if userCache.SecuritySuspendedUntil > now {
+			retryAfter := userCache.SecuritySuspendedUntil - now
+			c.Header("Retry-After", strconv.FormatInt(retryAfter, 10))
+			recoverAt := time.Unix(userCache.SecuritySuspendedUntil, 0).
+				In(time.FixedZone("CST", 8*60*60)).
+				Format("2006-01-02 15:04:05")
+			abortWithOpenAiMessage(
+				c,
+				http.StatusTooManyRequests,
+				fmt.Sprintf("因触发平台安全使用规则，API 服务暂时不可用，预计恢复时间：%s（第 %d 次有效警告）。", recoverAt, userCache.SecurityStrikeCount),
+				types.ErrorCode("user_security_suspended"),
+			)
 			return
 		}
 		userEnabled := userCache.Status == common.UserStatusEnabled

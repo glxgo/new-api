@@ -3,6 +3,7 @@ package model
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -13,8 +14,13 @@ func TestConcurrencyApplicationLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&User{}, &ConcurrencyApplication{}))
 	oldDB := DB
+	oldRechargeCapacity := common.RechargeCapacityEnabled
 	DB = db
-	defer func() { DB = oldDB }()
+	common.RechargeCapacityEnabled = false
+	defer func() {
+		DB = oldDB
+		common.RechargeCapacityEnabled = oldRechargeCapacity
+	}()
 
 	user := User{Username: "concurrency-user", Password: "hashed-password", ConcurrencyLimit: 8}
 	require.NoError(t, db.Create(&user).Error)

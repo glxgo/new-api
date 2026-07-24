@@ -13,11 +13,14 @@ func withUserCapacityDefaults(t *testing.T, concurrency, rpm int) {
 	t.Helper()
 	oldConcurrency := common.DefaultUserConcurrencyLimit
 	oldRPM := common.DefaultUserRPMLimit
+	oldRechargeCapacity := common.RechargeCapacityEnabled
 	common.DefaultUserConcurrencyLimit = concurrency
 	common.DefaultUserRPMLimit = rpm
+	common.RechargeCapacityEnabled = false
 	t.Cleanup(func() {
 		common.DefaultUserConcurrencyLimit = oldConcurrency
 		common.DefaultUserRPMLimit = oldRPM
+		common.RechargeCapacityEnabled = oldRechargeCapacity
 	})
 }
 

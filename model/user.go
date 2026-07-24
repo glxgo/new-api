@@ -67,11 +67,18 @@ type User struct {
 	RPMLimit                 int            `json:"rpm_limit" gorm:"not null;default:12;column:rpm_limit"`
 	RPMLimitOverride         bool           `json:"rpm_limit_override" gorm:"not null;default:false;column:rpm_limit_override"`
 	CurrentRPM               int            `json:"current_rpm" gorm:"-:all"`
+	RechargeTotalCents       int64          `json:"recharge_total_cents" gorm:"not null;default:0;column:recharge_total_cents"`
+	SecurityStrikeCount      int            `json:"security_strike_count" gorm:"not null;default:0;column:security_strike_count"`
+	SecuritySuspendedUntil   int64          `json:"security_suspended_until" gorm:"not null;default:0;column:security_suspended_until;index"`
+	SecurityPermanentBan     bool           `json:"security_permanent_ban" gorm:"not null;default:false;column:security_permanent_ban;index"`
 }
 
 func (user *User) EffectiveConcurrencyLimit() int {
 	if user != nil && user.ConcurrencyLimitOverride && user.ConcurrencyLimit > 0 {
 		return user.ConcurrencyLimit
+	}
+	if user != nil && common.RechargeCapacityEnabled {
+		return RechargeCapacityForCents(user.RechargeTotalCents).ConcurrencyLimit
 	}
 	return common.GetDefaultUserConcurrencyLimit()
 }
@@ -79,6 +86,9 @@ func (user *User) EffectiveConcurrencyLimit() int {
 func (user *User) EffectiveRPMLimit() int {
 	if user != nil && user.RPMLimitOverride && user.RPMLimit > 0 {
 		return user.RPMLimit
+	}
+	if user != nil && common.RechargeCapacityEnabled {
+		return RechargeCapacityForCents(user.RechargeTotalCents).RPMLimit
 	}
 	return common.GetDefaultUserRPMLimit()
 }
@@ -114,6 +124,10 @@ func (user *User) ToBaseUser() *UserBase {
 		ConcurrencyLimitOverride: user.ConcurrencyLimitOverride,
 		RPMLimit:                 user.RPMLimit,
 		RPMLimitOverride:         user.RPMLimitOverride,
+		RechargeTotalCents:       user.RechargeTotalCents,
+		SecurityStrikeCount:      user.SecurityStrikeCount,
+		SecuritySuspendedUntil:   user.SecuritySuspendedUntil,
+		SecurityPermanentBan:     user.SecurityPermanentBan,
 		CapacityPolicyVersion:    userCapacityPolicyVersion,
 	}
 	return cache

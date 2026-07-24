@@ -334,6 +334,7 @@ export type OperationsSettings = {
 }
 
 export type SecuritySettings = {
+  RechargeCapacityEnabled: boolean
   DefaultUserConcurrencyLimit: number
   DefaultUserRPMLimit: number
   ModelRequestRateLimitEnabled: boolean

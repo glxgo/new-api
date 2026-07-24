@@ -31,11 +31,14 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { FormDirtyIndicator } from '../components/form-dirty-indicator'
 import { FormNavigationGuard } from '../components/form-navigation-guard'
 import {
   SettingsForm,
   SettingsFormGrid,
+  SettingsSwitchContent,
+  SettingsSwitchItem,
 } from '../components/settings-form-layout'
 import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
@@ -43,6 +46,7 @@ import { useSettingsForm } from '../hooks/use-settings-form'
 import { useUpdateOption } from '../hooks/use-update-option'
 
 const accountCapacitySchema = z.object({
+  RechargeCapacityEnabled: z.boolean(),
   DefaultUserConcurrencyLimit: z.coerce.number().int().min(1).max(10000),
   DefaultUserRPMLimit: z.coerce.number().int().min(1).max(10000000),
 })
@@ -88,8 +92,8 @@ export function AccountCapacitySection({
       <FormNavigationGuard when={isDirty} />
       <Alert>
         <AlertDescription>
-          这里修改的是继承默认值的账号。已经单独设置过并发或 RPM
-          的账号，会分别保留对应的独立上限。
+          开启累计充值容量后，普通账号按已支付充值和套餐金额自动解锁容量；管理员单独覆盖的并发或
+          RPM 仍优先。关闭后才使用下方默认值。
         </AlertDescription>
       </Alert>
 
@@ -100,6 +104,46 @@ export function AccountCapacitySection({
             isSaving={updateOption.isPending || isSubmitting}
           />
           <FormDirtyIndicator isDirty={isDirty} />
+          <FormField
+            control={form.control}
+            name='RechargeCapacityEnabled'
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <div className='text-sm font-medium'>按累计充值解锁容量</div>
+                  <p className='text-muted-foreground text-xs'>
+                    充值、管理员加额和在线支付订阅计入；赠金、兑换码、签到、扣减和余额覆盖不计入。
+                  </p>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </SettingsSwitchItem>
+            )}
+          />
+          <div className='grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-4 gap-y-2 rounded-lg border p-4 text-sm'>
+            <div className='text-muted-foreground'>累计充值</div>
+            <div className='text-muted-foreground text-right'>并发</div>
+            <div className='text-muted-foreground text-right'>RPM</div>
+            {[
+              ['¥0–10', '2', '10'],
+              ['¥10–50', '4', '20'],
+              ['¥50–200', '8', '40'],
+              ['¥200–500', '15', '60'],
+              ['¥500–1000', '20', '100'],
+              ['¥1000–2000', '30', '150'],
+              ['¥2000+', '50', '200'],
+            ].map(([amount, concurrency, rpm]) => (
+              <div key={amount} className='contents'>
+                <div>{amount}</div>
+                <div className='text-right font-mono'>{concurrency}</div>
+                <div className='text-right font-mono'>{rpm}</div>
+              </div>
+            ))}
+          </div>
           <SettingsFormGrid>
             <FormField
               control={form.control}
