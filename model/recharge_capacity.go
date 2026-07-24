@@ -314,7 +314,7 @@ func MigrateRechargeCapacityCreditsV3() error {
 	if err := DB.
 		Table("subscription_orders AS o").
 		Select("o.user_id, o.money, o.trade_no, o.complete_time").
-		Joins("JOIN users AS u ON u.id = o.user_id").
+		Joins("JOIN users AS u ON u.id = o.user_id AND u.deleted_at IS NULL").
 		Joins("LEFT JOIN recharge_credits AS r ON r.source_type = ? AND r.source_ref = TRIM(o.trade_no)", "topup").
 		Where("o.status = ? AND o.money > 0", common.TopUpStatusSuccess).
 		Where("LOWER(TRIM(COALESCE(o.payment_provider, ''))) <> ?", PaymentProviderBalance).
