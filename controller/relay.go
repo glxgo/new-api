@@ -286,12 +286,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 	}
 	if perfmetrics.ShouldRecordRelayFailure(newAPIError, isClientRequestCanceled(c)) {
-		healthKey := ""
-		if affinity, ok := service.GetChannelAffinityStatsContext(c); ok {
-			healthKey = affinity.KeyFingerprint
-		}
 		gopool.Go(func() {
-			perfmetrics.RecordRelaySampleWithHealthKey(relayInfo, false, 0, 0, 0, healthKey)
+			perfmetrics.RecordRelaySample(relayInfo, false, 0, 0, 0)
 		})
 	}
 }

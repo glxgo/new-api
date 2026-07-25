@@ -137,12 +137,27 @@ function ProbeStatusBand({ summary }: { summary?: GroupCacheSummary }) {
                 'size-1.5 rounded-full',
                 tone === 'unhealthy'
                   ? 'bg-destructive'
-                  : tone === 'unknown'
-                    ? 'bg-muted-foreground/35'
-                    : 'bg-foreground'
+                  : tone === 'degraded'
+                    ? 'bg-amber-500'
+                    : tone === 'unknown'
+                      ? 'bg-muted-foreground/35'
+                      : 'bg-emerald-500'
               )}
             />
-            <p className='text-sm font-semibold'>{probeLabel(tone)}</p>
+            <p
+              className={cn(
+                'text-sm font-semibold',
+                tone === 'unhealthy'
+                  ? 'text-destructive'
+                  : tone === 'degraded'
+                    ? 'text-amber-700 dark:text-amber-400'
+                    : tone === 'healthy'
+                      ? 'text-emerald-700 dark:text-emerald-400'
+                      : 'text-foreground'
+              )}
+            >
+              {probeLabel(tone, probe)}
+            </p>
           </div>
         </div>
         <div className='shrink-0 text-right'>
@@ -341,12 +356,7 @@ export function ModelStatus() {
   const [rangeHours, setRangeHours] = useState(24)
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
   const [probeDialogOpen, setProbeDialogOpen] = useState(false)
-  const {
-    models,
-    usableGroup,
-    autoGroups,
-    isLoading: pricingLoading,
-  } = usePricingData()
+  const { models, usableGroup, isLoading: pricingLoading } = usePricingData()
   const summaryQuery = useQuery({
     queryKey: ['perf-metrics-group-summary-model-status', rangeHours],
     queryFn: () => getPerfMetricsGroupSummary(rangeHours),
@@ -388,17 +398,11 @@ export function ModelStatus() {
     for (const group of groups) {
       map.set(
         group,
-        group === 'auto'
-          ? models.filter((model) =>
-              model.enable_groups?.some((enabled) =>
-                autoGroups.includes(enabled)
-              )
-            )
-          : models.filter((model) => model.enable_groups?.includes(group))
+        models.filter((model) => model.enable_groups?.includes(group))
       )
     }
     return map
-  }, [autoGroups, groups, models])
+  }, [groups, models])
 
   const selectedModels = selectedGroup
     ? (modelsByGroup.get(selectedGroup) ?? [])
@@ -418,7 +422,7 @@ export function ModelStatus() {
             <div className='flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between'>
               <div className='text-muted-foreground flex items-center gap-2 text-xs'>
                 <Activity className='text-foreground size-4' />
-                数据每分钟更新；可识别的同会话重复结果会在统计桶内去重
+                数据每分钟更新；只统计最终请求结果，重试中的中间错误不会重复计入
               </div>
               <div className='flex w-full flex-col gap-2 sm:flex-row lg:w-auto'>
                 {isAdmin ? (

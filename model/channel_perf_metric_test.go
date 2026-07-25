@@ -9,6 +9,7 @@ import (
 )
 
 func TestUpsertAndQueryChannelPerfMetric(t *testing.T) {
+	require.Equal(t, "channel_perf_metrics_v2", (ChannelPerfMetric{}).TableName())
 	previousDB := DB
 	db, err := gorm.Open(sqlite.Open("file:channel_perf_metric?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)

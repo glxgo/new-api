@@ -260,9 +260,10 @@ export function Wallet(props: WalletProps) {
         <SectionPageLayout.Title>{t('Wallet')}</SectionPageLayout.Title>
         <SectionPageLayout.Content>
           <div className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-5'>
-            <WalletStatsCard user={user} loading={userLoading} />
-
-            <RechargeCapacityCard user={user} loading={userLoading} />
+            <div className='grid items-stretch gap-4 xl:grid-cols-[minmax(18rem,0.72fr)_minmax(0,1.28fr)]'>
+              <WalletStatsCard user={user} loading={userLoading} />
+              <RechargeCapacityCard user={user} loading={userLoading} />
+            </div>
 
             <MySubscriptionsSummary />
 

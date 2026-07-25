@@ -26,18 +26,17 @@ func TestBuildPerfMetricChannelScopesUsesEnabledSelectedAbilities(t *testing.T) 
 	settings := &operation_setting.MonitorSetting{ChannelCanaryChannelIds: []int{8, 31, 34}}
 
 	scopes := buildPerfMetricChannelScopes(
-		[]string{"auto", "gpt-pro", "套餐专用分组"},
+		[]string{"gpt-pro", "套餐专用分组"},
 		channels,
 		abilities,
 		settings,
 	)
 
-	require.Len(t, scopes, 3)
+	require.Len(t, scopes, 2)
 	byGroup := make(map[string]map[string][]int, len(scopes))
 	for _, scope := range scopes {
 		byGroup[scope.Group] = scope.ModelChannels
 	}
 	require.Equal(t, []int{8}, byGroup["gpt-pro"]["gpt-5"])
 	require.Equal(t, []int{8}, byGroup["套餐专用分组"]["gpt-5"])
-	require.Equal(t, []int{8}, byGroup["auto"]["gpt-5"])
 }

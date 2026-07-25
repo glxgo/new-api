@@ -490,14 +490,9 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		Other:            other,
 		BillingSource:    relayInfo.BillingSource,
 	})
-	healthKey := ""
-	if affinity, ok := GetChannelAffinityStatsContext(ctx); ok {
-		healthKey = affinity.KeyFingerprint
-	}
 	gopool.Go(func() {
-		perfmetrics.RecordRelaySampleWithHealthKey(relayInfo, true, int64(summary.CompletionTokens),
+		perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens),
 			int64(summary.CacheTokens),
-			int64(summary.PromptTokens),
-			healthKey)
+			int64(summary.PromptTokens))
 	})
 }

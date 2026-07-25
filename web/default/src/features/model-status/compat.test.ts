@@ -34,6 +34,26 @@ describe('resolveModelStatusGroups', () => {
 
     assert.deepEqual(groups, ['default', '套餐专用分组', 'vip'])
   })
+
+  test('never exposes the internal auto routing group as a status card', () => {
+    const groups = resolveModelStatusGroups(
+      {
+        available_groups: ['auto', 'default'],
+        groups: [
+          {
+            group: 'auto',
+            cache_rate: 0,
+            request_count: 1,
+            cache_tokens: 0,
+            prompt_tokens: 0,
+          },
+        ],
+      },
+      ['auto', '套餐专用分组']
+    )
+
+    assert.deepEqual(groups, ['default', '套餐专用分组'])
+  })
 })
 
 describe('hasCompleteHealthMetrics', () => {

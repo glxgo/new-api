@@ -303,6 +303,26 @@ type probeSeriesAccumulator struct {
 	ttftCount    int64
 }
 
+func classifyGroupProbeStatus(summary *perfmetrics.GroupProbeSummary) string {
+	if summary == nil || summary.TotalChannels < 1 || summary.CheckedChannels < 1 {
+		return "unknown"
+	}
+	if summary.HealthyChannels == summary.TotalChannels {
+		return model.ChannelProbeStatusHealthy
+	}
+	if summary.HealthyChannels >= 2 {
+		return model.ChannelProbeStatusHealthy
+	}
+	if summary.HealthyChannels == 1 {
+		return model.ChannelProbeStatusDegraded
+	}
+	if summary.CheckedChannels == summary.TotalChannels &&
+		summary.UnhealthyChannels == summary.TotalChannels {
+		return model.ChannelProbeStatusUnhealthy
+	}
+	return model.ChannelProbeStatusDegraded
+}
+
 func buildGroupProbeSummaries(hours int, visibleGroups []string) (map[string]*perfmetrics.GroupProbeSummary, error) {
 	result := make(map[string]*perfmetrics.GroupProbeSummary)
 	if model.DB == nil || !model.DB.Migrator().HasTable(&model.ChannelProbeState{}) || !model.DB.Migrator().HasTable(&model.ChannelProbeRecord{}) {
@@ -436,16 +456,7 @@ func buildGroupProbeSummaries(hours int, visibleGroups []string) (map[string]*pe
 
 	for group, acc := range accumulators {
 		summary := acc.summary
-		switch {
-		case summary.CheckedChannels == 0:
-			summary.Status = "unknown"
-		case summary.CheckedChannels == summary.TotalChannels && summary.HealthyChannels == summary.TotalChannels:
-			summary.Status = model.ChannelProbeStatusHealthy
-		case summary.HealthyChannels == 0 && summary.UnhealthyChannels > 0 && summary.DegradedChannels == 0:
-			summary.Status = model.ChannelProbeStatusUnhealthy
-		default:
-			summary.Status = model.ChannelProbeStatusDegraded
-		}
+		summary.Status = classifyGroupProbeStatus(summary)
 		if acc.probeCount > 0 {
 			summary.SuccessRate = float64(acc.successCount) * 100 / float64(acc.probeCount)
 		}

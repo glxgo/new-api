@@ -8,6 +8,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
@@ -43,6 +44,56 @@ func TestClassifyChannelProbeError(t *testing.T) {
 	require.Equal(t, "timeout", classifyChannelProbeError(testResult{localErr: context.DeadlineExceeded}))
 	require.Equal(t, "rate_limit", classifyChannelProbeError(testResult{httpStatus: 429}))
 	require.Equal(t, "upstream", classifyChannelProbeError(testResult{httpStatus: 502}))
+}
+
+func TestClassifyGroupProbeStatusByRemainingHealthyChannels(t *testing.T) {
+	tests := []struct {
+		name     string
+		summary  *perfmetrics.GroupProbeSummary
+		expected string
+	}{
+		{
+			name:     "single channel group remains healthy",
+			summary:  &perfmetrics.GroupProbeSummary{TotalChannels: 1, CheckedChannels: 1, HealthyChannels: 1},
+			expected: model.ChannelProbeStatusHealthy,
+		},
+		{
+			name:     "all channels healthy",
+			summary:  &perfmetrics.GroupProbeSummary{TotalChannels: 3, CheckedChannels: 3, HealthyChannels: 3},
+			expected: model.ChannelProbeStatusHealthy,
+		},
+		{
+			name:     "two healthy channels keep a multi-channel group green",
+			summary:  &perfmetrics.GroupProbeSummary{TotalChannels: 3, CheckedChannels: 3, HealthyChannels: 2, UnhealthyChannels: 1},
+			expected: model.ChannelProbeStatusHealthy,
+		},
+		{
+			name:     "one remaining channel is degraded",
+			summary:  &perfmetrics.GroupProbeSummary{TotalChannels: 3, CheckedChannels: 3, HealthyChannels: 1, UnhealthyChannels: 2},
+			expected: model.ChannelProbeStatusDegraded,
+		},
+		{
+			name:     "all confirmed failures are unhealthy",
+			summary:  &perfmetrics.GroupProbeSummary{TotalChannels: 2, CheckedChannels: 2, UnhealthyChannels: 2},
+			expected: model.ChannelProbeStatusUnhealthy,
+		},
+		{
+			name:     "unconfirmed failures stay degraded",
+			summary:  &perfmetrics.GroupProbeSummary{TotalChannels: 2, CheckedChannels: 2, DegradedChannels: 2},
+			expected: model.ChannelProbeStatusDegraded,
+		},
+		{
+			name:     "unchecked groups stay unknown",
+			summary:  &perfmetrics.GroupProbeSummary{TotalChannels: 2},
+			expected: "unknown",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.expected, classifyGroupProbeStatus(test.summary))
+		})
+	}
 }
 
 func TestBuildGroupProbeSummariesKeepsSyntheticHealthSeparate(t *testing.T) {

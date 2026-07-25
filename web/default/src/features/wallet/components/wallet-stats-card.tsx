@@ -19,17 +19,9 @@ For commercial licensing, please contact support@quantumnous.com
 import { Activity, BarChart3, WalletCards } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { formatQuota } from '@/lib/format'
-import { Skeleton } from '@/components/ui/skeleton'
 import { CountUp } from '@/components/ui/count-up'
+import { Skeleton } from '@/components/ui/skeleton'
 import type { UserWalletData } from '../types'
-
-// 能量条渐变（每卡一色），与 dashboard 统计卡一致
-const CARD_ACCENTS = [
-  'from-sky-500 to-blue-500',
-  'from-violet-500 to-purple-500',
-  'from-emerald-500 to-teal-500',
-  'from-amber-500 to-orange-500',
-] as const
 
 interface WalletStatsCardProps {
   user: UserWalletData | null
@@ -40,12 +32,11 @@ export function WalletStatsCard(props: WalletStatsCardProps) {
   const { t } = useTranslation()
   if (props.loading) {
     return (
-      <div className='grid grid-cols-1 gap-3 sm:grid-cols-3'>
+      <div className='bg-border grid min-h-36 grid-cols-1 gap-px overflow-hidden rounded-xl border sm:grid-cols-3 xl:grid-cols-1'>
         {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className='rounded-xl border p-4 shadow-sm'>
+          <div key={i} className='bg-card p-3.5'>
             <Skeleton className='h-3.5 w-20' />
-            <Skeleton className='mt-2 h-7 w-28' />
-            <Skeleton className='mt-1.5 h-3.5 w-24' />
+            <Skeleton className='mt-2 h-6 w-28' />
           </div>
         ))}
       </div>
@@ -86,45 +77,33 @@ export function WalletStatsCard(props: WalletStatsCardProps) {
   ]
 
   return (
-    <div className='grid grid-cols-1 gap-3 sm:grid-cols-3'>
-      {stats.map((item, idx) => {
+    <section className='bg-border grid min-h-36 grid-cols-1 gap-px overflow-hidden rounded-xl border shadow-sm sm:grid-cols-3 xl:grid-cols-1'>
+      {stats.map((item) => {
         const Icon = item.icon
-        const accent = CARD_ACCENTS[idx % CARD_ACCENTS.length]
         return (
           <div
             key={item.label}
-            className='group rounded-xl border border-border bg-card p-4 shadow-sm transition-all duration-300 hover:scale-[1.03] hover:shadow-md'
+            className='bg-card hover:bg-muted/25 flex min-w-0 items-center gap-3 p-3.5 transition-colors'
           >
-            <div className='flex items-center gap-2'>
-              <Icon className='text-muted-foreground/70 size-3.5 shrink-0' />
-              <div className='text-muted-foreground truncate text-xs font-medium tracking-wider uppercase'>
+            <div className='bg-background flex size-9 shrink-0 items-center justify-center rounded-lg border'>
+              <Icon className='text-muted-foreground size-4' />
+            </div>
+            <div className='min-w-0 flex-1'>
+              <div className='text-muted-foreground truncate text-[11px] font-medium tracking-wider uppercase'>
                 {item.label}
               </div>
-            </div>
-
-            <div className='text-foreground mt-1.5 font-mono text-base font-bold tracking-tight break-all tabular-nums sm:mt-2 sm:text-2xl'>
-              <CountUp value={item.rawValue} format={item.format} />
-            </div>
-
-            {item.detail ? (
-              <div className='text-muted-foreground mt-1 text-xs md:block'>
-                {item.detail}
+              <div className='text-foreground mt-0.5 truncate font-mono text-lg font-bold tracking-tight tabular-nums'>
+                <CountUp value={item.rawValue} format={item.format} />
               </div>
-            ) : (
-              <div className='text-muted-foreground/60 mt-1 hidden text-xs md:block'>
-                {item.description}
-              </div>
-            )}
-
-            {/* 能量条：默认 50%，hover 充到 80%（与 dashboard 统计卡一致）*/}
-            <div className='mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted'>
-              <div
-                className={`h-full w-full origin-left scale-x-50 rounded-full bg-gradient-to-r ${accent} transition-transform duration-500 ease-out group-hover:scale-x-[0.8]`}
-              />
+              {item.detail ? (
+                <div className='text-muted-foreground mt-0.5 truncate text-[10px]'>
+                  {item.detail}
+                </div>
+              ) : null}
             </div>
           </div>
         )
       })}
-    </div>
+    </section>
   )
 }

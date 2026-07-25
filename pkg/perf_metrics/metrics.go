@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -17,7 +16,6 @@ import (
 
 var hotBuckets sync.Map
 var channelHotBuckets sync.Map
-var channelHealthDedup sync.Map
 
 // seriesSchema is a stable client cache/schema marker. Do not change it when
 // hiding fields or making response-only privacy hardening changes.
@@ -28,10 +26,6 @@ func Init() {
 }
 
 func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens, cacheTokens, promptTokens int64) {
-	RecordRelaySampleWithHealthKey(info, success, outputTokens, cacheTokens, promptTokens, "")
-}
-
-func RecordRelaySampleWithHealthKey(info *relaycommon.RelayInfo, success bool, outputTokens, cacheTokens, promptTokens int64, healthKey string) {
 	if info == nil {
 		return
 	}
@@ -62,7 +56,6 @@ func RecordRelaySampleWithHealthKey(info *relaycommon.RelayInfo, success bool, o
 		Model:        info.OriginModelName,
 		Group:        info.UsingGroup,
 		ChannelId:    channelId,
-		HealthKey:    healthKey,
 		LatencyMs:    latencyMs,
 		TtftMs:       ttftMs,
 		HasTtft:      hasTtft,
@@ -94,7 +87,7 @@ func Record(sample Sample) {
 	actual, _ := hotBuckets.LoadOrStore(key, &atomicBucket{})
 	actual.(*atomicBucket).add(sample)
 	recordRedis(key, sample)
-	if sample.ChannelId > 0 && shouldRecordChannelHealthSample(sample, key.bucketTs) {
+	if sample.ChannelId > 0 {
 		channelKey := channelBucketKey{
 			model:     sample.Model,
 			channelId: sample.ChannelId,
@@ -103,31 +96,6 @@ func Record(sample Sample) {
 		channelActual, _ := channelHotBuckets.LoadOrStore(channelKey, &atomicBucket{})
 		channelActual.(*atomicBucket).add(sample)
 	}
-}
-
-func shouldRecordChannelHealthSample(sample Sample, bucketTs int64) bool {
-	healthKey := strings.TrimSpace(sample.HealthKey)
-	if healthKey == "" {
-		return true
-	}
-	key := channelHealthDedupKey{
-		model:     sample.Model,
-		bucketTs:  bucketTs,
-		healthKey: healthKey,
-		success:   sample.Success,
-	}
-	_, loaded := channelHealthDedup.LoadOrStore(key, struct{}{})
-	return !loaded
-}
-
-func cleanupChannelHealthDedupBefore(bucketTs int64) {
-	channelHealthDedup.Range(func(rawKey, _ any) bool {
-		key := rawKey.(channelHealthDedupKey)
-		if key.bucketTs < bucketTs {
-			channelHealthDedup.Delete(rawKey)
-		}
-		return true
-	})
 }
 
 func Query(params QueryParams) (QueryResult, error) {

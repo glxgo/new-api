@@ -160,9 +160,6 @@ func buildPerfMetricChannelScopes(
 			continue
 		}
 		add(ability.Group, ability)
-		if _, autoVisible := activeGroupSet["auto"]; autoVisible && ability.Group != "auto" {
-			add("auto", ability)
-		}
 	}
 
 	scopes := make([]perfmetrics.GroupChannelScope, 0, len(channelSets))
@@ -250,7 +247,8 @@ func hiddenStatusGroups() map[string]bool {
 	return hidden
 }
 
-// visibleStatusGroups 返回模型状态页应展示的分组(ratio 分组 - 黑名单 + auto)。
+// visibleStatusGroups 返回模型状态页应展示的分组（ratio 分组 - 黑名单）。
+// auto 仅用于运行时自动路由，不作为独立、可观测的服务分组展示。
 func visibleStatusGroups() []string {
 	hidden := hiddenStatusGroups()
 	groupSet := map[string]struct{}{}
@@ -259,7 +257,6 @@ func visibleStatusGroups() []string {
 			groupSet[g] = struct{}{}
 		}
 	}
-	groupSet["auto"] = struct{}{}
 	groups := make([]string, 0, len(groupSet))
 	for group := range groupSet {
 		groups = append(groups, group)

@@ -27,7 +27,7 @@ export function resolveModelStatusGroups(
       ...(data?.groups ?? []).map((summary) => summary.group),
       ...pricingGroups,
     ])
-  ).filter(Boolean)
+  ).filter((group) => Boolean(group) && group.toLowerCase() !== 'auto')
 }
 
 export function hasCompleteHealthMetrics(

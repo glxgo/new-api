@@ -29,10 +29,9 @@ func (PerfMetric) TableName() string {
 	return "perf_metrics"
 }
 
-// ChannelPerfMetric stores conversation-weighted health measurements keyed by
-// the final upstream channel. Raw request-volume measurements remain in
-// PerfMetric, while affinity-identifiable retries are deduplicated before they
-// reach this table so one bad conversation cannot dominate public health.
+// ChannelPerfMetric stores final request health measurements keyed by the
+// upstream channel. Internal retry attempts never reach this table, while
+// client-side and invalid-request failures are filtered before recording.
 type ChannelPerfMetric struct {
 	Id             int    `json:"id" gorm:"primaryKey"`
 	ModelName      string `json:"model_name" gorm:"size:128;uniqueIndex:idx_channel_perf_model_channel_bucket,priority:1"`
@@ -50,7 +49,9 @@ type ChannelPerfMetric struct {
 }
 
 func (ChannelPerfMetric) TableName() string {
-	return "channel_perf_metrics"
+	// V2 starts a clean series because V1 conversation/outcome deduplication
+	// distorted request-weighted availability and cannot be losslessly rebuilt.
+	return "channel_perf_metrics_v2"
 }
 
 func UpsertChannelPerfMetric(metric *ChannelPerfMetric) error {
@@ -64,15 +65,15 @@ func UpsertChannelPerfMetric(metric *ChannelPerfMetric) error {
 			{Name: "bucket_ts"},
 		},
 		DoUpdates: clause.Assignments(map[string]interface{}{
-			"request_count":    gorm.Expr("channel_perf_metrics.request_count + ?", metric.RequestCount),
-			"success_count":    gorm.Expr("channel_perf_metrics.success_count + ?", metric.SuccessCount),
-			"total_latency_ms": gorm.Expr("channel_perf_metrics.total_latency_ms + ?", metric.TotalLatencyMs),
-			"ttft_sum_ms":      gorm.Expr("channel_perf_metrics.ttft_sum_ms + ?", metric.TtftSumMs),
-			"ttft_count":       gorm.Expr("channel_perf_metrics.ttft_count + ?", metric.TtftCount),
-			"output_tokens":    gorm.Expr("channel_perf_metrics.output_tokens + ?", metric.OutputTokens),
-			"generation_ms":    gorm.Expr("channel_perf_metrics.generation_ms + ?", metric.GenerationMs),
-			"cache_tokens":     gorm.Expr("channel_perf_metrics.cache_tokens + ?", metric.CacheTokens),
-			"prompt_tokens":    gorm.Expr("channel_perf_metrics.prompt_tokens + ?", metric.PromptTokens),
+			"request_count":    gorm.Expr("channel_perf_metrics_v2.request_count + ?", metric.RequestCount),
+			"success_count":    gorm.Expr("channel_perf_metrics_v2.success_count + ?", metric.SuccessCount),
+			"total_latency_ms": gorm.Expr("channel_perf_metrics_v2.total_latency_ms + ?", metric.TotalLatencyMs),
+			"ttft_sum_ms":      gorm.Expr("channel_perf_metrics_v2.ttft_sum_ms + ?", metric.TtftSumMs),
+			"ttft_count":       gorm.Expr("channel_perf_metrics_v2.ttft_count + ?", metric.TtftCount),
+			"output_tokens":    gorm.Expr("channel_perf_metrics_v2.output_tokens + ?", metric.OutputTokens),
+			"generation_ms":    gorm.Expr("channel_perf_metrics_v2.generation_ms + ?", metric.GenerationMs),
+			"cache_tokens":     gorm.Expr("channel_perf_metrics_v2.cache_tokens + ?", metric.CacheTokens),
+			"prompt_tokens":    gorm.Expr("channel_perf_metrics_v2.prompt_tokens + ?", metric.PromptTokens),
 		}),
 	}).Create(metric).Error
 }

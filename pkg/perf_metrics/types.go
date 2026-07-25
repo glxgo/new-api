@@ -11,7 +11,6 @@ type Sample struct {
 	Model        string
 	Group        string
 	ChannelId    int
-	HealthKey    string
 	LatencyMs    int64
 	TtftMs       int64
 	HasTtft      bool
@@ -135,13 +134,6 @@ type channelBucketKey struct {
 	model     string
 	channelId int
 	bucketTs  int64
-}
-
-type channelHealthDedupKey struct {
-	model     string
-	bucketTs  int64
-	healthKey string
-	success   bool
 }
 
 type counters struct {

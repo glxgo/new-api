@@ -1,5 +1,5 @@
-export const HEALTHY_AVAILABILITY_THRESHOLD = 96
-export const UNSTABLE_AVAILABILITY_THRESHOLD = 90
+export const HEALTHY_AVAILABILITY_THRESHOLD = 90
+export const UNSTABLE_AVAILABILITY_THRESHOLD = 80
 
 export function availabilityBarClass(successRate: number): string {
   if (successRate >= HEALTHY_AVAILABILITY_THRESHOLD) {

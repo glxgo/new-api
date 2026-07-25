@@ -25,7 +25,6 @@ func flushLoop() {
 
 func flushCompletedBuckets() {
 	currentBucket := bucketStart(time.Now().Unix())
-	cleanupChannelHealthDedupBefore(currentBucket)
 	hotBuckets.Range(func(key, value any) bool {
 		k := key.(bucketKey)
 		if k.bucketTs >= currentBucket {

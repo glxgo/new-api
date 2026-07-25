@@ -3,14 +3,30 @@ import type { GroupProbeSummary } from '@/features/performance-metrics/types'
 export type ProbeTone = 'healthy' | 'degraded' | 'unhealthy' | 'unknown'
 
 export function probeTone(probe?: GroupProbeSummary): ProbeTone {
-  if (!probe || probe.checked_channels === 0) return 'unknown'
-  return probe.status
+  if (!probe || probe.total_channels < 1 || probe.checked_channels < 1)
+    return 'unknown'
+  if (probe.healthy_channels === probe.total_channels) return 'healthy'
+  if (probe.healthy_channels >= 2) return 'healthy'
+  if (probe.healthy_channels === 1) return 'degraded'
+  if (
+    probe.checked_channels === probe.total_channels &&
+    probe.unhealthy_channels === probe.total_channels
+  )
+    return 'unhealthy'
+  return 'degraded'
 }
 
-export function probeLabel(tone: ProbeTone) {
-  if (tone === 'healthy') return '全部正常'
-  if (tone === 'degraded') return '部分波动'
-  if (tone === 'unhealthy') return '探测异常'
+export function probeLabel(tone: ProbeTone, probe?: GroupProbeSummary) {
+  if (tone === 'healthy') {
+    if (probe && probe.healthy_channels < probe.total_channels)
+      return '部分正常'
+    return '全部正常'
+  }
+  if (tone === 'degraded') {
+    if (probe?.healthy_channels) return '部分正常'
+    return '状态确认中'
+  }
+  if (tone === 'unhealthy') return '服务异常'
   return '等待探测'
 }
 
