@@ -4,7 +4,23 @@ import (
 	"io"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/tidwall/sjson"
 )
+
+// ApplyMappedModelToOutboundJSON preserves a pass-through request body while
+// replacing only its model field with the channel's resolved upstream model.
+// ModelMappedHelper updates the parsed request, but pass-through handlers send
+// the original JSON bytes, so they must apply the resolved model explicitly.
+func ApplyMappedModelToOutboundJSON(data []byte, info *RelayInfo) ([]byte, bool, error) {
+	if info == nil || info.ChannelMeta == nil || !info.IsModelMapped || info.UpstreamModelName == "" {
+		return data, false, nil
+	}
+	result, err := sjson.SetBytes(data, "model", info.UpstreamModelName)
+	if err != nil {
+		return nil, false, err
+	}
+	return result, true, nil
+}
 
 // NewOutboundJSONBody wraps the already-marshaled upstream request body into a
 // BodyStorage. When disk cache is enabled and the payload exceeds the configured

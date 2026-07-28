@@ -81,10 +81,24 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry())
 		}
+		jsonData, modelMapped, err := relaycommon.ApplyMappedModelToOutboundJSON(jsonData, info)
+		if err != nil {
+			return types.NewError(err, types.ErrorCodeChannelModelMappedError, types.ErrOptionWithSkipRetry())
+		}
 		if billingErr := service.PreparePriorityBillingForOutbound(info, jsonData); billingErr != nil {
 			return billingErr
 		}
-		requestBody = common.ReaderOnly(storage)
+		if modelMapped {
+			body, size, closer, bodyErr := relaycommon.NewOutboundJSONBody(jsonData)
+			if bodyErr != nil {
+				return types.NewError(bodyErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			}
+			defer closer.Close()
+			info.UpstreamRequestBodySize = size
+			requestBody = body
+		} else {
+			requestBody = common.ReaderOnly(storage)
+		}
 	} else {
 		convertedRequest, err := adaptor.ConvertOpenAIResponsesRequest(c, info, *request)
 		if err != nil {
