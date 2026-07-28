@@ -39,8 +39,8 @@ function StatCard(props: {
   const Icon = props.icon
 
   return (
-    <div className='group border-border/70 bg-background/80 hover:border-foreground/20 flex min-h-24 origin-center items-center gap-3 rounded-xl border px-4 py-3 shadow-xs transition-[transform,box-shadow,border-color] duration-300 ease-out will-change-transform hover:-translate-y-1 hover:scale-[1.025] hover:shadow-lg motion-reduce:transform-none motion-reduce:transition-none'>
-      <span className='border-border/70 bg-muted/25 group-hover:bg-muted/50 flex size-9 shrink-0 items-center justify-center rounded-lg border transition-[transform,background-color] duration-300 group-hover:scale-105 group-hover:-rotate-2 motion-reduce:transform-none'>
+    <div className='group border-border/70 bg-background/80 hover:border-foreground/20 flex min-h-24 items-center gap-3 rounded-xl border px-4 py-3 transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] dark:hover:shadow-[0_8px_24px_rgba(0,0,0,0.4)]'>
+      <span className='border-border/70 bg-muted/25 group-hover:bg-muted/50 flex size-9 shrink-0 items-center justify-center rounded-lg border transition-[transform,background-color] duration-200 group-hover:scale-105'>
         <Icon className='text-foreground/80 size-4' />
       </span>
       <div className='min-w-0'>

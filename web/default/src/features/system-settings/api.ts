@@ -77,7 +77,10 @@ export async function fetchUpstreamRatios(request: FetchUpstreamRatiosRequest) {
 
 // 分组定价预览(2026-06-22): 后端按「官方价 × GroupRatio / GroupCostRatio」算出每个模型
 // 在某分组下的实际售价/成本/毛利。成本字段仅 Root 返回。详见 controller/group_pricing_preview.go。
-export async function getGroupPricingPreview(group: string, includeDisabled: boolean) {
+export async function getGroupPricingPreview(
+  group: string,
+  includeDisabled: boolean
+) {
   const res = await api.get('/api/option/pricing/group-preview', {
     params: { group, include_disabled: includeDisabled },
   })

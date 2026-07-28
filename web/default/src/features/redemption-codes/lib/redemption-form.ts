@@ -100,7 +100,8 @@ export function transformRedemptionToFormDefaults(
 ): RedemptionFormValues {
   return {
     name: redemption.name,
-    target_type: redemption.target_type === 'subscription' ? 'subscription' : 'quota',
+    target_type:
+      redemption.target_type === 'subscription' ? 'subscription' : 'quota',
     plan_id: redemption.plan_id || 0,
     quota_dollars: quotaUnitsToDollars(redemption.quota),
     expired_time:

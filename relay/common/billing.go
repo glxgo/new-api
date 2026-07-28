@@ -25,4 +25,7 @@ type BillingSettler interface {
 
 	// Reserve 将预扣额度补到目标值；若目标值不高于当前预扣额度则不做任何事。
 	Reserve(targetQuota int) error
+
+	// ReserveRequired 将可预知附加费用强制预扣到目标值，不使用信任额度旁路。
+	ReserveRequired(targetQuota int) error
 }

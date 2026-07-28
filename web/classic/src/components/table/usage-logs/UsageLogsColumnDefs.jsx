@@ -269,6 +269,27 @@ function renderBillingTag(record, t) {
   return null;
 }
 
+function renderEffortTag(effort) {
+  if (!effort) return null;
+  const key = String(effort).toLowerCase();
+  if (key === 'none') return null;
+  const map = {
+    max: { label: '顶级', color: 'purple' },
+    xhigh: { label: '极高', color: 'orange' },
+    high: { label: '高', color: 'blue' },
+    medium: { label: '中', color: 'green' },
+    low: { label: '低', color: 'grey' },
+    minimal: { label: '极低', color: 'grey' },
+  };
+  const cfg = map[key];
+  if (!cfg) return null;
+  return (
+    <Tag color={cfg.color} size='small'>
+      {cfg.label}
+    </Tag>
+  );
+}
+
 function renderModelName(record, copyText, t) {
   let other = getLogOther(record.other);
   let modelMapped =
@@ -684,13 +705,34 @@ export const getLogsColumns = ({
       title: t('模型'),
       dataIndex: 'model_name',
       render: (text, record, index) => {
-        return record.type === 0 ||
-          record.type === 2 ||
-          record.type === 5 ||
-          record.type === 6 ? (
-          <>{renderModelName(record, copyText, t)}</>
-        ) : (
-          <></>
+        if (
+          !(
+            record.type === 0 ||
+            record.type === 2 ||
+            record.type === 5 ||
+            record.type === 6
+          )
+        ) {
+          return <></>;
+        }
+        const other = getLogOther(record.other);
+        const effortTag = renderEffortTag(other?.reasoning_effort);
+        const isFast = other?.service_tier === 'priority';
+        if (!effortTag && !isFast) {
+          return <>{renderModelName(record, copyText, t)}</>;
+        }
+        return (
+          <Space vertical align='start' spacing={2}>
+            {renderModelName(record, copyText, t)}
+            <Space spacing={4}>
+              {effortTag}
+              {isFast ? (
+                <Tag color='red' size='small'>
+                  FAST
+                </Tag>
+              ) : null}
+            </Space>
+          </Space>
         );
       },
     },

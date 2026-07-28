@@ -185,6 +185,7 @@ const EditChannelModal = (props) => {
     groups: ['default'],
     priority: 0,
     weight: 0,
+    cost_ratio: null,
     tag: '',
     multi_key_mode: 'random',
     // 渠道额外设置的默认值
@@ -973,6 +974,10 @@ const EditChannelModal = (props) => {
       }
 
       initialBaseUrlRef.current = data.base_url || '';
+      data.cost_ratio =
+        data.cost_ratio_ppm === null || data.cost_ratio_ppm === undefined
+          ? null
+          : data.cost_ratio_ppm / 1000000;
       setInputs(data);
       if (formApiRef.current) {
         formApiRef.current.setValues(data);
@@ -1538,6 +1543,30 @@ const EditChannelModal = (props) => {
     const formValues = formApiRef.current ? formApiRef.current.getValues() : {};
     let localInputs = { ...formValues };
     localInputs.param_override = inputs.param_override;
+    if (
+      localInputs.status === 1 &&
+      (localInputs.cost_ratio === null ||
+        localInputs.cost_ratio === undefined ||
+        localInputs.cost_ratio === '')
+    ) {
+      showInfo(t('启用渠道前必须配置成本倍率'));
+      return;
+    }
+    if (
+      localInputs.cost_ratio !== null &&
+      localInputs.cost_ratio !== undefined &&
+      localInputs.cost_ratio !== ''
+    ) {
+      const ratio = Number(localInputs.cost_ratio);
+      if (!Number.isFinite(ratio) || ratio < 0 || ratio > 1000) {
+        showInfo(t('渠道成本倍率必须在 0-1000 之间'));
+        return;
+      }
+      localInputs.cost_ratio_ppm = Math.round(ratio * 1000000);
+    } else {
+      localInputs.cost_ratio_ppm = null;
+    }
+    delete localInputs.cost_ratio;
 
     if (localInputs.type === 57) {
       if (batch) {
@@ -2477,6 +2506,22 @@ const EditChannelModal = (props) => {
                       />
                     </Col>
                   </Row>
+
+                  <Form.InputNumber
+                    field='cost_ratio'
+                    label={t('渠道成本倍率')}
+                    placeholder={t('例如 0.85')}
+                    min={0}
+                    max={1000}
+                    step={0.000001}
+                    onNumberChange={(value) =>
+                      handleInputChange('cost_ratio', value)
+                    }
+                    extraText={t(
+                      '按本渠道实际售价计算平台成本；0 表示零成本，留空表示尚未配置'
+                    )}
+                    style={{ width: '100%' }}
+                  />
 
                   {inputs.type === 1 && (
                     <>

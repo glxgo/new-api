@@ -103,25 +103,25 @@ const typeOptions = [
   {
     value: 'ongoing',
     label: 'Ongoing',
-    color: 'bg-blue-500',
+    color: 'bg-info',
     badgeVariant: 'info' as const,
   },
   {
     value: 'success',
     label: 'Success',
-    color: 'bg-green-500',
+    color: 'bg-success',
     badgeVariant: 'success' as const,
   },
   {
     value: 'warning',
     label: 'Warning',
-    color: 'bg-orange-500',
+    color: 'bg-warning',
     badgeVariant: 'warning' as const,
   },
   {
     value: 'error',
     label: 'Error',
-    color: 'bg-red-500',
+    color: 'bg-destructive',
     badgeVariant: 'danger' as const,
   },
 ]

@@ -83,7 +83,7 @@ function PriceBlock({ item }: { item: PriceItem }) {
       {item.original && (
         <div className='text-muted-foreground mt-1 text-xs'>
           原价{' '}
-          <span className='font-mono line-through decoration-muted-foreground/50'>
+          <span className='decoration-muted-foreground/50 font-mono line-through'>
             {item.original}
           </span>
           /{item.unit}
@@ -114,10 +114,11 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   const [selectedGroup, setSelectedGroup] = useState(groups[0] ?? '')
   const currentGroup = groups.includes(selectedGroup)
     ? selectedGroup
-    : groups[0] ?? ''
-  const currentRatio = currentGroup ? groupRatios[currentGroup] ?? 1 : 1
+    : (groups[0] ?? '')
+  const currentRatio = currentGroup ? (groupRatios[currentGroup] ?? 1) : 1
   const isDynamicPricing =
-    props.model.billing_mode === 'tiered_expr' && Boolean(props.model.billing_expr)
+    props.model.billing_mode === 'tiered_expr' &&
+    Boolean(props.model.billing_expr)
   const dynamicSummary = isDynamicPricing
     ? getDynamicPricingSummary(props.model, {
         tokenUnit,
@@ -158,7 +159,9 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
     ? [
         {
           label: t('Input'),
-          value: stripTrailingZeros(getDynamicEntry('inputPrice') ?? groupPrice('input')),
+          value: stripTrailingZeros(
+            getDynamicEntry('inputPrice') ?? groupPrice('input')
+          ),
           original:
             props.model.official_input !== undefined
               ? stripTrailingZeros(
@@ -200,7 +203,8 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             props.model.create_cache_ratio == null
               ? null
               : stripTrailingZeros(
-                  getDynamicEntry('cacheCreatePrice') ?? groupPrice('create_cache')
+                  getDynamicEntry('cacheCreatePrice') ??
+                    groupPrice('create_cache')
                 ),
           original:
             props.model.official_cache_write !== undefined
@@ -213,7 +217,9 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
           value:
             props.model.cache_ratio == null
               ? null
-              : stripTrailingZeros(getDynamicEntry('cacheReadPrice') ?? groupPrice('cache')),
+              : stripTrailingZeros(
+                  getDynamicEntry('cacheReadPrice') ?? groupPrice('cache')
+                ),
           original:
             props.model.official_cache_read !== undefined
               ? stripTrailingZeros(String(props.model.official_cache_read))
@@ -253,11 +259,11 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
     <div
       className={cn(
         'group bg-card text-card-foreground relative flex min-h-[250px] flex-col overflow-hidden rounded-xl border shadow-sm transition-all duration-200',
-        'hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md'
+        'hover:border-primary/30 hover:-translate-y-0.5 hover:shadow-md'
       )}
     >
       {contextLabel && (
-        <span className='absolute top-3 right-3 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 font-mono text-xs font-semibold text-violet-700 dark:border-violet-900/60 dark:bg-violet-950/40 dark:text-violet-300'>
+        <span className='border-chart-4/30 bg-chart-4/10 text-chart-4 absolute top-3 right-3 rounded-full border px-2 py-0.5 font-mono text-xs font-semibold'>
           {contextLabel}
         </span>
       )}
@@ -265,7 +271,9 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
       <div className='flex min-h-[88px] items-start gap-3 px-4 pt-4 pb-3'>
         <div className='bg-background flex size-9 shrink-0 items-center justify-center rounded-xl border shadow-sm'>
           {modelIcon || (
-            <span className='text-muted-foreground text-sm font-bold'>{initial}</span>
+            <span className='text-muted-foreground text-sm font-bold'>
+              {initial}
+            </span>
           )}
         </div>
         <div className='min-w-0 flex-1 pr-16'>
@@ -273,10 +281,10 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             {props.model.model_name}
           </h3>
           <div className='mt-1.5 flex flex-wrap items-center gap-1.5'>
-            <span className='inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300'>
+            <span className='border-success/30 bg-success/10 text-success inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-bold'>
               {isTokenBased ? t('Token-based') : t('Per Request')}
             </span>
-            <span className='inline-flex items-center rounded-full border border-blue-300 bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-300'>
+            <span className='border-info/30 bg-info/10 text-info inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-bold'>
               倍率 {formatRatio(currentRatio)}
             </span>
             {dynamicSummary?.isSpecialExpression && (
@@ -308,7 +316,10 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
         {priceItems.map((item, index) => (
           <div
             key={`${item.label}-${index}`}
-            className={cn(index % 2 === 1 && 'border-l', index > 1 && 'border-t')}
+            className={cn(
+              index % 2 === 1 && 'border-l',
+              index > 1 && 'border-t'
+            )}
           >
             <PriceBlock item={item} />
           </div>
@@ -329,7 +340,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
                 className={cn(
                   'inline-flex max-w-full items-center rounded-full border px-2.5 py-1 font-semibold transition-colors',
                   active
-                    ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300'
+                    ? 'border-success/30 bg-success/10 text-success'
                     : 'border-border bg-background text-muted-foreground hover:text-foreground'
                 )}
                 title={group}
@@ -340,7 +351,9 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             )
           })
         ) : (
-          <span className='rounded-full border px-2.5 py-1 font-medium'>默认渠道 ×1</span>
+          <span className='rounded-full border px-2.5 py-1 font-medium'>
+            默认渠道 ×1
+          </span>
         )}
       </div>
     </div>

@@ -136,6 +136,12 @@ export const GroupRatioForm = memo(function GroupRatioForm({
         </SettingsPageActionsPortal>
         {editMode === 'visual' ? (
           <div className='space-y-6'>
+            <div className='border-border bg-muted/30 rounded-lg border p-4 text-sm'>
+              <div className='font-medium'>成本倍率已迁移到渠道</div>
+              <div className='text-muted-foreground mt-1'>
+                这里仅维护销售分组倍率；平台成本请在渠道新增、编辑或标签批量编辑中设置。
+              </div>
+            </div>
             <GroupRatioVisualEditor
               groupRatio={form.watch('GroupRatio')}
               groupCostRatio={form.watch('GroupCostRatio')}
@@ -199,24 +205,13 @@ export const GroupRatioForm = memo(function GroupRatioForm({
               )}
             />
 
-            <FormField
-              control={form.control}
-              name='GroupCostRatio'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('Group cost ratios')}</FormLabel>
-                  <FormControl>
-                    <Textarea rows={6} {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    {t(
-                      'JSON map of group → cost ratio (platform cost = official price × cost ratio). Leave a group out to inherit its sale ratio.'
-                    )}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className='border-border bg-muted/30 rounded-lg border p-4 text-sm'>
+              <div className='font-medium'>成本倍率已迁移到渠道</div>
+              <div className='text-muted-foreground mt-1'>
+                平台成本按本次最终成功渠道的成本倍率计算。旧分组成本倍率仅保留用于回滚，
+                此处不再提供编辑入口。
+              </div>
+            </div>
 
             <FormField
               control={form.control}

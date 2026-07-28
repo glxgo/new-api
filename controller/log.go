@@ -55,6 +55,31 @@ func GetUserLogs(c *gin.Context) {
 	return
 }
 
+func GetUserFinancialConsumeDaily(c *gin.Context) {
+	userId := c.GetInt("id")
+	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
+	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
+	if endTimestamp <= 0 {
+		endTimestamp = common.GetTimestamp()
+	}
+	if startTimestamp <= 0 {
+		startTimestamp = endTimestamp - 30*86400
+	}
+	if endTimestamp <= startTimestamp || endTimestamp-startTimestamp > 31*86400 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "时间范围无效或超过 31 天",
+		})
+		return
+	}
+	items, err := model.GetUserFinancialConsumeDaily(userId, startTimestamp, endTimestamp)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, items)
+}
+
 // Deprecated: SearchAllLogs 已废弃，前端未使用该接口。
 func SearchAllLogs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{

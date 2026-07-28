@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
@@ -138,11 +139,11 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	quota := calculateAudioQuota(quotaInfo)
 
 	if userQuota < quota {
-		return fmt.Errorf("user quota is not enough, user quota: %s, need quota: %s", logger.FormatQuota(userQuota), logger.FormatQuota(quota))
+		return fmt.Errorf(i18n.T(ctx, i18n.MsgQuotaUserNotEnough, map[string]any{"Have": logger.FormatQuota(userQuota), "Need": logger.FormatQuota(quota)}))
 	}
 
 	if !token.UnlimitedQuota && token.RemainQuota < quota {
-		return fmt.Errorf("token quota is not enough, token remain quota: %s, need quota: %s", logger.FormatQuota(token.RemainQuota), logger.FormatQuota(quota))
+		return fmt.Errorf(i18n.T(ctx, i18n.MsgQuotaTokenNotEnough, map[string]any{"Have": logger.FormatQuota(token.RemainQuota), "Need": logger.FormatQuota(quota)}))
 	}
 
 	err = PostConsumeQuota(relayInfo, quota, 0, false)
@@ -238,30 +239,33 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	if tieredResult != nil {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
-	costQuota := CalcCostFromSaleQuota(quota, groupRatio, relayInfo.UsingGroup)
+	costQuota := CalcCostFromChannelRatio(quota, relayInfo.ChannelCostRatioPPM)
 	affAdminIdSnap, inviterIdSnap, inviter2IdSnap := GetAffiliateSnapshot(relayInfo.UserId)
 	// 双池记账(阶段2b): 按实际扣减拆分填, 无 BillingSession 时回退全本金。
 	paidGift, paidPrincipal := paidSplitForLog(relayInfo, quota)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
-		ChannelId:        relayInfo.ChannelId,
-		PromptTokens:     usage.InputTokens,
-		CompletionTokens: usage.OutputTokens,
-		ModelName:        logModel,
-		TokenName:        tokenName,
-		Quota:            quota,
-		Cost:             costQuota,
-		PaidQuota:        paidPrincipal,
-		PaidGiftQuota:    paidGift,
-		AffAdminIdSnap:   affAdminIdSnap,
-		InviterIdSnap:    inviterIdSnap,
-		Inviter2IdSnap:   inviter2IdSnap,
-		Content:          logContent,
-		TokenId:          relayInfo.TokenId,
-		UseTimeSeconds:   int(useTimeSeconds),
-		IsStream:         relayInfo.IsStream,
-		Group:            relayInfo.UsingGroup,
-		Other:            other,
-		BillingSource:    relayInfo.BillingSource,
+		ChannelId:           relayInfo.ChannelId,
+		PromptTokens:        usage.InputTokens,
+		CompletionTokens:    usage.OutputTokens,
+		ModelName:           logModel,
+		TokenName:           tokenName,
+		Quota:               quota,
+		Cost:                costQuota,
+		PaidQuota:           paidPrincipal,
+		PaidGiftQuota:       paidGift,
+		AffAdminIdSnap:      affAdminIdSnap,
+		InviterIdSnap:       inviterIdSnap,
+		Inviter2IdSnap:      inviter2IdSnap,
+		Content:             logContent,
+		TokenId:             relayInfo.TokenId,
+		UseTimeSeconds:      int(useTimeSeconds),
+		IsStream:            relayInfo.IsStream,
+		Group:               relayInfo.UsingGroup,
+		Other:               other,
+		BillingSource:       relayInfo.BillingSource,
+		SubscriptionId:      relayInfo.SubscriptionId,
+		CostRuleVersion:     2,
+		ChannelCostRatioPPM: relayInfo.ChannelCostRatioPPM,
 	})
 }
 
@@ -381,31 +385,34 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	if tieredResult != nil {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
-	costQuota := CalcCostFromSaleQuota(quota, groupRatio, relayInfo.UsingGroup)
+	costQuota := CalcCostFromChannelRatio(quota, relayInfo.ChannelCostRatioPPM)
 	affAdminIdSnap, inviterIdSnap, inviter2IdSnap := GetAffiliateSnapshot(relayInfo.UserId)
 	// 双池记账(阶段2b): 按实际扣减拆分填, 无 BillingSession 时回退全本金。
 	paidGift, paidPrincipal := paidSplitForLog(relayInfo, quota)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
-		ChannelId:        relayInfo.ChannelId,
-		PromptTokens:     usage.PromptTokens,
-		CacheTokens:      normalizedCacheHitTokens(usage),
-		CompletionTokens: usage.CompletionTokens,
-		ModelName:        logModel,
-		TokenName:        tokenName,
-		Quota:            quota,
-		Cost:             costQuota,
-		PaidQuota:        paidPrincipal,
-		PaidGiftQuota:    paidGift,
-		AffAdminIdSnap:   affAdminIdSnap,
-		InviterIdSnap:    inviterIdSnap,
-		Inviter2IdSnap:   inviter2IdSnap,
-		Content:          logContent,
-		TokenId:          relayInfo.TokenId,
-		UseTimeSeconds:   int(useTimeSeconds),
-		IsStream:         relayInfo.IsStream,
-		Group:            relayInfo.UsingGroup,
-		Other:            other,
-		BillingSource:    relayInfo.BillingSource,
+		ChannelId:           relayInfo.ChannelId,
+		PromptTokens:        usage.PromptTokens,
+		CacheTokens:         normalizedCacheHitTokens(usage),
+		CompletionTokens:    usage.CompletionTokens,
+		ModelName:           logModel,
+		TokenName:           tokenName,
+		Quota:               quota,
+		Cost:                costQuota,
+		PaidQuota:           paidPrincipal,
+		PaidGiftQuota:       paidGift,
+		AffAdminIdSnap:      affAdminIdSnap,
+		InviterIdSnap:       inviterIdSnap,
+		Inviter2IdSnap:      inviter2IdSnap,
+		Content:             logContent,
+		TokenId:             relayInfo.TokenId,
+		UseTimeSeconds:      int(useTimeSeconds),
+		IsStream:            relayInfo.IsStream,
+		Group:               relayInfo.UsingGroup,
+		Other:               other,
+		BillingSource:       relayInfo.BillingSource,
+		SubscriptionId:      relayInfo.SubscriptionId,
+		CostRuleVersion:     2,
+		ChannelCostRatioPPM: relayInfo.ChannelCostRatioPPM,
 	})
 	gopool.Go(func() {
 		perfmetrics.RecordRelaySample(relayInfo, true, int64(usage.CompletionTokens),
@@ -429,7 +436,7 @@ func PreConsumeTokenQuota(relayInfo *relaycommon.RelayInfo, quota int) error {
 		return err
 	}
 	if !relayInfo.TokenUnlimited && token.RemainQuota < quota {
-		return fmt.Errorf("token quota is not enough, token remain quota: %s, need quota: %s", logger.FormatQuota(token.RemainQuota), logger.FormatQuota(quota))
+		return fmt.Errorf(i18n.Translate(i18n.GetUserLang(relayInfo.UserId), i18n.MsgQuotaTokenNotEnough, map[string]any{"Have": logger.FormatQuota(token.RemainQuota), "Need": logger.FormatQuota(quota)}))
 	}
 	err = model.DecreaseTokenQuota(relayInfo.TokenId, relayInfo.TokenKey, quota)
 	if err != nil {
@@ -443,7 +450,7 @@ func PostConsumeQuota(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQu
 	// 1) Consume from wallet quota OR subscription item
 	if relayInfo != nil && relayInfo.BillingSource == BillingSourceSubscription {
 		if relayInfo.SubscriptionId == 0 {
-			return errors.New("subscription id is missing")
+			return errors.New(i18n.Translate(i18n.GetUserLang(relayInfo.UserId), i18n.MsgQuotaSubscriptionIdMissing))
 		}
 		delta := int64(quota)
 		if delta != 0 {

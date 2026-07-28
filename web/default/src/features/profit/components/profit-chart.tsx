@@ -56,6 +56,20 @@ export function ProfitChart({ summary, loading }: ProfitChartProps) {
     updateTheme()
   }, [resolvedTheme])
 
+  // 从 CSS 变量读 chart token，明暗切换时重读，避免硬编码 hex 跟主题脱节
+  const chartColors = useMemo(() => {
+    if (typeof window === 'undefined') return []
+    const root = document.documentElement
+    const read = (n: string) =>
+      getComputedStyle(root).getPropertyValue(n).trim()
+    return [
+      read('--chart-1'),
+      read('--chart-2'),
+      read('--chart-3'),
+      read('--chart-4'),
+    ].filter(Boolean) as string[]
+  }, [resolvedTheme])
+
   const values = useMemo(() => {
     if (!summary) return []
     return [
@@ -78,9 +92,11 @@ export function ProfitChart({ summary, loading }: ProfitChartProps) {
       label: { visible: true },
       legends: { visible: true, orient: 'right', position: 'start' },
       tooltip: true,
-      color: ['#f59e0b', '#3b82f6', '#a855f7', '#10b981'],
+      color: chartColors.length
+        ? chartColors
+        : ['#f59e0b', '#3b82f6', '#a855f7', '#10b981'],
     }),
-    [values]
+    [values, chartColors]
   )
 
   return (

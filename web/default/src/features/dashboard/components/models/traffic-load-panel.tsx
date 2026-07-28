@@ -1,7 +1,25 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
 import { useMemo, useState, type ComponentType } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   Activity,
-  BarChart3,
   ChevronLeft,
   ChevronRight,
   Coins,
@@ -21,28 +39,18 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { getChannels } from '@/features/channels/api'
 import { PanelWrapper } from '@/features/dashboard/components/ui/panel-wrapper'
 import { useDashboardTraffic } from '@/features/dashboard/hooks/use-dashboard-traffic'
 import type {
   DashboardChannelTraffic,
   DashboardFilters,
   DashboardTrafficDaily,
-  DashboardTrafficSummary,
 } from '@/features/dashboard/types'
 
 const DAILY_PAGE_SIZE = 7
 const EMPTY_DAILY: DashboardTrafficDaily[] = []
 const EMPTY_CHANNELS: DashboardChannelTraffic[] = []
-const EMPTY_TRAFFIC_SUMMARY: DashboardTrafficSummary = {
-  request_count: 0,
-  active_minutes: 0,
-  avg_rpm: 0,
-  peak_rpm: 0,
-  avg_concurrency: 0,
-  peak_concurrency: 0,
-  billed_quota: 0,
-  cost_quota: 0,
-}
 
 type TrafficLoadPanelProps = {
   filters?: DashboardFilters
@@ -227,118 +235,18 @@ function DailyLoadTable(props: { daily: DashboardTrafficDaily[] }) {
   )
 }
 
-function AdminChannelTable(props: {
-  channels: DashboardChannelTraffic[]
-  dayStart: number | null
-}) {
-  const { t } = useTranslation()
-  return (
-    <div className='overflow-x-auto rounded-xl border'>
-      <Table className='min-w-[940px]'>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t('Channel')}</TableHead>
-            <TableHead className='text-right'>{t('Consumption')}</TableHead>
-            <TableHead className='text-right'>{t('Upstream cost')}</TableHead>
-            <TableHead className='text-right'>{t('Average RPM')}</TableHead>
-            <TableHead className='text-right'>{t('Peak RPM')}</TableHead>
-            <TableHead className='text-right'>
-              {t('Average concurrency')}
-            </TableHead>
-            <TableHead className='text-right'>
-              {t('Peak concurrency')}
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {props.channels.map((channel) => {
-            const summary =
-              props.dayStart === null
-                ? channel.summary
-                : (channel.daily.find(
-                    (day) => day.day_start === props.dayStart
-                  ) ?? EMPTY_TRAFFIC_SUMMARY)
-            return (
-              <TableRow key={channel.channel_id}>
-                <TableCell>
-                  <div className='font-medium'>{channel.channel_name}</div>
-                  <div className='text-muted-foreground text-[11px]'>
-                    #{channel.channel_id}
-                  </div>
-                </TableCell>
-                <TableCell className='text-right font-mono tabular-nums'>
-                  {formatQuota(summary.billed_quota)}
-                </TableCell>
-                <TableCell className='text-muted-foreground text-right font-mono tabular-nums'>
-                  {formatQuota(summary.cost_quota)}
-                </TableCell>
-                <TableCell className='text-right font-mono tabular-nums'>
-                  {metric(summary.avg_rpm)}
-                </TableCell>
-                <TableCell className='text-right font-mono tabular-nums'>
-                  {formatNumber(summary.peak_rpm)}
-                </TableCell>
-                <TableCell className='text-right font-mono tabular-nums'>
-                  {metric(summary.avg_concurrency)}
-                </TableCell>
-                <TableCell className='text-right font-mono tabular-nums'>
-                  {formatNumber(summary.peak_concurrency)}
-                </TableCell>
-              </TableRow>
-            )
-          })}
-        </TableBody>
-      </Table>
-    </div>
-  )
-}
-
-function ChannelPeriodButtons(props: {
-  days: DashboardTrafficDaily[]
-  selectedDay: number | null
-  onSelect: (dayStart: number | null) => void
-}) {
-  const { t } = useTranslation()
-  const orderedDays = useMemo(
-    () => [...props.days].sort((a, b) => b.day_start - a.day_start),
-    [props.days]
-  )
-
-  return (
-    <div className='flex gap-2 overflow-x-auto pb-1'>
-      <Button
-        type='button'
-        variant={props.selectedDay === null ? 'default' : 'outline'}
-        size='sm'
-        aria-pressed={props.selectedDay === null}
-        onClick={() => props.onSelect(null)}
-      >
-        {t('Overview')}
-      </Button>
-      {orderedDays.map((day) => (
-        <Button
-          key={day.day_start}
-          type='button'
-          variant={props.selectedDay === day.day_start ? 'default' : 'outline'}
-          size='sm'
-          aria-pressed={props.selectedDay === day.day_start}
-          onClick={() => props.onSelect(day.day_start)}
-        >
-          {formatDay(day.day_start)}
-        </Button>
-      ))}
-    </div>
-  )
-}
-
 function DailyChannelSpend(props: {
   channels: DashboardChannelTraffic[]
   days: DashboardTrafficDaily[]
 }) {
   const { t } = useTranslation()
   const pagination = useDailyPagination(props.days)
+  // 过滤已删除渠道：后端 GetDashboardChannelNames 查不到已删 channel（表已删），name 为空
+  const activeChannels = props.channels.filter((channel) =>
+    channel.channel_name?.trim()
+  )
   const dailyByChannel = new Map(
-    props.channels.map((channel) => [
+    activeChannels.map((channel) => [
       channel.channel_id,
       new Map(channel.daily.map((day) => [day.day_start, day.billed_quota])),
     ])
@@ -352,7 +260,7 @@ function DailyChannelSpend(props: {
               <TableHead className='bg-card sticky left-0 z-10'>
                 {t('Date')}
               </TableHead>
-              {props.channels.map((channel) => (
+              {activeChannels.map((channel) => (
                 <TableHead
                   key={channel.channel_id}
                   className='min-w-32 text-right'
@@ -373,7 +281,7 @@ function DailyChannelSpend(props: {
                 <TableCell className='bg-card sticky left-0 z-10 font-medium'>
                   {formatDay(day.day_start)}
                 </TableCell>
-                {props.channels.map((channel) => (
+                {activeChannels.map((channel) => (
                   <TableCell
                     key={channel.channel_id}
                     className='text-right font-mono tabular-nums'
@@ -405,15 +313,29 @@ export function TrafficLoadPanel(props: TrafficLoadPanelProps) {
   const data = query.data
   const summary = data?.summary
   const daily = data?.daily ?? EMPTY_DAILY
-  const channels = data?.channels ?? EMPTY_CHANNELS
-  const [selectedChannelDay, setSelectedChannelDay] = useState<number | null>(
-    null
-  )
-  const visibleChannelDay =
-    selectedChannelDay !== null &&
-    daily.some((day) => day.day_start === selectedChannelDay)
-      ? selectedChannelDay
-      : null
+
+  // 管理员渠道列表：日志聚合的 channels 可能仍含渠道表里已删除/已禁用的渠道
+  // （GetDashboardChannelNames 只按 id 查 name，不过滤 status）。这里用最新
+  // 渠道状态再过一道，只保留 status=1 启用的渠道。
+  const adminChannelsQuery = useQuery({
+    queryKey: ['traffic-load-admin-channels'],
+    queryFn: () => getChannels({ page_size: 1000 }),
+    enabled: props.isAdmin,
+    staleTime: 60_000,
+  })
+  const enabledChannelIds = useMemo(() => {
+    const items = adminChannelsQuery.data?.data?.items ?? []
+    // status: 1=enabled, 0=manual disabled, 2=auto disabled —— 只保留启用
+    return new Set(items.filter((c) => c.status === 1).map((c) => c.id))
+  }, [adminChannelsQuery.data])
+
+  const rawChannels = data?.channels ?? EMPTY_CHANNELS
+  const channels =
+    props.isAdmin && !adminChannelsQuery.isSuccess
+      ? EMPTY_CHANNELS
+      : props.isAdmin
+        ? rawChannels.filter((c) => enabledChannelIds.has(c.channel_id))
+        : rawChannels
 
   if (query.isLoading) {
     return (
@@ -486,28 +408,6 @@ export function TrafficLoadPanel(props: TrafficLoadPanelProps) {
           </>
         )}
       </PanelWrapper>
-
-      {props.isAdmin && channels.length > 0 && (
-        <PanelWrapper
-          title={
-            <span className='inline-flex items-center gap-2'>
-              <BarChart3 className='text-muted-foreground size-4' />
-              {t('Channel load')}
-            </span>
-          }
-          description={t(
-            'Successful traffic statistics by final selected channel'
-          )}
-          contentClassName='space-y-4'
-        >
-          <ChannelPeriodButtons
-            days={daily}
-            selectedDay={visibleChannelDay}
-            onSelect={setSelectedChannelDay}
-          />
-          <AdminChannelTable channels={channels} dayStart={visibleChannelDay} />
-        </PanelWrapper>
-      )}
 
       {props.isAdmin && channels.length > 0 && (
         <PanelWrapper

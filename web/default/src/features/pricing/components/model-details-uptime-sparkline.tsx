@@ -53,11 +53,11 @@ type UptimeSparklineProps = {
 }
 
 function colourFor(uptime: number): string {
-  if (uptime >= 99.9) return 'bg-emerald-500'
-  if (uptime >= 99.0) return 'bg-emerald-400'
-  if (uptime >= 95.0) return 'bg-amber-500'
-  if (uptime >= 90.0) return 'bg-amber-600'
-  return 'bg-rose-500'
+  if (uptime >= 99.9) return 'bg-success'
+  if (uptime >= 99.0) return 'bg-success'
+  if (uptime >= 95.0) return 'bg-warning'
+  if (uptime >= 90.0) return 'bg-warning'
+  return 'bg-destructive'
 }
 
 function heightFor(uptime: number): string {
@@ -69,10 +69,10 @@ function heightFor(uptime: number): string {
 }
 
 function overallTextColour(pct: number): string {
-  if (pct >= 99.9) return 'text-emerald-600 dark:text-emerald-400'
-  if (pct >= 99.0) return 'text-emerald-600 dark:text-emerald-400'
-  if (pct >= 95.0) return 'text-amber-600 dark:text-amber-400'
-  return 'text-rose-600 dark:text-rose-400'
+  if (pct >= 99.9) return 'text-success'
+  if (pct >= 99.0) return 'text-success'
+  if (pct >= 95.0) return 'text-warning'
+  return 'text-destructive'
 }
 
 export function UptimeSparkline(props: UptimeSparklineProps) {
@@ -94,8 +94,7 @@ export function UptimeSparkline(props: UptimeSparklineProps) {
     )
   }
 
-  const overall =
-    series.reduce((s, p) => s + p.uptime_pct, 0) / series.length
+  const overall = series.reduce((s, p) => s + p.uptime_pct, 0) / series.length
 
   const containerHeight = size === 'sm' ? 'h-3.5' : 'h-5'
   const barWidth = fillBars
@@ -108,7 +107,12 @@ export function UptimeSparkline(props: UptimeSparklineProps) {
   return (
     <div className={cn('flex items-center gap-2', props.className)}>
       <div
-        className={cn('flex items-end', containerHeight, gap, fillBars && 'w-full')}
+        className={cn(
+          'flex items-end',
+          containerHeight,
+          gap,
+          fillBars && 'w-full'
+        )}
         role='img'
         aria-label={`30 day uptime ${overall.toFixed(2)}%`}
       >
@@ -187,12 +191,12 @@ export function UptimeStatusRow(props: {
 
   const statusColour =
     status === 'operational'
-      ? 'text-emerald-600 dark:text-emerald-400'
+      ? 'text-success'
       : status === 'minor'
-        ? 'text-emerald-600 dark:text-emerald-400'
+        ? 'text-success'
         : status === 'degraded'
-          ? 'text-amber-600 dark:text-amber-400'
-          : 'text-rose-600 dark:text-rose-400'
+          ? 'text-warning'
+          : 'text-destructive'
 
   const statusLabel =
     status === 'operational'

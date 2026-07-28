@@ -50,6 +50,10 @@ import {
 import { combineBillingExpr } from '@/features/pricing/lib/billing-expr'
 import { safeJsonParse } from '../utils/json-parser'
 import {
+  type ModelCostInfo,
+  type ModelPricingSource,
+} from './model-pricing-core'
+import {
   ModelPricingEditorPanel,
   type ModelPricingEditorPanelHandle,
   ModelPricingSheet,
@@ -61,7 +65,6 @@ import {
   type ModelRow,
 } from './model-pricing-snapshots'
 import { buildModelRatioColumns } from './model-ratio-table-columns'
-import { type ModelCostInfo, type ModelPricingSource } from './model-pricing-core'
 
 type ModelRatioVisualEditorProps = {
   savedModelPrice: string
@@ -435,10 +438,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
         JSON.stringify(billingExprMap, null, 2)
       )
       onChange('ModelCost', JSON.stringify(costMap, null, 2))
-      onChange(
-        'ModelPricingSource',
-        JSON.stringify(pricingSourceMap, null, 2)
-      )
+      onChange('ModelPricingSource', JSON.stringify(pricingSourceMap, null, 2))
     },
     [
       modelPrice,
@@ -610,9 +610,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
           data.costExpr
         ) {
           costMap[name] = {
-            input_cost_per_m: Number.isFinite(costInputNum)
-              ? costInputNum
-              : 0,
+            input_cost_per_m: Number.isFinite(costInputNum) ? costInputNum : 0,
             output_cost_per_m: Number.isFinite(costOutputNum)
               ? costOutputNum
               : 0,
@@ -629,13 +627,10 @@ const ModelRatioVisualEditorComponent = forwardRef<
         // 写官方价+倍率到 pricingSourceMap（UI 还原用, 不计费）。per-token 用 official_input 等,
         // per-request 用 official_request_price, tiered_expr 用 official_expr。
         const officialInputNum = parseFloat(data.officialInput || '')
-        const officialRequestNum = parseFloat(
-          data.officialRequestPrice || ''
-        )
+        const officialRequestNum = parseFloat(data.officialRequestPrice || '')
         if (
           (Number.isFinite(officialInputNum) && officialInputNum > 0) ||
-          (Number.isFinite(officialRequestNum) &&
-            officialRequestNum > 0) ||
+          (Number.isFinite(officialRequestNum) && officialRequestNum > 0) ||
           data.officialExpr ||
           data.saleMultiplier ||
           data.costMultiplier
@@ -645,17 +640,13 @@ const ModelRatioVisualEditorComponent = forwardRef<
               ? officialInputNum
               : 0,
             official_output: parseFloat(data.officialOutput || '') || 0,
-            official_cache_read:
-              parseFloat(data.officialCacheRead || '') || 0,
+            official_cache_read: parseFloat(data.officialCacheRead || '') || 0,
             official_cache_write:
               parseFloat(data.officialCacheWrite || '') || 0,
-            ...(Number.isFinite(officialRequestNum) &&
-            officialRequestNum > 0
+            ...(Number.isFinite(officialRequestNum) && officialRequestNum > 0
               ? { official_request_price: officialRequestNum }
               : {}),
-            ...(data.officialExpr
-              ? { official_expr: data.officialExpr }
-              : {}),
+            ...(data.officialExpr ? { official_expr: data.officialExpr } : {}),
             sale_multiplier: parseFloat(data.saleMultiplier || '') || 0,
             cost_multiplier: parseFloat(data.costMultiplier || '') || 0,
           }
@@ -682,10 +673,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
         JSON.stringify(billingExprMap, null, 2)
       )
       onChange('ModelCost', JSON.stringify(costMap, null, 2))
-      onChange(
-        'ModelPricingSource',
-        JSON.stringify(pricingSourceMap, null, 2)
-      )
+      onChange('ModelPricingSource', JSON.stringify(pricingSourceMap, null, 2))
     },
     [
       modelPrice,

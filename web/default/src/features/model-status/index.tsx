@@ -138,10 +138,10 @@ function ProbeStatusBand({ summary }: { summary?: GroupCacheSummary }) {
                 tone === 'unhealthy'
                   ? 'bg-destructive'
                   : tone === 'degraded'
-                    ? 'bg-amber-500'
+                    ? 'bg-warning'
                     : tone === 'unknown'
                       ? 'bg-muted-foreground/35'
-                      : 'bg-emerald-500'
+                      : 'bg-success'
               )}
             />
             <p
@@ -150,9 +150,9 @@ function ProbeStatusBand({ summary }: { summary?: GroupCacheSummary }) {
                 tone === 'unhealthy'
                   ? 'text-destructive'
                   : tone === 'degraded'
-                    ? 'text-amber-700 dark:text-amber-400'
+                    ? 'text-warning'
                     : tone === 'healthy'
-                      ? 'text-emerald-700 dark:text-emerald-400'
+                      ? 'text-success'
                       : 'text-foreground'
               )}
             >
@@ -230,7 +230,7 @@ function GroupHealthCard({
   const requestCount = summary?.request_count ?? 0
 
   return (
-    <article className='border-border/70 bg-background/80 group hover:border-foreground/25 overflow-hidden rounded-2xl border shadow-xs transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:shadow-md'>
+    <article className='border-border/70 bg-background/80 group hover:border-foreground/25 overflow-hidden rounded-2xl border transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] dark:hover:shadow-[0_8px_24px_rgba(0,0,0,0.4)]'>
       <div className='flex items-start justify-between gap-4 border-b border-dashed px-5 py-4'>
         <div className='min-w-0'>
           <div className='flex items-center gap-2.5'>

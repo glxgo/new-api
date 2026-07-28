@@ -994,6 +994,24 @@ func GetUserGiftQuota(id int, fromDB bool) (quota int, err error) {
 	return quota, nil
 }
 
+// GetUserTotalQuotaFromDB reads principal and gift balances in one main-DB
+// query. It is used for durable post-operation snapshots and intentionally does
+// not consult asynchronously updated Redis fields.
+func GetUserTotalQuotaFromDB(id int) (int64, error) {
+	var balances struct {
+		Quota     int64 `gorm:"column:quota"`
+		GiftQuota int64 `gorm:"column:gift_quota"`
+	}
+	err := DB.Model(&User{}).
+		Select("quota, gift_quota").
+		Where("id = ?", id).
+		Take(&balances).Error
+	if err != nil {
+		return 0, err
+	}
+	return balances.Quota + balances.GiftQuota, nil
+}
+
 // DecreaseUserGiftQuotaGuarded 带守卫的赠金扣减: WHERE gift_quota >= amount。
 // 成功(且本次赠金消耗计入 used_gift_quota)返回 (true, nil); 余额被并发抢占返回 (false, nil)。
 // 仅供 service.DecreaseUserQuotaDual 在拆分后调用, 不做"先gift后principal"编排。

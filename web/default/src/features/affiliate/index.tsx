@@ -173,7 +173,7 @@ export function Affiliate() {
                   }}
                   className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
                     layer === 1
-                      ? 'bg-background text-foreground shadow-sm'
+                      ? 'bg-background text-foreground ring-border ring-1'
                       : 'text-muted-foreground'
                   }`}
                 >
@@ -187,7 +187,7 @@ export function Affiliate() {
                   }}
                   className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
                     layer === 2
-                      ? 'bg-background text-foreground shadow-sm'
+                      ? 'bg-background text-foreground ring-border ring-1'
                       : 'text-muted-foreground'
                   }`}
                 >
@@ -259,7 +259,7 @@ export function Affiliate() {
                       </span>
                     </div>
                     <div className='text-right'>
-                      <div className='font-mono font-semibold text-emerald-600'>
+                      <div className='text-success font-mono font-semibold'>
                         +{formatQuota(r.amount)}
                       </div>
                       <div className='text-muted-foreground text-xs'>

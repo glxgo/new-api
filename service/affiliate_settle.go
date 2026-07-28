@@ -51,6 +51,11 @@ func RunDailySettle(batchId string, dayStart, dayEnd int64) error {
 	dAdminDirect := decimal.NewFromFloat(common.AffiliateAdminDirectRate)     // 管理员直接拉新分红
 	dAdminIndirect := decimal.NewFromFloat(common.AffiliateAdminIndirectRate) // 管理员间接/三层+拉新分红
 	root := model.GetRootUser()
+	if unresolved, err := model.CountUnresolvedWalletCostLogs(dayStart, dayEnd); err != nil {
+		return err
+	} else if unresolved > 0 {
+		return fmt.Errorf("daily settle %s blocked: %d logs have unresolved channel cost ratio", batchId, unresolved)
+	}
 
 	accumGift := map[int]int{}     // userId -> 普通用户赠金返利
 	accumDividend := map[int]int{} // userId -> 代理可提佣金 / 管理员与超管分红

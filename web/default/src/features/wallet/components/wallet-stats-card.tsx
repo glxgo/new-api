@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Activity, BarChart3, WalletCards } from 'lucide-react'
+import { BarChart3, CalendarRange, WalletCards } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { formatQuota } from '@/lib/format'
 import { CountUp } from '@/components/ui/count-up'
@@ -26,6 +26,10 @@ import type { UserWalletData } from '../types'
 interface WalletStatsCardProps {
   user: UserWalletData | null
   loading?: boolean
+  /** 本月（自然月）已消费额度，由父级通过 useWalletMonthUsage 拉取后传入 */
+  monthUsage?: number
+  /** 本月消费是否仍在加载 */
+  monthUsageLoading?: boolean
 }
 
 export function WalletStatsCard(props: WalletStatsCardProps) {
@@ -61,18 +65,20 @@ export function WalletStatsCard(props: WalletStatsCardProps) {
       icon: WalletCards,
     },
     {
+      label: t('This Month Usage'),
+      rawValue: Number(props.monthUsage ?? 0),
+      format: (v: number) => formatQuota(v),
+      description: props.monthUsageLoading
+        ? t('Loading...')
+        : t('Consumed this month'),
+      icon: CalendarRange,
+    },
+    {
       label: t('Total Usage'),
       rawValue: Number(props.user?.used_quota ?? 0),
       format: (v: number) => formatQuota(v),
       description: t('Total consumed quota'),
       icon: BarChart3,
-    },
-    {
-      label: t('API Requests'),
-      rawValue: Number(props.user?.request_count ?? 0),
-      format: undefined, // 整数千分位（CountUp 默认）
-      description: t('Total requests made'),
-      icon: Activity,
     },
   ]
 

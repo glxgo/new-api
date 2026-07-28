@@ -49,6 +49,9 @@ type ApiKeyGroupComboboxProps = {
   onValueChange: (value: string) => void
   placeholder?: string
   disabled?: boolean
+  // Groups the user has unlocked via an active subscription plan. These are
+  // pinned to the top of the list and badged as a "Plan Group".
+  subscribedGroups?: string[]
 }
 
 function formatGroupRatio(
@@ -95,32 +98,59 @@ function GroupRatioBadge({ ratio }: { ratio: ApiKeyGroupOption['ratio'] }) {
   )
 }
 
+function PlanGroupBadge() {
+  const { t } = useTranslation()
+  return (
+    <Badge
+      variant='outline'
+      className='shrink-0 border-violet-200 bg-violet-50 text-[10px] text-violet-700 sm:text-xs dark:border-violet-900/60 dark:bg-violet-950/40 dark:text-violet-300'
+    >
+      {t('Plan Group')}
+    </Badge>
+  )
+}
+
 export function ApiKeyGroupCombobox({
   options,
   value,
   onValueChange,
   placeholder,
   disabled,
+  subscribedGroups,
 }: ApiKeyGroupComboboxProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [searchValue, setSearchValue] = useState('')
   const selectedOption = options.find((option) => option.value === value)
+  const subscribedSet = useMemo(
+    () => new Set((subscribedGroups ?? []).filter(Boolean)),
+    [subscribedGroups]
+  )
+  const isSubscribed = (val: string) => subscribedSet.has(val)
+  const selectedIsSubscribed = !!value && isSubscribed(value)
 
   const filteredOptions = useMemo(() => {
     const search = searchValue.trim().toLowerCase()
-    if (!search) return options
-
-    return options.filter((option) => {
-      const ratioText = String(option.ratio ?? '').toLowerCase()
-      return (
-        option.value.toLowerCase().includes(search) ||
-        option.label.toLowerCase().includes(search) ||
-        option.desc?.toLowerCase().includes(search) ||
-        ratioText.includes(search)
-      )
+    const matched = search
+      ? options.filter((option) => {
+          const ratioText = String(option.ratio ?? '').toLowerCase()
+          return (
+            option.value.toLowerCase().includes(search) ||
+            option.label.toLowerCase().includes(search) ||
+            option.desc?.toLowerCase().includes(search) ||
+            ratioText.includes(search)
+          )
+        })
+      : options
+    // Stable sort: subscribed plan groups first (preserving original order),
+    // then the rest. Keeps the highlighting deterministic across re-renders.
+    return [...matched].sort((a, b) => {
+      const aSub = isSubscribed(a.value) ? 0 : 1
+      const bSub = isSubscribed(b.value) ? 0 : 1
+      return aSub - bSub
     })
-  }, [options, searchValue])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options, searchValue, subscribedSet])
 
   const handleSelect = (selectedValue: string) => {
     onValueChange(selectedValue)
@@ -153,7 +183,8 @@ export function ApiKeyGroupCombobox({
               </span>
             )}
           </span>
-          <span className='hidden sm:block'>
+          <span className='hidden items-center gap-1.5 sm:flex'>
+            {selectedIsSubscribed && <PlanGroupBadge />}
             <GroupRatioBadge ratio={selectedOption?.ratio} />
           </span>
         </span>
@@ -197,7 +228,10 @@ export function ApiKeyGroupCombobox({
                       </span>
                     )}
                   </span>
-                  <GroupRatioBadge ratio={option.ratio} />
+                  <span className='flex items-center gap-1.5'>
+                    {isSubscribed(option.value) && <PlanGroupBadge />}
+                    <GroupRatioBadge ratio={option.ratio} />
+                  </span>
                 </CommandItem>
               ))}
             </CommandGroup>

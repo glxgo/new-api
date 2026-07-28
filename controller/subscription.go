@@ -241,6 +241,7 @@ func AdminCreateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "自定义重置周期需大于0秒")
 		return
 	}
+	req.Plan.PlanVersion = model.NormalizePlanVersion(req.Plan.PlanVersion)
 	err := model.DB.Create(&req.Plan).Error
 	if err != nil {
 		common.ApiError(c, err)
@@ -316,6 +317,7 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "自定义重置周期需大于0秒")
 		return
 	}
+	req.Plan.PlanVersion = model.NormalizePlanVersion(req.Plan.PlanVersion)
 
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		// update plan (allow zero values updates with map)
@@ -342,6 +344,10 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 			"description":                req.Plan.Description,
 			"quota_reset_period":         req.Plan.QuotaResetPeriod,
 			"quota_reset_custom_seconds": req.Plan.QuotaResetCustomSeconds,
+			"model_limit":                req.Plan.ModelLimit,
+			"plan_version":               req.Plan.PlanVersion,
+			"suitable_for":               req.Plan.SuitableFor,
+			"number_pool":                req.Plan.NumberPool,
 			"updated_at":                 common.GetTimestamp(),
 		}
 		if req.Plan.AllowBalancePay != nil {

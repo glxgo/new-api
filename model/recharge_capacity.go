@@ -24,13 +24,12 @@ type RechargeCapacityTier struct {
 }
 
 var rechargeCapacityTiers = []RechargeCapacityTier{
-	{MinimumCents: 0, MaximumCents: 1000, ConcurrencyLimit: 2, RPMLimit: 10},
-	{MinimumCents: 1000, MaximumCents: 5000, ConcurrencyLimit: 4, RPMLimit: 20},
-	{MinimumCents: 5000, MaximumCents: 20000, ConcurrencyLimit: 8, RPMLimit: 40},
-	{MinimumCents: 20000, MaximumCents: 50000, ConcurrencyLimit: 15, RPMLimit: 60},
-	{MinimumCents: 50000, MaximumCents: 100000, ConcurrencyLimit: 20, RPMLimit: 100},
-	{MinimumCents: 100000, MaximumCents: 200000, ConcurrencyLimit: 30, RPMLimit: 150},
-	{MinimumCents: 200000, MaximumCents: 0, ConcurrencyLimit: 50, RPMLimit: 200},
+	{MinimumCents: 0, MaximumCents: 1000, ConcurrencyLimit: 8, RPMLimit: 15},
+	{MinimumCents: 1000, MaximumCents: 5000, ConcurrencyLimit: 15, RPMLimit: 30},
+	{MinimumCents: 5000, MaximumCents: 20000, ConcurrencyLimit: 20, RPMLimit: 50},
+	{MinimumCents: 20000, MaximumCents: 50000, ConcurrencyLimit: 30, RPMLimit: 80},
+	{MinimumCents: 50000, MaximumCents: 100000, ConcurrencyLimit: 50, RPMLimit: 100},
+	{MinimumCents: 100000, MaximumCents: 0, ConcurrencyLimit: 70, RPMLimit: 150},
 }
 
 type RechargeCapacityProgress struct {

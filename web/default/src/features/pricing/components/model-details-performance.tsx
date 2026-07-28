@@ -56,8 +56,8 @@ function StatCard(props: {
       <span
         className={cn(
           'text-foreground font-mono text-lg font-semibold tabular-nums',
-          intent === 'warning' && 'text-amber-600 dark:text-amber-400',
-          intent === 'success' && 'text-emerald-600 dark:text-emerald-400'
+          intent === 'warning' && 'text-warning',
+          intent === 'success' && 'text-success'
         )}
       >
         {props.value}
@@ -325,7 +325,7 @@ export function ModelDetailsPerformance(props: { model: PricingModel }) {
           }
           accent={
             incidentCount > 0 ? (
-              <span className='inline-flex items-center gap-1 text-amber-600 dark:text-amber-400'>
+              <span className='text-warning inline-flex items-center gap-1'>
                 <AlertTriangle className='size-3.5' />
                 {t('{{count}} incidents', {
                   count: incidentCount,

@@ -1,5 +1,17 @@
 {
+  "Agent receives 20% direct referral rebate and has no admin permissions.": "Agent receives 20% direct referral rebate and has no admin permissions.",
+  "No distillation or substitution": "No distillation or substitution",
+  "No hidden multipliers or fees": "No hidden multipliers or fees",
+  "One-click import to CC Switch": "One-click import to CC Switch",
+  "On par with direct official access": "On par with direct official access",
+  "Averages include only periods with successful requests; failed requests are excluded": "Averages include only periods with successful requests; failed requests are excluded",
+  "Billed consumption amount by completion date and final channel": "Billed consumption amount by completion date and final channel",
+  "Daily RPM and concurrency": "Daily RPM and concurrency",
+  "Failed to load traffic statistics": "Failed to load traffic statistics",
   "Multipliers (apply to all modes)": "Multipliers (apply to all modes)",
   "Sale = official × sale multiplier; Cost = official × cost multiplier. Fill official prices in the tab below.": "Sale = official × sale multiplier; Cost = official × cost multiplier. Fill official prices in the tab below.",
-  "Approximate — official price inferred from existing ratio. Save to lock in multipliers.": "Approximate — official price inferred from existing ratio. Save to lock in multipliers."
+  "Approximate — official price inferred from existing ratio. Save to lock in multipliers.": "Approximate — official price inferred from existing ratio. Save to lock in multipliers.",
+  "Agent commission: direct invitee API consumption pays {{rate}}% of gross profit; subscriptions pay {{orderRate}}% of actual plan profit after expiry. Indirect referral commission follows the platform standard rates.": "Agent commission: direct invitee API consumption pays {{rate}}% of gross profit; subscriptions pay {{orderRate}}% of actual plan profit after expiry. Indirect referral commission follows the platform standard rates.",
+  "Agent commission enters your withdrawable commission account. API consumption is settled T+1; subscription commission is credited after the plan expires and its actual profit is calculated.": "Agent commission enters your withdrawable commission account. API consumption is settled T+1; subscription commission is credited after the plan expires and its actual profit is calculated.",
+  "Commission balance is withdrawable. The super admin will contact you for payout.": "Commission balance is withdrawable. The super admin will contact you to arrange payout."
 }

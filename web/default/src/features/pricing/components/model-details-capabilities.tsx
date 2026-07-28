@@ -162,7 +162,7 @@ export function ModelDetailsCapabilities(props: {
               'hover:bg-muted/30'
             )}
           >
-            <span className='bg-muted text-foreground inline-flex size-7 shrink-0 items-center justify-center rounded-md transition-colors group-hover:bg-emerald-100 group-hover:text-emerald-700 dark:group-hover:bg-emerald-500/20 dark:group-hover:text-emerald-300'>
+            <span className='bg-muted text-foreground group-hover:bg-success/10 group-hover:text-success inline-flex size-7 shrink-0 items-center justify-center rounded-md transition-colors'>
               <Icon className='size-3.5' />
             </span>
             <div className='min-w-0 flex-1'>

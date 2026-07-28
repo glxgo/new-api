@@ -25,6 +25,7 @@ export function getPlanFormSchema(t: TFunction) {
   return z.object({
     title: z.string().min(1, t('Please enter plan title')),
     subtitle: z.string().optional(),
+    suitable_for: z.string().optional(),
     price_amount: z.coerce.number().min(0, t('Please enter amount')),
     duration_unit: z.enum(['year', 'month', 'week', 'day', 'hour', 'custom']),
     duration_value: z.coerce.number().min(1),
@@ -44,6 +45,9 @@ export function getPlanFormSchema(t: TFunction) {
     total_amount: z.coerce.number().min(0),
     upgrade_group: z.string().optional(),
     allowed_group: z.string().optional(),
+    number_pool: z.string().optional(),
+    model_limit: z.string().optional(),
+    plan_version: z.string().optional(),
     recommended: z.boolean().optional(),
     min_ratio: z.coerce.number().min(0).optional(),
     amount_cap: z.coerce.number().min(0).optional(),
@@ -59,6 +63,7 @@ export type PlanFormValues = z.infer<ReturnType<typeof getPlanFormSchema>>
 export const PLAN_FORM_DEFAULTS: PlanFormValues = {
   title: '',
   subtitle: '',
+  suitable_for: '',
   price_amount: 0,
   duration_unit: 'month',
   duration_value: 1,
@@ -72,6 +77,9 @@ export const PLAN_FORM_DEFAULTS: PlanFormValues = {
   total_amount: 0,
   upgrade_group: '',
   allowed_group: '',
+  number_pool: '',
+  model_limit: '',
+  plan_version: '',
   recommended: false,
   min_ratio: 0,
   amount_cap: 0,
@@ -85,6 +93,7 @@ export function planToFormValues(plan: SubscriptionPlan): PlanFormValues {
   return {
     title: plan.title || '',
     subtitle: plan.subtitle || '',
+    suitable_for: plan.suitable_for || '',
     price_amount: Number(plan.price_amount || 0),
     duration_unit: plan.duration_unit || 'month',
     duration_value: Number(plan.duration_value || 1),
@@ -98,6 +107,9 @@ export function planToFormValues(plan: SubscriptionPlan): PlanFormValues {
     total_amount: quotaUnitsToDollars(Number(plan.total_amount || 0)),
     upgrade_group: plan.upgrade_group || '',
     allowed_group: plan.allowed_group || '',
+    number_pool: plan.number_pool || '',
+    model_limit: plan.model_limit || '',
+    plan_version: plan.plan_version || '',
     recommended: Boolean(plan.recommended),
     min_ratio: Number(plan.min_ratio || 0),
     amount_cap: quotaUnitsToDollars(Number(plan.amount_cap || 0)),
@@ -126,6 +138,17 @@ export function formValuesToPlanPayload(values: PlanFormValues): PlanPayload {
       total_amount: parseQuotaFromDollars(Number(values.total_amount || 0)),
       upgrade_group: values.upgrade_group || '',
       allowed_group: values.allowed_group || '',
+      suitable_for: values.suitable_for || '',
+      number_pool: values.number_pool || '',
+      model_limit: values.model_limit || '',
+      plan_version:
+        values.plan_version && values.plan_version !== '__none__'
+          ? (values.plan_version as
+              | 'starter'
+              | 'advanced'
+              | 'pro'
+              | 'enterprise')
+          : undefined,
       recommended: values.recommended,
       min_ratio: values.min_ratio,
       amount_cap: parseQuotaFromDollars(values.amount_cap ?? 0),

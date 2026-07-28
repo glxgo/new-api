@@ -19,8 +19,6 @@ For commercial licensing, please contact support@quantumnous.com
 import { useState, useMemo, useEffect, useCallback, memo } from 'react'
 import { Pencil, Plus, Trash2, GripVertical, ChevronDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useAuthStore } from '@/stores/auth-store'
-import { ROLE } from '@/lib/roles'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -783,8 +781,6 @@ function GroupPricingTable({
   onChange,
 }: GroupPricingTableProps) {
   const { t } = useTranslation()
-  const isRoot =
-    (useAuthStore((s) => s.auth.user)?.role ?? 0) >= ROLE.SUPER_ADMIN
   const [rows, setRows] = useState<GroupPricingRow[]>(() =>
     buildGroupPricingRows(groupRatio, groupCostRatio, userUsableGroups)
   )
@@ -926,26 +922,6 @@ function GroupPricingTable({
                     }
                   />
                 ),
-              },
-              {
-                id: 'cost-ratio',
-                header: t('Group cost ratio'),
-                className: 'w-32',
-                cell: (row) =>
-                  isRoot ? (
-                    <Input
-                      type='number'
-                      min={0}
-                      step={0.1}
-                      placeholder={t('Inherit sale ratio')}
-                      value={row.costRatio}
-                      onChange={(event) =>
-                        updateRow(row._id, 'costRatio', event.target.value)
-                      }
-                    />
-                  ) : (
-                    <span className='text-muted-foreground px-3 text-sm'>—</span>
-                  ),
               },
               {
                 id: 'selectable',

@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/types"
@@ -50,7 +51,7 @@ func GetAndValidateRequest(c *gin.Context, format types.RelayFormat) (request dt
 	case types.RelayFormatOpenAIRealtime:
 		request = &dto.BaseRequest{}
 	default:
-		return nil, fmt.Errorf("unsupported relay format: %s", format)
+		return nil, fmt.Errorf(i18n.T(c, i18n.MsgRelayUnsupportedFormat, map[string]any{"Format": format}))
 	}
 	return request, err
 }
@@ -64,11 +65,11 @@ func GetAndValidAudioRequest(c *gin.Context, relayMode int) (*dto.AudioRequest, 
 	switch relayMode {
 	case relayconstant.RelayModeAudioSpeech:
 		if audioRequest.Model == "" {
-			return nil, errors.New("model is required")
+			return nil, errors.New(i18n.T(c, i18n.MsgRelayModelRequired))
 		}
 	default:
 		if audioRequest.Model == "" {
-			return nil, errors.New("model is required")
+			return nil, errors.New(i18n.T(c, i18n.MsgRelayModelRequired))
 		}
 		if audioRequest.ResponseFormat == "" {
 			audioRequest.ResponseFormat = "json"
@@ -86,10 +87,10 @@ func GetAndValidateRerankRequest(c *gin.Context) (*dto.RerankRequest, error) {
 	}
 
 	if rerankRequest.Query == "" {
-		return nil, types.NewError(fmt.Errorf("query is empty"), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
+		return nil, types.NewError(fmt.Errorf(i18n.T(c, i18n.MsgRelayQueryEmpty)), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
 	}
 	if len(rerankRequest.Documents) == 0 {
-		return nil, types.NewError(fmt.Errorf("documents is empty"), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
+		return nil, types.NewError(fmt.Errorf(i18n.T(c, i18n.MsgRelayDocumentsEmpty)), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
 	}
 	return rerankRequest, nil
 }
@@ -103,7 +104,7 @@ func GetAndValidateEmbeddingRequest(c *gin.Context, relayMode int) (*dto.Embeddi
 	}
 
 	if embeddingRequest.Input == nil {
-		return nil, fmt.Errorf("input is empty")
+		return nil, fmt.Errorf(i18n.T(c, i18n.MsgRelayInputEmpty))
 	}
 	if relayMode == relayconstant.RelayModeModerations && embeddingRequest.Model == "" {
 		embeddingRequest.Model = "omni-moderation-latest"
@@ -121,10 +122,10 @@ func GetAndValidateResponsesRequest(c *gin.Context) (*dto.OpenAIResponsesRequest
 		return nil, err
 	}
 	if request.Model == "" {
-		return nil, errors.New("model is required")
+		return nil, errors.New(i18n.T(c, i18n.MsgRelayModelRequired))
 	}
 	if request.Input == nil {
-		return nil, errors.New("input is required")
+		return nil, errors.New(i18n.T(c, i18n.MsgRelayInputRequired))
 	}
 	return request, nil
 }
@@ -135,7 +136,7 @@ func GetAndValidateResponsesCompactionRequest(c *gin.Context) (*dto.OpenAIRespon
 		return nil, err
 	}
 	if request.Model == "" {
-		return nil, errors.New("model is required")
+		return nil, errors.New(i18n.T(c, i18n.MsgRelayModelRequired))
 	}
 	return request, nil
 }
@@ -148,7 +149,7 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 		if strings.Contains(c.Request.Header.Get("Content-Type"), "multipart/form-data") {
 			form, err := common.ParseMultipartFormReusable(c)
 			if err != nil {
-				return nil, fmt.Errorf("failed to parse image edit form request: %w", err)
+				return nil, fmt.Errorf(i18n.T(c, i18n.MsgRelayParseImageEditFailed, map[string]any{"Error": err.Error()}))
 			}
 			formData := url.Values(form.Value)
 			c.Request.MultipartForm = form
@@ -161,7 +162,7 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 			if streamValue := strings.TrimSpace(formData.Get("stream")); streamValue != "" {
 				stream, err := strconv.ParseBool(streamValue)
 				if err != nil {
-					return nil, fmt.Errorf("invalid stream value: %w", err)
+					return nil, fmt.Errorf(i18n.T(c, i18n.MsgRelayInvalidStreamValue, map[string]any{"Error": err.Error()}))
 				}
 				imageRequest.Stream = common.GetPointer(stream)
 			}
@@ -194,24 +195,24 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 
 		if imageRequest.Model == "" {
 			//imageRequest.Model = "dall-e-3"
-			return nil, errors.New("model is required")
+			return nil, errors.New(i18n.T(c, i18n.MsgRelayModelRequired))
 		}
 
 		if strings.Contains(imageRequest.Size, "×") {
-			return nil, errors.New("size an unexpected error occurred in the parameter, please use 'x' instead of the multiplication sign '×'")
+			return nil, errors.New(i18n.T(c, i18n.MsgRelaySizeUseXNotMultiply))
 		}
 
 		// Not "256x256", "512x512", or "1024x1024"
 		if imageRequest.Model == "dall-e-2" || imageRequest.Model == "dall-e" {
 			if imageRequest.Size != "" && imageRequest.Size != "256x256" && imageRequest.Size != "512x512" && imageRequest.Size != "1024x1024" {
-				return nil, errors.New("size must be one of 256x256, 512x512, or 1024x1024 for dall-e-2 or dall-e")
+				return nil, errors.New(i18n.T(c, i18n.MsgRelaySizeInvalidDalle2))
 			}
 			if imageRequest.Size == "" {
 				imageRequest.Size = "1024x1024"
 			}
 		} else if imageRequest.Model == "dall-e-3" {
 			if imageRequest.Size != "" && imageRequest.Size != "1024x1024" && imageRequest.Size != "1024x1792" && imageRequest.Size != "1792x1024" {
-				return nil, errors.New("size must be one of 1024x1024, 1024x1792 or 1792x1024 for dall-e-3")
+				return nil, errors.New(i18n.T(c, i18n.MsgRelaySizeInvalidDalle3))
 			}
 			if imageRequest.Quality == "" {
 				imageRequest.Quality = "standard"
@@ -244,10 +245,10 @@ func GetAndValidateClaudeRequest(c *gin.Context) (textRequest *dto.ClaudeRequest
 		return nil, err
 	}
 	if textRequest.Messages == nil || len(textRequest.Messages) == 0 {
-		return nil, errors.New("field messages is required")
+		return nil, errors.New(i18n.T(c, i18n.MsgRelayFieldRequired, map[string]any{"Field": "messages"}))
 	}
 	if textRequest.Model == "" {
-		return nil, errors.New("field model is required")
+		return nil, errors.New(i18n.T(c, i18n.MsgRelayFieldRequired, map[string]any{"Field": "model"}))
 	}
 
 	//if textRequest.Stream {
@@ -272,10 +273,10 @@ func GetAndValidateTextRequest(c *gin.Context, relayMode int) (*dto.GeneralOpenA
 	}
 
 	if lo.FromPtrOr(textRequest.MaxTokens, uint(0)) > math.MaxInt32/2 {
-		return nil, errors.New("max_tokens is invalid")
+		return nil, errors.New(i18n.T(c, i18n.MsgRelayMaxTokensInvalid))
 	}
 	if textRequest.Model == "" {
-		return nil, errors.New("model is required")
+		return nil, errors.New(i18n.T(c, i18n.MsgRelayModelRequired))
 	}
 	if textRequest.WebSearchOptions != nil {
 		if textRequest.WebSearchOptions.SearchContextSize != "" {
@@ -285,7 +286,7 @@ func GetAndValidateTextRequest(c *gin.Context, relayMode int) (*dto.GeneralOpenA
 				"low":    true,
 			}
 			if !validSizes[textRequest.WebSearchOptions.SearchContextSize] {
-				return nil, errors.New("invalid search_context_size, must be one of: high, medium, low")
+				return nil, errors.New(i18n.T(c, i18n.MsgRelayInvalidSearchContextSize))
 			}
 		} else {
 			textRequest.WebSearchOptions.SearchContextSize = "medium"
@@ -294,22 +295,22 @@ func GetAndValidateTextRequest(c *gin.Context, relayMode int) (*dto.GeneralOpenA
 	switch relayMode {
 	case relayconstant.RelayModeCompletions:
 		if textRequest.Prompt == "" {
-			return nil, errors.New("field prompt is required")
+			return nil, errors.New(i18n.T(c, i18n.MsgRelayFieldRequired, map[string]any{"Field": "prompt"}))
 		}
 	case relayconstant.RelayModeChatCompletions:
 		// For FIM (Fill-in-the-middle) requests with prefix/suffix, messages is optional
 		// It will be filled by provider-specific adaptors if needed (e.g., SiliconFlow)。Or it is allowed by model vendor(s) (e.g., DeepSeek)
 		if len(textRequest.Messages) == 0 && textRequest.Prefix == nil && textRequest.Suffix == nil {
-			return nil, errors.New("field messages is required")
+			return nil, errors.New(i18n.T(c, i18n.MsgRelayFieldRequired, map[string]any{"Field": "messages"}))
 		}
 	case relayconstant.RelayModeEmbeddings:
 	case relayconstant.RelayModeModerations:
 		if textRequest.Input == nil || textRequest.Input == "" {
-			return nil, errors.New("field input is required")
+			return nil, errors.New(i18n.T(c, i18n.MsgRelayFieldRequired, map[string]any{"Field": "input"}))
 		}
 	case relayconstant.RelayModeEdits:
 		if textRequest.Instruction == "" {
-			return nil, errors.New("field instruction is required")
+			return nil, errors.New(i18n.T(c, i18n.MsgRelayFieldRequired, map[string]any{"Field": "instruction"}))
 		}
 	}
 	return textRequest, nil
@@ -322,7 +323,7 @@ func GetAndValidateGeminiRequest(c *gin.Context) (*dto.GeminiChatRequest, error)
 		return nil, err
 	}
 	if len(request.Contents) == 0 && len(request.Requests) == 0 {
-		return nil, errors.New("contents is required")
+		return nil, errors.New(i18n.T(c, i18n.MsgRelayContentsRequired))
 	}
 
 	//if c.Query("alt") == "sse" {

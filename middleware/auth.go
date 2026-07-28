@@ -468,7 +468,7 @@ func TokenAuth() func(c *gin.Context) {
 
 func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) error {
 	if token == nil {
-		return fmt.Errorf("token is nil")
+		return fmt.Errorf(i18n.T(c, i18n.MsgAuthTokenNil))
 	}
 	c.Set("id", token.UserId)
 	c.Set("token_id", token.Id)

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -31,7 +32,7 @@ func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Reque
 		modelMap := make(map[string]string)
 		err := json.Unmarshal([]byte(modelMapping), &modelMap)
 		if err != nil {
-			return fmt.Errorf("unmarshal_model_mapping_failed")
+			return fmt.Errorf(i18n.T(c, i18n.MsgModelMappingUnmarshalFailed))
 		}
 
 		// 支持链式模型重定向，最终使用链尾的模型
@@ -52,7 +53,7 @@ func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Reque
 							break
 						}
 					}
-					return errors.New("model_mapping_contains_cycle")
+					return errors.New(i18n.T(c, i18n.MsgModelMappingCycle))
 				}
 				visitedModels[mappedModel] = true
 				currentModel = mappedModel

@@ -62,15 +62,21 @@ type Log struct {
 	UserRPMLimit         int    `json:"user_rpm_limit" gorm:"default:0;column:user_rpm_limit"`
 	Other                string `json:"other"`
 	// 分润系统字段(T+1结算用)
-	Cost           int    `json:"cost" gorm:"default:0"`                                   // 该请求成本(quota单位,平台付上游)
-	PaidQuota      int    `json:"paid_quota" gorm:"default:0;column:paid_quota"`           // 本金分摊
-	PaidGiftQuota  int    `json:"paid_gift_quota" gorm:"default:0;column:paid_gift_quota"` // 赠金分摊
-	AffAdminIdSnap int    `json:"aff_admin_id_snap" gorm:"default:0;column:aff_admin_id_snap;index:idx_logs_settle"`
-	InviterIdSnap  int    `json:"inviter_id_snap" gorm:"default:0;column:inviter_id_snap"`
-	Inviter2IdSnap int    `json:"inviter2_id_snap" gorm:"default:0;column:inviter2_id_snap"`
-	Settled        bool   `json:"settled" gorm:"default:false;column:settled;index:idx_logs_settle"`
-	SettleBatchId  string `json:"settle_batch_id" gorm:"type:varchar(40);column:settle_batch_id;index:idx_logs_settle"`
-	BillingSource  string `json:"billing_source" gorm:"type:varchar(16);default:'';column:billing_source"` // wallet/subscription，订阅消费不计分润(购买时已分润)
+	Cost                int    `json:"cost" gorm:"default:0"`                                   // 该请求成本(quota单位,平台付上游)
+	PaidQuota           int    `json:"paid_quota" gorm:"default:0;column:paid_quota"`           // 本金分摊
+	PaidGiftQuota       int    `json:"paid_gift_quota" gorm:"default:0;column:paid_gift_quota"` // 赠金分摊
+	AffAdminIdSnap      int    `json:"aff_admin_id_snap" gorm:"default:0;column:aff_admin_id_snap;index:idx_logs_settle"`
+	InviterIdSnap       int    `json:"inviter_id_snap" gorm:"default:0;column:inviter_id_snap"`
+	Inviter2IdSnap      int    `json:"inviter2_id_snap" gorm:"default:0;column:inviter2_id_snap"`
+	Settled             bool   `json:"settled" gorm:"default:false;column:settled;index:idx_logs_settle"`
+	SettleBatchId       string `json:"settle_batch_id" gorm:"type:varchar(40);column:settle_batch_id;index:idx_logs_settle"`
+	BillingSource       string `json:"billing_source" gorm:"type:varchar(16);default:'';column:billing_source"` // wallet/subscription，订阅消费不计分润(购买时已分润)
+	SubscriptionId      int    `json:"subscription_id" gorm:"default:0;column:subscription_id;index"`
+	CostRuleVersion     int    `json:"cost_rule_version" gorm:"default:1;column:cost_rule_version;index"`
+	ChannelCostRatioPPM *int64 `json:"channel_cost_ratio_ppm" gorm:"column:channel_cost_ratio_ppm;default:null"`
+	// BalanceAfter 操作后余额快照(quota 单位, 本金+赠金)，仅供财务流水展示，
+	// 不参与计费/扣费。扣费走异步缓存/批量更新，此值为 best-effort 快照。
+	BalanceAfter *int64 `json:"balance_after" gorm:"column:balance_after"`
 }
 
 // don't use iota, avoid change log type value
@@ -298,26 +304,29 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 }
 
 type RecordConsumeLogParams struct {
-	ChannelId        int                    `json:"channel_id"`
-	PromptTokens     int                    `json:"prompt_tokens"`
-	CacheTokens      int                    `json:"cache_tokens"` // prompt cache 命中 token
-	CompletionTokens int                    `json:"completion_tokens"`
-	ModelName        string                 `json:"model_name"`
-	TokenName        string                 `json:"token_name"`
-	Quota            int                    `json:"quota"`
-	Cost             int                    `json:"cost"`              // 平台成本(quota 单位, T+1 毛利计算用)
-	PaidQuota        int                    `json:"paid_quota"`        // 本金分摊
-	PaidGiftQuota    int                    `json:"paid_gift_quota"`   // 赠金分摊
-	AffAdminIdSnap   int                    `json:"aff_admin_id_snap"` // 树顶管理员快照
-	InviterIdSnap    int                    `json:"inviter_id_snap"`   // 直接上级快照
-	Inviter2IdSnap   int                    `json:"inviter2_id_snap"`  // 间接上级快照
-	Content          string                 `json:"content"`
-	TokenId          int                    `json:"token_id"`
-	UseTimeSeconds   int                    `json:"use_time_seconds"`
-	IsStream         bool                   `json:"is_stream"`
-	Group            string                 `json:"group"`
-	Other            map[string]interface{} `json:"other"`
-	BillingSource    string                 `json:"billing_source"` // wallet/subscription
+	ChannelId           int                    `json:"channel_id"`
+	PromptTokens        int                    `json:"prompt_tokens"`
+	CacheTokens         int                    `json:"cache_tokens"` // prompt cache 命中 token
+	CompletionTokens    int                    `json:"completion_tokens"`
+	ModelName           string                 `json:"model_name"`
+	TokenName           string                 `json:"token_name"`
+	Quota               int                    `json:"quota"`
+	Cost                int                    `json:"cost"`              // 平台成本(quota 单位, T+1 毛利计算用)
+	PaidQuota           int                    `json:"paid_quota"`        // 本金分摊
+	PaidGiftQuota       int                    `json:"paid_gift_quota"`   // 赠金分摊
+	AffAdminIdSnap      int                    `json:"aff_admin_id_snap"` // 树顶管理员快照
+	InviterIdSnap       int                    `json:"inviter_id_snap"`   // 直接上级快照
+	Inviter2IdSnap      int                    `json:"inviter2_id_snap"`  // 间接上级快照
+	Content             string                 `json:"content"`
+	TokenId             int                    `json:"token_id"`
+	UseTimeSeconds      int                    `json:"use_time_seconds"`
+	IsStream            bool                   `json:"is_stream"`
+	Group               string                 `json:"group"`
+	Other               map[string]interface{} `json:"other"`
+	BillingSource       string                 `json:"billing_source"` // wallet/subscription
+	SubscriptionId      int                    `json:"subscription_id"`
+	CostRuleVersion     int                    `json:"cost_rule_version"`
+	ChannelCostRatioPPM *int64                 `json:"channel_cost_ratio_ppm"`
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
@@ -373,6 +382,14 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		UserRPMLimit:         common.GetContextKeyInt(c, constant.ContextKeyUserRPMLimit),
 		Other:                otherStr,
 		BillingSource:        params.BillingSource,
+		SubscriptionId:       params.SubscriptionId,
+		CostRuleVersion:      params.CostRuleVersion,
+		ChannelCostRatioPPM:  params.ChannelCostRatioPPM,
+	}
+	// 强制从主库单次读取两池余额，避免扣费后的 Redis 异步更新尚未完成时
+	// 把扣费前余额写入财务流水。
+	if balanceAfter, balanceErr := GetUserTotalQuotaFromDB(userId); balanceErr == nil {
+		log.BalanceAfter = &balanceAfter
 	}
 	err := LOG_DB.Create(log).Error
 	if err != nil {
@@ -386,22 +403,25 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 }
 
 type RecordTaskBillingLogParams struct {
-	UserId         int
-	LogType        int
-	Content        string
-	ChannelId      int
-	ModelName      string
-	Quota          int
-	Cost           int // 平台成本(quota 单位)
-	PaidQuota      int // 本金分摊
-	PaidGiftQuota  int // 赠金分摊
-	AffAdminIdSnap int // 树顶管理员快照
-	InviterIdSnap  int // 直接上级快照
-	Inviter2IdSnap int // 间接上级快照
-	TokenId        int
-	Group          string
-	Other          map[string]interface{}
-	BillingSource  string // wallet/subscription
+	UserId              int
+	LogType             int
+	Content             string
+	ChannelId           int
+	ModelName           string
+	Quota               int
+	Cost                int // 平台成本(quota 单位)
+	PaidQuota           int // 本金分摊
+	PaidGiftQuota       int // 赠金分摊
+	AffAdminIdSnap      int // 树顶管理员快照
+	InviterIdSnap       int // 直接上级快照
+	Inviter2IdSnap      int // 间接上级快照
+	TokenId             int
+	Group               string
+	Other               map[string]interface{}
+	BillingSource       string // wallet/subscription
+	SubscriptionId      int
+	CostRuleVersion     int
+	ChannelCostRatioPPM *int64
 }
 
 func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
@@ -416,30 +436,95 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 		}
 	}
 	log := &Log{
-		UserId:         params.UserId,
-		Username:       username,
-		CreatedAt:      common.GetTimestamp(),
-		Type:           params.LogType,
-		Content:        params.Content,
-		TokenName:      tokenName,
-		ModelName:      params.ModelName,
-		Quota:          params.Quota,
-		Cost:           params.Cost,
-		PaidQuota:      params.PaidQuota,
-		PaidGiftQuota:  params.PaidGiftQuota,
-		AffAdminIdSnap: params.AffAdminIdSnap,
-		InviterIdSnap:  params.InviterIdSnap,
-		Inviter2IdSnap: params.Inviter2IdSnap,
-		ChannelId:      params.ChannelId,
-		TokenId:        params.TokenId,
-		Group:          params.Group,
-		Other:          common.MapToJsonStr(params.Other),
-		BillingSource:  params.BillingSource,
+		UserId:              params.UserId,
+		Username:            username,
+		CreatedAt:           common.GetTimestamp(),
+		Type:                params.LogType,
+		Content:             params.Content,
+		TokenName:           tokenName,
+		ModelName:           params.ModelName,
+		Quota:               params.Quota,
+		Cost:                params.Cost,
+		PaidQuota:           params.PaidQuota,
+		PaidGiftQuota:       params.PaidGiftQuota,
+		AffAdminIdSnap:      params.AffAdminIdSnap,
+		InviterIdSnap:       params.InviterIdSnap,
+		Inviter2IdSnap:      params.Inviter2IdSnap,
+		ChannelId:           params.ChannelId,
+		TokenId:             params.TokenId,
+		Group:               params.Group,
+		Other:               common.MapToJsonStr(params.Other),
+		BillingSource:       params.BillingSource,
+		SubscriptionId:      params.SubscriptionId,
+		CostRuleVersion:     params.CostRuleVersion,
+		ChannelCostRatioPPM: params.ChannelCostRatioPPM,
+	}
+	if balanceAfter, balanceErr := GetUserTotalQuotaFromDB(params.UserId); balanceErr == nil {
+		log.BalanceAfter = &balanceAfter
 	}
 	err := LOG_DB.Create(log).Error
 	if err != nil {
 		common.SysLog("failed to record task billing log: " + err.Error())
 	}
+}
+
+type FinancialConsumeDaily struct {
+	DayStart     int64  `json:"day_start"`
+	Quota        int64  `json:"quota"`
+	BalanceAfter *int64 `json:"balance_after"`
+}
+
+// GetUserFinancialConsumeDaily streams consume logs in chronological order,
+// aggregates them by the server's local calendar day, and keeps the last
+// operation's balance snapshot.
+// Streaming avoids loading an unbounded 30-day request history into memory.
+func GetUserFinancialConsumeDaily(userId int, startTimestamp int64, endTimestamp int64) ([]FinancialConsumeDaily, error) {
+	rows, err := LOG_DB.Model(&Log{}).
+		Select("created_at, quota, balance_after").
+		Where("user_id = ? AND type = ? AND created_at >= ? AND created_at < ?",
+			userId, LogTypeConsume, startTimestamp, endTimestamp).
+		Order("created_at ASC, id ASC").
+		Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type financialConsumeRow struct {
+		CreatedAt    int64
+		Quota        int64
+		BalanceAfter *int64
+	}
+	items := make([]FinancialConsumeDaily, 0, 31)
+	for rows.Next() {
+		var row financialConsumeRow
+		if err := LOG_DB.ScanRows(rows, &row); err != nil {
+			return nil, err
+		}
+		createdAt := time.Unix(row.CreatedAt, 0).In(time.Local)
+		dayStart := time.Date(
+			createdAt.Year(),
+			createdAt.Month(),
+			createdAt.Day(),
+			0, 0, 0, 0,
+			time.Local,
+		).Unix()
+		if len(items) == 0 || items[len(items)-1].DayStart != dayStart {
+			items = append(items, FinancialConsumeDaily{
+				DayStart:     dayStart,
+				Quota:        row.Quota,
+				BalanceAfter: row.BalanceAfter,
+			})
+			continue
+		}
+		items[len(items)-1].Quota += row.Quota
+		items[len(items)-1].BalanceAfter = row.BalanceAfter
+	}
+
+	for left, right := 0, len(items)-1; left < right; left, right = left+1, right-1 {
+		items[left], items[right] = items[right], items[left]
+	}
+	return items, nil
 }
 
 func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
@@ -752,6 +837,15 @@ func GetUnsettledConsumeLogs(dayStart, dayEnd int64, afterLogId, limit int) ([]*
 		false, LogTypeConsume, dayStart, dayEnd, afterLogId).
 		Order("id asc").Limit(limit).Find(&logs).Error
 	return logs, err
+}
+
+func CountUnresolvedWalletCostLogs(dayStart, dayEnd int64) (int64, error) {
+	var count int64
+	err := LOG_DB.Model(&Log{}).
+		Where("settled = ? AND type = ? AND created_at >= ? AND created_at < ? AND quota > 0 AND (billing_source = '' OR billing_source = 'wallet') AND cost_rule_version >= ? AND channel_cost_ratio_ppm IS NULL",
+			false, LogTypeConsume, dayStart, dayEnd, 2).
+		Count(&count).Error
+	return count, err
 }
 
 // GetUserCacheRate 用户个人缓存命中数据(近指定时段): 返回 sum(cache_tokens)/sum(effective_prompt_tokens)。

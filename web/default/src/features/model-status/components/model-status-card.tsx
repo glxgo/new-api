@@ -18,22 +18,24 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { memo, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useTranslation } from 'react-i18next'
 import { Activity, AlertCircle, ChevronRight, Zap } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
-import type { PricingModel } from '@/features/pricing/types'
 import { getPerfMetrics } from '@/features/performance-metrics/api'
 import type { PerformanceGroup } from '@/features/performance-metrics/types'
 import { UptimeSparkline } from '@/features/pricing/components/model-details-uptime-sparkline'
 import type { UptimeDayPoint } from '@/features/pricing/lib/mock-stats'
+import type { PricingModel } from '@/features/pricing/types'
 
-type Summary = {
-  success_rate: number
-  avg_latency_ms: number
-  avg_tps: number
-  cache_rate?: number
-  request_count?: number
-} | undefined
+type Summary =
+  | {
+      success_rate: number
+      avg_latency_ms: number
+      avg_tps: number
+      cache_rate?: number
+      request_count?: number
+    }
+  | undefined
 
 type Props = {
   model: PricingModel
@@ -63,9 +65,9 @@ function aggregateGroupSeries(groups: PerformanceGroup[]): UptimeDayPoint[] {
 }
 
 function statusText(rate: number): string {
-  if (rate >= 95) return 'text-emerald-600 dark:text-emerald-400'
-  if (rate >= 90) return 'text-amber-600 dark:text-amber-400'
-  return 'text-rose-600 dark:text-rose-400'
+  if (rate >= 95) return 'text-success'
+  if (rate >= 90) return 'text-warning'
+  return 'text-destructive'
 }
 
 export const ModelStatusCard = memo(function ModelStatusCard({
@@ -100,7 +102,7 @@ export const ModelStatusCard = memo(function ModelStatusCard({
           onClick()
         }
       }}
-      className='hover:border-primary/50 bg-card group relative flex cursor-pointer flex-col gap-3 rounded-xl border p-4 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+      className='hover:border-primary/50 bg-card group focus-visible:ring-ring relative flex cursor-pointer flex-col gap-3 rounded-xl border p-4 text-left transition-colors focus:outline-none focus-visible:ring-2'
     >
       <div className='flex items-start justify-between gap-3'>
         <div className='min-w-0 flex-1'>
@@ -131,27 +133,28 @@ export const ModelStatusCard = memo(function ModelStatusCard({
         maxPoints={24}
         fill
         className='w-full'
-        emptyLabel={
-          metricsQuery.isLoading ? t('Loading...') : t('No data')
-        }
+        emptyLabel={metricsQuery.isLoading ? t('Loading...') : t('No data')}
       />
 
       <div className='text-muted-foreground flex items-center justify-between text-xs'>
         <span className='inline-flex items-center gap-3'>
           <span className='inline-flex items-center gap-1'>
             {hasData && (rate as number) < 95 ? (
-              <AlertCircle className='size-3 text-amber-500' />
+              <AlertCircle className='text-warning size-3' />
             ) : (
-              <Activity className='size-3 text-emerald-500' />
+              <Activity className='text-success size-3' />
             )}
-            {summary?.avg_latency_ms ? `${(summary.avg_latency_ms / 1000).toFixed(2)}s` : t('No data')}
+            {summary?.avg_latency_ms
+              ? `${(summary.avg_latency_ms / 1000).toFixed(2)}s`
+              : t('No data')}
           </span>
-          {typeof summary?.cache_rate === 'number' && summary.cache_rate > 0 && (
-            <span className='inline-flex items-center gap-1'>
-              <Zap className='size-3 text-sky-500' />
-              {summary.cache_rate.toFixed(0)}% {t('cache')}
-            </span>
-          )}
+          {typeof summary?.cache_rate === 'number' &&
+            summary.cache_rate > 0 && (
+              <span className='inline-flex items-center gap-1'>
+                <Zap className='text-info size-3' />
+                {summary.cache_rate.toFixed(0)}% {t('cache')}
+              </span>
+            )}
         </span>
         <span className='group-hover:text-primary inline-flex items-center gap-0.5'>
           {t('Details')}

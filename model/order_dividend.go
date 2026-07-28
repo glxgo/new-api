@@ -1,52 +1,56 @@
 package model
 
 import (
+	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
 )
 
-// SettleOrderDividend 按上层已计算好的可分润基数，一次性分润给推荐人/管理员/超管。
-// 当前唯一调用方是订阅到期结算：base = 套餐实际利润(售价 - 渠道成本, quota 单位)。
-// 它与 API 消费分润(T+1 按 gross)独立，使用 OrderXxxRate 比例。
-// 幂等: sourceRef(如订单号)去重, 防 webhook 重放/兑换码重试重复发放。
-// 兑换码兑换订阅不调本函数(用户要求兑换码不计入分润)。
-// 放 model 包(model/subscription.go 直接调), 避免 model→service 循环依赖。
-func SettleOrderDividend(buyerUserId int, orderQuota int64, sourceRef string) {
-	if orderQuota <= 0 || buyerUserId <= 0 {
-		return
+// settleOrderDividendTx writes order/subscription dividend records and recipient
+// balances in the caller's transaction. This keeps the audit rows and money
+// movement atomic: a crash can no longer leave "recorded but not credited".
+func settleOrderDividendTx(tx *gorm.DB, buyer *User, orderQuota int64, sourceRef string) ([]int, error) {
+	if tx == nil {
+		return nil, errors.New("dividend transaction is nil")
+	}
+	if buyer == nil || buyer.Id <= 0 || orderQuota <= 0 || buyer.Role >= common.RoleRootUser {
+		return nil, nil
 	}
 	if sourceRef != "" {
-		if exists, err := HasDividendRecordBySourceRef(sourceRef); err != nil {
-			common.SysError("SettleOrderDividend idempotency check failed: " + err.Error())
-			return
-		} else if exists {
-			common.SysLog(fmt.Sprintf("SettleOrderDividend skip: sourceRef=%s already settled", sourceRef))
-			return
+		var existing int64
+		if err := tx.Model(&DividendRecord{}).Where("source_ref = ?", sourceRef).Count(&existing).Error; err != nil {
+			return nil, err
+		}
+		if existing > 0 {
+			return nil, nil
 		}
 	}
 
-	buyer, err := GetUserById(buyerUserId, false)
-	if err != nil || buyer == nil {
-		return
-	}
-	if buyer.Role >= common.RoleRootUser {
-		return
-	}
-
-	// 内联 affiliate snapshot(同包直接读, 不依赖 service.GetAffiliateSnapshot)
+	buyerUserId := buyer.Id
 	affAdminId := buyer.AffAdminId
 	inviterId := buyer.InviterId
 	inviter2Id := 0
-	if inviterId > 0 {
-		if inviter, e := GetUserById(inviterId, false); e == nil && inviter != nil {
-			inviter2Id = inviter.InviterId
+	getUser := func(id int) *User {
+		if id <= 0 {
+			return nil
 		}
+		var user User
+		if err := tx.Omit("password").Where("id = ?", id).First(&user).Error; err != nil {
+			return nil
+		}
+		return &user
 	}
-	root := GetRootUser()
+	if inviter := getUser(inviterId); inviter != nil {
+		inviter2Id = inviter.InviterId
+	}
+	var root *User
+	var rootUser User
+	if err := tx.Omit("password").Where("role = ?", common.RoleRootUser).First(&rootUser).Error; err == nil {
+		root = &rootUser
+	}
 
 	dIndirect := decimal.NewFromFloat(common.OrderAffiliateIndirectRate)
 	dRoot := decimal.NewFromFloat(common.OrderRootDividendRate)
@@ -60,17 +64,6 @@ func SettleOrderDividend(buyerUserId int, orderQuota int64, sourceRef string) {
 	var records []*DividendRecord
 	now := common.GetTimestamp()
 	batchId := "order-" + sourceRef
-
-	getUser := func(id int) *User {
-		if id == 0 {
-			return nil
-		}
-		u, e := GetUserById(id, false)
-		if e != nil || u == nil {
-			return nil
-		}
-		return u
-	}
 
 	// 直接上级(普通用户才发返利)
 	if inv := getUser(inviterId); inv != nil && inv.Role < common.RoleAdminUser {
@@ -121,126 +114,166 @@ func SettleOrderDividend(buyerUserId int, orderQuota int64, sourceRef string) {
 		}
 	}
 
-	if len(records) == 0 {
-		return
-	}
-	// 先写明细(含 source_ref 幂等), 再 post-commit 发放(沿用 RunDailySettle 崩溃只漏发不多发范式)
-	if err := BatchInsertDividendRecords(records); err != nil {
-		common.SysError("SettleOrderDividend insert records failed: " + err.Error())
-		return
-	}
-	for uid, amt := range accumGift {
-		if err := IncreaseUserGiftQuota(uid, amt, true); err != nil {
-			common.SysError(fmt.Sprintf("SettleOrderDividend increase gift failed uid=%d: %v", uid, err))
+	if len(records) > 0 {
+		if err := tx.CreateInBatches(records, 500).Error; err != nil {
+			return nil, err
 		}
 	}
+	giftRecipients := make([]int, 0, len(accumGift))
+	for uid, amt := range accumGift {
+		if amt <= 0 {
+			continue
+		}
+		res := tx.Model(&User{}).Where("id = ?", uid).
+			Update("gift_quota", gorm.Expr("gift_quota + ?", amt))
+		if res.Error != nil {
+			return nil, res.Error
+		}
+		if res.RowsAffected != 1 {
+			return nil, fmt.Errorf("dividend gift recipient %d not found", uid)
+		}
+		giftRecipients = append(giftRecipients, uid)
+	}
 	for uid, amt := range accumDividend {
-		if err := IncreaseUserDividend(uid, amt); err != nil {
-			common.SysError(fmt.Sprintf("SettleOrderDividend increase dividend failed uid=%d: %v", uid, err))
+		if amt <= 0 {
+			continue
+		}
+		res := tx.Model(&User{}).Where("id = ?", uid).
+			Updates(map[string]interface{}{
+				"dividend_balance": gorm.Expr("dividend_balance + ?", amt),
+				"dividend_total":   gorm.Expr("dividend_total + ?", amt),
+			})
+		if res.Error != nil {
+			return nil, res.Error
+		}
+		if res.RowsAffected != 1 {
+			return nil, fmt.Errorf("dividend recipient %d not found", uid)
+		}
+	}
+	return giftRecipients, nil
+}
+
+func invalidateDividendGiftCaches(userIds []int) {
+	for _, userId := range userIds {
+		if err := invalidateUserCache(userId); err != nil {
+			common.SysError(fmt.Sprintf("invalidate dividend gift cache failed uid=%d: %v", userId, err))
 		}
 	}
 }
 
-// SettleSubscriptionEndDividend 套餐到期/失效时按实际利润分润(v2 简化版)。
-//
-//	利润 = 套餐售价 − 成本
-//	  套餐售价 = plan.PriceAmount × QuotaPerUnit (用户实付金额)
-//	  成本     = 用户消费全部售价 × 分组成本倍率(GroupCostRatio)
-//
-// 依据(2026-07-14): 售价=官方价(套餐专用分组 GR=1 平价), log.quota 即官方售价;
-// log.quota 由分段公式算出已含缓存折扣(cache 自动包含), 无需 ModelCost/单独算 cache。
-// 不参与: Source=redeem(兑换码) / buyer.Role>=root(超管)。
-// GroupCostRatio 未配(default) → 整个套餐不分润。profit<=0 → 不分润。
-// 幂等: sourceRef=sub-end-{subId}。
+// SettleOrderDividend 按上层已计算好的可分润基数，一次性分润给推荐人/管理员/超管。
+// 明细和余额在同一事务中提交，sourceRef 用于幂等。
+func SettleOrderDividend(buyerUserId int, orderQuota int64, sourceRef string) {
+	if orderQuota <= 0 || buyerUserId <= 0 {
+		return
+	}
+	var giftRecipients []int
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var buyer User
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").
+			Omit("password").Where("id = ?", buyerUserId).First(&buyer).Error; err != nil {
+			return err
+		}
+		var err error
+		giftRecipients, err = settleOrderDividendTx(tx, &buyer, orderQuota, sourceRef)
+		return err
+	})
+	if err != nil {
+		common.SysError("SettleOrderDividend failed: " + err.Error())
+		return
+	}
+	invalidateDividendGiftCaches(giftRecipients)
+}
+
+func subscriptionCostQuota(costNumerator int64) int64 {
+	if costNumerator <= 0 {
+		return 0
+	}
+	return (costNumerator-1)/ChannelCostRatioScale + 1
+}
+
+// SettleSubscriptionEndDividend settles from the subscription's immutable paid
+// revenue snapshot and O(1) channel-cost accumulator. It never scans logs.
 func SettleSubscriptionEndDividend(buyerUserId, subId int) {
 	if buyerUserId <= 0 || subId <= 0 {
 		return
 	}
 	sourceRef := fmt.Sprintf("sub-end-%d", subId)
-	if exists, err := HasDividendRecordBySourceRef(sourceRef); err != nil {
-		common.SysError("SettleSubscriptionEndDividend idempotency check failed: " + err.Error())
-		return
-	} else if exists {
-		return
-	}
-
-	var sub UserSubscription
-	if err := DB.Where("id = ?", subId).First(&sub).Error; err != nil {
-		common.SysError(fmt.Sprintf("SettleSubscriptionEndDividend sub %d not found: %v", subId, err))
-		return
-	}
-
-	// 兑换码兑换不分润
-	if strings.TrimSpace(sub.Source) == "redeem" {
-		common.SysLog(fmt.Sprintf("SettleSubscriptionEndDividend skip: subId=%d source=redeem(兑换码不分润)", subId))
-		return
-	}
-
-	// 超管不分润
-	buyer, err := GetUserById(buyerUserId, false)
-	if err != nil || buyer == nil {
-		return
-	}
-	if buyer.Role >= common.RoleRootUser {
-		return
-	}
-
-	// 分组成本倍率: 未配(default) → 整个套餐不分润
-	group := strings.TrimSpace(sub.AllowedGroup)
-	if group == "" {
-		group = strings.TrimSpace(sub.UpgradeGroup)
-	}
-	gcr, costSource := ratio_setting.GetGroupCostRatioWithSource(group)
-	if costSource == ratio_setting.CostRatioSourceDefault {
-		common.SysError(fmt.Sprintf("SettleSubscriptionEndDividend skip: subId=%d group=%s GroupCostRatio未配置→整个套餐不分润", subId, group))
-		return
-	}
-	// 守护(方案A): 套餐分组销售倍率(GroupRatio)必须=1(平价)。
-	// 成本 = log.quota × GCR, 而 log.quota 含销售倍率; 倍率=1 时 log.quota=官方价口径才正确。
-	// 若被改成≠1(加价卖), 成本会放大→利润算错, 故直接拦下告警, 不分润。
-	if gr := ratio_setting.GetGroupRatio(group); gr != 1 {
-		common.SysError(fmt.Sprintf("SettleSubscriptionEndDividend skip: subId=%d group=%s GroupRatio=%.4f≠1, 套餐分组必须平价(否则成本口径错误)→整个套餐不分润", subId, group, gr))
-		return
-	}
-
-	// 套餐售价(用户实付)
-	plan, err := GetSubscriptionPlanById(sub.PlanId)
-	if err != nil || plan == nil {
-		return
-	}
-	priceQuota, err := calcSubscriptionBalanceQuota(plan.PriceAmount)
-	if err != nil || priceQuota <= 0 {
-		return
-	}
-
-	// 成本 = 用户消费全部售价 × GCR
-	totalSaleQuota, err := GetSubscriptionConsumedQuota(subId)
+	var profit int64
+	var priceQuota int64
+	var costQuota int64
+	var giftRecipients []int
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var sub UserSubscription
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").
+			Where("id = ?", subId).First(&sub).Error; err != nil {
+			return err
+		}
+		if sub.UserId != buyerUserId {
+			return errors.New("subscription buyer mismatch")
+		}
+		var buyer User
+		if err := tx.Omit("password").Where("id = ?", buyerUserId).First(&buyer).Error; err != nil {
+			return err
+		}
+		if sub.Status == "active" {
+			return nil
+		}
+		switch sub.DividendState {
+		case SubscriptionDividendDone, SubscriptionDividendSkippedNoProfit, SubscriptionDividendSkippedSource:
+			return nil
+		}
+		var pending int64
+		if err := tx.Model(&SubscriptionPreConsumeRecord{}).
+			Where("user_subscription_id = ? AND status IN ?", subId, []string{
+				SubscriptionCostStatusReserved,
+				SubscriptionCostStatusProvisional,
+			}).Count(&pending).Error; err != nil {
+			return err
+		}
+		if pending > 0 {
+			return nil
+		}
+		if sub.Source == "redeem" || sub.Source == "admin" || buyer.Role >= common.RoleRootUser {
+			return tx.Model(&sub).Updates(map[string]interface{}{
+				"dividend_state": SubscriptionDividendSkippedSource,
+				"updated_at":     common.GetTimestamp(),
+			}).Error
+		}
+		priceQuota = sub.PaidRevenueQuota
+		costQuota = subscriptionCostQuota(sub.CostAccumulator)
+		profit = priceQuota - costQuota
+		if profit <= 0 {
+			return tx.Model(&sub).Updates(map[string]interface{}{
+				"dividend_state": SubscriptionDividendSkippedNoProfit,
+				"updated_at":     common.GetTimestamp(),
+			}).Error
+		}
+		if err := tx.Model(&sub).Updates(map[string]interface{}{
+			"dividend_state": SubscriptionDividendProcessing,
+			"updated_at":     common.GetTimestamp(),
+		}).Error; err != nil {
+			return err
+		}
+		var err error
+		giftRecipients, err = settleOrderDividendTx(tx, &buyer, profit, sourceRef)
+		if err != nil {
+			return err
+		}
+		return tx.Model(&sub).Updates(map[string]interface{}{
+			"dividend_state": SubscriptionDividendDone,
+			"updated_at":     common.GetTimestamp(),
+		}).Error
+	})
 	if err != nil {
-		common.SysError(fmt.Sprintf("SettleSubscriptionEndDividend get consumed quota failed subId=%d: %v", subId, err))
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			common.SysError(fmt.Sprintf("SettleSubscriptionEndDividend prepare failed subId=%d: %v", subId, err))
+		}
 		return
 	}
-	costQuota := decimal.NewFromInt(totalSaleQuota).Mul(decimal.NewFromFloat(gcr)).Round(0).IntPart()
-
-	profit := int64(priceQuota) - costQuota
-	if profit <= 0 {
-		common.SysLog(fmt.Sprintf("SettleSubscriptionEndDividend skip: subId=%d profit=%d<=0 (price=%d cost=%d saleQuota=%d gcr=%.4f)",
-			subId, profit, priceQuota, costQuota, totalSaleQuota, gcr))
-		return
+	invalidateDividendGiftCaches(giftRecipients)
+	if profit > 0 {
+		common.SysLog(fmt.Sprintf("SettleSubscriptionEndDividend settled atomically: subId=%d price=%d cost=%d profit=%d",
+			subId, priceQuota, costQuota, profit))
 	}
-
-	common.SysLog(fmt.Sprintf("SettleSubscriptionEndDividend settle: subId=%d price=%d saleQuota=%d gcr=%.4f cost=%d profit=%d",
-		subId, priceQuota, totalSaleQuota, gcr, costQuota, profit))
-	SettleOrderDividend(buyerUserId, profit, sourceRef)
-}
-
-// GetSubscriptionConsumedQuota 返回某订阅所有消费日志的售价额度合计(quota)。
-// 用于套餐结束分润成本反推: 成本 = 该合计 × GroupCostRatio。
-// log.quota 已含缓存折扣(分段公式算), 无需单独处理 cache。
-func GetSubscriptionConsumedQuota(subId int) (int64, error) {
-	var sum int64
-	err := LOG_DB.Model(&Log{}).
-		Where("type = ? AND billing_source = ? AND JSON_EXTRACT(other, '$.subscription_id') = ?",
-			LogTypeConsume, "subscription", subId).
-		Select("COALESCE(SUM(quota),0)").Scan(&sum).Error
-	return sum, err
 }

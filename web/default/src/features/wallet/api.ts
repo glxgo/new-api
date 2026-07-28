@@ -38,6 +38,7 @@ import type {
   WaffoPaymentResponse,
   WaffoPancakePaymentRequest,
   WaffoPancakePaymentResponse,
+  FinancialConsumeDaily,
 } from './types'
 
 // ============================================================================
@@ -221,6 +222,18 @@ export async function getAllBillingHistory(
     params.append('keyword', keyword)
   }
   const res = await api.get(`/api/user/topup?${params.toString()}`)
+  return res.data
+}
+
+export async function getFinancialConsumeDaily(
+  startTimestamp: number,
+  endTimestamp: number
+): Promise<ApiResponse<FinancialConsumeDaily[]>> {
+  const params = new URLSearchParams({
+    start_timestamp: startTimestamp.toString(),
+    end_timestamp: endTimestamp.toString(),
+  })
+  const res = await api.get(`/api/log/self/financial-flow?${params.toString()}`)
   return res.data
 }
 

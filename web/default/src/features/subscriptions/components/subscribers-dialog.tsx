@@ -20,7 +20,6 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Users } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Skeleton } from '@/components/ui/skeleton'
 import {
   Sheet,
   SheetContent,
@@ -28,6 +27,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   sideDrawerContentClassName,
   sideDrawerHeaderClassName,
@@ -41,7 +41,10 @@ interface SubscribersDialogProps {
 }
 
 // 订阅用户列表: 超管查看所有买过套餐的用户, 点击某用户展开其订阅详情
-export function SubscribersDialog({ open, onOpenChange }: SubscribersDialogProps) {
+export function SubscribersDialog({
+  open,
+  onOpenChange,
+}: SubscribersDialogProps) {
   const { t } = useTranslation()
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null)
 

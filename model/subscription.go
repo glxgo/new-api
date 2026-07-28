@@ -34,14 +34,36 @@ const (
 	SubscriptionResetCustom  = "custom"
 )
 
+// Subscription plan version (drives card border color & badge: starter=铜/advanced=银/pro=金/enterprise=黑金)
+const (
+	PlanVersionStarter    = "starter"
+	PlanVersionAdvanced   = "advanced"
+	PlanVersionPro        = "pro"
+	PlanVersionEnterprise = "enterprise"
+)
+
 var (
 	ErrSubscriptionOrderNotFound      = errors.New("subscription order not found")
 	ErrSubscriptionOrderStatusInvalid = errors.New("subscription order status invalid")
+	ErrChannelCostRatioMissing        = errors.New("channel cost ratio is not configured")
 )
 
 const (
-	subscriptionPlanCacheNamespace     = "new-api:subscription_plan:v1"
-	subscriptionPlanInfoCacheNamespace = "new-api:subscription_plan_info:v1"
+	subscriptionPlanCacheNamespace           = "new-api:subscription_plan:v1"
+	subscriptionPlanInfoCacheNamespace       = "new-api:subscription_plan_info:v1"
+	ChannelCostRatioScale              int64 = 1_000_000
+	MaxChannelCostRatioPPM             int64 = 1_000_000_000
+
+	SubscriptionCostStatusReserved    = "reserved"
+	SubscriptionCostStatusProvisional = "provisional"
+	SubscriptionCostStatusFinal       = "final"
+	SubscriptionCostStatusRefunded    = "refunded"
+
+	SubscriptionDividendPending         = "pending"
+	SubscriptionDividendProcessing      = "processing"
+	SubscriptionDividendDone            = "done"
+	SubscriptionDividendSkippedNoProfit = "skipped_no_profit"
+	SubscriptionDividendSkippedSource   = "skipped_source"
 )
 
 var (
@@ -149,6 +171,8 @@ type SubscriptionPlan struct {
 
 	Title    string `json:"title" gorm:"type:varchar(128);not null"`
 	Subtitle string `json:"subtitle" gorm:"type:varchar(255);default:''"`
+	// SuitableFor: 适合人群(套餐名下方展示"适合 XXX")
+	SuitableFor string `json:"suitable_for" gorm:"type:varchar(255);default:''"`
 	// Description: 套餐详细介绍(用户订阅时弹出展示, "已阅读"关闭/"永不展示"localStorage 记住)
 	Description string `json:"description" gorm:"type:text"`
 
@@ -177,6 +201,14 @@ type SubscriptionPlan struct {
 
 	// AllowedGroup: 订阅级分组限制。非空时订阅额度只能用于该分组(不改 user.group, 与 UpgradeGroup 互斥)
 	AllowedGroup string `json:"allowed_group" gorm:"type:varchar(64);default:''"`
+
+	// NumberPool: 号池(权益列表展示, 如"旗舰池/高质量池")
+	NumberPool string `json:"number_pool" gorm:"type:varchar(255);default:''"`
+
+	// ModelLimit: 模型限制(权益列表展示"模型限制: XXX", 管理员自由填写)
+	ModelLimit string `json:"model_limit" gorm:"type:varchar(255);default:''"`
+	// PlanVersion: 套餐版本(入门版/进阶版/专业版/企业版), 驱动用户卡片边框配色与右上徽章
+	PlanVersion string `json:"plan_version" gorm:"type:varchar(32);default:''"`
 
 	// Recommended: 前台展示「推荐」标记
 	Recommended bool `json:"recommended" gorm:"default:false"`
@@ -283,6 +315,14 @@ type UserSubscription struct {
 	// AllowedGroup: 冗余自 plan, 扣费时按 relayInfo.UsingGroup 过滤(订阅级分组限制)
 	AllowedGroup string `json:"allowed_group" gorm:"type:varchar(64);default:''"`
 
+	// PaidRevenueQuota is the immutable actual paid amount snapshot in quota units.
+	// CostAccumulator stores the exact sum of sale_quota*channel_ratio_ppm and is
+	// rounded only once when the subscription ends.
+	PaidRevenueQuota int64  `json:"paid_revenue_quota" gorm:"type:bigint;not null;default:0"`
+	CostAccumulator  int64  `json:"cost_accumulator" gorm:"type:bigint;not null;default:0"`
+	DividendState    string `json:"dividend_state" gorm:"type:varchar(32);not null;default:'pending';index"`
+	DividendReadyAt  int64  `json:"dividend_ready_at" gorm:"type:bigint;not null;default:0;index"`
+
 	CreatedAt int64 `json:"created_at" gorm:"bigint"`
 	UpdatedAt int64 `json:"updated_at" gorm:"bigint"`
 }
@@ -340,7 +380,17 @@ func NormalizeResetPeriod(period string) string {
 	}
 }
 
-func calcNextResetTime(base time.Time, plan *SubscriptionPlan, endUnix int64) int64 {
+// NormalizePlanVersion 非法/空值回落到 ""(不设版本, 卡片保持默认外观)
+func NormalizePlanVersion(v string) string {
+	switch strings.TrimSpace(v) {
+	case PlanVersionStarter, PlanVersionAdvanced, PlanVersionPro, PlanVersionEnterprise:
+		return strings.TrimSpace(v)
+	default:
+		return ""
+	}
+}
+
+func calcNextResetTime(base time.Time, plan *SubscriptionPlan, endUnix int64, startUnix int64) int64 {
 	if plan == nil {
 		return 0
 	}
@@ -354,15 +404,17 @@ func calcNextResetTime(base time.Time, plan *SubscriptionPlan, endUnix int64) in
 		next = time.Date(base.Year(), base.Month(), base.Day(), 0, 0, 0, 0, base.Location()).
 			AddDate(0, 0, 1)
 	case SubscriptionResetWeekly:
-		// Align to next Monday 00:00
-		weekday := int(base.Weekday()) // Sunday=0
-		// Convert to Monday=1..Sunday=7
-		if weekday == 0 {
-			weekday = 7
+		// 所有卡(周卡/月卡/季卡/年卡)都从订阅(付款)日起每 7 天一周期, 不对齐周一。
+		// 单月卡(duration_value=1)特殊: 前 3 周各重置一次(start+7/+14/+21),
+		// 第 4 段(start+21 → 月底约 9-10 天)不再重置, 额度用到月底到期。
+		// 解决月卡 30 天按 4×7=28 天算多出 2-3 天、最后一周额度浪费的问题。
+		if plan.DurationUnit == SubscriptionDurationMonth && plan.DurationValue == 1 && startUnix > 0 {
+			weeksFromStart := int(base.Sub(time.Unix(startUnix, 0)).Hours() / 24 / 7)
+			if weeksFromStart >= 3 {
+				return 0
+			}
 		}
-		daysUntil := 8 - weekday
-		next = time.Date(base.Year(), base.Month(), base.Day(), 0, 0, 0, 0, base.Location()).
-			AddDate(0, 0, daysUntil)
+		next = base.AddDate(0, 0, 7)
 	case SubscriptionResetMonthly:
 		// Align to first day of next month 00:00
 		next = time.Date(base.Year(), base.Month(), 1, 0, 0, 0, 0, base.Location()).
@@ -471,7 +523,7 @@ func downgradeUserGroupForSubscriptionTx(tx *gorm.DB, sub *UserSubscription, now
 	return prevGroup, nil
 }
 
-func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *SubscriptionPlan, source string) (*UserSubscription, error) {
+func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *SubscriptionPlan, source string, paidRevenueQuota ...int64) (*UserSubscription, error) {
 	if tx == nil {
 		return nil, errors.New("tx is nil")
 	}
@@ -499,7 +551,7 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		return nil, err
 	}
 	resetBase := now
-	nextReset := calcNextResetTime(resetBase, plan, endUnix)
+	nextReset := calcNextResetTime(resetBase, plan, endUnix, now.Unix())
 	lastReset := int64(0)
 	if nextReset > 0 {
 		lastReset = now.Unix()
@@ -519,24 +571,30 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 			}
 		}
 	}
+	revenueQuota := int64(0)
+	if len(paidRevenueQuota) > 0 && paidRevenueQuota[0] > 0 {
+		revenueQuota = paidRevenueQuota[0]
+	}
 	sub := &UserSubscription{
-		UserId:        userId,
-		PlanId:        plan.Id,
-		AmountTotal:   plan.TotalAmount,
-		AmountUsed:    0,
-		AmountCap:     plan.AmountCap,
-		AmountCapUsed: 0,
-		StartTime:     now.Unix(),
-		EndTime:       endUnix,
-		Status:        "active",
-		Source:        source,
-		LastResetTime: lastReset,
-		NextResetTime: nextReset,
-		UpgradeGroup:  upgradeGroup,
-		PrevUserGroup: prevGroup,
-		AllowedGroup:  strings.TrimSpace(plan.AllowedGroup),
-		CreatedAt:     common.GetTimestamp(),
-		UpdatedAt:     common.GetTimestamp(),
+		UserId:           userId,
+		PlanId:           plan.Id,
+		AmountTotal:      plan.TotalAmount,
+		AmountUsed:       0,
+		AmountCap:        plan.AmountCap,
+		AmountCapUsed:    0,
+		StartTime:        now.Unix(),
+		EndTime:          endUnix,
+		Status:           "active",
+		Source:           source,
+		LastResetTime:    lastReset,
+		NextResetTime:    nextReset,
+		UpgradeGroup:     upgradeGroup,
+		PrevUserGroup:    prevGroup,
+		AllowedGroup:     strings.TrimSpace(plan.AllowedGroup),
+		PaidRevenueQuota: revenueQuota,
+		DividendState:    SubscriptionDividendPending,
+		CreatedAt:        common.GetTimestamp(),
+		UpdatedAt:        common.GetTimestamp(),
 	}
 	if err := tx.Create(sub).Error; err != nil {
 		return nil, err
@@ -582,7 +640,11 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 			// still allow completion for already purchased orders
 		}
 		upgradeGroup = strings.TrimSpace(plan.UpgradeGroup)
-		_, err = CreateUserSubscriptionFromPlanTx(tx, order.UserId, plan, "order")
+		revenueQuota, quotaErr := calcSubscriptionBalanceQuota(order.Money)
+		if quotaErr != nil {
+			return quotaErr
+		}
+		_, err = CreateUserSubscriptionFromPlanTx(tx, order.UserId, plan, "order", int64(revenueQuota))
 		if err != nil {
 			return err
 		}
@@ -648,6 +710,9 @@ func upsertSubscriptionTopUpTx(tx *gorm.DB, order *SubscriptionOrder) error {
 				CompleteTime:  now,
 				Status:        common.TopUpStatusSuccess,
 			}
+			// 订阅购买不改 user.quota（额度走订阅系统），故快照 quotaToAdd=0，
+			// 仅记录完成时刻的 (quota+gift_quota) 余额，保持充值记录字段一致。
+			topup.BalanceAfter = snapshotBalanceAfterRecharge(tx, order.UserId, 0)
 			return tx.Create(&topup).Error
 		}
 		return err
@@ -663,6 +728,8 @@ func upsertSubscriptionTopUpTx(tx *gorm.DB, order *SubscriptionOrder) error {
 	}
 	topup.CompleteTime = now
 	topup.Status = common.TopUpStatusSuccess
+	// 订阅购买不改 user.quota，快照 quotaToAdd=0，记录完成时刻余额。
+	topup.BalanceAfter = snapshotBalanceAfterRecharge(tx, order.UserId, 0)
 	return tx.Save(&topup).Error
 }
 
@@ -773,7 +840,7 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 			}
 		}
 
-		if _, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, PaymentMethodBalance); err != nil {
+		if _, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, PaymentMethodBalance, int64(requiredQuota)); err != nil {
 			return err
 		}
 
@@ -949,9 +1016,10 @@ func AdminInvalidateUserSubscription(userSubscriptionId int) (string, error) {
 		}
 		userId = sub.UserId
 		if err := tx.Model(&sub).Updates(map[string]interface{}{
-			"status":     "cancelled",
-			"end_time":   now,
-			"updated_at": now,
+			"status":            "cancelled",
+			"end_time":          now,
+			"dividend_ready_at": now,
+			"updated_at":        now,
 		}).Error; err != nil {
 			return err
 		}
@@ -1006,6 +1074,12 @@ func AdminDeleteUserSubscription(userSubscriptionId int) (string, error) {
 		if err := tx.Where("id = ?", userSubscriptionId).Delete(&UserSubscription{}).Error; err != nil {
 			return err
 		}
+		// 管理员硬删除代表订阅作废：不结算利润，同时删除该订阅的
+		// 请求成本明细，避免留下永远无法归属的孤儿记录。
+		if err := tx.Where("user_subscription_id = ?", userSubscriptionId).
+			Delete(&SubscriptionPreConsumeRecord{}).Error; err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
@@ -1014,16 +1088,14 @@ func AdminDeleteUserSubscription(userSubscriptionId int) (string, error) {
 	if cacheGroup != "" && userId > 0 {
 		_ = UpdateUserGroupCache(userId, cacheGroup)
 	}
-	// 删除前已存 sub 值, 删除后按实际利润结算(利润≤0不分润)
-	settleSubscriptionEndForSub(&sub)
 	if downgradeGroup != "" {
 		return fmt.Sprintf("用户分组将回退到 %s", downgradeGroup), nil
 	}
 	return "", nil
 }
 
-// settleSubscriptionEndForSub 套餐结束时按实际利润分润(复用 SettleSubscriptionEndDividend)。
-// 供 AdminInvalidate/AdminDelete/Expire 调用。v2: 只需 subId, 参数内部自查。
+// settleSubscriptionEndForSub 套餐结束时按实际利润分润。
+// 管理员硬删除表示订阅作废，删除路径不得调用本函数。
 func settleSubscriptionEndForSub(sub *UserSubscription) {
 	if sub == nil || sub.UserId <= 0 {
 		return
@@ -1068,8 +1140,9 @@ func ExpireDueSubscriptions(limit int) (int, error) {
 			res := tx.Model(&UserSubscription{}).
 				Where("user_id = ? AND status = ? AND end_time > 0 AND end_time <= ?", userId, "active", now).
 				Updates(map[string]interface{}{
-					"status":     "expired",
-					"updated_at": common.GetTimestamp(),
+					"status":            "expired",
+					"dividend_ready_at": now,
+					"updated_at":        common.GetTimestamp(),
 				})
 			if res.Error != nil {
 				return res.Error
@@ -1142,7 +1215,9 @@ func SettleDelayedSubscriptionDividend(delaySeconds int64, limit int) (int, erro
 	}
 	now := GetDBTimestamp()
 	cutoff := now - delaySeconds
-	query := DB.Where("status = ? AND end_time > 0 AND end_time <= ?", "expired", cutoff)
+	query := DB.Where("status IN ? AND ((dividend_ready_at > 0 AND dividend_ready_at <= ?) OR (dividend_ready_at = 0 AND end_time > 0 AND end_time <= ?))",
+		[]string{"expired", "cancelled"}, cutoff, cutoff).
+		Where("dividend_state = ? OR dividend_state = ''", SubscriptionDividendPending)
 	// 部署时间分界: 只扫部署后到期的, 排除历史(历史由人工/追回处理, 不走新机制扫描)
 	// 避免给旧机制漏分的套餐补发分润
 	if deployCutoff := getSubEndDividendCutoff(); deployCutoff > 0 {
@@ -1176,14 +1251,18 @@ func getSubEndDividendCutoff() int64 {
 
 // SubscriptionPreConsumeRecord stores idempotent pre-consume operations per request.
 type SubscriptionPreConsumeRecord struct {
-	Id                 int    `json:"id"`
-	RequestId          string `json:"request_id" gorm:"type:varchar(64);uniqueIndex"`
-	UserId             int    `json:"user_id" gorm:"index"`
-	UserSubscriptionId int    `json:"user_subscription_id" gorm:"index"`
-	PreConsumed        int64  `json:"pre_consumed" gorm:"type:bigint;not null;default:0"`
-	Status             string `json:"status" gorm:"type:varchar(32);index"` // consumed/refunded
-	CreatedAt          int64  `json:"created_at" gorm:"bigint"`
-	UpdatedAt          int64  `json:"updated_at" gorm:"bigint;index"`
+	Id                  int    `json:"id"`
+	RequestId           string `json:"request_id" gorm:"type:varchar(64);uniqueIndex"`
+	UserId              int    `json:"user_id" gorm:"index"`
+	UserSubscriptionId  int    `json:"user_subscription_id" gorm:"index"`
+	PreConsumed         int64  `json:"pre_consumed" gorm:"type:bigint;not null;default:0"`
+	FinalSaleQuota      int64  `json:"final_sale_quota" gorm:"type:bigint;not null;default:0"`
+	ChannelId           int    `json:"channel_id" gorm:"index;not null;default:0"`
+	ChannelCostRatioPPM *int64 `json:"channel_cost_ratio_ppm" gorm:"column:channel_cost_ratio_ppm;default:null"`
+	CostNumerator       int64  `json:"cost_numerator" gorm:"type:bigint;not null;default:0"`
+	Status              string `json:"status" gorm:"type:varchar(32);index"` // reserved/provisional/final/refunded
+	CreatedAt           int64  `json:"created_at" gorm:"bigint"`
+	UpdatedAt           int64  `json:"updated_at" gorm:"bigint;index"`
 }
 
 func (r *SubscriptionPreConsumeRecord) BeforeCreate(tx *gorm.DB) error {
@@ -1213,12 +1292,12 @@ func maybeResetUserSubscriptionWithPlanTx(tx *gorm.DB, sub *UserSubscription, pl
 		baseUnix = sub.StartTime
 	}
 	base := time.Unix(baseUnix, 0)
-	next := calcNextResetTime(base, plan, sub.EndTime)
+	next := calcNextResetTime(base, plan, sub.EndTime, sub.StartTime)
 	advanced := false
 	for next > 0 && next <= now {
 		advanced = true
 		base = time.Unix(next, 0)
-		next = calcNextResetTime(base, plan, sub.EndTime)
+		next = calcNextResetTime(base, plan, sub.EndTime, sub.StartTime)
 	}
 	if !advanced {
 		if sub.NextResetTime == 0 && next > 0 {
@@ -1256,7 +1335,7 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 			return query.Error
 		}
 		if query.RowsAffected > 0 {
-			if existing.Status == "refunded" {
+			if existing.Status == SubscriptionCostStatusRefunded {
 				return errors.New("subscription pre-consume already refunded")
 			}
 			var sub UserSubscription
@@ -1309,12 +1388,12 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 				UserId:             userId,
 				UserSubscriptionId: sub.Id,
 				PreConsumed:        amount,
-				Status:             "consumed",
+				Status:             SubscriptionCostStatusReserved,
 			}
 			if err := tx.Create(record).Error; err != nil {
 				var dup SubscriptionPreConsumeRecord
 				if err2 := tx.Where("request_id = ?", requestId).First(&dup).Error; err2 == nil {
-					if dup.Status == "refunded" {
+					if dup.Status == SubscriptionCostStatusRefunded {
 						return errors.New("subscription pre-consume already refunded")
 					}
 					returnValue.UserSubscriptionId = sub.Id
@@ -1331,6 +1410,8 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 			// 月限额用完 → 套餐到期
 			if sub.AmountCap > 0 && sub.AmountCapUsed >= sub.AmountCap {
 				sub.Status = "expired"
+				sub.EndTime = now
+				sub.DividendReadyAt = now
 			}
 			if err := tx.Save(&sub).Error; err != nil {
 				return err
@@ -1347,16 +1428,111 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 	if err != nil {
 		return nil, err
 	}
-	// 月限额到期: post-commit 分润(扣费后 status 变 expired)
-	if returnValue.UserSubscriptionId > 0 {
-		var sub UserSubscription
-		if dbErr := DB.Where("id = ?", returnValue.UserSubscriptionId).First(&sub).Error; dbErr == nil {
-			if sub.Status == "expired" && sub.AmountCap > 0 && sub.AmountCapUsed >= sub.AmountCap {
-				settleSubscriptionEndForSub(&sub)
-			}
+	return returnValue, nil
+}
+
+func channelCostNumerator(saleQuota, ratioPPM int64) (int64, error) {
+	if saleQuota < 0 {
+		return 0, errors.New("sale quota cannot be negative")
+	}
+	if ratioPPM < 0 || ratioPPM > MaxChannelCostRatioPPM {
+		return 0, errors.New("channel cost ratio is out of range")
+	}
+	if saleQuota != 0 && ratioPPM > (1<<63-1)/saleQuota {
+		return 0, errors.New("channel cost accumulator overflow")
+	}
+	return saleQuota * ratioPPM, nil
+}
+
+// SettleSubscriptionPreConsume applies the final usage delta and channel-cost
+// snapshot in one transaction. This is the hot-path entry used by synchronous
+// subscription billing, avoiding two separate row-lock transactions.
+func SettleSubscriptionPreConsume(requestId string, usageDelta, finalSaleQuota int64, channelId int, ratioPPM *int64, provisional bool) error {
+	if strings.TrimSpace(requestId) == "" {
+		return errors.New("requestId is empty")
+	}
+	// Zero final sale has zero accounting cost regardless of the ratio. This
+	// matters for full refunds: they must not stay pending only because a
+	// channel was missing configuration.
+	missingRatio := ratioPPM == nil && finalSaleQuota > 0
+	costNumerator := int64(0)
+	if ratioPPM != nil {
+		var err error
+		costNumerator, err = channelCostNumerator(finalSaleQuota, *ratioPPM)
+		if err != nil {
+			return err
 		}
 	}
-	return returnValue, nil
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var record SubscriptionPreConsumeRecord
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").
+			Where("request_id = ?", requestId).First(&record).Error; err != nil {
+			return err
+		}
+		if record.Status == SubscriptionCostStatusRefunded {
+			return nil
+		}
+		var sub UserSubscription
+		needsSubscription := usageDelta != 0 || !missingRatio
+		if needsSubscription {
+			if err := tx.Set("gorm:query_option", "FOR UPDATE").
+				Where("id = ?", record.UserSubscriptionId).First(&sub).Error; err != nil {
+				return err
+			}
+		}
+		if usageDelta != 0 {
+			if err := applySubscriptionUsageDeltaTx(tx, &sub, usageDelta); err != nil {
+				return err
+			}
+		}
+		// Keep enough evidence to repair a missing channel ratio later. Returning
+		// ErrChannelCostRatioMissing from inside this transaction would roll this
+		// snapshot back and make the real final sale/channel unrecoverable.
+		if missingRatio {
+			record.FinalSaleQuota = finalSaleQuota
+			record.ChannelId = channelId
+			record.Status = SubscriptionCostStatusReserved
+			return tx.Save(&record).Error
+		}
+		delta := costNumerator - record.CostNumerator
+		if delta > 0 && sub.CostAccumulator > (1<<63-1)-delta {
+			return errors.New("subscription cost accumulator overflow")
+		}
+		if delta < 0 && sub.CostAccumulator < -delta {
+			return errors.New("subscription cost accumulator underflow")
+		}
+		sub.CostAccumulator += delta
+		record.FinalSaleQuota = finalSaleQuota
+		record.ChannelId = channelId
+		if ratioPPM != nil {
+			ratioCopy := *ratioPPM
+			record.ChannelCostRatioPPM = &ratioCopy
+		} else {
+			record.ChannelCostRatioPPM = nil
+		}
+		record.CostNumerator = costNumerator
+		record.Status = SubscriptionCostStatusFinal
+		if provisional {
+			record.Status = SubscriptionCostStatusProvisional
+		}
+		if err := tx.Save(&sub).Error; err != nil {
+			return err
+		}
+		return tx.Save(&record).Error
+	})
+	if err != nil {
+		return err
+	}
+	if missingRatio {
+		return ErrChannelCostRatioMissing
+	}
+	return nil
+}
+
+// FinalizeSubscriptionPreConsume updates only the final channel-cost snapshot.
+// Async task reconciliation uses this after it has adjusted usage separately.
+func FinalizeSubscriptionPreConsume(requestId string, finalSaleQuota int64, channelId int, ratioPPM *int64, provisional bool) error {
+	return SettleSubscriptionPreConsume(requestId, 0, finalSaleQuota, channelId, ratioPPM, provisional)
 }
 
 // RefundSubscriptionPreConsume is idempotent and refunds pre-consumed subscription quota by requestId.
@@ -1370,17 +1546,27 @@ func RefundSubscriptionPreConsume(requestId string) error {
 			Where("request_id = ?", requestId).First(&record).Error; err != nil {
 			return err
 		}
-		if record.Status == "refunded" {
+		if record.Status == SubscriptionCostStatusRefunded {
 			return nil
 		}
-		if record.PreConsumed <= 0 {
-			record.Status = "refunded"
-			return tx.Save(&record).Error
-		}
-		if err := PostConsumeUserSubscriptionDelta(record.UserSubscriptionId, -record.PreConsumed); err != nil {
+		var sub UserSubscription
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").
+			Where("id = ?", record.UserSubscriptionId).First(&sub).Error; err != nil {
 			return err
 		}
-		record.Status = "refunded"
+		if err := applySubscriptionUsageDeltaTx(tx, &sub, -record.PreConsumed); err != nil {
+			return err
+		}
+		if record.CostNumerator > sub.CostAccumulator {
+			return errors.New("subscription cost accumulator underflow")
+		}
+		sub.CostAccumulator -= record.CostNumerator
+		if err := tx.Save(&sub).Error; err != nil {
+			return err
+		}
+		record.FinalSaleQuota = 0
+		record.CostNumerator = 0
+		record.Status = SubscriptionCostStatusRefunded
 		return tx.Save(&record).Error
 	})
 }
@@ -1434,7 +1620,10 @@ func CleanupSubscriptionPreConsumeRecords(olderThanSeconds int64) (int64, error)
 		olderThanSeconds = 7 * 24 * 3600
 	}
 	cutoff := GetDBTimestamp() - olderThanSeconds
-	res := DB.Where("updated_at < ?", cutoff).Delete(&SubscriptionPreConsumeRecord{})
+	res := DB.Where("updated_at < ? AND status IN ?", cutoff, []string{
+		SubscriptionCostStatusFinal,
+		SubscriptionCostStatusRefunded,
+	}).Delete(&SubscriptionPreConsumeRecord{})
 	return res.RowsAffected, res.Error
 }
 
@@ -1482,32 +1671,43 @@ func PostConsumeUserSubscriptionDelta(userSubscriptionId int, delta int64) error
 			First(&sub).Error; err != nil {
 			return err
 		}
-		newUsed := sub.AmountUsed + delta
-		if newUsed < 0 {
-			newUsed = 0
-		}
-		if sub.AmountTotal > 0 && newUsed > sub.AmountTotal {
-			return fmt.Errorf("subscription used exceeds total, used=%d total=%d", newUsed, sub.AmountTotal)
-		}
-		newCapUsed := sub.AmountCapUsed
-		if sub.AmountCap > 0 {
-			newCapUsed += delta
-			if newCapUsed < 0 {
-				newCapUsed = 0
-			}
-			if newCapUsed > sub.AmountCap {
-				return fmt.Errorf("subscription cap used exceeds cap, used=%d cap=%d", newCapUsed, sub.AmountCap)
-			}
-		}
-		sub.AmountUsed = newUsed
-		sub.AmountCapUsed = newCapUsed
-		if sub.AmountCap > 0 {
-			if sub.AmountCapUsed >= sub.AmountCap {
-				sub.Status = "expired"
-			} else if sub.Status == "expired" && sub.EndTime > GetDBTimestamp() {
-				sub.Status = "active"
-			}
-		}
-		return tx.Save(&sub).Error
+		return applySubscriptionUsageDeltaTx(tx, &sub, delta)
 	})
+}
+
+func applySubscriptionUsageDeltaTx(tx *gorm.DB, sub *UserSubscription, delta int64) error {
+	if tx == nil || sub == nil {
+		return errors.New("invalid subscription delta args")
+	}
+	newUsed := sub.AmountUsed + delta
+	if newUsed < 0 {
+		newUsed = 0
+	}
+	if sub.AmountTotal > 0 && newUsed > sub.AmountTotal {
+		return fmt.Errorf("subscription used exceeds total, used=%d total=%d", newUsed, sub.AmountTotal)
+	}
+	newCapUsed := sub.AmountCapUsed
+	if sub.AmountCap > 0 {
+		newCapUsed += delta
+		if newCapUsed < 0 {
+			newCapUsed = 0
+		}
+		if newCapUsed > sub.AmountCap {
+			return fmt.Errorf("subscription cap used exceeds cap, used=%d cap=%d", newCapUsed, sub.AmountCap)
+		}
+	}
+	sub.AmountUsed = newUsed
+	sub.AmountCapUsed = newCapUsed
+	if sub.AmountCap > 0 {
+		if sub.AmountCapUsed >= sub.AmountCap {
+			sub.Status = "expired"
+			if sub.DividendReadyAt == 0 {
+				sub.DividendReadyAt = GetDBTimestamp()
+			}
+		} else if sub.Status == "expired" && sub.EndTime > GetDBTimestamp() {
+			sub.Status = "active"
+			sub.DividendReadyAt = 0
+		}
+	}
+	return tx.Save(sub).Error
 }

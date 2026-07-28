@@ -118,11 +118,14 @@ const (
 
 // Quota related messages
 const (
-	MsgQuotaNegative        = "quota.negative"
-	MsgQuotaExceedMax       = "quota.exceed_max"
-	MsgQuotaInsufficient    = "quota.insufficient"
-	MsgQuotaWarningInvalid  = "quota.warning_invalid"
-	MsgQuotaThresholdGtZero = "quota.threshold_gt_zero"
+	MsgQuotaNegative              = "quota.negative"
+	MsgQuotaExceedMax             = "quota.exceed_max"
+	MsgQuotaInsufficient          = "quota.insufficient"
+	MsgQuotaWarningInvalid        = "quota.warning_invalid"
+	MsgQuotaThresholdGtZero       = "quota.threshold_gt_zero"
+	MsgQuotaUserNotEnough         = "quota.user_not_enough"
+	MsgQuotaTokenNotEnough        = "quota.token_not_enough"
+	MsgQuotaSubscriptionIdMissing = "quota.subscription_id_missing"
 )
 
 // Subscription related messages
@@ -329,4 +332,65 @@ const (
 	MsgCustomOAuthHasBindings       = "custom_oauth.has_bindings"
 	MsgCustomOAuthBindingNotFound   = "custom_oauth.binding_not_found"
 	MsgCustomOAuthProviderIdInvalid = "custom_oauth.provider_id_field_invalid"
+)
+
+// Relay request validation messages (用户调用 API 时请求校验失败)
+const (
+	MsgRelayModelRequired            = "relay.model_required"
+	MsgRelayFieldRequired            = "relay.field_required"
+	MsgRelayContentsRequired         = "relay.contents_required"
+	MsgRelayInputRequired            = "relay.input_required"
+	MsgRelayInputEmpty               = "relay.input_empty"
+	MsgRelayQueryEmpty               = "relay.query_empty"
+	MsgRelayDocumentsEmpty           = "relay.documents_empty"
+	MsgRelayUnsupportedFormat        = "relay.unsupported_format"
+	MsgRelayMaxTokensInvalid         = "relay.max_tokens_invalid"
+	MsgRelayInvalidSearchContextSize = "relay.invalid_search_context_size"
+	MsgRelayParseImageEditFailed     = "relay.parse_image_edit_failed"
+	MsgRelayInvalidStreamValue       = "relay.invalid_stream_value"
+	MsgRelaySizeUseXNotMultiply      = "relay.size_use_x_not_multiply"
+	MsgRelaySizeInvalidDalle2        = "relay.size_invalid_dalle2"
+	MsgRelaySizeInvalidDalle3        = "relay.size_invalid_dalle3"
+	MsgRelayInvalidRequestType       = "relay.invalid_request_type"
+	MsgRelayFailedCopyRequest        = "relay.failed_copy_request"
+	MsgRelayInvalidApiType           = "relay.invalid_api_type"
+	MsgRelayUnsupportedEndpoint      = "relay.unsupported_endpoint"
+)
+
+// Middleware-layer messages (限流/即梦/系统过载/分发/鉴权)
+const (
+	MsgRatelimitCheckFailed         = "ratelimit.check_failed"
+	MsgJimengActionRequired         = "jimeng.action_required"
+	MsgJimengInvalidBody            = "jimeng.invalid_body"
+	MsgJimengMarshalFailed          = "jimeng.marshal_failed"
+	MsgJimengTaskIdRequired         = "jimeng.task_id_required"
+	MsgSystemCpuOverloaded          = "system.cpu_overloaded"
+	MsgSystemMemoryOverloaded       = "system.memory_overloaded"
+	MsgSystemDiskOverloaded         = "system.disk_overloaded"
+	MsgDistributorInvalidJsonBody   = "distributor.invalid_json_body"
+	MsgDistributorFieldMustBeString = "distributor.field_must_be_string"
+	MsgDistributorChannelNil        = "distributor.channel_nil"
+	MsgAuthTokenNil                 = "auth.token_nil"
+)
+
+// Task messages (视频/任务/异步)
+const (
+	MsgTaskVideoIdRequired    = "task.video_id_required"
+	MsgTaskOriginNotExist     = "task.origin_not_exist"
+	MsgTaskChannelDisabled    = "task.channel_disabled"
+	MsgTaskInvalidApiPlatform = "task.invalid_api_platform"
+	MsgTaskInvalidRelayMode   = "task.invalid_relay_mode"
+	MsgTaskNotExist           = "task.not_exist"
+	MsgTaskInvalidChannelId   = "task.invalid_channel_id"
+	MsgTaskNotImplemented     = "task.not_implemented"
+)
+
+// Billing & model-mapping messages
+const (
+	MsgBillingTieredNoExpr         = "billing.tiered_no_expr"
+	MsgBillingTieredRunFailed      = "billing.tiered_run_failed"
+	MsgBillingUnsupportedFunding   = "billing.unsupported_funding"
+	MsgBillingRelayInfoNil         = "billing.relayinfo_nil"
+	MsgModelMappingUnmarshalFailed = "model.mapping_unmarshal_failed"
+	MsgModelMappingCycle           = "model.mapping_contains_cycle"
 )

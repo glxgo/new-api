@@ -25,7 +25,9 @@ import type {
   RebateRecord,
 } from './types'
 
-export async function getAffiliateSummary(): Promise<ApiResponse<AffiliateSummary>> {
+export async function getAffiliateSummary(): Promise<
+  ApiResponse<AffiliateSummary>
+> {
   const res = await api.get('/api/user/affiliate/summary')
   return res.data
 }

@@ -309,6 +309,9 @@ export interface TopupRecord {
   complete_time?: number
   /** Payment status */
   status: TopupStatus
+  /** Balance (quota, principal + gift) snapshot after this recharge.
+   *  Backend best-effort snapshot; undefined for historical rows → show 「—」. */
+  balance_after?: number
 }
 
 /**
@@ -317,6 +320,12 @@ export interface TopupRecord {
 export interface BillingHistoryResponse {
   items: TopupRecord[]
   total: number
+}
+
+export interface FinancialConsumeDaily {
+  day_start: number
+  quota: number
+  balance_after?: number
 }
 
 /**

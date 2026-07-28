@@ -53,7 +53,6 @@ import {
   useDebouncedColumnFilter,
   useDataTable,
 } from '@/components/data-table'
-import { GroupBadge } from '@/components/group-badge'
 import { StatusBadge } from '@/components/status-badge'
 import { useChatPresets } from '@/features/chat/hooks/use-chat-presets'
 import { getUserProfile } from '@/features/profile/api'
@@ -72,6 +71,7 @@ import {
   ERROR_MESSAGES,
 } from '../constants'
 import { type ApiKey } from '../types'
+import { ApiKeyGroupCell } from './api-keys-cells'
 import {
   ApiKeyCell,
   IpRestrictionsCell,
@@ -348,7 +348,7 @@ function ApiKeysDesktopWorkspace({
             {rows.length}
           </span>
         </div>
-        <aside className='border-border/70 bg-background/80 -mt-px flex h-72 flex-col overflow-hidden rounded-xl border shadow-xs'>
+        <aside className='border-border/70 bg-background/80 -mt-px flex h-[26rem] flex-col overflow-hidden rounded-xl border shadow-xs'>
           <div className='border-border/60 flex items-center justify-between border-b px-3.5 py-2.5'>
             <div>
               <p className='text-xs font-semibold'>{t('API Keys')}</p>
@@ -459,7 +459,7 @@ function ApiKeysDesktopWorkspace({
         <div className='border-border/70 bg-muted/15 mt-5 space-y-3 rounded-xl border p-4'>
           <div className='grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 text-xs'>
             <span className='text-muted-foreground'>{t('Group')}</span>
-            <GroupBadge group={apiKey.group || 'default'} />
+            <ApiKeyGroupCell apiKey={apiKey} />
           </div>
           <div className='grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 text-xs'>
             <span className='text-muted-foreground'>{t('API Key')}</span>

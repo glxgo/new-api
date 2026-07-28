@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
@@ -38,8 +39,8 @@ func (e *dualInsufficientQuotaError) Error() string {
 
 // IsDualInsufficientQuotaError 判别 Dual 的余额不足错误。
 func IsDualInsufficientQuotaError(err error) bool {
-	_, ok := err.(*dualInsufficientQuotaError)
-	return ok
+	var target *dualInsufficientQuotaError
+	return errors.As(err, &target)
 }
 
 // DecreaseUserQuotaDual 从用户双池扣减 amount, 优先赠金、不足扣本金。

@@ -19,8 +19,9 @@ For commercial licensing, please contact support@quantumnous.com
 import * as React from 'react'
 import { Check, ChevronsUpDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   Command,
   CommandEmpty,
@@ -34,7 +35,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
-import { cn } from '@/lib/utils'
 
 export type ChannelOption = { id: number; name: string }
 
@@ -64,7 +64,7 @@ export function ChannelMultiSelect({
     onChange(
       selectedSet.has(id)
         ? selectedIds.filter((x) => x !== id)
-        : [...selectedIds, id],
+        : [...selectedIds, id]
     )
   }
 
@@ -72,7 +72,7 @@ export function ChannelMultiSelect({
     const q = search.trim().toLowerCase()
     if (!q) return channels
     return channels.filter(
-      (c) => c.name.toLowerCase().includes(q) || String(c.id).includes(q),
+      (c) => c.name.toLowerCase().includes(q) || String(c.id).includes(q)
     )
   }, [channels, search])
 
@@ -100,10 +100,7 @@ export function ChannelMultiSelect({
           </span>
           <ChevronsUpDown className='ml-2 size-4 shrink-0 opacity-50' />
         </PopoverTrigger>
-        <PopoverContent
-          className='w-(--anchor-width) p-0'
-          align='start'
-        >
+        <PopoverContent className='w-(--anchor-width) p-0' align='start'>
           <Command shouldFilter={false}>
             <CommandInput
               placeholder={t('Search channels...')}
@@ -122,7 +119,7 @@ export function ChannelMultiSelect({
                     <Check
                       className={cn(
                         'mr-1 size-4',
-                        selectedSet.has(ch.id) ? 'opacity-100' : 'opacity-0',
+                        selectedSet.has(ch.id) ? 'opacity-100' : 'opacity-0'
                       )}
                     />
                     <span className='flex-1 truncate'>{ch.name}</span>

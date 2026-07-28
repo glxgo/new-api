@@ -19,8 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { formatQuota } from '@/lib/format'
 import { toast } from 'sonner'
+import { formatQuota } from '@/lib/format'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -327,7 +327,7 @@ export function UserSubscriptionsDialog(props: Props) {
                             {percent}% {t('Used')}
                           </span>
                         </div>
-                        <div className='h-2 w-full overflow-hidden rounded-full bg-muted'>
+                        <div className='bg-muted h-2 w-full overflow-hidden rounded-full'>
                           <div
                             className={`h-full rounded-full transition-all ${barColor}`}
                             style={{ width: `${percent}%` }}

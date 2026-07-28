@@ -227,7 +227,9 @@ export function RedemptionsMutateDrawer({
                       </FormControl>
                       <SelectContent alignItemWithTrigger={false}>
                         <SelectGroup>
-                          <SelectItem value='quota'>{t('Quota (Gift)')}</SelectItem>
+                          <SelectItem value='quota'>
+                            {t('Quota (Gift)')}
+                          </SelectItem>
                           <SelectItem value='subscription'>
                             {t('Subscription')}
                           </SelectItem>

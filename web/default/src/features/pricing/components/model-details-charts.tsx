@@ -187,7 +187,7 @@ export function UptimeTrendChart(props: {
       yField: 'uptime',
       smooth: true,
       line: {
-        style: { stroke: '#10b981', lineWidth: 2 },
+        style: { stroke: 'oklch(0.59 0.13 145)', lineWidth: 2 },
       },
       point: {
         visible: true,
@@ -196,9 +196,9 @@ export function UptimeTrendChart(props: {
           stroke: '#ffffff',
           lineWidth: 1.5,
           fill: (datum: { uptime: number }) => {
-            if (datum.uptime >= 99.9) return '#10b981'
-            if (datum.uptime >= 99.0) return '#f59e0b'
-            return '#ef4444'
+            if (datum.uptime >= 99.9) return 'oklch(0.59 0.13 145)'
+            if (datum.uptime >= 99.0) return 'oklch(0.75 0.14 75)'
+            return 'oklch(0.565 0.195 27)'
           },
         },
       },
@@ -309,7 +309,7 @@ export function ThroughputBarChart(props: {
       yField: 'group',
       bar: {
         style: {
-          fill: '#6366f1',
+          fill: 'oklch(0.63 0.105 350)',
           ...(barRadius == null ? {} : { cornerRadius: barRadius }),
         },
       },

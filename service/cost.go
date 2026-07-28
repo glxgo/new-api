@@ -34,6 +34,20 @@ func CalcCostFromSaleQuota(saleQuota int, saleGroupRatio float64, group string) 
 	return int(dBase.Mul(dCostRatio).Round(0).IntPart())
 }
 
+// CalcCostFromChannelRatio applies the final successful channel's fixed-point
+// accounting multiplier. nil deliberately produces no fabricated cost; callers
+// must surface the missing configuration and subscription settlement remains pending.
+func CalcCostFromChannelRatio(saleQuota int, ratioPPM *int64) int {
+	if saleQuota <= 0 || ratioPPM == nil || *ratioPPM <= 0 {
+		return 0
+	}
+	return int(decimal.NewFromInt(int64(saleQuota)).
+		Mul(decimal.NewFromInt(*ratioPPM)).
+		Div(decimal.NewFromInt(model.ChannelCostRatioScale)).
+		Round(0).
+		IntPart())
+}
+
 // SplitPayment 按业务规则③「消费优先扣赠金、不足扣本金」拆分本次消费额度。
 // 返回 (paidGift 赠金扣减量, paidPrincipal 本金扣减量), 二者之和 ≤ totalQuota。
 // 用于双池扣费(阶段2b)与消费日志快照。
@@ -61,6 +75,7 @@ func SplitPayment(totalQuota, giftBalance, principalBalance int) (paidGift, paid
 
 // CalcGrossProfit 计算单笔毛利(quota 单位)。
 // 跨池分摊规则: 成本只按「本金占比」计入利润, 赠金部分对应的成本由平台自负(不进分润)。
+//
 //	grossProfit = paidPrincipal − cost × paidPrincipal / (paidPrincipal + paidGift)
 func CalcGrossProfit(paidPrincipal, paidGift, cost int) int {
 	total := paidPrincipal + paidGift

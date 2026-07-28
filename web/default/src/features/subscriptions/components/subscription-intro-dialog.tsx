@@ -70,9 +70,7 @@ export function SubscriptionIntroDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className='max-w-2xl'>
         <DialogHeader>
-          <DialogTitle>
-            {t('Subscription Plans Intro')}
-          </DialogTitle>
+          <DialogTitle>{t('Subscription Plans Intro')}</DialogTitle>
           <DialogDescription>
             {t(
               'Global intro shown at the top of the subscription plans page. Supports Markdown.'
@@ -88,7 +86,7 @@ export function SubscriptionIntroDialog({
             placeholder={t(
               'Welcome to our subscription plans! **Bold**, <span style="color:#e11d48">colored</span>, [link](url)'
             )}
-            className='border-input bg-background focus-visible:ring-ring flex min-h-[160px] w-full rounded-md border px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 disabled:opacity-50'
+            className='border-input bg-background focus-visible:ring-ring placeholder:text-muted-foreground flex min-h-[160px] w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:outline-none disabled:opacity-50'
           />
           {value ? (
             <div className='bg-muted/30 rounded-md border p-3'>

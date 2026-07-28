@@ -29,9 +29,6 @@ export function ApiKeys() {
     <ApiKeysProvider>
       <SectionPageLayout fixedContent variant='editorial'>
         <SectionPageLayout.Title>{t('API Keys')}</SectionPageLayout.Title>
-        <SectionPageLayout.Description>
-          {t('Create a key for your app or service')}
-        </SectionPageLayout.Description>
         <SectionPageLayout.FeatureStrip>
           <EditorialFeatureStrip />
         </SectionPageLayout.FeatureStrip>

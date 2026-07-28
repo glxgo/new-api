@@ -90,6 +90,12 @@ const (
 	ErrorCodePreConsumeTokenQuotaFailed ErrorCode = "pre_consume_token_quota_failed"
 )
 
+// TranslateUpstreamError, if set, localizes the message of upstream-origin errors
+// (ErrorTypeOpenAIError / ErrorTypeClaudeError) right before they are serialized
+// to the client. Injected by the service package at init time
+// (see service/upstream_error_translate.go). nil-safe: when nil, messages pass through unchanged.
+var TranslateUpstreamError func(message string) string
+
 type NewAPIError struct {
 	Err            error
 	RelayError     any
@@ -207,6 +213,9 @@ func (e *NewAPIError) ToOpenAIError() OpenAIError {
 	if e.errorCode != ErrorCodeCountTokenFailed {
 		result.Message = common.MaskSensitiveInfo(result.Message)
 	}
+	if (e.errorType == ErrorTypeOpenAIError || e.errorType == ErrorTypeClaudeError) && TranslateUpstreamError != nil && result.Message != "" {
+		result.Message = TranslateUpstreamError(result.Message)
+	}
 	if result.Message == "" {
 		result.Message = string(e.errorType)
 	}
@@ -235,6 +244,9 @@ func (e *NewAPIError) ToClaudeError() ClaudeError {
 	}
 	if e.errorCode != ErrorCodeCountTokenFailed {
 		result.Message = common.MaskSensitiveInfo(result.Message)
+	}
+	if (e.errorType == ErrorTypeOpenAIError || e.errorType == ErrorTypeClaudeError) && TranslateUpstreamError != nil && result.Message != "" {
+		result.Message = TranslateUpstreamError(result.Message)
 	}
 	if result.Message == "" {
 		result.Message = string(e.errorType)

@@ -210,6 +210,7 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     values.remark?.trim() ||
     values.priority ||
     values.weight ||
+    values.cost_ratio != null ||
     values.proxy?.trim() ||
     values.system_prompt?.trim() ||
     values.force_format ||
@@ -2510,7 +2511,7 @@ export function ChannelMutateDrawer({
                           title={t('Routing Strategy')}
                           icon={<Route className='h-3.5 w-3.5' />}
                         />
-                        <div className='grid gap-4 sm:grid-cols-2 xl:grid-cols-4'>
+                        <div className='grid gap-4 sm:grid-cols-2 xl:grid-cols-5'>
                           <FormField
                             control={form.control}
                             name='priority'
@@ -2603,6 +2604,38 @@ export function ChannelMutateDrawer({
                                 </FormControl>
                                 <FormDescription>
                                   0 表示不限制；一分钟满载时无感切换。
+                                </FormDescription>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+
+                          <FormField
+                            control={form.control}
+                            name='cost_ratio'
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>成本倍率</FormLabel>
+                                <FormControl>
+                                  <Input
+                                    type='number'
+                                    min={0}
+                                    max={1000}
+                                    step='0.000001'
+                                    placeholder='例如 0.85'
+                                    value={field.value ?? ''}
+                                    onChange={(e) =>
+                                      field.onChange(
+                                        e.target.value === ''
+                                          ? undefined
+                                          : Number(e.target.value)
+                                      )
+                                    }
+                                  />
+                                </FormControl>
+                                <FormDescription>
+                                  按本渠道实际售价计算平台成本；0
+                                  表示零成本，留空表示尚未配置。
                                 </FormDescription>
                                 <FormMessage />
                               </FormItem>

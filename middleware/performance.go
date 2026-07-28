@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 )
@@ -49,21 +50,21 @@ func checkSystemPerformance() *types.NewAPIError {
 	// 检查 CPU
 	if config.CPUThreshold > 0 && int(status.CPUUsage) > config.CPUThreshold {
 		return types.NewErrorWithStatusCode(
-			fmt.Errorf("system cpu overloaded (current: %.1f%%, threshold: %d%%)", status.CPUUsage, config.CPUThreshold),
+			fmt.Errorf(i18n.Translate(i18n.LangZhCN, i18n.MsgSystemCpuOverloaded, map[string]any{"Current": fmt.Sprintf("%.1f", status.CPUUsage), "Threshold": config.CPUThreshold})),
 			"system_cpu_overloaded", http.StatusServiceUnavailable)
 	}
 
 	// 检查内存
 	if config.MemoryThreshold > 0 && int(status.MemoryUsage) > config.MemoryThreshold {
 		return types.NewErrorWithStatusCode(
-			fmt.Errorf("system memory overloaded (current: %.1f%%, threshold: %d%%)", status.MemoryUsage, config.MemoryThreshold),
+			fmt.Errorf(i18n.Translate(i18n.LangZhCN, i18n.MsgSystemMemoryOverloaded, map[string]any{"Current": fmt.Sprintf("%.1f", status.MemoryUsage), "Threshold": config.MemoryThreshold})),
 			"system_memory_overloaded", http.StatusServiceUnavailable)
 	}
 
 	// 检查磁盘
 	if config.DiskThreshold > 0 && int(status.DiskUsage) > config.DiskThreshold {
 		return types.NewErrorWithStatusCode(
-			fmt.Errorf("system disk overloaded (current: %.1f%%, threshold: %d%%)", status.DiskUsage, config.DiskThreshold),
+			fmt.Errorf(i18n.Translate(i18n.LangZhCN, i18n.MsgSystemDiskOverloaded, map[string]any{"Current": fmt.Sprintf("%.1f", status.DiskUsage), "Threshold": config.DiskThreshold})),
 			"system_disk_overloaded", http.StatusServiceUnavailable)
 	}
 

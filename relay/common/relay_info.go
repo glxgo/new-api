@@ -78,6 +78,9 @@ type ChannelMeta struct {
 	UpstreamModelName    string
 	IsModelMapped        bool
 	SupportStreamOptions bool // 是否支持流式选项
+	// ChannelCostRatioPPM snapshots the selected attempt's channel accounting
+	// multiplier. nil is deliberately distinct from an explicit zero.
+	ChannelCostRatioPPM *int64
 }
 
 type TokenCountMeta struct {
@@ -171,6 +174,13 @@ type RelayInfo struct {
 	TieredBillingSnapshot *billingexpr.BillingSnapshot
 	BillingRequestInput   *billingexpr.RequestInput
 
+	// ServiceTier captures the service tier (e.g. "priority") from the final
+	// outbound payload after disabled-field filtering and parameter overrides.
+	ServiceTier string
+	// PriorityDoubled records that the priority 2x surcharge was applied, so
+	// the consume log can surface it for transparency.
+	PriorityDoubled bool
+
 	Request dto.Request
 
 	// RequestConversionChain records request format conversions in order, e.g.
@@ -212,6 +222,18 @@ func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
 		UpstreamModelName:    common.GetContextKeyString(c, constant.ContextKeyOriginalModel),
 		IsModelMapped:        false,
 		SupportStreamOptions: false,
+	}
+	if ratio, ok := c.Get("channel_cost_ratio_ppm"); ok {
+		switch value := ratio.(type) {
+		case *int64:
+			if value != nil {
+				copied := *value
+				channelMeta.ChannelCostRatioPPM = &copied
+			}
+		case int64:
+			copied := value
+			channelMeta.ChannelCostRatioPPM = &copied
+		}
 	}
 
 	if channelType == constant.ChannelTypeAzure {
@@ -591,6 +613,45 @@ func GenRelayInfo(c *gin.Context, relayFormat types.RelayFormat, request dto.Req
 
 	info.InitRequestConversionChain()
 	return info, nil
+}
+
+// CaptureEffectiveServiceTier records the service tier present in the final
+// outbound JSON payload. It deliberately clears a previously captured value
+// when the final payload no longer contains the field, for example after a
+// channel disables service_tier or a parameter override deletes it.
+func (info *RelayInfo) CaptureEffectiveServiceTier(jsonData []byte) {
+	if info == nil {
+		return
+	}
+	info.ServiceTier = strings.ToLower(strings.TrimSpace(gjson.GetBytes(jsonData, "service_tier").String()))
+	info.PriorityDoubled = false
+}
+
+// IsOpenAIChannel reports whether the request is served by an OpenAI-type channel.
+func (info *RelayInfo) IsOpenAIChannel() bool {
+	return info != nil && info.ChannelType == constant.ChannelTypeOpenAI
+}
+
+// ApplyPrioritySurcharge doubles billed quota for an effective OpenAI
+// service_tier "priority" payload. Tiered expressions are self-contained
+// billing contracts and are never modified here.
+func (info *RelayInfo) ApplyPrioritySurcharge(quota int) int {
+	if info != nil {
+		info.PriorityDoubled = false
+	}
+	if info == nil || quota <= 0 {
+		return quota
+	}
+	if !info.IsOpenAIChannel() || info.ServiceTier != "priority" {
+		return quota
+	}
+	// tiered_expr is a self-contained billing contract. Priority multipliers for
+	// tiered models must be expressed in that contract rather than stacked here.
+	if info.TieredBillingSnapshot != nil {
+		return quota
+	}
+	info.PriorityDoubled = true
+	return quota * 2
 }
 
 func (info *RelayInfo) InitRequestConversionChain() {

@@ -17,13 +17,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Crown, RefreshCw, Sparkles, Check } from 'lucide-react'
+import { Crown, RefreshCw, Check } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { formatQuota } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Markdown } from '@/components/ui/markdown'
 import {
   Select,
   SelectContent,
@@ -34,39 +35,29 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Markdown } from '@/components/ui/markdown'
 import { TitledCard } from '@/components/ui/titled-card'
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import {
-  StatusBadge,
-  dotColorMap,
-  textColorMap,
-} from '@/components/status-badge'
+import { dotColorMap, textColorMap } from '@/components/status-badge'
 import {
   getPublicPlans,
   getSelfSubscriptionFull,
   updateBillingPreference,
 } from '@/features/subscriptions/api'
 import { SubscriptionPurchaseDialog } from '@/features/subscriptions/components/dialogs/subscription-purchase-dialog'
+import {
+  versionLabelOf,
+  PLAN_VERSION_STYLES,
+} from '@/features/subscriptions/constants'
 import { formatDuration, formatResetPeriod } from '@/features/subscriptions/lib'
 import type {
   PlanRecord,
   UserSubscriptionRecord,
 } from '@/features/subscriptions/types'
 import type { PaymentMethod, TopupInfo } from '../types'
-
-// 套餐卡片配色轮换(顶部色条+售价+能量条), 每张卡不同色
-const PLAN_ACCENTS = [
-  { bar: 'from-sky-500 to-blue-500', price: 'text-sky-600 dark:text-sky-400' },
-  { bar: 'from-violet-500 to-purple-500', price: 'text-violet-600 dark:text-violet-400' },
-  { bar: 'from-emerald-500 to-teal-500', price: 'text-emerald-600 dark:text-emerald-400' },
-  { bar: 'from-amber-500 to-orange-500', price: 'text-amber-600 dark:text-amber-400' },
-  { bar: 'from-rose-500 to-pink-500', price: 'text-rose-600 dark:text-rose-400' },
-] as const
 
 interface SubscriptionPlansCardProps {
   topupInfo: TopupInfo | null
@@ -415,9 +406,7 @@ export function SubscriptionPlansCard({
                   const capRemain =
                     capTotal > 0 ? Math.max(0, capTotal - capUsed) : 0
                   const capPercent =
-                    capTotal > 0
-                      ? Math.round((capUsed / capTotal) * 100)
-                      : 0
+                    capTotal > 0 ? Math.round((capUsed / capTotal) * 100) : 0
                   const allowedGroup = subscription?.allowed_group || ''
                   const planTitle =
                     planTitleMap.get(subscription?.plan_id) || ''
@@ -429,10 +418,10 @@ export function SubscriptionPlansCard({
                     capTotal > 0 ? Math.max(0, 100 - capPercent) : 0
                   const quotaBarColor = (pct: number) =>
                     pct >= 90
-                      ? 'bg-rose-500'
+                      ? 'bg-destructive'
                       : pct >= 70
-                        ? 'bg-amber-500'
-                        : 'bg-emerald-500'
+                        ? 'bg-warning'
+                        : 'bg-success'
                   const now = Date.now() / 1000
                   const isExpired = (subscription?.end_time || 0) < now
                   const isCancelled = subscription?.status === 'cancelled'
@@ -442,7 +431,7 @@ export function SubscriptionPlansCard({
                   return (
                     <div
                       key={subscription?.id}
-                      className='bg-card relative flex flex-col overflow-hidden rounded-lg border shadow-sm transition-all duration-300 hover:scale-[1.03] hover:shadow-md'
+                      className='bg-card hover:border-primary/40 relative flex flex-col overflow-hidden rounded-lg border transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] dark:hover:shadow-[0_8px_24px_rgba(0,0,0,0.4)]'
                     >
                       <div className='flex flex-col gap-2 p-3'>
                         {/* 标题 + 剩余天数药丸 */}
@@ -457,7 +446,7 @@ export function SubscriptionPlansCard({
                             </div>
                           </div>
                           {isActive ? (
-                            <span className='bg-emerald-500/10 dark:text-emerald-400 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium text-emerald-600'>
+                            <span className='bg-success/10 text-success shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium'>
                               {t('{{count}} days remaining', {
                                 count: remainDays,
                               })}
@@ -583,17 +572,7 @@ export function SubscriptionPlansCard({
                           )}
                       </div>
 
-                      {/* 底部能量条: 剩余比例填充(满额满条, 用得越多从右侧逐渐消失) */}
-                      <div className='bg-muted h-1.5 w-full'>
-                        {isActive && (
-                          <div
-                            className='h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500'
-                            style={{
-                              width: `${Math.min(100, remainPercent)}%`,
-                            }}
-                          />
-                        )}
-                      </div>
+                      {/* 底部能量条已移除 */}
                     </div>
                   )
                 })}
@@ -616,8 +595,8 @@ export function SubscriptionPlansCard({
               if (!plan) return null
               const totalAmount = Number(plan.total_amount || 0)
               const price = Number(plan.price_amount || 0).toFixed(2)
-              const accent = PLAN_ACCENTS[index % PLAN_ACCENTS.length]
-              const isPopular = Boolean(plan.recommended) || (index === 0 && plans.length > 1)
+              const isPopular =
+                Boolean(plan.recommended) || (index === 0 && plans.length > 1)
               const limit = Number(plan.max_purchase_per_user || 0)
               const count = planPurchaseCountMap.get(plan.id) || 0
               const reached = limit > 0 && count >= limit
@@ -631,17 +610,28 @@ export function SubscriptionPlansCard({
                     : plan.quota_reset_period === 'monthly'
                       ? t('Monthly Limit')
                       : t('Total Quota')
-              const benefits = [
-                { label: t('Validity Period'), value: formatDuration(plan, t) },
+              // 三要素（时长/额度）抽到价格区突出展示，对照商务样图「价格/周期/额度」前置
+              const validityLabel = formatDuration(plan, t)
+              const quotaLabel =
+                totalAmount > 0 ? formatQuota(totalAmount) : t('Unlimited')
+              const remainingBenefits = [
                 formatResetPeriod(plan, t) !== t('No Reset')
-                  ? { label: t('Quota Reset'), value: formatResetPeriod(plan, t) }
+                  ? {
+                      label: t('Quota Reset'),
+                      value: formatResetPeriod(plan, t),
+                    }
                   : null,
-                {
-                  label: limitLabel,
-                  value: totalAmount > 0 ? formatQuota(totalAmount) : t('Unlimited'),
-                },
-                plan.amount_cap
-                  ? { label: t('Plan Amount Cap'), value: formatQuota(Number(plan.amount_cap)) }
+                plan.number_pool
+                  ? { label: t('Number Pool'), value: plan.number_pool }
+                  : null,
+                plan.model_limit
+                  ? { label: t('Model Limit'), value: plan.model_limit }
+                  : null,
+                plan.plan_version
+                  ? {
+                      label: t('Plan Version'),
+                      value: t(versionLabelOf(plan.plan_version)),
+                    }
                   : null,
                 plan.min_ratio
                   ? { label: t('Min Ratio'), value: `×${plan.min_ratio}` }
@@ -649,104 +639,162 @@ export function SubscriptionPlansCard({
                 plan.allowed_group
                   ? { label: t('Allowed Group'), value: plan.allowed_group }
                   : null,
-                limit > 0 ? { label: t('Purchase Limit'), value: String(limit) } : null,
+                limit > 0
+                  ? { label: t('Purchase Limit'), value: String(limit) }
+                  : null,
                 plan.upgrade_group
                   ? { label: t('Upgrade Group'), value: plan.upgrade_group }
                   : null,
               ].filter(Boolean) as { label: string; value: string }[]
 
+              const planVersionStyle =
+                plan.plan_version && PLAN_VERSION_STYLES[plan.plan_version]
+                  ? PLAN_VERSION_STYLES[plan.plan_version]
+                  : null
+
               return (
-                <Card
+                <div
                   key={plan.id}
-                  data-card-hover='false'
                   className={cn(
-                    'group relative overflow-hidden from-primary/5 to-card bg-gradient-to-br transition-all duration-300 hover:scale-[1.03] hover:shadow-md',
-                    isPopular &&
-                      'border-primary/70 shadow-md ring-2 ring-primary/20'
+                    'rounded-xl transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] dark:hover:shadow-[0_8px_24px_rgba(0,0,0,0.4)]',
+                    planVersionStyle ? planVersionStyle.wrapper : ''
                   )}
                 >
-                  <div className={cn('absolute inset-x-0 top-0 h-1 bg-gradient-to-r', accent.bar)} />
-                  <CardContent className='flex h-full flex-col p-3.5 sm:p-4'>
-                    <div className='mb-2 flex items-start justify-between gap-3'>
-                      <div className='min-w-0'>
-                        <h4 className='truncate font-semibold'>
+                  <Card
+                    data-card-hover='false'
+                    className={cn(
+                      'relative h-full overflow-hidden transition-colors',
+                      planVersionStyle
+                        ? planVersionStyle.inner
+                        : isPopular
+                          ? 'border-primary ring-primary/25 ring-1'
+                          : 'hover:border-primary/40'
+                    )}
+                  >
+                    <CardContent className='flex h-full flex-col p-5 sm:p-6'>
+                      {planVersionStyle && (
+                        <span
+                          className={cn(
+                            'absolute top-3 right-3 z-10 rounded-full px-2.5 py-0.5 text-[11px] font-semibold shadow-sm',
+                            planVersionStyle.badge
+                          )}
+                        >
+                          {t(versionLabelOf(plan.plan_version))}
+                        </span>
+                      )}
+                      <div className='mb-3 text-center'>
+                        <h4 className='truncate text-base font-semibold'>
                           {plan.title || t('Subscription Plans')}
                         </h4>
+                        {plan.suitable_for && (
+                          <p className='text-muted-foreground mt-1 text-xs'>
+                            <span className='text-foreground/70'>
+                              {t('Suitable for')}{' '}
+                            </span>
+                            {plan.suitable_for}
+                          </p>
+                        )}
                         {plan.subtitle && (
-                          <p className='text-muted-foreground line-clamp-3 text-xs'>
+                          <p className='text-muted-foreground mt-1 line-clamp-2 text-xs'>
                             {plan.subtitle}
                           </p>
                         )}
                       </div>
-                      {isPopular && (
-                        <StatusBadge
-                          variant='info'
-                          copyable={false}
-                          className='shrink-0'
-                        >
-                          <Sparkles className='h-3 w-3' />
-                          {t('Recommended')}
-                        </StatusBadge>
-                      )}
-                    </div>
 
-                    <div className='py-2'>
-                      <span className={cn('text-2xl font-bold', accent.price)}>
-                        ${price}
-                      </span>
-                    </div>
+                      {/* 价格 + 周期合体（对照样图：¥X/年） */}
+                      <div className='text-center'>
+                        <span className='text-foreground text-3xl font-bold tabular-nums'>
+                          ${price}
+                        </span>
+                        <span className='text-muted-foreground text-sm'>
+                          {' '}
+                          / {validityLabel}
+                        </span>
+                      </div>
 
-                    <div className='flex-1 space-y-1.5 pb-3'>
-                      {benefits.map((b) => (
-                        <div
-                          key={b.label}
-                          className='text-muted-foreground flex items-center gap-1.5 text-xs'
-                        >
-                          <Check className='text-primary h-3 w-3 shrink-0' />
-                          <span>{b.label}:</span>
-                          <span className='text-primary font-mono text-sm font-bold'>
-                            {b.value}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+                      {/* 额度：周期额度 + 总额度 同行展示 */}
+                      <div className='mt-1 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-sm'>
+                        <span className='text-foreground font-semibold tabular-nums'>
+                          {quotaLabel}
+                        </span>
+                        <span className='text-muted-foreground text-xs'>
+                          {limitLabel}
+                        </span>
+                        {plan.amount_cap ? (
+                          <>
+                            <span className='text-muted-foreground/40'>·</span>
+                            <span className='text-foreground font-semibold tabular-nums'>
+                              {formatQuota(Number(plan.amount_cap))}
+                            </span>
+                            <span className='text-muted-foreground text-xs'>
+                              {t('Total Cap')}
+                            </span>
+                          </>
+                        ) : null}
+                      </div>
 
-                    <Separator className='mb-3' />
-
-                    {reached ? (
-                      <Tooltip>
-                        <TooltipTrigger render={<div />}>
-                          <Button variant='outline' className='w-full' disabled>
-                            {t('Limit Reached')}
+                      {/* CTA 蓝色实心，放在权益列表上方（对照样图） */}
+                      <div className='mt-4 mb-4'>
+                        {reached ? (
+                          <Tooltip>
+                            <TooltipTrigger render={<div />}>
+                              <Button
+                                variant='outline'
+                                className='w-full'
+                                disabled
+                              >
+                                {t('Limit Reached')}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {t('Purchase limit reached')} ({count}/{limit})
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <Button
+                            variant='gradient'
+                            className='w-full'
+                            onClick={() => {
+                              if (
+                                plan.description &&
+                                !localStorage.getItem(
+                                  `sub-desc-hide-${plan.id}`
+                                )
+                              ) {
+                                setDescPlan(p)
+                              } else {
+                                setSelectedPlan(p)
+                                setPurchaseOpen(true)
+                              }
+                            }}
+                          >
+                            {t('Subscribe Now')}
                           </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          {t('Purchase limit reached')} ({count}/{limit})
-                        </TooltipContent>
-                      </Tooltip>
-                    ) : (
-                      <Button
-                        variant='outline'
-                        className='w-full'
-                        onClick={() => {
-                          if (plan.description && !localStorage.getItem(`sub-desc-hide-${plan.id}`)) {
-                            setDescPlan(p)
-                          } else {
-                            setSelectedPlan(p)
-                            setPurchaseOpen(true)
-                          }
-                        }}
-                      >
-                        {t('Subscribe Now')}
-                      </Button>
-                    )}
+                        )}
+                      </div>
 
-                    {/* 能量条：默认50%，hover充到80%（与其他卡片一致） */}
-                    <div className='mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted'>
-                      <div className={cn('h-full w-full origin-left scale-x-50 rounded-full bg-gradient-to-r transition-transform duration-500 ease-out group-hover:scale-x-[0.8]', accent.bar)} />
-                    </div>
-                  </CardContent>
-                </Card>
+                      {/* 权益列表：次要信息，下半部分，细线分隔 */}
+                      <div className='flex-1 border-t pt-4'>
+                        <div className='space-y-2'>
+                          {remainingBenefits.map((b) => (
+                            <div
+                              key={b.label}
+                              className='flex items-start gap-2 text-xs'
+                            >
+                              <Check className='text-foreground mt-0.5 h-3.5 w-3.5 shrink-0' />
+                              <span className='text-muted-foreground'>
+                                {b.label}:
+                              </span>
+                              <span className='text-foreground font-medium'>
+                                {b.value}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
               )
             })}
           </div>
@@ -764,12 +812,10 @@ export function SubscriptionPlansCard({
           onClick={() => setDescPlan(null)}
         >
           <div
-            className='bg-card max-w-lg rounded-2xl border p-6 shadow-xl'
+            className='bg-card max-w-lg rounded-2xl border p-6 shadow-lg'
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className='mb-3 text-lg font-bold'>
-              {descPlan.plan.title}
-            </h3>
+            <h3 className='mb-3 text-lg font-bold'>{descPlan.plan.title}</h3>
             <div className='mb-5 max-h-[40vh] overflow-y-auto text-sm'>
               <Markdown>{descPlan.plan.description || ''}</Markdown>
             </div>
@@ -778,10 +824,7 @@ export function SubscriptionPlansCard({
                 variant='ghost'
                 size='sm'
                 onClick={() => {
-                  localStorage.setItem(
-                    `sub-desc-hide-${descPlan.plan.id}`,
-                    '1'
-                  )
+                  localStorage.setItem(`sub-desc-hide-${descPlan.plan.id}`, '1')
                   setSelectedPlan(descPlan)
                   setPurchaseOpen(true)
                   setDescPlan(null)

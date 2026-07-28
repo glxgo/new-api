@@ -46,16 +46,11 @@ const THEME_CHART_COLOR_VARIABLES = [
 ] as const
 
 const FALLBACK_CHART_COLORS = [
-  '#1664FF',
-  '#1AC6FF',
-  '#FF8A00',
-  '#3CC780',
-  '#7442D4',
-  '#FFC400',
-  '#304D77',
-  '#B48DEB',
-  '#009488',
-  '#FF7DDA',
+  'oklch(0.665 0.145 38)', // chart-1 陶土
+  'oklch(0.59 0.095 132)', // chart-2 橄榄
+  'oklch(0.68 0.085 245)', // chart-3 蓝
+  'oklch(0.63 0.105 350)', // chart-4 紫
+  'oklch(0.72 0.085 165)', // chart-5 绿
 ] as const
 
 function getThemeChartColors(themeKey?: string): string[] {

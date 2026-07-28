@@ -100,6 +100,12 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	appendBillingInfo(relayInfo, other)
 	appendParamOverrideInfo(relayInfo, other)
 	appendStreamStatus(relayInfo, other)
+	if relayInfo.ServiceTier != "" {
+		other["service_tier"] = relayInfo.ServiceTier
+	}
+	if relayInfo.PriorityDoubled {
+		other["priority_doubled"] = true
+	}
 	return other
 }
 
@@ -159,6 +165,15 @@ func appendBillingInfo(relayInfo *relaycommon.RelayInfo, other map[string]interf
 	}
 	if relayInfo.UserSetting.BillingPreference != "" {
 		other["billing_preference"] = relayInfo.UserSetting.BillingPreference
+	}
+	other["channel_cost_rule_version"] = 2
+	if relayInfo.ChannelMeta != nil {
+		other["channel_cost_channel_id"] = relayInfo.ChannelId
+		if relayInfo.ChannelCostRatioPPM != nil {
+			other["channel_cost_ratio_ppm"] = *relayInfo.ChannelCostRatioPPM
+		} else {
+			other["channel_cost_ratio_missing"] = true
+		}
 	}
 	if relayInfo.BillingSource == "subscription" {
 		if relayInfo.SubscriptionId != 0 {
@@ -295,6 +310,7 @@ func GenerateMjOtherInfo(relayInfo *relaycommon.RelayInfo, priceData types.Price
 		other["user_group_ratio"] = priceData.GroupRatioInfo.GroupSpecialRatio
 	}
 	appendRequestPath(nil, relayInfo, other)
+	appendBillingInfo(relayInfo, other)
 	return other
 }
 

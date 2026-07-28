@@ -1,12 +1,15 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"sync"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -52,12 +55,35 @@ func (s *BillingSession) Settle(actualQuota int) error {
 		return nil
 	}
 	delta := actualQuota - s.preConsumedQuota
-	if delta == 0 {
-		s.settled = true
-		return nil
-	}
-	// 1) 调整资金来源（仅在尚未提交时执行，防止重复调用）
-	if !s.fundingSettled {
+	isSubscription := s.funding.Source() == BillingSourceSubscription
+	var costErr error
+	// 1) 调整资金来源（仅在尚未提交时执行，防止重复调用）。
+	// 订阅用量差额与渠道成本在同一事务内提交，减少热路径事务数。
+	if isSubscription && !s.fundingSettled {
+		ratioPPM := (*int64)(nil)
+		channelId := 0
+		if s.relayInfo.ChannelMeta != nil {
+			ratioPPM = s.relayInfo.ChannelCostRatioPPM
+			channelId = s.relayInfo.ChannelId
+		}
+		settleErr := model.SettleSubscriptionPreConsume(
+			s.relayInfo.RequestId,
+			int64(delta),
+			int64(actualQuota),
+			channelId,
+			ratioPPM,
+			s.relayInfo.ForcePreConsume &&
+				!s.relayInfo.PriceData.UsePrice &&
+				!common.StringsContains(constant.TaskPricePatches, s.relayInfo.OriginModelName),
+		)
+		if settleErr != nil && !errors.Is(settleErr, model.ErrChannelCostRatioMissing) {
+			return settleErr
+		}
+		// ErrChannelCostRatioMissing is returned after the usage change and
+		// repairable final sale/channel evidence have committed.
+		s.fundingSettled = true
+		costErr = settleErr
+	} else if delta != 0 && !s.fundingSettled {
 		if err := s.funding.Settle(delta); err != nil {
 			return err
 		}
@@ -65,7 +91,7 @@ func (s *BillingSession) Settle(actualQuota int) error {
 	}
 	// 2) 调整令牌额度
 	var tokenErr error
-	if !s.relayInfo.IsPlayground {
+	if delta != 0 && !s.relayInfo.IsPlayground {
 		if delta > 0 {
 			tokenErr = model.DecreaseTokenQuota(s.relayInfo.TokenId, s.relayInfo.TokenKey, delta)
 		} else {
@@ -78,11 +104,11 @@ func (s *BillingSession) Settle(actualQuota int) error {
 		}
 	}
 	// 3) 更新 relayInfo 上的订阅 PostDelta（用于日志）
-	if s.funding.Source() == BillingSourceSubscription {
+	if isSubscription {
 		s.relayInfo.SubscriptionPostDelta += int64(delta)
 	}
 	s.settled = true
-	return tokenErr
+	return errors.Join(tokenErr, costErr)
 }
 
 // Refund 退还所有预扣费，幂等安全，异步执行。
@@ -194,11 +220,26 @@ func (s *BillingSession) GetPaidSplit() (gift, principal int) {
 }
 
 func (s *BillingSession) Reserve(targetQuota int) error {
+	return s.reserve(targetQuota, false)
+}
+
+// ReserveRequired reserves a predictable surcharge before the upstream request
+// is sent. Unlike the ordinary reserve path, it disables the trust bypass so a
+// priority request cannot be delivered first and discover an insufficient
+// balance only during post-settlement.
+func (s *BillingSession) ReserveRequired(targetQuota int) error {
+	return s.reserve(targetQuota, true)
+}
+
+func (s *BillingSession) reserve(targetQuota int, required bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.settled || s.refunded || s.trusted || targetQuota <= s.preConsumedQuota {
+	if s.settled || s.refunded || (!required && s.trusted) || targetQuota <= s.preConsumedQuota {
 		return nil
+	}
+	if required {
+		s.trusted = false
 	}
 
 	delta := targetQuota - s.preConsumedQuota
@@ -303,7 +344,7 @@ func (s *BillingSession) reserveFunding(delta int) error {
 		}
 		return nil
 	default:
-		return types.NewError(fmt.Errorf("unsupported funding source: %s", s.funding.Source()), types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
+		return s.funding.Settle(delta)
 	}
 }
 
@@ -406,7 +447,7 @@ func (s *BillingSession) syncRelayInfo() {
 // NewBillingSession 根据用户计费偏好创建 BillingSession，处理 subscription_first / wallet_first 的回退。
 func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preConsumedQuota int) (*BillingSession, *types.NewAPIError) {
 	if relayInfo == nil {
-		return nil, types.NewError(fmt.Errorf("relayInfo is nil"), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
+		return nil, types.NewError(fmt.Errorf(i18n.T(c, i18n.MsgBillingRelayInfoNil)), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
 	}
 
 	pref := common.NormalizeBillingPreference(relayInfo.UserSetting.BillingPreference)

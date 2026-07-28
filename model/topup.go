@@ -22,7 +22,10 @@ type TopUp struct {
 	PaymentProvider string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
 	CreateTime      int64   `json:"create_time"`
 	CompleteTime    int64   `json:"complete_time"`
-	Status          string  `json:"status"`
+	// BalanceAfter 充值完成后用户余额快照(quota 单位, 本金+赠金)，
+	// 仅供财务流水展示，不参与计费/扣费/退款逻辑。历史订单为 0。
+	BalanceAfter *int64 `json:"balance_after" gorm:"column:balance_after"`
+	Status       string `json:"status"`
 }
 
 const (
@@ -107,6 +110,19 @@ func UpdatePendingTopUpStatus(tradeNo string, expectedPaymentProvider string, ta
 	})
 }
 
+// snapshotBalanceAfterRecharge 在充值事务内读取用户当前 (quota + gift_quota)，
+// 加上本次充值新增额度，得到充值完成后的余额快照（quota 单位，本金+赠金）。
+// 仅用于填充 topUp.BalanceAfter，不影响计费/扣费/退款逻辑。读取失败返回 nil。
+// 注意：读取发生在 tx 内 quota 更新之前，所以 = 更新前余额 + 本次充值额度 = 更新后余额。
+func snapshotBalanceAfterRecharge(tx *gorm.DB, userId int, quotaToAdd int) *int64 {
+	var u User
+	if err := tx.Select("quota", "gift_quota").Where("id = ?", userId).First(&u).Error; err != nil {
+		return nil
+	}
+	balance := int64(u.Quota + u.GiftQuota + quotaToAdd)
+	return &balance
+}
+
 func Recharge(referenceId string, customerId string, callerIp string) (err error) {
 	if referenceId == "" {
 		return errors.New("未提供支付单号")
@@ -136,12 +152,13 @@ func Recharge(referenceId string, customerId string, callerIp string) (err error
 
 		topUp.CompleteTime = common.GetTimestamp()
 		topUp.Status = common.TopUpStatusSuccess
+		quota = topUp.Money * common.QuotaPerUnit
+		topUp.BalanceAfter = snapshotBalanceAfterRecharge(tx, topUp.UserId, int(quota))
 		err = tx.Save(topUp).Error
 		if err != nil {
 			return err
 		}
 
-		quota = topUp.Money * common.QuotaPerUnit
 		err = tx.Model(&User{}).Where("id = ?", topUp.UserId).Updates(map[string]interface{}{"stripe_customer": customerId, "quota": gorm.Expr("quota + ?", quota)}).Error
 		if err != nil {
 			return err
@@ -196,6 +213,7 @@ func CompleteEpayTopUp(tradeNo string, actualPaymentMethod string) (*TopUp, int,
 		if quotaToAdd <= 0 {
 			return errors.New("无效的充值额度")
 		}
+		completed.BalanceAfter = snapshotBalanceAfterRecharge(tx, completed.UserId, quotaToAdd)
 		if err := tx.Save(&completed).Error; err != nil {
 			return err
 		}
@@ -427,6 +445,7 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 		// 标记完成
 		topUp.CompleteTime = common.GetTimestamp()
 		topUp.Status = common.TopUpStatusSuccess
+		topUp.BalanceAfter = snapshotBalanceAfterRecharge(tx, topUp.UserId, quotaToAdd)
 		if err := tx.Save(topUp).Error; err != nil {
 			return err
 		}
@@ -483,13 +502,13 @@ func RechargeCreem(referenceId string, customerEmail string, customerName string
 
 		topUp.CompleteTime = common.GetTimestamp()
 		topUp.Status = common.TopUpStatusSuccess
+		// Creem 直接使用 Amount 作为充值额度（整数）
+		quota = topUp.Amount
+		topUp.BalanceAfter = snapshotBalanceAfterRecharge(tx, topUp.UserId, int(quota))
 		err = tx.Save(topUp).Error
 		if err != nil {
 			return err
 		}
-
-		// Creem 直接使用 Amount 作为充值额度（整数）
-		quota = topUp.Amount
 
 		// 构建更新字段，优先使用邮箱，如果邮箱为空则使用用户名
 		updateFields := map[string]interface{}{
@@ -571,6 +590,7 @@ func RechargeWaffo(tradeNo string, callerIp string) (err error) {
 
 		topUp.CompleteTime = common.GetTimestamp()
 		topUp.Status = common.TopUpStatusSuccess
+		topUp.BalanceAfter = snapshotBalanceAfterRecharge(tx, topUp.UserId, quotaToAdd)
 		if err := tx.Save(topUp).Error; err != nil {
 			return err
 		}
@@ -634,6 +654,7 @@ func RechargeWaffoPancake(tradeNo string) (err error) {
 
 		topUp.CompleteTime = common.GetTimestamp()
 		topUp.Status = common.TopUpStatusSuccess
+		topUp.BalanceAfter = snapshotBalanceAfterRecharge(tx, topUp.UserId, quotaToAdd)
 		if err := tx.Save(topUp).Error; err != nil {
 			return err
 		}

@@ -16,18 +16,18 @@ func TestRechargeCapacityTierBoundaries(t *testing.T) {
 		concurrency int
 		rpm         int
 	}{
-		{0, 2, 10},
-		{999, 2, 10},
-		{1000, 4, 20},
-		{4999, 4, 20},
-		{5000, 8, 40},
-		{19999, 8, 40},
-		{20000, 15, 60},
-		{50000, 20, 100},
-		{100000, 30, 150},
-		{199999, 30, 150},
-		{200000, 50, 200},
-		{999999, 50, 200},
+		{0, 8, 15},
+		{999, 8, 15},
+		{1000, 15, 30},
+		{4999, 15, 30},
+		{5000, 20, 50},
+		{19999, 20, 50},
+		{20000, 30, 80},
+		{50000, 50, 100},
+		{100000, 70, 150},
+		{199999, 70, 150},
+		{200000, 70, 150},
+		{999999, 70, 150},
 	}
 	for _, test := range tests {
 		t.Run(fmt.Sprintf("%d", test.cents), func(t *testing.T) {
@@ -68,8 +68,8 @@ func TestRechargeCreditIsIdempotentAndUpdatesCapacity(t *testing.T) {
 	var stored User
 	require.NoError(t, db.First(&stored, user.Id).Error)
 	require.EqualValues(t, 5000, stored.RechargeTotalCents)
-	require.Equal(t, 8, stored.EffectiveConcurrencyLimit())
-	require.Equal(t, 40, stored.EffectiveRPMLimit())
+	require.Equal(t, 20, stored.EffectiveConcurrencyLimit())
+	require.Equal(t, 50, stored.EffectiveRPMLimit())
 
 	var count int64
 	require.NoError(t, db.Model(&RechargeCredit{}).Count(&count).Error)
@@ -82,7 +82,7 @@ func TestRechargeCapacityProgress(t *testing.T) {
 	require.InDelta(t, 0.4375, progress.Progress, 0.0001)
 	require.NotNil(t, progress.NextTier)
 	require.EqualValues(t, 5000, progress.NextTier.MinimumCents)
-	require.Len(t, progress.Tiers, 7)
+	require.Len(t, progress.Tiers, 6)
 }
 
 func TestAdministratorRechargeIsAtomicAndIdempotent(t *testing.T) {

@@ -1,3 +1,21 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
 import type { GroupProbeSummary } from '@/features/performance-metrics/types'
 
 export type ProbeTone = 'healthy' | 'degraded' | 'unhealthy' | 'unknown'
@@ -5,14 +23,15 @@ export type ProbeTone = 'healthy' | 'degraded' | 'unhealthy' | 'unknown'
 export function probeTone(probe?: GroupProbeSummary): ProbeTone {
   if (!probe || probe.total_channels < 1 || probe.checked_channels < 1)
     return 'unknown'
-  if (probe.healthy_channels === probe.total_channels) return 'healthy'
-  if (probe.healthy_channels >= 2) return 'healthy'
-  if (probe.healthy_channels === 1) return 'degraded'
+  // 1. 该组有任何一个渠道正常 → 绿
+  if (probe.healthy_channels >= 1) return 'healthy'
+  // 3. 该组所有渠道 3 次以上不正常 → 红
   if (
     probe.checked_channels === probe.total_channels &&
     probe.unhealthy_channels === probe.total_channels
   )
     return 'unhealthy'
+  // 2. 该组所有渠道都不正常（1~3 次，非全部 unhealthy）→ 黄
   return 'degraded'
 }
 

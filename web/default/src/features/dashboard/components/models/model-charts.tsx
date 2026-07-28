@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { VChart } from '@visactor/react-vchart'
-import { PieChart as PieChartIcon } from 'lucide-react'
+import { ChartNoAxesCombined } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useThemeRadiusPx } from '@/lib/theme-radius'
 import type { TimeGranularity } from '@/lib/time'
@@ -39,11 +39,10 @@ let themeManagerPromise: Promise<
   (typeof import('@visactor/vchart'))['ThemeManager']
 > | null = null
 
-type ChartSpecKey = 'spec_model_line' | 'spec_pie' | 'spec_rank_bar'
+type ChartSpecKey = 'spec_model_line' | 'spec_rank_bar'
 
 const CHART_SPEC_KEYS: Record<ModelAnalyticsChartTab, ChartSpecKey> = {
   trend: 'spec_model_line',
-  proportion: 'spec_pie',
   top: 'spec_rank_bar',
 }
 
@@ -62,18 +61,20 @@ export function ModelCharts(props: ModelChartsProps) {
     '--radius-md',
     `${customization.preset}:${customization.radius}`
   )
-  const [activeTab, setActiveTab] = useState<ModelAnalyticsChartTab>(
-    props.defaultChartTab ?? 'trend'
-  )
+  const defaultTab = props.defaultChartTab ?? 'trend'
+  const [tabState, setTabState] = useState<{
+    defaultTab: ModelAnalyticsChartTab
+    activeTab: ModelAnalyticsChartTab
+  }>(() => ({ defaultTab, activeTab: defaultTab }))
+  if (tabState.defaultTab !== defaultTab) {
+    setTabState({ defaultTab, activeTab: defaultTab })
+  }
+  const activeTab = tabState.activeTab
   const [themeReady, setThemeReady] = useState(false)
   const themeManagerRef = useRef<
     (typeof import('@visactor/vchart'))['ThemeManager'] | null
   >(null)
   const timeGranularity = props.timeGranularity ?? DEFAULT_TIME_GRANULARITY
-
-  useEffect(() => {
-    if (props.defaultChartTab) setActiveTab(props.defaultChartTab)
-  }, [props.defaultChartTab])
 
   useEffect(() => {
     const updateTheme = async () => {
@@ -128,7 +129,7 @@ export function ModelCharts(props: ModelChartsProps) {
     <div className='overflow-hidden rounded-lg border'>
       <div className='flex w-full flex-col gap-1.5 border-b px-3 py-2 sm:gap-3 sm:px-5 sm:py-3 lg:flex-row lg:items-center lg:justify-between'>
         <div className='flex items-center gap-2'>
-          <PieChartIcon className='text-muted-foreground/60 size-4' />
+          <ChartNoAxesCombined className='text-muted-foreground/60 size-4' />
           <div className='text-sm font-semibold'>
             {t('Model Call Analytics')}
           </div>
@@ -142,7 +143,12 @@ export function ModelCharts(props: ModelChartsProps) {
             <button
               key={tab.value}
               type='button'
-              onClick={() => setActiveTab(tab.value)}
+              onClick={() =>
+                setTabState((current) => ({
+                  ...current,
+                  activeTab: tab.value,
+                }))
+              }
               className={`shrink-0 rounded-md px-3 text-xs font-medium transition-colors ${
                 activeTab === tab.value
                   ? 'bg-background text-foreground shadow-sm'

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -10,7 +11,6 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 )
 
@@ -18,8 +18,8 @@ import (
 //   - saleQuota       任务实际扣费 / 退款额度 / 差额额度
 //   - saleGroupRatio  任务预扣时的分组倍率(取 BillingContext 快照)
 //   - group           任务所属分组(task.Group)
-func calcTaskCost(saleQuota int, saleGroupRatio float64, group string) int {
-	return CalcCostFromSaleQuota(saleQuota, saleGroupRatio, group)
+func calcTaskCost(saleQuota int, ratioPPM *int64) int {
+	return CalcCostFromChannelRatio(saleQuota, ratioPPM)
 }
 
 // LogTaskConsumption 记录任务消费日志和统计信息（仅记录，不涉及实际扣费）。
@@ -68,17 +68,20 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 		Quota:     info.PriceData.Quota,
 		// 异步任务(图片/视频)通常按次计费, ModelCost($/1M tokens) 不适用, 成本暂记 0。
 		// 后续可扩展按次成本(ModelCost 增加 per-call 字段); 快照仍填写供 T+1 分润用。
-		Cost: calcTaskCost(info.PriceData.Quota, info.PriceData.GroupRatioInfo.GroupRatio, info.UsingGroup),
-		PaidQuota:      paidPrincipal,
-		PaidGiftQuota:  paidGift,
-		AffAdminIdSnap: affAdminIdSnap,
-		InviterIdSnap:  inviterIdSnap,
-		Inviter2IdSnap: inviter2IdSnap,
-		Content:        logContent,
-		TokenId:        info.TokenId,
-		Group:          info.UsingGroup,
-		Other:          other,
-		BillingSource:  info.BillingSource,
+		Cost:                calcTaskCost(info.PriceData.Quota, info.ChannelCostRatioPPM),
+		PaidQuota:           paidPrincipal,
+		PaidGiftQuota:       paidGift,
+		AffAdminIdSnap:      affAdminIdSnap,
+		InviterIdSnap:       inviterIdSnap,
+		Inviter2IdSnap:      inviter2IdSnap,
+		Content:             logContent,
+		TokenId:             info.TokenId,
+		Group:               info.UsingGroup,
+		Other:               other,
+		BillingSource:       info.BillingSource,
+		SubscriptionId:      info.SubscriptionId,
+		CostRuleVersion:     2,
+		ChannelCostRatioPPM: info.ChannelCostRatioPPM,
 	})
 	model.UpdateUserUsedQuotaAndRequestCount(info.UserId, info.PriceData.Quota)
 	model.UpdateChannelUsedQuota(info.ChannelId, info.PriceData.Quota)
@@ -199,8 +202,28 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) {
 		return
 	}
 
-	// 1. 退还资金来源（钱包或订阅）
-	paidGift, paidPrincipal, err := taskAdjustFunding(task, -quota)
+	// 1. 退还资金来源（钱包或订阅）。订阅把用量退款和成本清零合成一个事务。
+	var paidGift, paidPrincipal int
+	var err error
+	subscriptionSettled := false
+	if taskIsSubscription(task) {
+		if bc := task.PrivateData.BillingContext; bc != nil && bc.BillingRequestId != "" {
+			err = model.SettleSubscriptionPreConsume(
+				bc.BillingRequestId,
+				-int64(quota),
+				0,
+				bc.ChannelId,
+				bc.ChannelCostRatioPPM,
+				false,
+			)
+			paidPrincipal = quota
+			subscriptionSettled = true
+		} else {
+			paidGift, paidPrincipal, err = taskAdjustFunding(task, -quota)
+		}
+	} else {
+		paidGift, paidPrincipal, err = taskAdjustFunding(task, -quota)
+	}
 	if err != nil {
 		logger.LogWarn(ctx, fmt.Sprintf("退还资金来源失败 task %s: %s", task.TaskID, err.Error()))
 		return
@@ -208,6 +231,19 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) {
 
 	// 2. 退还令牌额度
 	taskAdjustTokenQuota(ctx, task, -quota)
+	if taskIsSubscription(task) && !subscriptionSettled {
+		if bc := task.PrivateData.BillingContext; bc != nil && bc.BillingRequestId != "" {
+			if err := model.FinalizeSubscriptionPreConsume(
+				bc.BillingRequestId,
+				0,
+				bc.ChannelId,
+				bc.ChannelCostRatioPPM,
+				false,
+			); err != nil {
+				logger.LogWarn(ctx, fmt.Sprintf("清零订阅任务成本失败 task %s: %s", task.TaskID, err.Error()))
+			}
+		}
+	}
 
 	// 3. 记录日志（补阶段2a 漏填的 snapshot 字段，阶段2b）
 	affAdminIdSnap, inviterIdSnap, inviter2IdSnap := GetAffiliateSnapshot(task.UserId)
@@ -215,26 +251,30 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) {
 	other["task_id"] = task.TaskID
 	other["reason"] = reason
 	// 退款对应的成本: 从退款额度反推(与正向消费同口径), 分组倍率取预扣时 BillingContext 快照
-	refundGroupRatio := 1.0
-	if bc := task.PrivateData.BillingContext; bc != nil && bc.GroupRatio > 0 {
-		refundGroupRatio = bc.GroupRatio
+	var channelCostRatioPPM *int64
+	if bc := task.PrivateData.BillingContext; bc != nil {
+		channelCostRatioPPM = bc.ChannelCostRatioPPM
 	}
 	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
-		UserId:          task.UserId,
-		LogType:         model.LogTypeRefund,
-		Content:         "",
-		ChannelId:       task.ChannelId,
-		ModelName:       taskModelName(task),
-		Quota:           quota,
-		Cost: calcTaskCost(quota, refundGroupRatio, task.Group),
-		PaidQuota:       paidPrincipal,
-		PaidGiftQuota:   paidGift,
-		AffAdminIdSnap:  affAdminIdSnap,
-		InviterIdSnap:   inviterIdSnap,
-		Inviter2IdSnap:  inviter2IdSnap,
-		TokenId:         task.PrivateData.TokenId,
-		Group:           task.Group,
-		Other:           other,
+		UserId:              task.UserId,
+		LogType:             model.LogTypeRefund,
+		Content:             "",
+		ChannelId:           task.ChannelId,
+		ModelName:           taskModelName(task),
+		Quota:               quota,
+		Cost:                calcTaskCost(quota, channelCostRatioPPM),
+		PaidQuota:           paidPrincipal,
+		PaidGiftQuota:       paidGift,
+		AffAdminIdSnap:      affAdminIdSnap,
+		InviterIdSnap:       inviterIdSnap,
+		Inviter2IdSnap:      inviter2IdSnap,
+		TokenId:             task.PrivateData.TokenId,
+		Group:               task.Group,
+		Other:               other,
+		BillingSource:       task.PrivateData.BillingSource,
+		SubscriptionId:      task.PrivateData.SubscriptionId,
+		CostRuleVersion:     2,
+		ChannelCostRatioPPM: channelCostRatioPPM,
 	})
 }
 
@@ -249,6 +289,7 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	quotaDelta := actualQuota - preConsumedQuota
 
 	if quotaDelta == 0 {
+		finalizeTaskSubscriptionCost(ctx, task, actualQuota)
 		logger.LogInfo(ctx, fmt.Sprintf("任务 %s 预扣费准确（%s，%s）",
 			task.TaskID, logger.LogQuota(actualQuota), reason))
 		return
@@ -262,8 +303,36 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 		reason,
 	))
 
-	// 调整资金来源
-	paidGift, paidPrincipal, err := taskAdjustFunding(task, quotaDelta)
+	// 调整资金来源。订阅把差额和最终渠道成本合并到一个事务。
+	var paidGift, paidPrincipal int
+	var err error
+	subscriptionSettled := false
+	if taskIsSubscription(task) {
+		if bc := task.PrivateData.BillingContext; bc != nil && bc.BillingRequestId != "" {
+			err = model.SettleSubscriptionPreConsume(
+				bc.BillingRequestId,
+				int64(quotaDelta),
+				int64(actualQuota),
+				bc.ChannelId,
+				bc.ChannelCostRatioPPM,
+				false,
+			)
+			if quotaDelta > 0 {
+				paidPrincipal = quotaDelta
+			} else {
+				paidPrincipal = -quotaDelta
+			}
+			subscriptionSettled = true
+		} else {
+			paidGift, paidPrincipal, err = taskAdjustFunding(task, quotaDelta)
+		}
+	} else {
+		paidGift, paidPrincipal, err = taskAdjustFunding(task, quotaDelta)
+	}
+	if errors.Is(err, model.ErrChannelCostRatioMissing) {
+		logger.LogWarn(ctx, fmt.Sprintf("任务 %s 渠道成本倍率缺失，已保留补账证据", task.TaskID))
+		err = nil
+	}
 	if err != nil {
 		logger.LogError(ctx, fmt.Sprintf("差额结算资金调整失败 task %s: %s", task.TaskID, err.Error()))
 		return
@@ -273,6 +342,9 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	taskAdjustTokenQuota(ctx, task, quotaDelta)
 
 	task.Quota = actualQuota
+	if !subscriptionSettled {
+		finalizeTaskSubscriptionCost(ctx, task, actualQuota)
+	}
 
 	var logType int
 	var logQuota int
@@ -290,28 +362,51 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	other["task_id"] = task.TaskID
 	other["pre_consumed_quota"] = preConsumedQuota
 	other["actual_quota"] = actualQuota
-	// 差额对应的成本: 从差额额度反推(与正向消费同口径), 分组倍率取预扣时 BillingContext 快照
-	deltaGroupRatio := 1.0
-	if bc := task.PrivateData.BillingContext; bc != nil && bc.GroupRatio > 0 {
-		deltaGroupRatio = bc.GroupRatio
+	var channelCostRatioPPM *int64
+	if bc := task.PrivateData.BillingContext; bc != nil {
+		channelCostRatioPPM = bc.ChannelCostRatioPPM
 	}
 	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
-		UserId:          task.UserId,
-		LogType:         logType,
-		Content:         reason,
-		ChannelId:       task.ChannelId,
-		ModelName:       taskModelName(task),
-		Quota:           logQuota,
-		Cost: calcTaskCost(logQuota, deltaGroupRatio, task.Group),
-		PaidQuota:       paidPrincipal,
-		PaidGiftQuota:   paidGift,
-		AffAdminIdSnap:  affAdminIdSnap,
-		InviterIdSnap:   inviterIdSnap,
-		Inviter2IdSnap:  inviter2IdSnap,
-		TokenId:         task.PrivateData.TokenId,
-		Group:           task.Group,
-		Other:           other,
+		UserId:              task.UserId,
+		LogType:             logType,
+		Content:             reason,
+		ChannelId:           task.ChannelId,
+		ModelName:           taskModelName(task),
+		Quota:               logQuota,
+		Cost:                calcTaskCost(logQuota, channelCostRatioPPM),
+		PaidQuota:           paidPrincipal,
+		PaidGiftQuota:       paidGift,
+		AffAdminIdSnap:      affAdminIdSnap,
+		InviterIdSnap:       inviterIdSnap,
+		Inviter2IdSnap:      inviter2IdSnap,
+		TokenId:             task.PrivateData.TokenId,
+		Group:               task.Group,
+		Other:               other,
+		BillingSource:       task.PrivateData.BillingSource,
+		SubscriptionId:      task.PrivateData.SubscriptionId,
+		CostRuleVersion:     2,
+		ChannelCostRatioPPM: channelCostRatioPPM,
 	})
+}
+
+func finalizeTaskSubscriptionCost(ctx context.Context, task *model.Task, actualQuota int) {
+	if !taskIsSubscription(task) {
+		return
+	}
+	bc := task.PrivateData.BillingContext
+	if bc == nil || bc.BillingRequestId == "" {
+		logger.LogWarn(ctx, fmt.Sprintf("订阅任务缺少成本快照 task %s", task.TaskID))
+		return
+	}
+	if err := model.FinalizeSubscriptionPreConsume(
+		bc.BillingRequestId,
+		int64(actualQuota),
+		bc.ChannelId,
+		bc.ChannelCostRatioPPM,
+		false,
+	); err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("结算订阅任务成本失败 task %s: %s", task.TaskID, err.Error()))
+	}
 }
 
 // RecalculateTaskQuotaByTokens 根据实际 token 消耗重新计费（异步差额结算）。
@@ -322,29 +417,12 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 		return
 	}
 
-	modelName := taskModelName(task)
-
-	// 获取模型价格和倍率
-	modelRatio, hasRatioSetting, _ := ratio_setting.GetModelRatio(modelName)
-	// 只有配置了倍率(非固定价格)时才按 token 重新计费
-	if !hasRatioSetting || modelRatio <= 0 {
+	bc := task.PrivateData.BillingContext
+	if bc == nil || bc.ModelRatio <= 0 || bc.GroupRatio <= 0 {
 		return
 	}
-
-	// 获取用户和组的倍率信息
-	group := task.Group
-	if group == "" {
-		user, err := model.GetUserById(task.UserId, false)
-		if err == nil {
-			group = user.Group
-		}
-	}
-	if group == "" {
-		return
-	}
-
-	// 废弃 GroupGroupRatio 二级倍率(2026-06-22): GroupRatio 是唯一分组售价倍率。
-	finalGroupRatio := ratio_setting.GetGroupRatio(group)
+	modelRatio := bc.ModelRatio
+	finalGroupRatio := bc.GroupRatio
 
 	// 计算 OtherRatios 乘积（视频折扣、时长等）
 	otherMultiplier := 1.0

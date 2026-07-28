@@ -487,6 +487,12 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 	if channel.RPMLimit < 0 || channel.RPMLimit > 10000000 {
 		return fmt.Errorf("渠道 RPM 上限必须在 0-10000000 之间，0 表示不限制")
 	}
+	if channel.Status == common.ChannelStatusEnabled && channel.CostRatioPPM == nil {
+		return fmt.Errorf("启用渠道前必须配置成本倍率")
+	}
+	if channel.CostRatioPPM != nil && (*channel.CostRatioPPM < 0 || *channel.CostRatioPPM > model.MaxChannelCostRatioPPM) {
+		return fmt.Errorf("渠道成本倍率必须在 0-%g 之间", float64(model.MaxChannelCostRatioPPM)/float64(model.ChannelCostRatioScale))
+	}
 	// 校验 channel settings
 	if err := channel.ValidateSettings(); err != nil {
 		return fmt.Errorf("渠道额外设置[channel setting] 格式错误：%s", err.Error())
@@ -768,6 +774,7 @@ type ChannelTag struct {
 	NewTag         *string `json:"new_tag"`
 	Priority       *int64  `json:"priority"`
 	Weight         *uint   `json:"weight"`
+	CostRatioPPM   *int64  `json:"cost_ratio_ppm"`
 	ModelMapping   *string `json:"model_mapping"`
 	Models         *string `json:"models"`
 	Groups         *string `json:"groups"`
@@ -866,7 +873,14 @@ func EditTagChannels(c *gin.Context) {
 		}
 		channelTag.HeaderOverride = common.GetPointer[string](trimmed)
 	}
-	err = model.EditChannelByTag(channelTag.Tag, channelTag.NewTag, channelTag.ModelMapping, channelTag.Models, channelTag.Groups, channelTag.Priority, channelTag.Weight, channelTag.ParamOverride, channelTag.HeaderOverride)
+	if channelTag.CostRatioPPM != nil && (*channelTag.CostRatioPPM < 0 || *channelTag.CostRatioPPM > model.MaxChannelCostRatioPPM) {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": fmt.Sprintf("渠道成本倍率必须在 0-%g 之间", float64(model.MaxChannelCostRatioPPM)/float64(model.ChannelCostRatioScale)),
+		})
+		return
+	}
+	err = model.EditChannelByTag(channelTag.Tag, channelTag.NewTag, channelTag.ModelMapping, channelTag.Models, channelTag.Groups, channelTag.Priority, channelTag.Weight, channelTag.CostRatioPPM, channelTag.ParamOverride, channelTag.HeaderOverride)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -952,6 +966,9 @@ func UpdateChannel(c *gin.Context) {
 	}
 	channel.Channel.ConcurrencyLimit = requestedConcurrencyLimit
 	channel.Channel.RPMLimit = requestedRPMLimit
+	if channel.Channel.CostRatioPPM == nil {
+		channel.Channel.CostRatioPPM = originChannel.CostRatioPPM
+	}
 
 	// 使用统一的校验函数。容量字段先与数据库原值合并，保证旧版管理端
 	// 未发送新字段时不会把已有上限意外清零。

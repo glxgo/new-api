@@ -37,10 +37,12 @@ interface UseBillingHistoryOptions {
   initialPage?: number
   /** Initial page size */
   initialPageSize?: number
+  /** Force personal records even when the current user is an administrator. */
+  scope?: 'auto' | 'self'
 }
 
 export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
-  const { initialPage = 1, initialPageSize = 10 } = options
+  const { initialPage = 1, initialPageSize = 10, scope = 'auto' } = options
   const isAdmin = useIsAdmin()
 
   const [records, setRecords] = useState<TopupRecord[]>([])
@@ -57,9 +59,10 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
   const fetchBillingHistory = useCallback(async () => {
     setLoading(true)
     try {
-      const response = isAdmin
-        ? await getAllBillingHistory(page, pageSize, keyword)
-        : await getUserBillingHistory(page, pageSize, keyword)
+      const response =
+        isAdmin && scope === 'auto'
+          ? await getAllBillingHistory(page, pageSize, keyword)
+          : await getUserBillingHistory(page, pageSize, keyword)
 
       if (isApiSuccess(response) && response.data) {
         setRecords(response.data.items || [])
@@ -80,7 +83,7 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
     } finally {
       setLoading(false)
     }
-  }, [isAdmin, page, pageSize, keyword])
+  }, [isAdmin, scope, page, pageSize, keyword])
 
   /**
    * Complete a pending order (admin only)

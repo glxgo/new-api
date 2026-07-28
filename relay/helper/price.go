@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
@@ -236,7 +237,7 @@ func HasModelBillingConfig(modelName string) bool {
 func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta, groupRatioInfo types.GroupRatioInfo) (types.PriceData, error) {
 	exprStr, ok := billing_setting.GetBillingExpr(info.OriginModelName)
 	if !ok {
-		return types.PriceData{}, fmt.Errorf("model %s is configured as tiered_expr but has no billing expression", info.OriginModelName)
+		return types.PriceData{}, fmt.Errorf(i18n.T(c, i18n.MsgBillingTieredNoExpr, map[string]any{"Model": info.OriginModelName}))
 	}
 
 	estimatedCompletionTokens := 0
@@ -255,7 +256,7 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptT
 		Len: float64(promptTokens),
 	}, requestInput)
 	if err != nil {
-		return types.PriceData{}, fmt.Errorf("model %s tiered expr run failed: %w", info.OriginModelName, err)
+		return types.PriceData{}, fmt.Errorf(i18n.T(c, i18n.MsgBillingTieredRunFailed, map[string]any{"Model": info.OriginModelName, "Error": err.Error()}))
 	}
 
 	// Expression coefficients are $/1M tokens prices; convert to quota the same way per-call billing does.

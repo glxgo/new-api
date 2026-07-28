@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"net/http"
 
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -22,6 +23,36 @@ func PreConsumeBilling(c *gin.Context, preConsumedQuota int, relayInfo *relaycom
 		return apiErr
 	}
 	relayInfo.Billing = session
+	return nil
+}
+
+// PreparePriorityBillingForOutbound captures the effective service tier from
+// the final payload and reserves the full predictable priority surcharge before
+// any upstream request is sent.
+func PreparePriorityBillingForOutbound(relayInfo *relaycommon.RelayInfo, jsonData []byte) *types.NewAPIError {
+	if relayInfo == nil {
+		return nil
+	}
+	relayInfo.CaptureEffectiveServiceTier(jsonData)
+	targetQuota := relayInfo.ApplyPrioritySurcharge(relayInfo.PriceData.QuotaToPreConsume)
+	if !relayInfo.PriorityDoubled || relayInfo.Billing == nil {
+		return nil
+	}
+	if err := relayInfo.Billing.ReserveRequired(targetQuota); err != nil {
+		errorCode := types.ErrorCodeUpdateDataError
+		statusCode := http.StatusInternalServerError
+		if IsDualInsufficientQuotaError(err) {
+			errorCode = types.ErrorCodeInsufficientUserQuota
+			statusCode = http.StatusForbidden
+		}
+		return types.NewErrorWithStatusCode(
+			fmt.Errorf("priority 预扣费失败: %w", err),
+			errorCode,
+			statusCode,
+			types.ErrOptionWithSkipRetry(),
+			types.ErrOptionWithNoRecordErrorLog(),
+		)
+	}
 	return nil
 }
 

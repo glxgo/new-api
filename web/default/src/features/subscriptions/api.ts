@@ -217,7 +217,8 @@ export async function getSubscriptionIntro(): Promise<
     })
     return res.data
   } catch (error: unknown) {
-    const status = (error as { response?: { status?: number } })?.response?.status
+    const status = (error as { response?: { status?: number } })?.response
+      ?.status
     if (status === 404) {
       return { success: true, data: { intro: '' } }
     }

@@ -59,6 +59,7 @@ export const channelSchema = z.object({
   auto_ban: z.number().nullish(),
   concurrency_limit: z.number().default(0),
   rpm_limit: z.number().default(0),
+  cost_ratio_ppm: z.number().int().min(0).max(1000000000).nullish(),
   current_concurrency: z.number().default(0),
   current_rpm: z.number().default(0),
   other_info: z.string().default(''),

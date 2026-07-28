@@ -20,10 +20,7 @@ import { type ColumnDef } from '@tanstack/react-table'
 import { ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { getLobeIcon } from '@/lib/lobe-icon'
-import {
-  BadgeListCell,
-  DataTableColumnHeader,
-} from '@/components/data-table'
+import { BadgeListCell, DataTableColumnHeader } from '@/components/data-table'
 import { StatusBadge } from '@/components/status-badge'
 import { DEFAULT_TOKEN_UNIT } from '../constants'
 import {
@@ -217,7 +214,10 @@ export function usePricingColumns(
         <DataTableColumnHeader column={column} title={t('Input')} />
       ),
       cell: ({ row }) => (
-        <PriceCell value={fieldPrice(row.original, 'input')} label={tokenUnitLabel} />
+        <PriceCell
+          value={fieldPrice(row.original, 'input')}
+          label={tokenUnitLabel}
+        />
       ),
       size: 110,
       enableSorting: false,
@@ -255,7 +255,10 @@ export function usePricingColumns(
       id: 'cached_price',
       header: t('Cached'),
       cell: ({ row }) => (
-        <PriceCell value={fieldPrice(row.original, 'cache')} label={tokenUnitLabel} />
+        <PriceCell
+          value={fieldPrice(row.original, 'cache')}
+          label={tokenUnitLabel}
+        />
       ),
       size: 110,
       enableSorting: false,
@@ -264,7 +267,11 @@ export function usePricingColumns(
     // Action column（详情按钮）
     {
       id: 'action',
-      header: () => <span className='text-muted-foreground font-medium text-xs'>{t('Action')}</span>,
+      header: () => (
+        <span className='text-muted-foreground text-xs font-medium'>
+          {t('Action')}
+        </span>
+      ),
       cell: ({ row }) => (
         <button
           type='button'

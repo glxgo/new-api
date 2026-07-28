@@ -150,7 +150,7 @@ export function Dividend() {
                           )}
                         </div>
                         {w.status === WITHDRAW_STATUS.REJECTED && w.remark && (
-                          <div className='mt-1 text-xs text-rose-600'>
+                          <div className='text-destructive mt-1 text-xs'>
                             {t('Reject Reason')}：{w.remark}
                           </div>
                         )}
@@ -213,18 +213,16 @@ function StatusBadge({
 }) {
   if (status === WITHDRAW_STATUS.PENDING)
     return (
-      <Badge variant='outline' className='border-amber-500 text-amber-600'>
+      <Badge variant='outline' className='border-warning text-warning'>
         {t('Pending')}
       </Badge>
     )
   if (status === WITHDRAW_STATUS.APPROVED)
     return (
-      <Badge className='bg-emerald-600 hover:bg-emerald-600'>
-        {t('Approved')}
-      </Badge>
+      <Badge className='bg-success hover:bg-success'>{t('Approved')}</Badge>
     )
   return (
-    <Badge variant='secondary' className='text-rose-600'>
+    <Badge variant='secondary' className='text-destructive'>
       {t('Rejected')}
     </Badge>
   )

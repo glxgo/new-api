@@ -22,10 +22,12 @@ import { ROLE } from '@/lib/roles'
 import { Dividend } from '@/features/dividend'
 
 export const Route = createFileRoute('/_authenticated/dividend/')({
-  // Dividend account is admin+ only.
+  // Commission/dividend account: agent and admin+. Agents can withdraw
+  // commission but hold no other admin permissions (see CanWithdrawDividend).
   beforeLoad: () => {
     const { auth } = useAuthStore.getState()
-    if (!auth.user || auth.user.role < ROLE.ADMIN) {
+    const role = auth.user?.role ?? 0
+    if (!auth.user || (role !== ROLE.AGENT && role < ROLE.ADMIN)) {
       throw redirect({ to: '/403' })
     }
   },

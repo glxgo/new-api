@@ -131,7 +131,7 @@ export function LogStatCards(props: LogStatCardsProps) {
         return (
           <div
             key={it.title}
-            className='group border-border bg-card rounded-xl border p-4 shadow-sm transition-all duration-300 hover:scale-[1.03] hover:shadow-md'
+            className='group border-border bg-card hover:border-primary/25 rounded-xl border p-4 transition-[border-color,transform] duration-200 hover:-translate-y-0.5'
           >
             <div className='flex items-center gap-2'>
               <Icon className='text-muted-foreground/70 size-3.5 shrink-0' />
@@ -152,7 +152,7 @@ export function LogStatCards(props: LogStatCardsProps) {
               </div>
             )}
 
-            {/* 能量条：默认 50%，hover 充到 80%（模仿 suning dashboard）*/}
+            {/* A restrained progress cue; color communicates series identity. */}
             <div className='bg-muted mt-3 h-1.5 w-full overflow-hidden rounded-full'>
               <div
                 className={`h-full w-full origin-left scale-x-50 rounded-full bg-gradient-to-r ${accent} transition-transform duration-500 ease-out group-hover:scale-x-[0.8]`}

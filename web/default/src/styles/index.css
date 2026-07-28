@@ -78,6 +78,49 @@ For commercial licensing, please contact support@quantumnous.com
   }
 }
 
+@layer components {
+  /* Authenticated product shell: editorial hierarchy without changing the
+   * public/home/auth layouts that will be redesigned separately. */
+  [data-authenticated-shell] [data-slot='sidebar-inset'] {
+    background-color: var(--background);
+  }
+
+  [data-authenticated-shell] [data-slot='card'] {
+    border-color: color-mix(in oklch, var(--border) 88%, transparent);
+    box-shadow: none;
+  }
+
+  [data-authenticated-shell] [data-slot='card-title'] {
+    font-family: var(--font-serif);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+  }
+
+  [data-authenticated-shell] [data-slot='table-container'] {
+    background-color: var(--card);
+  }
+
+  [data-authenticated-shell] [data-slot='dialog-footer'],
+  [data-authenticated-shell] [data-slot='card-footer'] {
+    background-color: color-mix(in oklch, var(--muted) 72%, var(--card));
+  }
+}
+
+/* Sonner does not expose a dedicated accent-strip variable. Keep the surface
+ * warm white and encode status through a narrow semantic edge + icon. */
+[data-sonner-toast][data-type='success'] {
+  border-inline-start: 3px solid var(--success) !important;
+}
+[data-sonner-toast][data-type='info'] {
+  border-inline-start: 3px solid var(--info) !important;
+}
+[data-sonner-toast][data-type='warning'] {
+  border-inline-start: 3px solid var(--warning) !important;
+}
+[data-sonner-toast][data-type='error'] {
+  border-inline-start: 3px solid var(--destructive) !important;
+}
+
 /* Vercel Geist-style skeleton shimmer */
 .skeleton-shimmer {
   background: linear-gradient(

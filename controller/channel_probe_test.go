@@ -68,9 +68,9 @@ func TestClassifyGroupProbeStatusByRemainingHealthyChannels(t *testing.T) {
 			expected: model.ChannelProbeStatusHealthy,
 		},
 		{
-			name:     "one remaining channel is degraded",
+			name:     "one remaining channel keeps the group healthy",
 			summary:  &perfmetrics.GroupProbeSummary{TotalChannels: 3, CheckedChannels: 3, HealthyChannels: 1, UnhealthyChannels: 2},
-			expected: model.ChannelProbeStatusDegraded,
+			expected: model.ChannelProbeStatusHealthy,
 		},
 		{
 			name:     "all confirmed failures are unhealthy",
@@ -127,7 +127,7 @@ func TestBuildGroupProbeSummariesKeepsSyntheticHealthSeparate(t *testing.T) {
 
 	summaries, err := buildGroupProbeSummaries(24, []string{"gpt-plus", "shared"})
 	require.NoError(t, err)
-	require.Equal(t, "degraded", summaries["gpt-plus"].Status)
+	require.Equal(t, "healthy", summaries["gpt-plus"].Status)
 	require.Equal(t, 2, summaries["gpt-plus"].TotalChannels)
 	require.Equal(t, 2, summaries["gpt-plus"].CheckedChannels)
 	require.Equal(t, 1, summaries["gpt-plus"].HealthyChannels)
@@ -136,7 +136,7 @@ func TestBuildGroupProbeSummariesKeepsSyntheticHealthSeparate(t *testing.T) {
 	require.EqualValues(t, 800, summaries["gpt-plus"].AvgLatencyMs)
 	require.Equal(t, "upstream", summaries["gpt-plus"].LastErrorCategory)
 
-	require.Equal(t, "degraded", summaries["shared"].Status)
+	require.Equal(t, "healthy", summaries["shared"].Status)
 	require.Equal(t, 2, summaries["shared"].TotalChannels)
 	require.Equal(t, 1, summaries["shared"].CheckedChannels)
 }

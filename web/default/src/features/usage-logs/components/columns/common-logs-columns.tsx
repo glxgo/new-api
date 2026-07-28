@@ -108,6 +108,69 @@ const timingBgMap: Record<string, string> = {
     'border border-border/60 bg-muted/30 dark:border-border/40 dark:bg-muted/20',
 }
 
+const EFFORT_BADGE_CONFIG: Record<
+  string,
+  { labelKey: string; className: string }
+> = {
+  max: {
+    labelKey: 'EffortMax',
+    className:
+      'border border-purple-500/30 bg-purple-500/15 text-purple-600 dark:text-purple-400',
+  },
+  xhigh: {
+    labelKey: 'EffortXhigh',
+    className:
+      'border border-orange-500/30 bg-orange-500/15 text-orange-600 dark:text-orange-400',
+  },
+  high: {
+    labelKey: 'EffortHigh',
+    className:
+      'border border-blue-500/30 bg-blue-500/15 text-blue-600 dark:text-blue-400',
+  },
+  medium: {
+    labelKey: 'EffortMedium',
+    className:
+      'border border-emerald-500/30 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
+  },
+  low: {
+    labelKey: 'EffortLow',
+    className:
+      'border border-slate-500/25 bg-slate-500/10 text-slate-600 dark:text-slate-400',
+  },
+  minimal: {
+    labelKey: 'EffortMinimal',
+    className:
+      'border border-slate-500/20 bg-slate-500/10 text-slate-500 dark:text-slate-500',
+  },
+}
+
+function EffortBadge({ effort }: { effort?: string | null }) {
+  const { t } = useTranslation()
+  const key = effort?.toLowerCase()
+  if (!key || key === 'none') return null
+  const cfg = EFFORT_BADGE_CONFIG[key]
+  if (!cfg) return null
+  return (
+    <span
+      className={cn(
+        'inline-flex w-fit items-center rounded px-1.5 py-0.5 text-[10px] leading-none font-medium',
+        cfg.className
+      )}
+    >
+      {t(cfg.labelKey)}
+    </span>
+  )
+}
+
+function FastBadge({ serviceTier }: { serviceTier?: string | null }) {
+  if (serviceTier !== 'priority') return null
+  return (
+    <span className='inline-flex w-fit items-center rounded border border-rose-500/40 bg-rose-500/15 px-1.5 py-0.5 text-[10px] leading-none font-semibold text-rose-600 dark:text-rose-400'>
+      FAST
+    </span>
+  )
+}
+
 function getFirstTokenSeconds(log: UsageLog): number | null {
   const firstTokenMs = resolveFirstTokenMs(parseLogOther(log.other))
   return firstTokenMs != null ? firstTokenMs / 1000 : null
@@ -445,6 +508,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             </TooltipProvider>
           )
         },
+        size: 120,
       },
       {
         id: 'user',
@@ -499,6 +563,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             </button>
           )
         },
+        size: 135,
       }
     )
   }
@@ -596,7 +661,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         </div>
       )
     },
-    size: 160,
+    size: 120,
   })
   columns.push(
     {
@@ -607,6 +672,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         if (!isDisplayableLogType(log.type)) return null
 
         const modelInfo = formatModelName(log)
+        const other = parseLogOther(log.other)
 
         return (
           <div className='flex w-fit flex-col gap-0.5'>
@@ -614,58 +680,14 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
               modelName={modelInfo.name}
               actualModel={modelInfo.actualModel}
             />
+            <div className='flex flex-wrap gap-1'>
+              <EffortBadge effort={other?.reasoning_effort} />
+              <FastBadge serviceTier={other?.service_tier} />
+            </div>
           </div>
         )
       },
       meta: { mobileTitle: true },
-    },
-    {
-      id: 'stream_status',
-      header: t('Stream Status'),
-      cell: ({ row }) => {
-        const log = row.original
-        if (!isTimingLogType(log.type) || !log.is_stream) {
-          return <span className='text-muted-foreground text-xs'>N/A</span>
-        }
-        const other = parseLogOther(log.other)
-        const streamStatus = other?.stream_status
-        const successful = streamStatus?.status
-          ? streamStatus.status === 'ok'
-          : log.type !== LOG_TYPE_ENUM.ERROR
-
-        return (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <span>
-                    <StatusBadge
-                      label={t(successful ? 'Success' : 'Failed')}
-                      variant={successful ? 'success' : 'danger'}
-                      size='sm'
-                      copyable={false}
-                      className='rounded-md'
-                    />
-                  </span>
-                }
-              />
-              {!successful && streamStatus && (
-                <TooltipContent>
-                  <div className='space-y-0.5 text-xs'>
-                    <p>{streamStatus.end_reason || 'unknown'}</p>
-                    {(streamStatus.error_count ?? 0) > 0 && (
-                      <p>
-                        {t('Soft Errors')}: {streamStatus.error_count}
-                      </p>
-                    )}
-                  </div>
-                </TooltipContent>
-              )}
-            </Tooltip>
-          </TooltipProvider>
-        )
-      },
-      size: 104,
     },
     {
       id: 'first_token_time',
@@ -703,24 +725,99 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         if (!isTimingLogType(log.type)) return null
 
         const outputSpeed = getOutputSpeed(log)
-        if (outputSpeed == null) {
-          return <span className='text-muted-foreground text-xs'>N/A</span>
-        }
+        const other = parseLogOther(log.other)
+        const streamStatus = other?.stream_status
+        const showStream = log.is_stream
+        const streamSuccessful = showStream
+          ? streamStatus?.status
+            ? streamStatus.status === 'ok'
+            : log.type !== LOG_TYPE_ENUM.ERROR
+          : false
+        const throughputVariant =
+          outputSpeed != null ? getThroughputColor(outputSpeed) : null
 
-        const variant = getThroughputColor(outputSpeed)
-        const digits = outputSpeed >= 10 ? 0 : 1
         return (
-          <StatusBadge
-            label={`${outputSpeed.toFixed(digits)} t/s`}
-            variant={variant as StatusBadgeProps['variant']}
-            size='sm'
-            showDot={false}
-            copyable={false}
-            className={cn('rounded-md font-mono', timingBgMap[variant])}
-          />
+          <div className='flex flex-col items-center gap-0.5'>
+            {outputSpeed == null ? (
+              <span className='text-muted-foreground text-xs'>N/A</span>
+            ) : (
+              <StatusBadge
+                label={`${outputSpeed.toFixed(outputSpeed >= 10 ? 0 : 1)} t/s`}
+                variant={throughputVariant as StatusBadgeProps['variant']}
+                size='sm'
+                showDot={false}
+                copyable={false}
+                className={cn(
+                  'rounded-md font-mono',
+                  timingBgMap[throughputVariant ?? 'neutral']
+                )}
+              />
+            )}
+            {showStream && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <span>
+                        <StatusBadge
+                          label={t(
+                            streamSuccessful ? 'StreamSuccess' : 'StreamFailed'
+                          )}
+                          variant={streamSuccessful ? 'success' : 'danger'}
+                          size='sm'
+                          copyable={false}
+                          className={cn(
+                            'h-3.5 rounded-full px-0.5 text-[9px]',
+                            timingBgMap[streamSuccessful ? 'success' : 'danger']
+                          )}
+                        />
+                      </span>
+                    }
+                  />
+                  {!streamSuccessful && streamStatus && (
+                    <TooltipContent>
+                      <div className='space-y-0.5 text-xs'>
+                        <p>{streamStatus.end_reason || 'unknown'}</p>
+                        {(streamStatus.error_count ?? 0) > 0 && (
+                          <p>
+                            {t('Soft Errors')}: {streamStatus.error_count}
+                          </p>
+                        )}
+                      </div>
+                    </TooltipContent>
+                  )}
+                </Tooltip>
+              </TooltipProvider>
+            )}
+          </div>
         )
       },
       size: 112,
+    },
+    {
+      id: 'total_time',
+      header: t('Total Time'),
+      cell: ({ row }) => {
+        const log = row.original
+        if (!isTimingLogType(log.type)) return null
+
+        const totalSeconds = log.use_time
+        if (totalSeconds == null) {
+          return <span className='text-muted-foreground text-xs'>N/A</span>
+        }
+
+        return (
+          <StatusBadge
+            label={formatUseTime(totalSeconds)}
+            variant='success'
+            size='sm'
+            showDot={false}
+            copyable={false}
+            className={cn('rounded-md font-mono', timingBgMap.success)}
+          />
+        )
+      },
+      size: 110,
     },
 
     {
@@ -821,6 +918,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           </div>
         )
       },
+      size: 130,
     },
 
     {
@@ -878,7 +976,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           </>
         )
       },
-      size: 180,
+      size: 150,
       maxSize: 200,
     }
   )

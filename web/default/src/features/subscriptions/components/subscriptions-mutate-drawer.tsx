@@ -23,7 +23,6 @@ import { CalendarClock, CreditCard, RefreshCw, Settings2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Markdown } from '@/components/ui/markdown'
 import {
   Form,
   FormControl,
@@ -34,6 +33,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { Markdown } from '@/components/ui/markdown'
 import {
   Select,
   SelectContent,
@@ -67,7 +67,11 @@ import {
   createWaffoPancakeSubscriptionProduct,
   listWaffoPancakeSubscriptionProductOptions,
 } from '../api'
-import { getDurationUnitOptions, getResetPeriodOptions } from '../constants'
+import {
+  getDurationUnitOptions,
+  getResetPeriodOptions,
+  getPlanVersionOptions,
+} from '../constants'
 import {
   getPlanFormSchema,
   PLAN_FORM_DEFAULTS,
@@ -241,6 +245,7 @@ export function SubscriptionsMutateDrawer({
 
   const durationUnitOpts = getDurationUnitOptions(t)
   const resetPeriodOpts = getResetPeriodOptions(t)
+  const planVersionOpts = getPlanVersionOptions(t)
 
   return (
     <Sheet
@@ -307,6 +312,88 @@ export function SubscriptionsMutateDrawer({
                     <FormMessage />
                   </FormItem>
                 )}
+              />
+
+              <FormField
+                control={form.control}
+                name='suitable_for'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Suitable For')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        placeholder={t('e.g. heavy users / teams')}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='model_limit'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Model Limit')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        placeholder={t('e.g. GPT-5.6 / Claude full series')}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='plan_version'
+                render={({ field }) => {
+                  const versionValue = field.value || '__none__'
+                  return (
+                    <FormItem>
+                      <FormLabel>{t('Plan Version')}</FormLabel>
+                      <Select
+                        items={[
+                          { value: '__none__', label: t('No Version') },
+                          ...planVersionOpts.map((o) => ({
+                            value: o.value,
+                            label: o.label,
+                          })),
+                        ]}
+                        onValueChange={field.onChange}
+                        value={versionValue}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent alignItemWithTrigger={false}>
+                          <SelectGroup>
+                            <SelectItem value='__none__'>
+                              {t('No Version')}
+                            </SelectItem>
+                            {planVersionOpts.map((o) => (
+                              <SelectItem key={o.value} value={o.value}>
+                                {o.label}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        {t(
+                          'Card border color & badge vary by version (starter=bronze / advanced=silver / pro=gold / enterprise=black-gold)'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )
+                }}
               />
 
               <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
@@ -414,7 +501,9 @@ export function SubscriptionsMutateDrawer({
                   name='allowed_group'
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t('Allowed Group (Subscription Lock)')}</FormLabel>
+                      <FormLabel>
+                        {t('Allowed Group (Subscription Lock)')}
+                      </FormLabel>
                       <Select
                         items={[
                           { value: '__none__', label: t('No Limit') },
@@ -450,6 +539,25 @@ export function SubscriptionsMutateDrawer({
                           'Subscription quota only usable in this group; wallet unaffected. Mutually exclusive with Upgrade Group.'
                         )}
                       </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name='number_pool'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Number Pool')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          placeholder={t(
+                            'e.g. flagship pool / high-quality pool'
+                          )}
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -517,8 +625,10 @@ export function SubscriptionsMutateDrawer({
                         <textarea
                           {...field}
                           rows={5}
-                          className='border-input bg-background flex min-h-[80px] w-full rounded-md border px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-                          placeholder={t('Detailed description shown when user clicks Subscribe')}
+                          className='border-input bg-background placeholder:text-muted-foreground focus-visible:ring-ring flex min-h-[80px] w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:outline-none'
+                          placeholder={t(
+                            'Detailed description shown when user clicks Subscribe'
+                          )}
                         />
                       </FormControl>
                       <FormDescription>

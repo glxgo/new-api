@@ -144,7 +144,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		contains, words := service.CheckSensitiveText(meta.CombineText)
 		if contains {
 			logger.LogWarn(c, fmt.Sprintf("user sensitive words detected: %s", strings.Join(words, ", ")))
-			newAPIError = types.NewError(err, types.ErrorCodeSensitiveWordsDetected)
+			newAPIError = types.NewError(fmt.Errorf("您的请求触发了拦截词，已被拦截，如有疑问请联系管理员"), types.ErrorCodeSensitiveWordsDetected)
 			return
 		}
 	}
@@ -741,12 +741,15 @@ func RelayTask(c *gin.Context) {
 		task.PrivateData.SubscriptionId = relayInfo.SubscriptionId
 		task.PrivateData.TokenId = relayInfo.TokenId
 		task.PrivateData.BillingContext = &model.TaskBillingContext{
-			ModelPrice:      relayInfo.PriceData.ModelPrice,
-			GroupRatio:      relayInfo.PriceData.GroupRatioInfo.GroupRatio,
-			ModelRatio:      relayInfo.PriceData.ModelRatio,
-			OtherRatios:     relayInfo.PriceData.OtherRatios,
-			OriginModelName: relayInfo.OriginModelName,
-			PerCallBilling:  common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
+			ModelPrice:          relayInfo.PriceData.ModelPrice,
+			GroupRatio:          relayInfo.PriceData.GroupRatioInfo.GroupRatio,
+			ModelRatio:          relayInfo.PriceData.ModelRatio,
+			OtherRatios:         relayInfo.PriceData.OtherRatios,
+			OriginModelName:     relayInfo.OriginModelName,
+			PerCallBilling:      common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
+			ChannelId:           relayInfo.ChannelId,
+			ChannelCostRatioPPM: relayInfo.ChannelCostRatioPPM,
+			BillingRequestId:    relayInfo.RequestId,
 		}
 		task.Quota = result.Quota
 		task.Data = result.TaskData

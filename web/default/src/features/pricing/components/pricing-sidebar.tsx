@@ -106,7 +106,9 @@ function FilterChip(props: {
       )}
       title={props.option.label}
     >
-      {props.option.icon && <span className='shrink-0'>{props.option.icon}</span>}
+      {props.option.icon && (
+        <span className='shrink-0'>{props.option.icon}</span>
+      )}
       <span className='truncate'>{props.option.label}</span>
       {(props.option.suffix || props.option.count != null) && (
         <span className='bg-muted text-muted-foreground rounded-full px-1.5 py-0.5 text-xs leading-none'>
@@ -119,10 +121,15 @@ function FilterChip(props: {
 
 function FilterSection(props: FilterSectionProps) {
   return (
-    <Collapsible defaultOpen className='border-border/80 border-b py-4 first:pt-0'>
+    <Collapsible
+      defaultOpen
+      className='border-border/80 border-b py-4 first:pt-0'
+    >
       <CollapsibleTrigger className='group flex w-full items-center justify-between gap-3 text-left'>
-        <span className='text-foreground text-base font-bold'>{props.title}</span>
-        <ChevronUp className='text-muted-foreground size-4 transition-transform group-data-[panel-open]:rotate-0 group-data-[panel-closed]:rotate-180' />
+        <span className='text-foreground text-base font-bold'>
+          {props.title}
+        </span>
+        <ChevronUp className='text-muted-foreground size-4 transition-transform group-data-[panel-closed]:rotate-180 group-data-[panel-open]:rotate-0' />
       </CollapsibleTrigger>
       <CollapsibleContent className='pt-3'>
         <div className='flex flex-wrap gap-2'>
@@ -155,7 +162,10 @@ export function PricingSidebar(props: PricingSidebarProps) {
       .map((vendor) => ({
         value: vendor.name,
         label: vendor.name,
-        count: countBy(props.models, (model) => model.vendor_name === vendor.name),
+        count: countBy(
+          props.models,
+          (model) => model.vendor_name === vendor.name
+        ),
         icon: vendor.icon ? getLobeIcon(vendor.icon, 16) : undefined,
       }))
       .filter((vendor) => vendor.count > 0),
@@ -234,17 +244,19 @@ export function PricingSidebar(props: PricingSidebarProps) {
             <h1 className='text-[clamp(1.75rem,4vw,2.5rem)] leading-none font-bold tracking-tight'>
               {props.title}
             </h1>
-            <span className='rounded-lg bg-orange-400 px-2.5 py-1 text-sm font-bold text-white'>
+            <span className='bg-warning rounded-lg px-2.5 py-1 text-sm font-bold text-white'>
               1¥ = 1$
             </span>
           </div>
           {props.subtitle && (
-            <p className='text-muted-foreground mt-2 text-sm'>{props.subtitle}</p>
+            <p className='text-muted-foreground mt-2 text-sm'>
+              {props.subtitle}
+            </p>
           )}
         </div>
       )}
 
-      <div className='rounded-3xl border bg-background/95 p-4 shadow-sm'>
+      <div className='bg-background/95 rounded-3xl border p-4 shadow-sm'>
         <div className='mb-3 flex items-start justify-between gap-3'>
           <div>
             <h2 className='text-xl font-bold'>{t('Filter')}</h2>

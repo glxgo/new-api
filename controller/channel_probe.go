@@ -100,11 +100,26 @@ func sanitizeProbeError(message string) string {
 }
 
 func executeChannelProbe(channel *model.Channel, testUserID int) (*model.ChannelProbeState, error) {
+	// 探测模型：优先 TestModel，否则 GetModels()[0]；都没有则跳过该渠道（不计失败）
+	testModel := ""
+	if channel.TestModel != nil && strings.TrimSpace(*channel.TestModel) != "" {
+		testModel = strings.TrimSpace(*channel.TestModel)
+	} else {
+		models := channel.GetModels()
+		if len(models) > 0 {
+			testModel = strings.TrimSpace(models[0])
+		}
+	}
+	if testModel == "" {
+		// 该渠道既无 TestModel 也无模型列表，跳过探测（不算失败，不影响健康状态）
+		return nil, nil
+	}
+
 	settings := operation_setting.GetMonitorSetting()
 	result := testChannelWithOptions(
 		channel,
 		testUserID,
-		"",
+		testModel,
 		"",
 		shouldUseStreamForAutomaticChannelTest(channel),
 		channelTestOptions{
@@ -307,14 +322,8 @@ func classifyGroupProbeStatus(summary *perfmetrics.GroupProbeSummary) string {
 	if summary == nil || summary.TotalChannels < 1 || summary.CheckedChannels < 1 {
 		return "unknown"
 	}
-	if summary.HealthyChannels == summary.TotalChannels {
+	if summary.HealthyChannels >= 1 {
 		return model.ChannelProbeStatusHealthy
-	}
-	if summary.HealthyChannels >= 2 {
-		return model.ChannelProbeStatusHealthy
-	}
-	if summary.HealthyChannels == 1 {
-		return model.ChannelProbeStatusDegraded
 	}
 	if summary.CheckedChannels == summary.TotalChannels &&
 		summary.UnhealthyChannels == summary.TotalChannels {

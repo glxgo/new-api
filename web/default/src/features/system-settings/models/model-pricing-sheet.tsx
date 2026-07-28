@@ -536,7 +536,15 @@ export const ModelPricingEditorPanel = forwardRef<
 
       return data
     },
-    [billingExpr, laneEnabled, lanePrices, mulState, pricingMode, promptPrice, requestRuleExpr]
+    [
+      billingExpr,
+      laneEnabled,
+      lanePrices,
+      mulState,
+      pricingMode,
+      promptPrice,
+      requestRuleExpr,
+    ]
   )
 
   useImperativeHandle(
@@ -756,7 +764,7 @@ export const ModelPricingEditorPanel = forwardRef<
             </div>
           </div>
           {showActions && (
-            <div className='bg-background/95 supports-[backdrop-filter]:bg-background/80 shrink-0 border-t p-3 backdrop-blur'>
+            <div className='bg-background shrink-0 border-t p-3'>
               <div className='flex flex-col-reverse gap-2 sm:flex-row sm:justify-end'>
                 {onSave && (
                   <Button

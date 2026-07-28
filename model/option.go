@@ -207,6 +207,7 @@ func InitOptionMap() {
 
 	common.OptionMapRWMutex.Unlock()
 	loadOptionsFromDatabase()
+	migrateLegacySensitiveWords()
 	migrateGroupModelPricingV1()
 }
 
@@ -311,6 +312,24 @@ func migrateGroupModelPricingV1() {
 
 func optionKeyWhereClause() string {
 	return commonKeyCol + " = ?"
+}
+
+// migrateLegacySensitiveWords upgrades only the untouched historical
+// placeholder. Explicit operator-managed lists, including an intentionally
+// empty list, are preserved.
+func migrateLegacySensitiveWords() {
+	var option Option
+	if DB.Where(optionKeyWhereClause(), "SensitiveWords").First(&option).Error != nil {
+		return
+	}
+	if strings.TrimSpace(option.Value) != "test_sensitive" {
+		return
+	}
+	if err := UpdateOption("SensitiveWords", strings.Join(setting.DefaultJailbreakWords, "\n")); err != nil {
+		common.SysError("failed to migrate legacy sensitive words: " + err.Error())
+		return
+	}
+	common.SysLog("[sensitive-words-migration] replaced legacy placeholder with the default jailbreak blocklist")
 }
 
 func updateOptionMap(key string, value string) (err error) {

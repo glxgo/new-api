@@ -124,9 +124,7 @@ export function ModalitiesMatrix(props: {
           cellClassName: (row: { label: string; set: Set<Modality> }) =>
             cn(
               'border-l px-3 py-2 text-center',
-              row.set.has(modality)
-                ? 'bg-emerald-50/40 dark:bg-emerald-500/10'
-                : 'bg-background'
+              row.set.has(modality) ? 'bg-success/10' : 'bg-background'
             ),
           cell: (row: { label: string; set: Set<Modality> }) => {
             const enabled = row.set.has(modality)
@@ -135,9 +133,7 @@ export function ModalitiesMatrix(props: {
               <span
                 className={cn(
                   'inline-flex items-center justify-center',
-                  enabled
-                    ? 'text-emerald-700 dark:text-emerald-300'
-                    : 'text-muted-foreground/40'
+                  enabled ? 'text-success' : 'text-muted-foreground/40'
                 )}
                 aria-label={
                   enabled

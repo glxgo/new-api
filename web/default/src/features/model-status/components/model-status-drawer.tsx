@@ -19,14 +19,14 @@ For commercial licensing, please contact support@quantumnous.com
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { Dialog } from '@/components/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Dialog } from '@/components/dialog'
 import { GroupBadge } from '@/components/group-badge'
 import { getPerfMetrics } from '@/features/performance-metrics/api'
 import type { PerformanceGroup } from '@/features/performance-metrics/types'
-import type { PricingModel } from '@/features/pricing/types'
 import { UptimeSparkline } from '@/features/pricing/components/model-details-uptime-sparkline'
 import type { UptimeDayPoint } from '@/features/pricing/lib/mock-stats'
+import type { PricingModel } from '@/features/pricing/types'
 
 type Props = {
   open: boolean
@@ -103,7 +103,7 @@ export function ModelStatusDrawer({ open, onOpenChange, model }: Props) {
                 <div className='text-[10px] tracking-wide uppercase'>
                   {t('Latency')}
                 </div>
-                <div className='font-medium text-foreground'>
+                <div className='text-foreground font-medium'>
                   {group.avg_latency_ms > 0
                     ? `${(group.avg_latency_ms / 1000).toFixed(2)}s`
                     : '—'}
@@ -113,24 +113,30 @@ export function ModelStatusDrawer({ open, onOpenChange, model }: Props) {
                 <div className='text-[10px] tracking-wide uppercase'>
                   {t('TTFT')}
                 </div>
-                <div className='font-medium text-foreground'>
-                  {group.avg_ttft_ms > 0 ? `${(group.avg_ttft_ms / 1000).toFixed(2)}s` : '—'}
+                <div className='text-foreground font-medium'>
+                  {group.avg_ttft_ms > 0
+                    ? `${(group.avg_ttft_ms / 1000).toFixed(2)}s`
+                    : '—'}
                 </div>
               </div>
               <div>
                 <div className='text-[10px] tracking-wide uppercase'>
                   {t('Throughput')}
                 </div>
-                <div className='font-medium text-foreground'>
-                  {group.avg_tps > 0 ? `${group.avg_tps.toFixed(2)} tok/s` : '—'}
+                <div className='text-foreground font-medium'>
+                  {group.avg_tps > 0
+                    ? `${group.avg_tps.toFixed(2)} tok/s`
+                    : '—'}
                 </div>
               </div>
               <div>
                 <div className='text-[10px] tracking-wide uppercase'>
                   {t('Cache')}
                 </div>
-                <div className='font-medium text-foreground'>
-                  {group.cache_rate > 0 ? `${group.cache_rate.toFixed(0)}%` : '—'}
+                <div className='text-foreground font-medium'>
+                  {group.cache_rate > 0
+                    ? `${group.cache_rate.toFixed(0)}%`
+                    : '—'}
                 </div>
               </div>
             </div>

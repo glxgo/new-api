@@ -201,7 +201,7 @@ func getModelFromJSONBody(c *gin.Context) (*ModelRequest, error) {
 		return nil, err
 	}
 	if !gjson.ValidBytes(requestBody) {
-		return nil, errors.New("invalid JSON request body")
+		return nil, errors.New(i18n.T(c, i18n.MsgDistributorInvalidJsonBody))
 	}
 
 	values := gjson.GetManyBytes(requestBody, "model", "group")
@@ -230,7 +230,7 @@ func getJSONStringValue(result gjson.Result, field string) (string, error) {
 		return "", nil
 	}
 	if result.Type != gjson.String {
-		return "", fmt.Errorf("field %s must be a string", field)
+		return "", fmt.Errorf(i18n.Translate(i18n.LangZhCN, i18n.MsgDistributorFieldMustBeString, map[string]any{"Field": field}))
 	}
 	return result.String(), nil
 }
@@ -429,7 +429,7 @@ func getTaskOriginModelName(c *gin.Context) string {
 func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, modelName string) *types.NewAPIError {
 	c.Set("original_model", modelName) // for retry
 	if channel == nil {
-		return types.NewError(errors.New("channel is nil"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		return types.NewError(errors.New(i18n.T(c, i18n.MsgDistributorChannelNil)), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
 	common.SetContextKey(c, constant.ContextKeyChannelId, channel.Id)
 	common.SetContextKey(c, constant.ContextKeyChannelName, channel.Name)
@@ -452,6 +452,7 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	common.SetContextKey(c, constant.ContextKeyChannelStatusCodeMapping, channel.GetStatusCodeMapping())
 	c.Set("channel_concurrency_limit", channel.ConcurrencyLimit)
 	c.Set("channel_rpm_limit", channel.RPMLimit)
+	c.Set("channel_cost_ratio_ppm", channel.CostRatioPPM)
 
 	key, index, newAPIError := channel.GetNextEnabledKey()
 	if newAPIError != nil {

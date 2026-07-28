@@ -28,7 +28,12 @@ interface CountUpProps {
 
 // 数字从上次值滚动到 value（easeOutCubic），用于钱包余额"跳动"效果。
 // 首次挂载从 0 滚到 value。尊重 prefers-reduced-motion（直接显示终值）。
-export function CountUp({ value, duration = 1200, format, className }: CountUpProps) {
+export function CountUp({
+  value,
+  duration = 1200,
+  format,
+  className,
+}: CountUpProps) {
   const [display, setDisplay] = useState(0)
   const fromRef = useRef(0)
   const rafRef = useRef<number>(0)

@@ -27,13 +27,11 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { StaticDataTable } from '@/components/data-table'
-import { useAuthStore } from '@/stores/auth-store'
-import { ROLE } from '@/lib/roles'
-import { useSystemOptions } from '../hooks/use-system-options'
 import { getGroupPricingPreview } from '../api'
+import { useSystemOptions } from '../hooks/use-system-options'
 
 type PreviewItem = {
   model: string
@@ -56,17 +54,10 @@ function formatMoney(n: number | undefined | null): string {
   return `$${n.toFixed(6)}`
 }
 
-function formatPercent(n: number | undefined | null): string {
-  if (n === undefined || n === null) return '-'
-  return `${(n * 100).toFixed(1)}%`
-}
-
-// GroupPricingPreviewCard 分组定价预览表: 展示每个模型在某分组下的实际售价/成本/毛利,
-// 用于运营核对「官方价 × 分组倍率」后有没有配错。成本/毛利仅 Root 可见。
+// GroupPricingPreviewCard previews sale pricing. Cost now depends on the final
+// selected channel and therefore cannot be represented by one group-level value.
 export function GroupPricingPreviewCard() {
   const { t } = useTranslation()
-  const isRoot =
-    (useAuthStore((s) => s.auth.user)?.role ?? 0) >= ROLE.SUPER_ADMIN
   const { data: resp } = useSystemOptions()
 
   const groups = useMemo(() => {
@@ -112,17 +103,15 @@ export function GroupPricingPreviewCard() {
   }, [preview, search, statusFilter])
 
   const saleRatio = preview?.sale_ratio
-  const costRatio = preview?.cost_ratio
-  const costRatioSource = preview?.cost_ratio_source
 
   return (
     <Card className='shadow-sm ring-0'>
-      <CardHeader className='border-b bg-muted/20'>
+      <CardHeader className='bg-muted/20 border-b'>
         <div>
           <CardTitle>{t('Group model pricing preview')}</CardTitle>
           <CardDescription>
             {t(
-              'Verify each model actual sale price and cost under the selected group (official price × group ratio).'
+              'Verify each model actual sale price under the selected group. Platform cost is configured per channel.'
             )}
           </CardDescription>
         </div>
@@ -162,7 +151,6 @@ export function GroupPricingPreviewCard() {
             >
               <option value='all'>{t('All')}</option>
               <option value='normal'>{t('Normal')}</option>
-              <option value='loss'>{t('Loss')}</option>
               <option value='missing_price'>{t('Missing price')}</option>
               <option value='no_enabled_channel'>
                 {t('No available channel')}
@@ -186,13 +174,6 @@ export function GroupPricingPreviewCard() {
             <span>
               {t('Sale ratio')}: <strong>{saleRatio}</strong>
             </span>
-            {isRoot && costRatio !== undefined && (
-              <span>
-                {t('Cost ratio')}: <strong>{costRatio}</strong>
-                {costRatioSource === 'inherited' &&
-                  ` (${t('Inherit sale ratio')})`}
-              </span>
-            )}
           </div>
         )}
 
@@ -267,7 +248,8 @@ export function GroupPricingPreviewCard() {
                         : row.billing_mode === 'expression'
                           ? undefined
                           : (row as PreviewItem).final_input_price_per_m
-                    const finalRequest = (row as PreviewItem).final_request_price
+                    const finalRequest = (row as PreviewItem)
+                      .final_request_price
                     return (
                       <span className='text-sm'>
                         {row.billing_mode === 'fixed'
@@ -279,58 +261,6 @@ export function GroupPricingPreviewCard() {
                     )
                   },
                 },
-                ...(isRoot
-                  ? [
-                      {
-                        id: 'cost',
-                        header: t('Actual cost'),
-                        className: 'w-28',
-                        cell: (row: PreviewItem) => {
-                          const cost =
-                            row.billing_mode === 'fixed'
-                              ? undefined
-                              : row.billing_mode === 'expression'
-                                ? undefined
-                                : (
-                                    row as PreviewItem & {
-                                      final_input_cost_per_m?: number
-                                    }
-                                  ).final_input_cost_per_m
-                          const finalRequestCost = (
-                            row as PreviewItem & {
-                              final_request_cost?: number
-                            }
-                          ).final_request_cost
-                          return (
-                            <span className='text-sm'>
-                              {row.billing_mode === 'fixed'
-                                ? formatMoney(finalRequestCost)
-                                : row.billing_mode === 'expression'
-                                  ? '-'
-                                  : `${formatMoney(cost)}/M`}
-                            </span>
-                          )
-                        },
-                      },
-                      {
-                        id: 'margin',
-                        header: t('Gross margin'),
-                        className: 'w-24',
-                        cell: (row: PreviewItem) => {
-                          const margin = (row as PreviewItem).gross_margin
-                          const loss =
-                            margin !== undefined && margin < 0
-                          return (
-                            <span
-                              className={`text-sm font-medium ${loss ? 'text-destructive' : ''}`}
-                            >
-                              {formatPercent(margin)}
-                            </span>
-                          )
-                        },
-                      },
-                    ]
-                  : []),
                 {
                   id: 'channels',
                   header: t('Channels'),
@@ -348,21 +278,19 @@ export function GroupPricingPreviewCard() {
                   header: t('Status'),
                   className: 'w-32',
                   cell: (row) => {
-                    const hasLoss = row.statuses.includes('loss')
                     const hasMissing = row.statuses.includes('missing_price')
-                    const hasNoChannel = row.statuses.includes(
-                      'no_enabled_channel'
-                    )
+                    const hasNoChannel =
+                      row.statuses.includes('no_enabled_channel')
                     return (
                       <span
-                        className={`text-xs ${hasLoss ? 'text-destructive' : hasMissing || hasNoChannel ? 'text-amber-600' : 'text-muted-foreground'}`}
+                        className={`text-xs ${hasMissing || hasNoChannel ? 'text-warning' : 'text-muted-foreground'}`}
                       >
                         {row.statuses
                           .map((s) =>
                             s === 'normal'
                               ? t('Normal')
                               : s === 'loss'
-                                ? t('Loss')
+                                ? t('Channel-dependent cost')
                                 : s === 'missing_price'
                                   ? t('Missing price')
                                   : s === 'no_enabled_channel'
@@ -385,11 +313,9 @@ export function GroupPricingPreviewCard() {
           )
         )}
 
-        {isRoot ? null : (
-          <p className='text-muted-foreground text-xs'>
-            {t('Cost is visible to super admin only')}
-          </p>
-        )}
+        <p className='text-muted-foreground text-xs'>
+          平台成本取决于请求最终成功渠道，本分组售价预览不再展示单一成本或毛利。
+        </p>
       </CardContent>
     </Card>
   )

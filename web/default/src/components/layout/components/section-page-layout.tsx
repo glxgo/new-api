@@ -100,10 +100,10 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
       <Main className='overflow-y-auto overscroll-y-contain sm:overflow-hidden'>
         <div
           className={cn(
-            'shrink-0 px-3 sm:px-4',
+            'border-border/80 shrink-0 border-b px-3 sm:px-5',
             editorial
               ? 'pt-5 pb-4 sm:pt-7 sm:pb-5'
-              : 'pt-3 pb-2.5 sm:pt-5 sm:pb-3'
+              : 'pt-4 pb-3.5 sm:pt-6 sm:pb-4'
           )}
         >
           {breadcrumb != null && (
@@ -118,9 +118,8 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
             <div className='min-w-0 flex-1'>
               <h2
                 className={cn(
-                  editorial
-                    ? 'font-serif text-2xl font-semibold tracking-[-0.025em] sm:text-3xl'
-                    : 'truncate text-base font-bold tracking-tight sm:text-lg'
+                  'font-serif text-2xl font-semibold tracking-[-0.025em] sm:text-3xl',
+                  !editorial && 'truncate'
                 )}
               >
                 {title}
@@ -148,8 +147,8 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
         <div
           className={
             props.fixedContent
-              ? 'min-h-0 flex-none overflow-visible px-3 pt-1 pb-3 sm:flex-1 sm:overflow-hidden sm:px-4 sm:pt-1.5 sm:pb-4'
-              : 'min-h-0 flex-none overflow-visible px-3 pt-1 pb-3 sm:flex-1 sm:overflow-auto sm:px-4 sm:pt-1.5 sm:pb-4'
+              ? 'min-h-0 flex-none overflow-visible px-3 pt-3 pb-3 sm:flex-1 sm:overflow-hidden sm:px-5 sm:pt-4 sm:pb-5'
+              : 'min-h-0 flex-none overflow-visible px-3 pt-3 pb-3 sm:flex-1 sm:overflow-auto sm:px-5 sm:pt-4 sm:pb-5'
           }
         >
           {content}
@@ -157,7 +156,7 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
 
         <div
           ref={setFooterContainer}
-          className='bg-background shrink-0 border-t px-3 py-2.5 empty:hidden sm:px-4 sm:py-3'
+          className='bg-background shrink-0 border-t px-3 py-2.5 empty:hidden sm:px-5 sm:py-3'
         />
       </Main>
     </PageFooterProvider>

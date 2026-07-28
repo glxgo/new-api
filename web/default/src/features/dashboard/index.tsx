@@ -25,6 +25,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SectionPageLayout } from '@/components/layout'
 import { FadeIn } from '@/components/page-transition'
+import { MySubscriptionsDetail } from '@/features/wallet/components/my-subscriptions-detail'
 import { ModelsChartPreferences } from './components/models/models-chart-preferences'
 import { ModelsFilter } from './components/models/models-filter-dialog'
 import { SummaryCards } from './components/overview/summary-cards'
@@ -56,12 +57,6 @@ const LazyLogStatCards = lazy(() =>
 const LazyModelCharts = lazy(() =>
   import('./components/models/model-charts').then((m) => ({
     default: m.ModelCharts,
-  }))
-)
-
-const LazyConsumptionDistributionChart = lazy(() =>
-  import('./components/models/consumption-distribution-chart').then((m) => ({
-    default: m.ConsumptionDistributionChart,
   }))
 )
 
@@ -260,6 +255,9 @@ export function Dashboard() {
                   />
                 </Suspense>
               </FadeIn>
+              <FadeIn delay={0.08}>
+                <MySubscriptionsDetail />
+              </FadeIn>
               {isAdmin && (
                 <FadeIn delay={0.05}>
                   <Suspense fallback={<PerformanceOverviewFallback />}>
@@ -272,20 +270,6 @@ export function Dashboard() {
                   <LazyTrafficLoadPanel
                     filters={modelFilters}
                     isAdmin={isAdmin}
-                  />
-                </Suspense>
-              </FadeIn>
-              <FadeIn delay={0.1}>
-                <Suspense fallback={<ModelChartsFallback />}>
-                  <LazyConsumptionDistributionChart
-                    data={modelData}
-                    loading={dataLoading}
-                    defaultChartType={
-                      chartPreferences.consumptionDistributionChart
-                    }
-                    timeGranularity={
-                      modelFilters.time_granularity || DEFAULT_TIME_GRANULARITY
-                    }
                   />
                 </Suspense>
               </FadeIn>

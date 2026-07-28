@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
@@ -46,7 +47,7 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 	if info.Action == constant.TaskActionRemix {
 		videoID := c.Param("video_id")
 		if strings.TrimSpace(videoID) == "" {
-			return service.TaskErrorWrapperLocal(fmt.Errorf("video_id is required"), "invalid_request", http.StatusBadRequest)
+			return service.TaskErrorWrapperLocal(fmt.Errorf(i18n.T(c, i18n.MsgTaskVideoIdRequired)), "invalid_request", http.StatusBadRequest)
 		}
 		info.OriginTaskID = videoID
 	}
@@ -61,7 +62,7 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 		return service.TaskErrorWrapper(err, "get_origin_task_failed", http.StatusInternalServerError)
 	}
 	if !exist {
-		return service.TaskErrorWrapperLocal(errors.New("task_origin_not_exist"), "task_not_exist", http.StatusBadRequest)
+		return service.TaskErrorWrapperLocal(errors.New(i18n.T(c, i18n.MsgTaskOriginNotExist)), "task_not_exist", http.StatusBadRequest)
 	}
 
 	// 从原始任务推导模型名称
@@ -85,7 +86,7 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 		return service.TaskErrorWrapperLocal(err, "channel_not_found", http.StatusBadRequest)
 	}
 	if ch.Status != common.ChannelStatusEnabled {
-		return service.TaskErrorWrapperLocal(errors.New("the channel of the origin task is disabled"), "task_channel_disable", http.StatusBadRequest)
+		return service.TaskErrorWrapperLocal(errors.New(i18n.T(c, i18n.MsgTaskChannelDisabled)), "task_channel_disable", http.StatusBadRequest)
 	}
 	info.LockedChannel = ch
 
@@ -151,7 +152,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	}
 	adaptor := GetTaskAdaptor(platform)
 	if adaptor == nil {
-		return nil, service.TaskErrorWrapperLocal(fmt.Errorf("invalid api platform: %s", platform), "invalid_api_platform", http.StatusBadRequest)
+		return nil, service.TaskErrorWrapperLocal(fmt.Errorf(i18n.T(c, i18n.MsgTaskInvalidApiPlatform, map[string]any{"Platform": platform})), "invalid_api_platform", http.StatusBadRequest)
 	}
 	adaptor.Init(info)
 	if taskErr := adaptor.ValidateRequestAndSetAction(c, info); taskErr != nil {
@@ -287,7 +288,7 @@ var fetchRespBuilders = map[int]func(c *gin.Context) (respBody []byte, taskResp 
 func RelayTaskFetch(c *gin.Context, relayMode int) (taskResp *dto.TaskError) {
 	respBuilder, ok := fetchRespBuilders[relayMode]
 	if !ok {
-		taskResp = service.TaskErrorWrapperLocal(errors.New("invalid_relay_mode"), "invalid_relay_mode", http.StatusBadRequest)
+		taskResp = service.TaskErrorWrapperLocal(errors.New(i18n.T(c, i18n.MsgTaskInvalidRelayMode)), "invalid_relay_mode", http.StatusBadRequest)
 	}
 
 	respBody, taskErr := respBuilder(c)
@@ -348,7 +349,7 @@ func sunoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *dt
 		return
 	}
 	if !exist {
-		taskResp = service.TaskErrorWrapperLocal(errors.New("task_not_exist"), "task_not_exist", http.StatusBadRequest)
+		taskResp = service.TaskErrorWrapperLocal(errors.New(i18n.T(c, i18n.MsgTaskNotExist)), "task_not_exist", http.StatusBadRequest)
 		return
 	}
 
@@ -372,7 +373,7 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 		return
 	}
 	if !exist {
-		taskResp = service.TaskErrorWrapperLocal(errors.New("task_not_exist"), "task_not_exist", http.StatusBadRequest)
+		taskResp = service.TaskErrorWrapperLocal(errors.New(i18n.T(c, i18n.MsgTaskNotExist)), "task_not_exist", http.StatusBadRequest)
 		return
 	}
 
@@ -388,7 +389,7 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 	if isOpenAIVideoAPI {
 		adaptor := GetTaskAdaptor(originTask.Platform)
 		if adaptor == nil {
-			taskResp = service.TaskErrorWrapperLocal(fmt.Errorf("invalid channel id: %d", originTask.ChannelId), "invalid_channel_id", http.StatusBadRequest)
+			taskResp = service.TaskErrorWrapperLocal(fmt.Errorf(i18n.T(c, i18n.MsgTaskInvalidChannelId, map[string]any{"ChannelId": originTask.ChannelId})), "invalid_channel_id", http.StatusBadRequest)
 			return
 		}
 		if converter, ok := adaptor.(channel.OpenAIVideoConverter); ok {
@@ -400,7 +401,7 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 			respBody = openAIVideoData
 			return
 		}
-		taskResp = service.TaskErrorWrapperLocal(fmt.Errorf("not_implemented:%s", originTask.Platform), "not_implemented", http.StatusNotImplemented)
+		taskResp = service.TaskErrorWrapperLocal(fmt.Errorf(i18n.T(c, i18n.MsgTaskNotImplemented, map[string]any{"Platform": originTask.Platform})), "not_implemented", http.StatusNotImplemented)
 		return
 	}
 

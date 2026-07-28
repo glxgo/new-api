@@ -236,7 +236,7 @@ export function StatCard(props: StatCardProps) {
         </div>
       ) : (
         <div className='flex flex-col gap-1'>
-          <div className='text-foreground font-mono text-2xl font-semibold tracking-tight break-all tabular-nums'>
+          <div className='text-foreground font-serif text-2xl font-semibold tracking-[-0.025em] break-all tabular-nums'>
             {props.value}
           </div>
           <p className='text-muted-foreground/60 text-xs leading-relaxed'>

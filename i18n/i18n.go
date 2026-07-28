@@ -121,6 +121,20 @@ func SetUserLangLoader(loader func(userId int) string) {
 	userLangLoaderFunc = loader
 }
 
+// GetUserLang returns the preferred language for the given user id.
+// It uses the injected userLangLoaderFunc (set by the model package); when the loader
+// is unavailable or returns an unsupported value it falls back to Chinese
+// (国内中转站默认). Use this in code paths that have a userId but no *gin.Context,
+// e.g. quota consumption inside the service layer.
+func GetUserLang(userId int) string {
+	if userLangLoaderFunc != nil && userId > 0 {
+		if normalized := normalizeLang(userLangLoaderFunc(userId)); IsSupported(normalized) {
+			return normalized
+		}
+	}
+	return LangZhCN
+}
+
 // GetLangFromContext extracts the language setting from gin context
 // It checks multiple sources in priority order:
 // 1. User settings (ContextKeyUserSetting) - if already loaded (e.g., by TokenAuth)

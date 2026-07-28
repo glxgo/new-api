@@ -31,6 +31,9 @@ export interface QuotaDataItem {
   token_used?: number
   count?: number
   quota?: number
+  /** Optional balance-after snapshot if the backend exposes it for the row.
+   *  Daily aggregates from /data/self usually omit this → show 「—」. */
+  balance_after?: number
 }
 
 export interface DashboardTrafficSummary {
@@ -90,10 +93,9 @@ export interface DashboardFilters {
 
 export type ConsumptionDistributionChartType = 'bar' | 'area'
 
-export type ModelAnalyticsChartTab = 'trend' | 'proportion' | 'top'
+export type ModelAnalyticsChartTab = 'trend' | 'top'
 
 export interface DashboardChartPreferences {
-  consumptionDistributionChart: ConsumptionDistributionChartType
   modelAnalyticsChart: ModelAnalyticsChartTab
   defaultTimeRangeDays: number
   defaultTimeGranularity: TimeGranularity

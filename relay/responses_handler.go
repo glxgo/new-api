@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	appconstant "github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -27,7 +28,7 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		case appconstant.APITypeOpenAI, appconstant.APITypeCodex:
 		default:
 			return types.NewErrorWithStatusCode(
-				fmt.Errorf("unsupported endpoint %q for api type %d", "/v1/responses/compact", info.ApiType),
+				fmt.Errorf(i18n.T(c, i18n.MsgRelayUnsupportedEndpoint, map[string]any{"Endpoint": "/v1/responses/compact", "Type": info.ApiType})),
 				types.ErrorCodeInvalidRequest,
 				http.StatusBadRequest,
 				types.ErrOptionWithSkipRetry(),
@@ -48,7 +49,7 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		}
 	default:
 		return types.NewErrorWithStatusCode(
-			fmt.Errorf("invalid request type, expected dto.OpenAIResponsesRequest or dto.OpenAIResponsesCompactionRequest, got %T", info.Request),
+			fmt.Errorf(i18n.T(c, i18n.MsgRelayInvalidRequestType)),
 			types.ErrorCodeInvalidRequest,
 			http.StatusBadRequest,
 			types.ErrOptionWithSkipRetry(),
@@ -57,7 +58,7 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 
 	request, err := common.DeepCopy(responsesReq)
 	if err != nil {
-		return types.NewError(fmt.Errorf("failed to copy request to GeneralOpenAIRequest: %w", err), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
+		return types.NewError(fmt.Errorf(i18n.T(c, i18n.MsgRelayFailedCopyRequest, map[string]any{"Error": err.Error()})), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
 	}
 
 	err = helper.ModelMappedHelper(c, info, request)
@@ -67,7 +68,7 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 
 	adaptor := GetAdaptor(info.ApiType)
 	if adaptor == nil {
-		return types.NewError(fmt.Errorf("invalid api type: %d", info.ApiType), types.ErrorCodeInvalidApiType, types.ErrOptionWithSkipRetry())
+		return types.NewError(fmt.Errorf(i18n.T(c, i18n.MsgRelayInvalidApiType, map[string]any{"Type": info.ApiType})), types.ErrorCodeInvalidApiType, types.ErrOptionWithSkipRetry())
 	}
 	adaptor.Init(info)
 	var requestBody io.Reader
@@ -75,6 +76,13 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		storage, err := common.GetBodyStorage(c)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry())
+		}
+		jsonData, err := storage.Bytes()
+		if err != nil {
+			return types.NewError(err, types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry())
+		}
+		if billingErr := service.PreparePriorityBillingForOutbound(info, jsonData); billingErr != nil {
+			return billingErr
 		}
 		requestBody = common.ReaderOnly(storage)
 	} else {
@@ -100,6 +108,9 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 			if err != nil {
 				return newAPIErrorFromParamOverride(err)
 			}
+		}
+		if billingErr := service.PreparePriorityBillingForOutbound(info, jsonData); billingErr != nil {
+			return billingErr
 		}
 
 		logger.LogDebug(c, "requestBody: %s", jsonData)

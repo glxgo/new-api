@@ -27,7 +27,6 @@ import {
   TIME_RANGE_BY_GRANULARITY,
 } from '@/features/dashboard/constants'
 import type {
-  ConsumptionDistributionChartType,
   DashboardChartPreferences,
   DashboardFilters,
   ModelAnalyticsChartTab,
@@ -43,16 +42,10 @@ function getLegacySavedGranularity(): TimeGranularity {
   return isTimeGranularity(saved) ? saved : DEFAULT_TIME_GRANULARITY
 }
 
-function isConsumptionDistributionChartType(
-  value: unknown
-): value is ConsumptionDistributionChartType {
-  return value === 'bar' || value === 'area'
-}
-
 function isModelAnalyticsChartTab(
   value: unknown
 ): value is ModelAnalyticsChartTab {
-  return value === 'trend' || value === 'proportion' || value === 'top'
+  return value === 'trend' || value === 'top'
 }
 
 function isTimeRangePresetDays(value: unknown): value is number {
@@ -105,11 +98,6 @@ export function getSavedChartPreferences(): DashboardChartPreferences {
 
     const parsed = JSON.parse(raw) as Partial<DashboardChartPreferences>
     return {
-      consumptionDistributionChart: isConsumptionDistributionChartType(
-        parsed.consumptionDistributionChart
-      )
-        ? parsed.consumptionDistributionChart
-        : fallbackPreferences.consumptionDistributionChart,
       modelAnalyticsChart: isModelAnalyticsChartTab(parsed.modelAnalyticsChart)
         ? parsed.modelAnalyticsChart
         : fallbackPreferences.modelAnalyticsChart,

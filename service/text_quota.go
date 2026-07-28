@@ -309,7 +309,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 
 	// 平台成本(2026-06-22 重构): 从售价反推 = (售价 / GroupRatio) × GroupCostRatio,
 	// 与售价同源(含 cache/image/audio/tool 附加费口径), 不再读 ModelCost。见 service/cost.go。
-	summary.Cost = CalcCostFromSaleQuota(summary.Quota, summary.GroupRatio, relayInfo.UsingGroup)
+	summary.Cost = CalcCostFromChannelRatio(summary.Quota, relayInfo.ChannelCostRatioPPM)
 
 	return summary
 }
@@ -350,6 +350,11 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 			summary.Quota = composeTieredTextQuota(relayInfo, summary, tieredQuota, tieredRes)
 		}
 	}
+
+	// Priority (fast) surcharge applies only to non-tiered billing. tiered_expr
+	// models own their complete price contract and are left unchanged.
+	summary.Quota = relayInfo.ApplyPrioritySurcharge(summary.Quota)
+	summary.Cost = CalcCostFromChannelRatio(summary.Quota, relayInfo.ChannelCostRatioPPM)
 
 	if summary.WebSearchCallCount > 0 {
 		extraContent = append(extraContent, fmt.Sprintf("Web Search 调用 %d 次，调用花费 %s", summary.WebSearchCallCount, decimal.NewFromFloat(summary.WebSearchPrice).Mul(decimal.NewFromInt(int64(summary.WebSearchCallCount))).Div(decimal.NewFromInt(1000)).Mul(decimal.NewFromFloat(summary.GroupRatio)).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).String()))
@@ -469,26 +474,29 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	// 双池记账(阶段2b): 从 BillingSession 取实际扣减拆分, 无则回退全本金。
 	paidGift, paidPrincipal := paidSplitForLog(relayInfo, summary.Quota)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
-		ChannelId:        relayInfo.ChannelId,
-		PromptTokens:     summary.PromptTokens,
-		CacheTokens:      summary.CacheTokens,
-		CompletionTokens: summary.CompletionTokens,
-		ModelName:        logModel,
-		TokenName:        summary.TokenName,
-		Quota:            summary.Quota,
-		Cost:             summary.Cost,
-		PaidQuota:        paidPrincipal,
-		PaidGiftQuota:    paidGift,
-		AffAdminIdSnap:   affAdminIdSnap,
-		InviterIdSnap:    inviterIdSnap,
-		Inviter2IdSnap:   inviter2IdSnap,
-		Content:          logContent,
-		TokenId:          relayInfo.TokenId,
-		UseTimeSeconds:   int(summary.UseTimeSeconds),
-		IsStream:         relayInfo.IsStream,
-		Group:            relayInfo.UsingGroup,
-		Other:            other,
-		BillingSource:    relayInfo.BillingSource,
+		ChannelId:           relayInfo.ChannelId,
+		PromptTokens:        summary.PromptTokens,
+		CacheTokens:         summary.CacheTokens,
+		CompletionTokens:    summary.CompletionTokens,
+		ModelName:           logModel,
+		TokenName:           summary.TokenName,
+		Quota:               summary.Quota,
+		Cost:                summary.Cost,
+		PaidQuota:           paidPrincipal,
+		PaidGiftQuota:       paidGift,
+		AffAdminIdSnap:      affAdminIdSnap,
+		InviterIdSnap:       inviterIdSnap,
+		Inviter2IdSnap:      inviter2IdSnap,
+		Content:             logContent,
+		TokenId:             relayInfo.TokenId,
+		UseTimeSeconds:      int(summary.UseTimeSeconds),
+		IsStream:            relayInfo.IsStream,
+		Group:               relayInfo.UsingGroup,
+		Other:               other,
+		BillingSource:       relayInfo.BillingSource,
+		SubscriptionId:      relayInfo.SubscriptionId,
+		CostRuleVersion:     2,
+		ChannelCostRatioPPM: relayInfo.ChannelCostRatioPPM,
 	})
 	gopool.Go(func() {
 		perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens),

@@ -557,4 +557,5 @@ func settleTaskBillingOnComplete(ctx context.Context, adaptor TaskPollingAdaptor
 		return
 	}
 	// 3. 无调整，保持预扣额度
+	finalizeTaskSubscriptionCost(ctx, task, task.Quota)
 }

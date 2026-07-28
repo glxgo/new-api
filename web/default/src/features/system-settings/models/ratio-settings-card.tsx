@@ -29,8 +29,8 @@ import { resetModelRatios } from '../api'
 import { SettingsPageTitleStatusPortal } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
-import { GroupRatioForm } from './group-ratio-form'
 import { GroupPricingPreviewCard } from './group-pricing-preview-card'
+import { GroupRatioForm } from './group-ratio-form'
 import { ModelRatioForm } from './model-ratio-form'
 import { ToolPriceSettings } from './tool-price-settings'
 import { UpstreamRatioSync } from './upstream-ratio-sync'
@@ -214,7 +214,9 @@ export function RatioSettingsCard({
       ModelPrice: formatJsonForTextarea(modelDefaults.ModelPrice),
       ModelRatio: formatJsonForTextarea(modelDefaults.ModelRatio),
       ModelCost: formatJsonForTextarea(modelDefaults.ModelCost),
-      ModelPricingSource: formatJsonForTextarea(modelDefaults.ModelPricingSource),
+      ModelPricingSource: formatJsonForTextarea(
+        modelDefaults.ModelPricingSource
+      ),
       CacheRatio: formatJsonForTextarea(modelDefaults.CacheRatio),
       CreateCacheRatio: formatJsonForTextarea(modelDefaults.CreateCacheRatio),
       CompletionRatio: formatJsonForTextarea(modelDefaults.CompletionRatio),
@@ -270,7 +272,9 @@ export function RatioSettingsCard({
       ModelPrice: formatJsonForTextarea(modelDefaults.ModelPrice),
       ModelRatio: formatJsonForTextarea(modelDefaults.ModelRatio),
       ModelCost: formatJsonForTextarea(modelDefaults.ModelCost),
-      ModelPricingSource: formatJsonForTextarea(modelDefaults.ModelPricingSource),
+      ModelPricingSource: formatJsonForTextarea(
+        modelDefaults.ModelPricingSource
+      ),
       CacheRatio: formatJsonForTextarea(modelDefaults.CacheRatio),
       CreateCacheRatio: formatJsonForTextarea(modelDefaults.CreateCacheRatio),
       CompletionRatio: formatJsonForTextarea(modelDefaults.CompletionRatio),
