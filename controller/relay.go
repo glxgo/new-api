@@ -131,10 +131,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	}()
 
 	needSensitiveCheck := setting.ShouldCheckPromptSensitive()
+	needCodex2APIFilter := service.Codex2APIPromptFilterEnabled()
 	needCountToken := constant.CountToken
 	// Avoid building huge CombineText (strings.Join) when token counting and sensitive check are both disabled.
 	var meta *types.TokenCountMeta
-	if needSensitiveCheck || needCountToken {
+	if needSensitiveCheck || needCodex2APIFilter || needCountToken {
 		meta = request.GetTokenCountMeta()
 	} else {
 		meta = fastTokenCountMetaForPricing(request)
@@ -144,7 +145,30 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		contains, words := service.CheckSensitiveText(meta.CombineText)
 		if contains {
 			logger.LogWarn(c, fmt.Sprintf("user sensitive words detected: %s", strings.Join(words, ", ")))
-			newAPIError = types.NewError(fmt.Errorf("您的请求触发了拦截词，已被拦截，如有疑问请联系管理员"), types.ErrorCodeSensitiveWordsDetected)
+			newAPIError = types.NewError(
+				fmt.Errorf("您的请求触发了敏感词规则，已在发送至上游前被拦截，本次不扣除任何费用。请调整内容后重试，如有疑问请联系管理员"),
+				types.ErrorCodeSensitiveWordsDetected,
+				types.ErrOptionWithStatusCode(http.StatusBadRequest),
+				types.ErrOptionWithSkipRetry(),
+			)
+			return
+		}
+	}
+
+	if needCodex2APIFilter && meta != nil {
+		filterResult := service.CheckCodex2APIPrompt(c, meta.CombineText, relayInfo.OriginModelName, c.Request.URL.Path)
+		if filterResult.Blocked {
+			logger.LogWarn(c, fmt.Sprintf(
+				"Codex2API blocked prompt before upstream: decision_id=%s reason_code=%s",
+				filterResult.DecisionID,
+				filterResult.ReasonCode,
+			))
+			newAPIError = types.NewError(
+				fmt.Errorf("您的请求触发了安全规则，已在发送至上游前被拦截，本次不扣除任何费用。您的账号和 API Key 仍可正常使用，请调整内容后重试"),
+				types.ErrorCodePromptFilterBlocked,
+				types.ErrOptionWithStatusCode(http.StatusBadRequest),
+				types.ErrOptionWithSkipRetry(),
+			)
 			return
 		}
 	}
@@ -273,6 +297,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	}
 	if service.IsCyberPolicyError(newAPIError) {
 		if common.CyberPolicyInterceptionEnabled {
+			if billingErr := service.SettleCyberPolicyOrder(c, relayInfo); billingErr != nil {
+				logger.LogError(c, "failed to settle cyber policy order: "+billingErr.Error())
+			}
 			if interceptionErr := service.InterceptCyberPolicyViolation(c, relayInfo, newAPIError); interceptionErr != nil {
 				logger.LogError(c, "failed to record cyber policy interception: "+interceptionErr.Error())
 			}

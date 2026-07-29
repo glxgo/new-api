@@ -83,7 +83,7 @@ func InterceptCyberPolicyViolation(c *gin.Context, info *relaycommon.RelayInfo, 
 }
 
 func CyberPolicyInterceptionMessage() string {
-	return "本次请求触发了平台安全使用规则，已被拦截。您的账号和 API Key 均处于正常状态，其他请求不受影响。请调整请求内容后重试。"
+	return "本次请求已发送至上游，但触发了平台安全使用规则，现已被拦截；本笔订单按正常规则扣费。您的账号和 API Key 均处于正常状态，其他请求不受影响。请调整请求内容后重试。"
 }
 
 func securityActionText(result model.UserSecurityEnforcementResult) string {
@@ -191,7 +191,8 @@ func cyberPolicyInterceptionEmail(requestId string, modelName string, occurredAt
 	content := fmt.Sprintf(
 		`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.7;color:#18181b">
 <h2 style="margin:0 0 16px">本次 API 请求已被拦截</h2>
-<p>系统检测到本次请求触发了平台安全使用规则，因此仅拦截了这一次请求。</p>
+<p>本次请求已发送至上游，但上游返回了网络安全风险提示，因此仅拦截了这一次请求。</p>
+<p><strong>由于请求已经发出，本笔订单按正常规则扣费。</strong></p>
 <p><strong>您的账号和 API Key 均处于正常状态，其他合规请求可以继续使用。</strong></p>
 <table style="border-collapse:collapse;width:100%%;max-width:560px">
 <tr><td style="padding:8px;border-bottom:1px solid #e4e4e7">拦截类别</td><td style="padding:8px;border-bottom:1px solid #e4e4e7">网络安全高风险内容</td></tr>
