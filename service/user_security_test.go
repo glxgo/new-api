@@ -75,3 +75,29 @@ func TestCyberPolicyWarningEmailStatesBanAndEscalation(t *testing.T) {
 	require.Contains(t, content, "&lt;request&amp;42&gt;")
 	require.NotContains(t, content, "<request&42>")
 }
+
+func TestCyberPolicyInterceptionMessageStatesAccountRemainsUsable(t *testing.T) {
+	message := CyberPolicyInterceptionMessage()
+
+	require.Contains(t, message, "本次请求")
+	require.Contains(t, message, "已被拦截")
+	require.Contains(t, message, "账号和 API Key 均处于正常状态")
+	require.Contains(t, message, "其他请求不受影响")
+	require.NotContains(t, message, "封禁时长")
+	require.NotContains(t, message, "永久封禁")
+}
+
+func TestCyberPolicyInterceptionEmailIsNonPunitiveAndPrivacySafe(t *testing.T) {
+	title, content := cyberPolicyInterceptionEmail("<request&42>", "<gpt&model>", 1_700_000_000)
+
+	require.Contains(t, title, "请求已被安全规则拦截")
+	require.Contains(t, title, "账号未封禁")
+	require.Contains(t, content, "仅拦截了这一次请求")
+	require.Contains(t, content, "账号和 API Key 均处于正常状态")
+	require.Contains(t, content, "&lt;gpt&amp;model&gt;")
+	require.Contains(t, content, "&lt;request&amp;42&gt;")
+	require.NotContains(t, content, "<gpt&model>")
+	require.NotContains(t, content, "<request&42>")
+	require.NotContains(t, content, "封禁时长")
+	require.NotContains(t, content, "警告次数")
+}

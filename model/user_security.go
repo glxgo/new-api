@@ -17,6 +17,9 @@ const (
 	UserSecurityActionSuspend24Hours   = "suspend_24_hours"
 	UserSecurityActionPermanentBan     = "permanent_ban"
 	UserSecurityActionObserved         = "observed_during_restriction"
+	UserSecurityActionIntercepted      = "intercepted"
+
+	UserSecurityErrorCodeContentPolicyBlocked = "content_policy_blocked"
 )
 
 type UserSecurityIncident struct {
@@ -46,6 +49,11 @@ type UserSecurityEnforcementResult struct {
 	Permanent      bool
 }
 
+type UserSecurityInterceptionResult struct {
+	Recorded     bool
+	ShouldNotify bool
+}
+
 func securityActionForStrike(strike int, now int64) (string, int64, bool) {
 	switch strike {
 	case 1:
@@ -73,7 +81,7 @@ func ApplyCyberPolicyViolation(userId int, tokenId int, requestId string, modelN
 		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", userId).First(&user).Error; err != nil {
 			return err
 		}
-		if !common.CyberPolicyEnforcementEnabled || user.SecurityWhitelisted {
+		if common.CyberPolicyInterceptionEnabled || !common.CyberPolicyEnforcementEnabled || user.SecurityWhitelisted {
 			return nil
 		}
 
@@ -139,6 +147,71 @@ func ApplyCyberPolicyViolation(userId int, tokenId int, requestId string, modelN
 	}
 	if err := InvalidateUserCache(userId); err != nil {
 		common.SysLog(fmt.Sprintf("failed to invalidate security cache for user %d: %s", userId, err.Error()))
+	}
+	return result, nil
+}
+
+// RecordCyberPolicyInterception records a privacy-safe, non-punitive audit
+// event. It never changes the user's strike, suspension, permanent-ban,
+// status, API keys, group, or channel affinity.
+func RecordCyberPolicyInterception(userId int, tokenId int, requestId string, modelName string, upstreamCode string, now int64) (UserSecurityInterceptionResult, error) {
+	result := UserSecurityInterceptionResult{}
+	if !common.CyberPolicyInterceptionEnabled {
+		return result, nil
+	}
+	if userId <= 0 || requestId == "" {
+		return result, errors.New("invalid security interception identity")
+	}
+	if now <= 0 {
+		now = common.GetTimestamp()
+	}
+
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var user User
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").Select("id").Where("id = ?", userId).First(&user).Error; err != nil {
+			return err
+		}
+
+		var existing UserSecurityIncident
+		if err := tx.Where("request_id = ?", requestId).First(&existing).Error; err == nil {
+			return nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
+		var recentNotifications int64
+		if err := tx.Model(&UserSecurityIncident{}).
+			Where(
+				"user_id = ? AND rule_code = ? AND action = ? AND created_at >= ?",
+				userId,
+				UserSecurityRuleCyberPolicy,
+				UserSecurityActionIntercepted,
+				now-int64((24*time.Hour).Seconds()),
+			).
+			Count(&recentNotifications).Error; err != nil {
+			return err
+		}
+
+		incident := UserSecurityIncident{
+			RequestId:    requestId,
+			UserId:       userId,
+			TokenId:      tokenId,
+			RuleCode:     UserSecurityRuleCyberPolicy,
+			UpstreamCode: upstreamCode,
+			ModelName:    modelName,
+			Action:       UserSecurityActionIntercepted,
+			Counted:      false,
+			CreatedAt:    now,
+		}
+		if err := tx.Create(&incident).Error; err != nil {
+			return err
+		}
+		result.Recorded = true
+		result.ShouldNotify = recentNotifications == 0
+		return nil
+	})
+	if err != nil {
+		return UserSecurityInterceptionResult{}, err
 	}
 	return result, nil
 }

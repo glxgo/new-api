@@ -9,6 +9,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	appconstant "github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
@@ -16,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newResponsesStreamTest(t *testing.T, body string) (*gin.Context, *relaycommon.RelayInfo, *http.Response) {
+func newResponsesStreamTest(t *testing.T, body string) (*gin.Context, *relaycommon.RelayInfo, *http.Response, *httptest.ResponseRecorder) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
@@ -41,11 +42,11 @@ func newResponsesStreamTest(t *testing.T, body string) (*gin.Context, *relaycomm
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(strings.NewReader(body)),
 	}
-	return c, info, resp
+	return c, info, resp, recorder
 }
 
 func TestOaiResponsesStreamHandler_CompletedEventMarksNormalEnd(t *testing.T) {
-	c, info, resp := newResponsesStreamTest(t,
+	c, info, resp, _ := newResponsesStreamTest(t,
 		"data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":3,\"output_tokens\":2,\"total_tokens\":5}}}\n\n")
 
 	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
@@ -59,7 +60,7 @@ func TestOaiResponsesStreamHandler_CompletedEventMarksNormalEnd(t *testing.T) {
 }
 
 func TestOaiResponsesStreamHandler_PrematureEOFIsIncomplete(t *testing.T) {
-	c, info, resp := newResponsesStreamTest(t,
+	c, info, resp, _ := newResponsesStreamTest(t,
 		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n")
 
 	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
@@ -73,7 +74,7 @@ func TestOaiResponsesStreamHandler_PrematureEOFIsIncomplete(t *testing.T) {
 }
 
 func TestOaiResponsesStreamHandler_ResponseFailedPreservesUpstreamCause(t *testing.T) {
-	c, info, resp := newResponsesStreamTest(t,
+	c, info, resp, _ := newResponsesStreamTest(t,
 		"data: {\"type\":\"response.failed\",\"response\":{\"id\":\"resp_failed_1\",\"status\":\"failed\",\"error\":{\"type\":\"server_error\",\"code\":\"server_error\",\"message\":\"upstream exploded\"}}}\n\n")
 
 	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
@@ -95,7 +96,7 @@ func TestOaiResponsesStreamHandler_ResponseFailedPreservesUpstreamCause(t *testi
 }
 
 func TestOaiResponsesStreamHandler_ResponseIncompleteCapturesReason(t *testing.T) {
-	c, info, resp := newResponsesStreamTest(t,
+	c, info, resp, _ := newResponsesStreamTest(t,
 		"data: {\"type\":\"response.incomplete\",\"response\":{\"id\":\"resp_incomplete_1\",\"status\":\"incomplete\",\"incomplete_details\":{\"reason\":\"max_output_tokens\"}}}\n\n")
 
 	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
@@ -111,7 +112,7 @@ func TestOaiResponsesStreamHandler_ResponseIncompleteCapturesReason(t *testing.T
 }
 
 func TestOaiResponsesStreamHandler_TopLevelResponseError(t *testing.T) {
-	c, info, resp := newResponsesStreamTest(t,
+	c, info, resp, _ := newResponsesStreamTest(t,
 		"data: {\"type\":\"response.error\",\"error\":{\"type\":\"invalid_request_error\",\"code\":\"invalid_prompt\",\"message\":\"bad prompt\"}}\n\n")
 
 	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
@@ -123,4 +124,32 @@ func TestOaiResponsesStreamHandler_TopLevelResponseError(t *testing.T) {
 	require.Equal(t, "response.error", terminal.EventType)
 	require.Equal(t, "invalid_prompt", terminal.ErrorCode)
 	require.Equal(t, "bad prompt", terminal.ErrorMessage)
+}
+
+func TestOaiResponsesStreamHandler_CyberPolicyRewritesClientEvent(t *testing.T) {
+	oldInterception := common.CyberPolicyInterceptionEnabled
+	common.CyberPolicyInterceptionEnabled = true
+	t.Cleanup(func() { common.CyberPolicyInterceptionEnabled = oldInterception })
+
+	c, info, resp, recorder := newResponsesStreamTest(t,
+		"data: {\"type\":\"response.failed\",\"response\":{\"id\":\"resp_cyber_1\",\"status\":\"failed\",\"error\":{\"type\":\"invalid_request_error\",\"code\":\"cyber_policy\",\"message\":\"This content was flagged for possible cybersecurity risk.\"}}}\n\n")
+	c.Set(common.RequestIdKey, "request-cyber-1")
+
+	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
+
+	require.Nil(t, usage)
+	require.NotNil(t, apiErr)
+	require.Equal(t, types.ErrorCode(model.UserSecurityRuleCyberPolicy), apiErr.GetErrorCode())
+	require.True(t, types.IsSkipRetryError(apiErr))
+	require.True(t, common.GetContextKeyBool(c, appconstant.ContextKeyRelayErrorAlreadyStreamed))
+
+	body := recorder.Body.String()
+	require.Contains(t, body, model.UserSecurityErrorCodeContentPolicyBlocked)
+	require.Contains(t, body, "账号和 API Key 均处于正常状态")
+	require.Contains(t, body, "request-cyber-1")
+	require.NotContains(t, body, "flagged for possible cybersecurity risk")
+
+	terminal := info.StreamStatus.UpstreamTerminalSnapshot()
+	require.Equal(t, model.UserSecurityRuleCyberPolicy, terminal.ErrorCode)
+	require.Contains(t, terminal.ErrorMessage, "flagged for possible cybersecurity risk")
 }

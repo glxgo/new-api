@@ -54,6 +54,38 @@ func EnforceCyberPolicyViolation(c *gin.Context, info *relaycommon.RelayInfo, ap
 	return result, nil
 }
 
+func InterceptCyberPolicyViolation(c *gin.Context, info *relaycommon.RelayInfo, apiErr *types.NewAPIError) error {
+	if c == nil || info == nil || !common.CyberPolicyInterceptionEnabled || !IsCyberPolicyError(apiErr) {
+		return nil
+	}
+	requestId := c.GetString(common.RequestIdKey)
+	if requestId == "" {
+		requestId = info.RequestId
+	}
+	occurredAt := common.GetTimestamp()
+	result, err := model.RecordCyberPolicyInterception(
+		info.UserId,
+		info.TokenId,
+		requestId,
+		info.OriginModelName,
+		string(apiErr.GetErrorCode()),
+		occurredAt,
+	)
+	if err != nil {
+		return err
+	}
+	if result.Recorded && result.ShouldNotify {
+		gopool.Go(func() {
+			sendCyberPolicyInterceptionEmail(info.UserId, requestId, info.OriginModelName, occurredAt)
+		})
+	}
+	return nil
+}
+
+func CyberPolicyInterceptionMessage() string {
+	return "本次请求触发了平台安全使用规则，已被拦截。您的账号和 API Key 均处于正常状态，其他请求不受影响。请调整请求内容后重试。"
+}
+
 func securityActionText(result model.UserSecurityEnforcementResult) string {
 	if result.Permanent {
 		return "API 调用权限已被永久封禁"
@@ -154,11 +186,32 @@ func cyberPolicyWarningEmail(requestId string, result model.UserSecurityEnforcem
 	return title, content
 }
 
-func sendCyberPolicyWarningEmail(userId int, requestId string, result model.UserSecurityEnforcementResult) {
+func cyberPolicyInterceptionEmail(requestId string, modelName string, occurredAt int64) (string, string) {
+	title := "您的一次 API 请求已被安全规则拦截（账号未封禁）"
+	content := fmt.Sprintf(
+		`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.7;color:#18181b">
+<h2 style="margin:0 0 16px">本次 API 请求已被拦截</h2>
+<p>系统检测到本次请求触发了平台安全使用规则，因此仅拦截了这一次请求。</p>
+<p><strong>您的账号和 API Key 均处于正常状态，其他合规请求可以继续使用。</strong></p>
+<table style="border-collapse:collapse;width:100%%;max-width:560px">
+<tr><td style="padding:8px;border-bottom:1px solid #e4e4e7">拦截类别</td><td style="padding:8px;border-bottom:1px solid #e4e4e7">网络安全高风险内容</td></tr>
+<tr><td style="padding:8px;border-bottom:1px solid #e4e4e7">请求模型</td><td style="padding:8px;border-bottom:1px solid #e4e4e7">%s</td></tr>
+<tr><td style="padding:8px;border-bottom:1px solid #e4e4e7">请求时间</td><td style="padding:8px;border-bottom:1px solid #e4e4e7">%s</td></tr>
+<tr><td style="padding:8px;border-bottom:1px solid #e4e4e7">请求编号</td><td style="padding:8px;border-bottom:1px solid #e4e4e7">%s</td></tr>
+</table>
+<p style="color:#52525b">请调整请求内容后重试。如认为存在误判，可携带请求编号联系管理员。为了保护隐私，本邮件不会包含您的原始请求内容。</p>
+</div>`,
+		html.EscapeString(modelName),
+		time.Unix(occurredAt, 0).In(chinaStandardTime).Format("2006-01-02 15:04:05"),
+		html.EscapeString(requestId),
+	)
+	return title, content
+}
+
+func cyberPolicyNotificationEmail(userId int) (string, error) {
 	email, err := model.GetUserEmail(userId)
 	if err != nil {
-		common.SysLog(fmt.Sprintf("failed to load cyber policy notification email for user %d: %s", userId, err.Error()))
-		return
+		return "", err
 	}
 	if userSetting, settingErr := model.GetUserSetting(userId, true); settingErr == nil {
 		if notificationEmail := strings.TrimSpace(userSetting.NotificationEmail); notificationEmail != "" {
@@ -167,7 +220,15 @@ func sendCyberPolicyWarningEmail(userId int, requestId string, result model.User
 	} else {
 		common.SysLog(fmt.Sprintf("failed to load cyber policy notification setting for user %d: %s", userId, settingErr.Error()))
 	}
-	email = strings.TrimSpace(email)
+	return strings.TrimSpace(email), nil
+}
+
+func sendCyberPolicyWarningEmail(userId int, requestId string, result model.UserSecurityEnforcementResult) {
+	email, err := cyberPolicyNotificationEmail(userId)
+	if err != nil {
+		common.SysLog(fmt.Sprintf("failed to load cyber policy notification email for user %d: %s", userId, err.Error()))
+		return
+	}
 	if email == "" {
 		common.SysLog(fmt.Sprintf("user %d has no email for cyber policy ban notification", userId))
 		return
@@ -175,5 +236,21 @@ func sendCyberPolicyWarningEmail(userId int, requestId string, result model.User
 	title, content := cyberPolicyWarningEmail(requestId, result)
 	if err := common.SendEmail(title, email, content); err != nil {
 		common.SysLog(fmt.Sprintf("failed to send cyber policy warning to user %d: %s", userId, err.Error()))
+	}
+}
+
+func sendCyberPolicyInterceptionEmail(userId int, requestId string, modelName string, occurredAt int64) {
+	email, err := cyberPolicyNotificationEmail(userId)
+	if err != nil {
+		common.SysLog(fmt.Sprintf("failed to load cyber policy interception email for user %d: %s", userId, err.Error()))
+		return
+	}
+	if email == "" {
+		common.SysLog(fmt.Sprintf("user %d has no email for cyber policy interception notification", userId))
+		return
+	}
+	title, content := cyberPolicyInterceptionEmail(requestId, modelName, occurredAt)
+	if err := common.SendEmail(title, email, content); err != nil {
+		common.SysLog(fmt.Sprintf("failed to send cyber policy interception notification to user %d: %s", userId, err.Error()))
 	}
 }

@@ -2,6 +2,7 @@ package model
 
 import (
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/glebarez/sqlite"
@@ -9,7 +10,20 @@ import (
 	"gorm.io/gorm"
 )
 
+func setCyberPolicyModesForTest(t *testing.T, interceptionEnabled bool, enforcementEnabled bool) {
+	t.Helper()
+	oldInterception := common.CyberPolicyInterceptionEnabled
+	oldEnforcement := common.CyberPolicyEnforcementEnabled
+	common.CyberPolicyInterceptionEnabled = interceptionEnabled
+	common.CyberPolicyEnforcementEnabled = enforcementEnabled
+	t.Cleanup(func() {
+		common.CyberPolicyInterceptionEnabled = oldInterception
+		common.CyberPolicyEnforcementEnabled = oldEnforcement
+	})
+}
+
 func TestCyberPolicyEscalationAndBurstCollapse(t *testing.T) {
+	setCyberPolicyModesForTest(t, false, true)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&User{}, &UserSecurityIncident{}))
@@ -60,6 +74,7 @@ func TestCyberPolicyEscalationAndBurstCollapse(t *testing.T) {
 }
 
 func TestCyberPolicyRequestIdIsIdempotent(t *testing.T) {
+	setCyberPolicyModesForTest(t, false, true)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&User{}, &UserSecurityIncident{}))
@@ -82,6 +97,7 @@ func TestCyberPolicyRequestIdIsIdempotent(t *testing.T) {
 }
 
 func TestCyberPolicySkipsWhitelistedUser(t *testing.T) {
+	setCyberPolicyModesForTest(t, false, true)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&User{}, &UserSecurityIncident{}))
@@ -108,17 +124,13 @@ func TestCyberPolicySkipsWhitelistedUser(t *testing.T) {
 }
 
 func TestCyberPolicySkipsWhenEnforcementDisabled(t *testing.T) {
+	setCyberPolicyModesForTest(t, false, false)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&User{}, &UserSecurityIncident{}))
 	oldDB := DB
 	DB = db
-	oldEnabled := common.CyberPolicyEnforcementEnabled
-	common.CyberPolicyEnforcementEnabled = false
-	t.Cleanup(func() {
-		DB = oldDB
-		common.CyberPolicyEnforcementEnabled = oldEnabled
-	})
+	t.Cleanup(func() { DB = oldDB })
 
 	user := User{Username: "security-disabled", Password: "hashed-password", AffCode: "sec4"}
 	require.NoError(t, db.Create(&user).Error)
@@ -131,6 +143,61 @@ func TestCyberPolicySkipsWhenEnforcementDisabled(t *testing.T) {
 	var incidents int64
 	require.NoError(t, db.Model(&UserSecurityIncident{}).Count(&incidents).Error)
 	require.Zero(t, incidents)
+}
+
+func TestCyberPolicyInterceptionTakesPriorityWithoutPunishment(t *testing.T) {
+	setCyberPolicyModesForTest(t, true, true)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&User{}, &UserSecurityIncident{}))
+	oldDB := DB
+	DB = db
+	t.Cleanup(func() { DB = oldDB })
+
+	user := User{Username: "security-intercepted", Password: "hashed-password", AffCode: "sec6"}
+	require.NoError(t, db.Create(&user).Error)
+	now := int64(1_700_000_000)
+
+	first, err := RecordCyberPolicyInterception(user.Id, 6, "intercept-1", "gpt", "cyber_policy", now)
+	require.NoError(t, err)
+	require.True(t, first.Recorded)
+	require.True(t, first.ShouldNotify)
+
+	duplicate, err := RecordCyberPolicyInterception(user.Id, 6, "intercept-1", "gpt", "cyber_policy", now+1)
+	require.NoError(t, err)
+	require.False(t, duplicate.Recorded)
+	require.False(t, duplicate.ShouldNotify)
+
+	second, err := RecordCyberPolicyInterception(user.Id, 6, "intercept-2", "gpt", "cyber_policy", now+60)
+	require.NoError(t, err)
+	require.True(t, second.Recorded)
+	require.False(t, second.ShouldNotify)
+
+	afterCooldown, err := RecordCyberPolicyInterception(user.Id, 6, "intercept-3", "gpt", "cyber_policy", now+60+int64((24*time.Hour).Seconds())+1)
+	require.NoError(t, err)
+	require.True(t, afterCooldown.Recorded)
+	require.True(t, afterCooldown.ShouldNotify)
+
+	enforcement, err := ApplyCyberPolicyViolation(user.Id, 6, "must-not-enforce", "gpt", "cyber_policy", now)
+	require.NoError(t, err)
+	require.False(t, enforcement.Counted)
+	require.Zero(t, enforcement.StrikeNumber)
+
+	var stored User
+	require.NoError(t, db.First(&stored, user.Id).Error)
+	require.Zero(t, stored.SecurityStrikeCount)
+	require.Zero(t, stored.SecuritySuspendedUntil)
+	require.False(t, stored.SecurityPermanentBan)
+
+	var interceptions []UserSecurityIncident
+	require.NoError(t, db.Order("id").Find(&interceptions).Error)
+	require.Len(t, interceptions, 3)
+	for _, incident := range interceptions {
+		require.Equal(t, UserSecurityActionIntercepted, incident.Action)
+		require.False(t, incident.Counted)
+		require.Zero(t, incident.StrikeNumber)
+		require.Zero(t, incident.SuspendedUntil)
+	}
 }
 
 func TestSetUserSecurityWhitelistClearsRestriction(t *testing.T) {

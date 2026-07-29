@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
@@ -92,6 +93,21 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			sr.Error(err)
 			return
 		}
+		if streamResponse.Type == "response.failed" || streamResponse.Type == "response.error" {
+			recordResponsesUpstreamTerminal(info, resp.StatusCode, streamResponse)
+			streamErr = responsesTerminalError(streamResponse, types.ErrorCodeUpstreamResponseFailed)
+			if common.CyberPolicyInterceptionEnabled && service.IsCyberPolicyError(streamErr) {
+				if interceptedData, rewriteErr := cyberPolicyInterceptionStreamData(c, streamResponse); rewriteErr != nil {
+					logger.LogError(c, "failed to rewrite cyber policy stream response: "+rewriteErr.Error())
+				} else {
+					data = interceptedData
+				}
+			}
+			sendResponsesStreamData(c, streamResponse, data)
+			common.SetContextKey(c, constant.ContextKeyRelayErrorAlreadyStreamed, true)
+			sr.Stop(streamErr)
+			return
+		}
 		sendResponsesStreamData(c, streamResponse, data)
 		switch streamResponse.Type {
 		case "response.completed":
@@ -118,11 +134,6 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 				}
 			}
 			sr.Done()
-		case "response.failed", "response.error":
-			recordResponsesUpstreamTerminal(info, resp.StatusCode, streamResponse)
-			streamErr = responsesTerminalError(streamResponse, types.ErrorCodeUpstreamResponseFailed)
-			common.SetContextKey(c, constant.ContextKeyRelayErrorAlreadyStreamed, true)
-			sr.Stop(streamErr)
 		case "response.incomplete":
 			recordResponsesUpstreamTerminal(info, resp.StatusCode, streamResponse)
 			streamErr = responsesTerminalError(streamResponse, types.ErrorCodeUpstreamResponseIncomplete)
@@ -193,6 +204,30 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 
 	return usage, nil
+}
+
+func cyberPolicyInterceptionStreamData(c *gin.Context, streamResponse dto.ResponsesStreamResponse) (string, error) {
+	requestId := ""
+	if c != nil {
+		requestId = c.GetString(common.RequestIdKey)
+	}
+	message := common.MessageWithRequestId(service.CyberPolicyInterceptionMessage(), requestId)
+	safeError := types.OpenAIError{
+		Message: message,
+		Type:    "invalid_request_error",
+		Code:    model.UserSecurityErrorCodeContentPolicyBlocked,
+	}
+	if streamResponse.Response != nil {
+		streamResponse.Response.Error = safeError
+	}
+	if streamResponse.Response == nil || streamResponse.Error != nil {
+		streamResponse.Error = safeError
+	}
+	bytes, err := common.Marshal(streamResponse)
+	if err != nil {
+		return "", err
+	}
+	return string(bytes), nil
 }
 
 func recordResponsesUpstreamTerminal(info *relaycommon.RelayInfo, upstreamHTTPStatus int, streamResponse dto.ResponsesStreamResponse) {

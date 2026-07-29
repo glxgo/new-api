@@ -86,3 +86,26 @@ func TestDefaultUserCapacityOptionsAreIndependent(t *testing.T) {
 	require.Equal(t, 16, common.DefaultUserConcurrencyLimit)
 	require.Equal(t, 45, common.DefaultUserRPMLimit)
 }
+
+func TestCyberPolicyInterceptionAndEnforcementOptionsAreIndependent(t *testing.T) {
+	oldInterception := common.CyberPolicyInterceptionEnabled
+	oldEnforcement := common.CyberPolicyEnforcementEnabled
+	common.OptionMapRWMutex.RLock()
+	oldOptionMap := common.OptionMap
+	common.OptionMapRWMutex.RUnlock()
+	t.Cleanup(func() {
+		common.CyberPolicyInterceptionEnabled = oldInterception
+		common.CyberPolicyEnforcementEnabled = oldEnforcement
+		common.OptionMapRWMutex.Lock()
+		common.OptionMap = oldOptionMap
+		common.OptionMapRWMutex.Unlock()
+	})
+
+	common.OptionMapRWMutex.Lock()
+	common.OptionMap = make(map[string]string)
+	common.OptionMapRWMutex.Unlock()
+	require.NoError(t, updateOptionMap("CyberPolicyInterceptionEnabled", "true"))
+	require.NoError(t, updateOptionMap("CyberPolicyEnforcementEnabled", "false"))
+	require.True(t, common.CyberPolicyInterceptionEnabled)
+	require.False(t, common.CyberPolicyEnforcementEnabled)
+}

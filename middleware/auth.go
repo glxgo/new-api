@@ -382,7 +382,9 @@ func TokenAuth() func(c *gin.Context) {
 				common.TranslateMessage(c, i18n.MsgDatabaseError))
 			return
 		}
-		securityEnforcementActive := common.CyberPolicyEnforcementEnabled && !userCache.SecurityWhitelisted
+		securityEnforcementActive := common.CyberPolicyEnforcementEnabled &&
+			!common.CyberPolicyInterceptionEnabled &&
+			!userCache.SecurityWhitelisted
 		if securityEnforcementActive && userCache.SecurityPermanentBan {
 			abortWithOpenAiMessage(
 				c,

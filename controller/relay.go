@@ -272,17 +272,31 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		logger.LogInfo(c, retryLogStr)
 	}
 	if service.IsCyberPolicyError(newAPIError) {
-		enforcement, enforcementErr := service.EnforceCyberPolicyViolation(c, relayInfo, newAPIError)
-		if enforcementErr != nil {
-			logger.LogError(c, "failed to enforce cyber policy restriction: "+enforcementErr.Error())
-		} else if enforcement.StrikeNumber > 0 &&
-			!common.GetContextKeyBool(c, constant.ContextKeyRelayErrorAlreadyStreamed) {
-			newAPIError = types.NewOpenAIError(
-				errors.New(service.CyberPolicyUserMessage(enforcement)),
-				types.ErrorCode(model.UserSecurityRuleCyberPolicy),
-				http.StatusBadGateway,
-				types.ErrOptionWithSkipRetry(),
-			)
+		if common.CyberPolicyInterceptionEnabled {
+			if interceptionErr := service.InterceptCyberPolicyViolation(c, relayInfo, newAPIError); interceptionErr != nil {
+				logger.LogError(c, "failed to record cyber policy interception: "+interceptionErr.Error())
+			}
+			if !common.GetContextKeyBool(c, constant.ContextKeyRelayErrorAlreadyStreamed) {
+				newAPIError = types.NewOpenAIError(
+					errors.New(service.CyberPolicyInterceptionMessage()),
+					types.ErrorCode(model.UserSecurityErrorCodeContentPolicyBlocked),
+					http.StatusBadRequest,
+					types.ErrOptionWithSkipRetry(),
+				)
+			}
+		} else {
+			enforcement, enforcementErr := service.EnforceCyberPolicyViolation(c, relayInfo, newAPIError)
+			if enforcementErr != nil {
+				logger.LogError(c, "failed to enforce cyber policy restriction: "+enforcementErr.Error())
+			} else if enforcement.StrikeNumber > 0 &&
+				!common.GetContextKeyBool(c, constant.ContextKeyRelayErrorAlreadyStreamed) {
+				newAPIError = types.NewOpenAIError(
+					errors.New(service.CyberPolicyUserMessage(enforcement)),
+					types.ErrorCode(model.UserSecurityRuleCyberPolicy),
+					http.StatusBadGateway,
+					types.ErrOptionWithSkipRetry(),
+				)
+			}
 		}
 	}
 	if perfmetrics.ShouldRecordRelayFailure(newAPIError, isClientRequestCanceled(c)) {
