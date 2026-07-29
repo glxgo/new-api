@@ -20,8 +20,11 @@ func setupSubscriptionChannelCostTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
 		&User{},
+		&Token{},
+		&SubscriptionOrder{},
 		&UserSubscription{},
 		&SubscriptionPreConsumeRecord{},
+		&TokenSubscriptionBindingHistory{},
 		&DividendRecord{},
 	))
 	oldDB := DB
@@ -159,7 +162,7 @@ func TestCleanupSubscriptionPreConsumeRecordsKeepsPendingRows(t *testing.T) {
 	require.Equal(t, []string{SubscriptionCostStatusReserved, SubscriptionCostStatusProvisional}, statuses)
 }
 
-func TestAdminDeleteSubscriptionVoidsCostWithoutDividend(t *testing.T) {
+func TestAdminDeleteSubscriptionWithCostRecordIsBlocked(t *testing.T) {
 	db := setupSubscriptionChannelCostTestDB(t)
 	sub := UserSubscription{
 		UserId:           103,
@@ -177,12 +180,12 @@ func TestAdminDeleteSubscriptionVoidsCostWithoutDividend(t *testing.T) {
 	}).Error)
 
 	_, err := AdminDeleteUserSubscription(sub.Id)
-	require.NoError(t, err)
-	require.ErrorIs(t, db.First(&UserSubscription{}, sub.Id).Error, gorm.ErrRecordNotFound)
+	require.Error(t, err)
+	require.NoError(t, db.First(&UserSubscription{}, sub.Id).Error)
 	var requestCount int64
 	require.NoError(t, db.Model(&SubscriptionPreConsumeRecord{}).
 		Where("user_subscription_id = ?", sub.Id).Count(&requestCount).Error)
-	require.Zero(t, requestCount)
+	require.Equal(t, int64(1), requestCount)
 	var dividendCount int64
 	require.NoError(t, db.Model(&DividendRecord{}).
 		Where("source_ref = ?", fmt.Sprintf("sub-end-%d", sub.Id)).Count(&dividendCount).Error)

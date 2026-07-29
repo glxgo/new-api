@@ -98,6 +98,7 @@ function SubscriptionStatusBadge(props: {
 
 export function UserSubscriptionsDialog(props: Props) {
   const { t } = useTranslation()
+  const userId = props.user?.id
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [plans, setPlans] = useState<PlanRecord[]>([])
@@ -117,12 +118,12 @@ export function UserSubscriptionsDialog(props: Props) {
   }, [plans])
 
   const loadData = useCallback(async () => {
-    if (!props.user?.id) return
+    if (!userId) return
     setLoading(true)
     try {
       const [plansRes, subsRes] = await Promise.all([
         getAdminPlans(),
-        getUserSubscriptions(props.user.id),
+        getUserSubscriptions(userId),
       ])
       if (plansRes.success) setPlans(plansRes.data || [])
       if (subsRes.success) setSubs(subsRes.data || [])
@@ -131,23 +132,30 @@ export function UserSubscriptionsDialog(props: Props) {
     } finally {
       setLoading(false)
     }
-  }, [props.user?.id, t])
+  }, [userId, t])
 
   useEffect(() => {
-    if (props.open && props.user?.id) {
-      setSelectedPlanId('')
-      loadData()
+    let active = true
+    if (props.open && userId) {
+      void Promise.resolve().then(() => {
+        if (!active) return
+        setSelectedPlanId('')
+        void loadData()
+      })
     }
-  }, [props.open, props.user?.id, loadData])
+    return () => {
+      active = false
+    }
+  }, [props.open, userId, loadData])
 
   const handleCreate = async () => {
-    if (!props.user?.id || !selectedPlanId) {
+    if (!userId || !selectedPlanId) {
       toast.error(t('Please select a subscription plan'))
       return
     }
     setCreating(true)
     try {
-      const res = await createUserSubscription(props.user.id, {
+      const res = await createUserSubscription(userId, {
         plan_id: Number(selectedPlanId),
       })
       if (res.success) {
@@ -406,10 +414,10 @@ export function UserSubscriptionsDialog(props: Props) {
           desc={
             confirmAction.type === 'invalidate'
               ? t(
-                  'After invalidating, this subscription will be immediately deactivated. Historical records are not affected. Continue?'
+                  'After invalidating, this subscription will be immediately deactivated. Every API Key currently bound to it is affected: its next request will follow that Key’s configured continuation policy, or fail if no continuation is allowed. Historical records and scheduled renewal relations remain visible. Continue?'
                 )
               : t(
-                  'Deleting will permanently remove this subscription record (including benefit details). Continue?'
+                  'Deleting permanently removes this instance. The system will block deletion when API Key bindings, billing records, audit history, or renewal relations exist; use Invalidate instead in that case. Continue?'
                 )
           }
           handleConfirm={handleConfirmAction}

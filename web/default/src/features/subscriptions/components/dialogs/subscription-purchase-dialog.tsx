@@ -44,7 +44,7 @@ import {
   paySubscriptionBalance,
 } from '../../api'
 import { formatDuration, formatResetPeriod } from '../../lib'
-import type { PlanRecord } from '../../types'
+import type { PlanRecord, SubscriptionRenewalPreview } from '../../types'
 
 interface PaymentMethod {
   type: string
@@ -63,6 +63,7 @@ interface Props {
   purchaseLimit?: number
   purchaseCount?: number
   userQuota?: number
+  renewalPreview?: SubscriptionRenewalPreview | null
   onPurchaseSuccess?: () => void | Promise<void>
 }
 
@@ -73,10 +74,17 @@ export function SubscriptionPurchaseDialog(props: Props) {
   const [selectedEpayMethod, setSelectedEpayMethod] = useState('')
 
   useEffect(() => {
-    if (props.open && props.epayMethods && props.epayMethods.length > 0) {
-      setSelectedEpayMethod(props.epayMethods[0].type)
-    } else if (!props.open) {
-      setSelectedEpayMethod('')
+    let active = true
+    void Promise.resolve().then(() => {
+      if (!active) return
+      if (props.open && props.epayMethods && props.epayMethods.length > 0) {
+        setSelectedEpayMethod(props.epayMethods[0].type)
+      } else if (!props.open) {
+        setSelectedEpayMethod('')
+      }
+    })
+    return () => {
+      active = false
     }
   }, [props.open, props.epayMethods])
 
@@ -109,13 +117,22 @@ export function SubscriptionPurchaseDialog(props: Props) {
   const allowBalancePay = plan.allow_balance_pay !== false
   const insufficientBalance = userQuota < balanceCost
   const limitReached =
+    !props.renewalPreview &&
     (props.purchaseLimit || 0) > 0 &&
     (props.purchaseCount || 0) >= (props.purchaseLimit || 0)
+  const payRequest = {
+    plan_id: plan.id,
+    ...(props.renewalPreview
+      ? {
+          renew_from_subscription_id: props.renewalPreview.from_subscription.id,
+        }
+      : {}),
+  }
 
   const handlePayStripe = async () => {
     setPaying(true)
     try {
-      const res = await paySubscriptionStripe({ plan_id: plan.id })
+      const res = await paySubscriptionStripe(payRequest)
       if (res.message === 'success' && res.data?.pay_link) {
         window.open(res.data.pay_link, '_blank')
         toast.success(t('Payment page opened'))
@@ -137,7 +154,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
   const handlePayCreem = async () => {
     setPaying(true)
     try {
-      const res = await paySubscriptionCreem({ plan_id: plan.id })
+      const res = await paySubscriptionCreem(payRequest)
       if (res.message === 'success' && res.data?.checkout_url) {
         window.open(res.data.checkout_url, '_blank')
         toast.success(t('Payment page opened'))
@@ -161,7 +178,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
   const handlePayWaffoPancake = async () => {
     setPaying(true)
     try {
-      const res = await paySubscriptionWaffoPancake({ plan_id: plan.id })
+      const res = await paySubscriptionWaffoPancake(payRequest)
       if (res.message === 'success' && res.data?.checkout_url) {
         toast.success(t('Redirecting to payment page...'))
         window.location.href = res.data.checkout_url
@@ -191,7 +208,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
     setPaying(true)
     try {
       const res = await paySubscriptionEpay({
-        plan_id: plan.id,
+        ...payRequest,
         payment_method: selectedEpayMethod,
       })
       if (res.message === 'success' && res.url) {
@@ -234,9 +251,13 @@ export function SubscriptionPurchaseDialog(props: Props) {
     }
     setPaying(true)
     try {
-      const res = await paySubscriptionBalance({ plan_id: plan.id })
+      const res = await paySubscriptionBalance(payRequest)
       if (res.success) {
-        toast.success(t('Subscription purchased successfully'))
+        toast.success(
+          props.renewalPreview
+            ? t('Renewal created successfully')
+            : t('Subscription purchased successfully')
+        )
         void props.onPurchaseSuccess?.()
         props.onOpenChange(false)
       } else {
@@ -260,7 +281,9 @@ export function SubscriptionPurchaseDialog(props: Props) {
       title={
         <>
           <Crown className='h-5 w-5' />
-          {t('Purchase Subscription')}
+          {props.renewalPreview
+            ? t('Confirm Subscription Renewal')
+            : t('Purchase Subscription')}
         </>
       }
       contentClassName='max-sm:w-[calc(100vw-1.5rem)] sm:max-w-md'
@@ -269,6 +292,32 @@ export function SubscriptionPurchaseDialog(props: Props) {
       bodyClassName='space-y-4'
     >
       <div className='space-y-3 sm:space-y-4'>
+        {props.renewalPreview && (
+          <Alert>
+            <AlertDescription className='space-y-1.5'>
+              <p className='font-medium'>
+                {t(
+                  'Renewal creates a new subscription instance using the current plan terms shown below.'
+                )}
+              </p>
+              <p>
+                {t('New instance starts at')}{' '}
+                {new Date(
+                  props.renewalPreview.start_time * 1000
+                ).toLocaleString()}
+                ，
+                {t('and inherits the API Key bindings visible in the preview.')}
+              </p>
+              {props.renewalPreview.is_replacement && (
+                <p className='text-warning'>
+                  {t(
+                    'The original plan is no longer renewable. The system will use its configured replacement plan.'
+                  )}
+                </p>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
         <div className='bg-muted/50 space-y-2.5 rounded-lg border p-3 sm:space-y-3 sm:p-4'>
           <div className='flex justify-between'>
             <span className='text-muted-foreground text-sm'>
@@ -312,6 +361,62 @@ export function SubscriptionPurchaseDialog(props: Props) {
               <GroupBadge group={plan.upgrade_group} />
             </div>
           )}
+          {plan.allowed_group && (
+            <div className='flex items-center justify-between'>
+              <span className='text-muted-foreground text-sm'>
+                {t('Available Endpoint')}
+              </span>
+              <GroupBadge group={plan.allowed_group} />
+            </div>
+          )}
+          {props.renewalPreview && (
+            <div className='flex justify-between gap-3'>
+              <span className='text-muted-foreground text-sm'>
+                {t('New validity period')}
+              </span>
+              <span className='text-right text-sm'>
+                {new Date(
+                  props.renewalPreview.start_time * 1000
+                ).toLocaleDateString()}{' '}
+                –{' '}
+                {new Date(
+                  props.renewalPreview.end_time * 1000
+                ).toLocaleDateString()}
+              </span>
+            </div>
+          )}
+          {props.renewalPreview &&
+            props.renewalPreview.binding_changes.length > 0 && (
+              <div className='space-y-1.5 rounded-md border p-2.5'>
+                <div className='text-xs font-medium'>
+                  {t('API Keys carried to the new instance')} (
+                  {props.renewalPreview.binding_changes.length})
+                </div>
+                {props.renewalPreview.binding_changes.map((change) => (
+                  <div
+                    key={change.token_id}
+                    className='text-muted-foreground flex items-center justify-between gap-3 text-xs'
+                  >
+                    <span className='truncate'>{change.token_name}</span>
+                    <span className='shrink-0'>
+                      {change.from_group}
+                      {change.from_group !== change.to_group
+                        ? ` → ${change.to_group}`
+                        : ''}
+                    </span>
+                  </div>
+                ))}
+                {props.renewalPreview.binding_changes.some(
+                  (change) => change.from_group !== change.to_group
+                ) && (
+                  <p className='text-warning text-xs'>
+                    {t(
+                      'The renewed plan uses a different group. These API Keys will switch group and instance together when the renewal becomes active.'
+                    )}
+                  </p>
+                )}
+              </div>
+            )}
           <Separator />
           <div className='flex items-center justify-between'>
             <span className='text-sm font-medium'>{t('Amount Due')}</span>

@@ -36,21 +36,43 @@ export function getApiKeyFormSchema(t: TFunction) {
       allow_ips: z.string().optional(),
       group: z.string().trim().min(1, t('Please select a group')),
       cross_group_retry: z.boolean().optional(),
+      subscription_mode: z.enum(['auto', 'instance']),
+      subscription_id: z.number(),
+      subscription_allow_renewal: z.boolean(),
+      subscription_allow_same_group: z.boolean(),
+      subscription_allow_wallet: z.boolean(),
+      subscription_wallet_limit_dollars: z.number(),
+      keep_planned_subscription: z.boolean(),
       tokenCount: z.number().min(1).optional(),
     })
     .superRefine((data, ctx) => {
-      if (data.unlimited_quota) {
-        return
-      }
-
       if (
-        data.remain_quota_dollars === undefined ||
-        data.remain_quota_dollars < 0
+        !data.unlimited_quota &&
+        (data.remain_quota_dollars === undefined ||
+          data.remain_quota_dollars < 0)
       ) {
         ctx.addIssue({
           code: 'custom',
           path: ['remain_quota_dollars'],
           message: t('Quota must be zero or greater'),
+        })
+      }
+      if (data.subscription_mode === 'instance' && data.subscription_id <= 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['subscription_id'],
+          message: t('Please select a subscription instance'),
+        })
+      }
+      if (
+        data.subscription_mode === 'instance' &&
+        data.subscription_allow_wallet &&
+        data.subscription_wallet_limit_dollars <= 0
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['subscription_wallet_limit_dollars'],
+          message: t('Wallet fallback limit must be greater than zero'),
         })
       }
     })
@@ -71,6 +93,13 @@ export const API_KEY_FORM_DEFAULT_VALUES: ApiKeyFormValues = {
   allow_ips: '',
   group: '',
   cross_group_retry: false,
+  subscription_mode: 'auto',
+  subscription_id: 0,
+  subscription_allow_renewal: true,
+  subscription_allow_same_group: false,
+  subscription_allow_wallet: false,
+  subscription_wallet_limit_dollars: 0,
+  keep_planned_subscription: false,
   tokenCount: 1,
 }
 
@@ -107,6 +136,22 @@ export function transformFormDataToPayload(
     allow_ips: data.allow_ips || '',
     group: data.group.trim(),
     cross_group_retry: data.group === 'auto' ? !!data.cross_group_retry : false,
+    subscription_mode: data.subscription_mode,
+    subscription_id:
+      data.subscription_mode === 'instance' ? data.subscription_id : 0,
+    subscription_allow_renewal:
+      data.subscription_mode === 'instance' && data.subscription_allow_renewal,
+    subscription_allow_same_group:
+      data.subscription_mode === 'instance' &&
+      data.subscription_allow_same_group,
+    subscription_allow_wallet:
+      data.subscription_mode === 'instance' && data.subscription_allow_wallet,
+    subscription_wallet_limit:
+      data.subscription_mode === 'instance' && data.subscription_allow_wallet
+        ? parseQuotaFromDollars(data.subscription_wallet_limit_dollars)
+        : 0,
+    cancel_planned_subscription:
+      data.subscription_mode === 'auto' && !data.keep_planned_subscription,
   }
 }
 
@@ -132,6 +177,16 @@ export function transformApiKeyToFormDefaults(
     allow_ips: apiKey.allow_ips || '',
     group: apiKey.group || '',
     cross_group_retry: !!apiKey.cross_group_retry,
+    subscription_mode: apiKey.subscription_mode || 'auto',
+    subscription_id: apiKey.subscription_id || 0,
+    subscription_allow_renewal: !!apiKey.subscription_allow_renewal,
+    subscription_allow_same_group: !!apiKey.subscription_allow_same_group,
+    subscription_allow_wallet: !!apiKey.subscription_allow_wallet,
+    subscription_wallet_limit_dollars: quotaUnitsToDollars(
+      apiKey.subscription_wallet_limit || 0
+    ),
+    keep_planned_subscription:
+      apiKey.subscription_mode === 'auto' && apiKey.planned_subscription_id > 0,
     tokenCount: 1,
   }
 }

@@ -23,6 +23,11 @@ export interface PriorityBillingSummary {
   multiplier: 2 | null
 }
 
+export interface PriorityBillingAmounts {
+  originalQuota: number
+  fastQuota: number
+}
+
 export function getPriorityBillingSummary(
   other: Pick<LogOtherData, 'service_tier' | 'priority_doubled'> | null
 ): PriorityBillingSummary | null {
@@ -31,5 +36,19 @@ export function getPriorityBillingSummary(
   return {
     isFast: true,
     multiplier: other.priority_doubled === true ? 2 : null,
+  }
+}
+
+export function getPriorityBillingAmounts(
+  finalQuota: number,
+  multiplier: PriorityBillingSummary['multiplier']
+): PriorityBillingAmounts | null {
+  if (multiplier !== 2 || !Number.isFinite(finalQuota) || finalQuota < 0) {
+    return null
+  }
+
+  return {
+    originalQuota: finalQuota / multiplier,
+    fastQuota: finalQuota,
   }
 }

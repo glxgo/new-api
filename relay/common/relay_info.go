@@ -90,15 +90,22 @@ type TokenCountMeta struct {
 }
 
 type RelayInfo struct {
-	TokenId           int
-	TokenKey          string
-	TokenGroup        string
-	UserId            int
-	UsingGroup        string // 使用的分组，当auto跨分组重试时，会变动
-	UserGroup         string // 用户所在分组
-	TokenUnlimited    bool
-	StartTime         time.Time
-	FirstResponseTime time.Time
+	TokenId                         int
+	TokenKey                        string
+	TokenGroup                      string
+	UserId                          int
+	UsingGroup                      string // 使用的分组，当auto跨分组重试时，会变动
+	UserGroup                       string // 用户所在分组
+	TokenUnlimited                  bool
+	TokenSubscriptionMode           string
+	ConfiguredSubscriptionId        int
+	PlannedSubscriptionId           int
+	SubscriptionWalletFallback      bool
+	SubscriptionWalletFallbackUsed  bool
+	SubscriptionWalletFallbackLimit int64
+	SubscriptionWalletFallbackSpent int64
+	StartTime                       time.Time
+	FirstResponseTime               time.Time
 	// UpstreamStartTime 是发给上游请求(client.Do)的时刻，用于纯上游延迟/首字统计。
 	// 为零(如本地鉴权失败未到上游)时回退到 StartTime。
 	UpstreamStartTime time.Time

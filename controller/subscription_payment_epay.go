@@ -17,8 +17,9 @@ import (
 )
 
 type SubscriptionEpayPayRequest struct {
-	PlanId        int    `json:"plan_id"`
-	PaymentMethod string `json:"payment_method"`
+	PlanId                  int    `json:"plan_id"`
+	PaymentMethod           string `json:"payment_method"`
+	RenewFromSubscriptionId int    `json:"renew_from_subscription_id"`
 }
 
 func SubscriptionRequestEpay(c *gin.Context) {
@@ -32,7 +33,8 @@ func SubscriptionRequestEpay(c *gin.Context) {
 		return
 	}
 
-	plan, err := model.GetSubscriptionPlanById(req.PlanId)
+	userId := c.GetInt("id")
+	plan, err := resolveSubscriptionPlanForPayment(userId, req.PlanId, req.RenewFromSubscriptionId)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -50,8 +52,7 @@ func SubscriptionRequestEpay(c *gin.Context) {
 		return
 	}
 
-	userId := c.GetInt("id")
-	if plan.MaxPurchasePerUser > 0 {
+	if req.RenewFromSubscriptionId <= 0 && plan.MaxPurchasePerUser > 0 {
 		count, err := model.CountUserSubscriptionsByPlan(userId, plan.Id)
 		if err != nil {
 			common.ApiError(c, err)
@@ -84,15 +85,16 @@ func SubscriptionRequestEpay(c *gin.Context) {
 		return
 	}
 
-	order := &model.SubscriptionOrder{
-		UserId:          userId,
-		PlanId:          plan.Id,
-		Money:           plan.PriceAmount,
-		TradeNo:         tradeNo,
-		PaymentMethod:   req.PaymentMethod,
-		PaymentProvider: model.PaymentProviderEpay,
-		CreateTime:      time.Now().Unix(),
-		Status:          common.TopUpStatusPending,
+	order, err := model.NewSubscriptionOrderFromPlan(
+		userId, plan, tradeNo, req.PaymentMethod, model.PaymentProviderEpay,
+	)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if err := configureSubscriptionOrderRenewal(order, userId, req.RenewFromSubscriptionId); err != nil {
+		common.ApiError(c, err)
+		return
 	}
 	if err := order.Insert(); err != nil {
 		common.ApiErrorMsg(c, "创建订单失败")

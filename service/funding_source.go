@@ -28,6 +28,8 @@ type FundingSource interface {
 
 type WalletFunding struct {
 	userId            int
+	tokenId           int
+	walletFallback    bool
 	consumedGift      int // 实际扣减的赠金额度(退款需原样退回赠金池)
 	consumedPrincipal int // 实际扣减的本金额度(退款需原样退回本金池)
 }
@@ -49,8 +51,16 @@ func (w *WalletFunding) PreConsume(amount int) error {
 	if amount <= 0 {
 		return nil
 	}
+	if w.walletFallback {
+		if _, err := model.ReserveTokenWalletFallback(w.tokenId, w.userId, int64(amount)); err != nil {
+			return err
+		}
+	}
 	paidGift, paidPrincipal, err := DecreaseUserQuotaDual(w.userId, amount)
 	if err != nil {
+		if w.walletFallback {
+			_, _ = model.ReleaseTokenWalletFallback(w.tokenId, w.userId, int64(amount))
+		}
 		return err
 	}
 	// PreConsume 是覆盖写(本会话首次预扣), 覆盖之前为零值。
@@ -64,9 +74,17 @@ func (w *WalletFunding) Settle(delta int) error {
 		return nil
 	}
 	if delta > 0 {
+		if w.walletFallback {
+			if _, err := model.ReserveTokenWalletFallback(w.tokenId, w.userId, int64(delta)); err != nil {
+				return err
+			}
+		}
 		// 补扣: 双池拆分累加。
 		paidGift, paidPrincipal, err := DecreaseUserQuotaDual(w.userId, delta)
 		if err != nil {
+			if w.walletFallback {
+				_, _ = model.ReleaseTokenWalletFallback(w.tokenId, w.userId, int64(delta))
+			}
 			return err
 		}
 		w.consumedGift += paidGift
@@ -98,6 +116,14 @@ func (w *WalletFunding) Settle(delta int) error {
 	}
 	w.consumedGift -= refundGift
 	w.consumedPrincipal -= refundPrincipal
+	if w.walletFallback {
+		if _, err := model.ReleaseTokenWalletFallback(w.tokenId, w.userId, int64(refundGift+refundPrincipal)); err != nil {
+			// The user's money is already back. Keep the fallback counter
+			// conservative on a rare release failure, but never leave the
+			// in-memory consumed amounts intact or a retry could refund twice.
+			return err
+		}
+	}
 	return nil
 }
 
@@ -107,9 +133,16 @@ func (w *WalletFunding) Refund() error {
 	}
 	// 各退全量。非幂等(依赖 billing_session.go 的 refunded 标志保证只调一次)。
 	gift, principal := w.consumedGift, w.consumedPrincipal
+	if err := RefundDualToPools(w.userId, gift, principal); err != nil {
+		return err
+	}
 	w.consumedGift = 0
 	w.consumedPrincipal = 0
-	return RefundDualToPools(w.userId, gift, principal)
+	if w.walletFallback {
+		_, err := model.ReleaseTokenWalletFallback(w.tokenId, w.userId, int64(gift+principal))
+		return err
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -120,10 +153,11 @@ type SubscriptionFunding struct {
 	requestId      string
 	userId         int
 	modelName      string
-	amount         int64 // 预扣的订阅额度（subConsume）
+	amount         int64  // 预扣的订阅额度（subConsume）
 	usingGroup     string // 订阅级分组限制: 只扣 AllowedGroup == UsingGroup 的订阅
 	subscriptionId int
 	preConsumed    int64
+	binding        *model.Token
 	// 以下字段在 PreConsume 成功后填充，供 RelayInfo 同步使用
 	AmountTotal     int64
 	AmountUsedAfter int64
@@ -135,7 +169,15 @@ func (s *SubscriptionFunding) Source() string { return BillingSourceSubscription
 
 func (s *SubscriptionFunding) PreConsume(_ int) error {
 	// amount 参数被忽略，使用内部 s.amount（已在构造时根据 preConsumedQuota 计算）
-	res, err := model.PreConsumeUserSubscription(s.requestId, s.userId, s.modelName, 0, s.amount, s.usingGroup)
+	res, err := model.PreConsumeUserSubscriptionForToken(
+		s.requestId,
+		s.userId,
+		s.modelName,
+		0,
+		s.amount,
+		s.usingGroup,
+		s.binding,
+	)
 	if err != nil {
 		return err
 	}

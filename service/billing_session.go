@@ -303,6 +303,16 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 		if strings.Contains(errMsg, "no active subscription") || strings.Contains(errMsg, "subscription quota insufficient") {
 			return types.NewErrorWithStatusCode(fmt.Errorf("订阅额度不足或未配置订阅: %s", errMsg), types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 		}
+		if errors.Is(err, model.ErrTokenWalletFallbackLimitReached) ||
+			errors.Is(err, model.ErrTokenWalletFallbackDisabled) {
+			return types.NewErrorWithStatusCode(
+				fmt.Errorf("API Key 钱包接续额度不足: %w", err),
+				types.ErrorCodeInsufficientUserQuota,
+				http.StatusForbidden,
+				types.ErrOptionWithSkipRetry(),
+				types.ErrOptionWithNoRecordErrorLog(),
+			)
+		}
 		return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
 	}
 
@@ -317,9 +327,23 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 func (s *BillingSession) reserveFunding(delta int) error {
 	switch funding := s.funding.(type) {
 	case *WalletFunding:
+		if funding.walletFallback {
+			if _, err := model.ReserveTokenWalletFallback(funding.tokenId, funding.userId, int64(delta)); err != nil {
+				return types.NewErrorWithStatusCode(
+					fmt.Errorf("API Key 钱包接续额度不足: %w", err),
+					types.ErrorCodeInsufficientUserQuota,
+					http.StatusForbidden,
+					types.ErrOptionWithSkipRetry(),
+					types.ErrOptionWithNoRecordErrorLog(),
+				)
+			}
+		}
 		// 双池补扣(阶段2b): 优先赠金不足本金。返回实际拆分并栈式记录, 供 rollback 精确退回。
 		paidGift, paidPrincipal, err := DecreaseUserQuotaDual(funding.userId, delta)
 		if err != nil {
+			if funding.walletFallback {
+				_, _ = model.ReleaseTokenWalletFallback(funding.tokenId, funding.userId, int64(delta))
+			}
 			if IsDualInsufficientQuotaError(err) {
 				return types.NewErrorWithStatusCode(
 					fmt.Errorf("用户额度不足: %s", err.Error()),
@@ -366,6 +390,15 @@ func (s *BillingSession) rollbackFundingReserve(delta int) {
 		} else {
 			funding.consumedGift -= sp.gift
 			funding.consumedPrincipal -= sp.principal
+			if funding.walletFallback {
+				if _, releaseErr := model.ReleaseTokenWalletFallback(
+					funding.tokenId,
+					funding.userId,
+					int64(sp.gift+sp.principal),
+				); releaseErr != nil {
+					common.SysLog("error rolling back wallet fallback reserve: " + releaseErr.Error())
+				}
+			}
 		}
 	case *SubscriptionFunding:
 		if err := model.PostConsumeUserSubscriptionDelta(funding.subscriptionId, -int64(delta)); err != nil {
@@ -408,6 +441,9 @@ func (s *BillingSession) shouldTrust(c *gin.Context) bool {
 
 	switch s.funding.Source() {
 	case BillingSourceWallet:
+		if wallet, ok := s.funding.(*WalletFunding); ok && wallet.walletFallback {
+			return false
+		}
 		return s.relayInfo.UserQuota > trustQuota
 	case BillingSourceSubscription:
 		// 订阅不能启用信任旁路。原因：
@@ -437,6 +473,9 @@ func (s *BillingSession) syncRelayInfo() {
 	} else {
 		info.SubscriptionId = 0
 		info.SubscriptionPreConsumed = 0
+		if wallet, ok := s.funding.(*WalletFunding); ok {
+			info.SubscriptionWalletFallbackUsed = wallet.walletFallback
+		}
 	}
 }
 
@@ -451,9 +490,24 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 	}
 
 	pref := common.NormalizeBillingPreference(relayInfo.UserSetting.BillingPreference)
+	var tokenBinding *model.Token
+	if !relayInfo.IsPlayground && relayInfo.TokenKey != "" {
+		if token, err := model.GetTokenByKey(relayInfo.TokenKey, false); err == nil {
+			tokenBinding = token
+			relayInfo.TokenSubscriptionMode = model.NormalizeTokenSubscriptionMode(token.SubscriptionMode)
+			relayInfo.ConfiguredSubscriptionId = token.SubscriptionId
+			relayInfo.PlannedSubscriptionId = token.PlannedSubscriptionId
+			relayInfo.SubscriptionWalletFallback = token.SubscriptionAllowWallet
+			relayInfo.SubscriptionWalletFallbackLimit = token.SubscriptionWalletLimit
+			relayInfo.SubscriptionWalletFallbackSpent = token.SubscriptionWalletUsed
+		}
+	}
+	instanceBinding := tokenBinding != nil &&
+		model.NormalizeTokenSubscriptionMode(tokenBinding.SubscriptionMode) == model.TokenSubscriptionModeInstance &&
+		tokenBinding.SubscriptionId > 0
 
 	// 钱包路径需要先检查用户额度
-	tryWallet := func() (*BillingSession, *types.NewAPIError) {
+	tryWallet := func(walletFallback bool) (*BillingSession, *types.NewAPIError) {
 		// 双池(阶段2b): 余额检查看 gift+principal 合计。一次 GetUserCache 同时取两池。
 		userCache, err := model.GetUserCache(relayInfo.UserId)
 		if err != nil {
@@ -482,7 +536,11 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 
 		session := &BillingSession{
 			relayInfo: relayInfo,
-			funding:   &WalletFunding{userId: relayInfo.UserId},
+			funding: &WalletFunding{
+				userId:         relayInfo.UserId,
+				tokenId:        relayInfo.TokenId,
+				walletFallback: walletFallback,
+			},
 		}
 		if apiErr := session.preConsume(c, preConsumedQuota); apiErr != nil {
 			return nil, apiErr
@@ -503,6 +561,7 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 				modelName:  relayInfo.OriginModelName,
 				amount:     subConsume,
 				usingGroup: relayInfo.UsingGroup,
+				binding:    tokenBinding,
 			},
 		}
 		// 必须传 subConsume 而非 preConsumedQuota，保证 SubscriptionFunding.amount、
@@ -513,13 +572,27 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		return session, nil
 	}
 
+	if instanceBinding {
+		session, apiErr := trySubscription()
+		if apiErr == nil {
+			return session, nil
+		}
+		if apiErr.GetErrorCode() != types.ErrorCodeInsufficientUserQuota {
+			return nil, apiErr
+		}
+		if tokenBinding.SubscriptionAllowWallet {
+			return tryWallet(true)
+		}
+		return nil, apiErr
+	}
+
 	switch pref {
 	case "subscription_only":
 		return trySubscription()
 	case "wallet_only":
-		return tryWallet()
+		return tryWallet(false)
 	case "wallet_first":
-		session, err := tryWallet()
+		session, err := tryWallet(false)
 		if err != nil {
 			if err.GetErrorCode() == types.ErrorCodeInsufficientUserQuota {
 				return trySubscription()
@@ -535,12 +608,12 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 			return nil, types.NewError(subCheckErr, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
 		}
 		if !hasSub {
-			return tryWallet()
+			return tryWallet(false)
 		}
 		session, apiErr := trySubscription()
 		if apiErr != nil {
 			if apiErr.GetErrorCode() == types.ErrorCodeInsufficientUserQuota {
-				return tryWallet()
+				return tryWallet(false)
 			}
 			return nil, apiErr
 		}

@@ -18,7 +18,10 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { getPriorityBillingSummary } from './priority-billing.ts'
+import {
+  getPriorityBillingAmounts,
+  getPriorityBillingSummary,
+} from './priority-billing.ts'
 
 describe('getPriorityBillingSummary', () => {
   test('reports an applied 2x surcharge from persisted audit fields', () => {
@@ -55,5 +58,18 @@ describe('getPriorityBillingSummary', () => {
       }),
       null
     )
+  })
+
+  test('derives the persisted pre-FAST price from the final 2x quota', () => {
+    assert.deepEqual(getPriorityBillingAmounts(2468, 2), {
+      originalQuota: 1234,
+      fastQuota: 2468,
+    })
+  })
+
+  test('does not invent an original price without a persisted 2x marker', () => {
+    assert.equal(getPriorityBillingAmounts(2468, null), null)
+    assert.equal(getPriorityBillingAmounts(Number.NaN, 2), null)
+    assert.equal(getPriorityBillingAmounts(-1, 2), null)
   })
 })

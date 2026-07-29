@@ -12,23 +12,38 @@ import (
 )
 
 type Token struct {
-	Id                 int            `json:"id"`
-	UserId             int            `json:"user_id" gorm:"index"`
-	Key                string         `json:"key" gorm:"type:varchar(128);uniqueIndex"`
-	Status             int            `json:"status" gorm:"default:1"`
-	Name               string         `json:"name" gorm:"index" `
-	CreatedTime        int64          `json:"created_time" gorm:"bigint"`
-	AccessedTime       int64          `json:"accessed_time" gorm:"bigint"`
-	ExpiredTime        int64          `json:"expired_time" gorm:"bigint;default:-1"` // -1 means never expired
-	RemainQuota        int            `json:"remain_quota" gorm:"default:0"`
-	UnlimitedQuota     bool           `json:"unlimited_quota"`
-	ModelLimitsEnabled bool           `json:"model_limits_enabled"`
-	ModelLimits        string         `json:"model_limits" gorm:"type:text"`
-	AllowIps           *string        `json:"allow_ips" gorm:"default:''"`
-	UsedQuota          int            `json:"used_quota" gorm:"default:0"` // used quota
-	Group              string         `json:"group" gorm:"default:''"`
-	CrossGroupRetry    bool           `json:"cross_group_retry"` // 跨分组重试，仅auto分组有效
-	DeletedAt          gorm.DeletedAt `gorm:"index"`
+	Id                 int     `json:"id"`
+	UserId             int     `json:"user_id" gorm:"index"`
+	Key                string  `json:"key" gorm:"type:varchar(128);uniqueIndex"`
+	Status             int     `json:"status" gorm:"default:1"`
+	Name               string  `json:"name" gorm:"index" `
+	CreatedTime        int64   `json:"created_time" gorm:"bigint"`
+	AccessedTime       int64   `json:"accessed_time" gorm:"bigint"`
+	ExpiredTime        int64   `json:"expired_time" gorm:"bigint;default:-1"` // -1 means never expired
+	RemainQuota        int     `json:"remain_quota" gorm:"default:0"`
+	UnlimitedQuota     bool    `json:"unlimited_quota"`
+	ModelLimitsEnabled bool    `json:"model_limits_enabled"`
+	ModelLimits        string  `json:"model_limits" gorm:"type:text"`
+	AllowIps           *string `json:"allow_ips" gorm:"default:''"`
+	UsedQuota          int     `json:"used_quota" gorm:"default:0"` // used quota
+	Group              string  `json:"group" gorm:"default:''"`
+	CrossGroupRetry    bool    `json:"cross_group_retry"` // 跨分组重试，仅auto分组有效
+	// SubscriptionMode keeps existing keys backward compatible: empty/auto
+	// continues the legacy user-level allocation, instance pins this key to a
+	// concrete UserSubscription.
+	SubscriptionMode             string         `json:"subscription_mode" gorm:"type:varchar(16);not null;default:'auto';index"`
+	SubscriptionId               int            `json:"subscription_id" gorm:"not null;default:0;index"`
+	SubscriptionAllowRenewal     bool           `json:"subscription_allow_renewal" gorm:"not null;default:false"`
+	SubscriptionAllowSameGroup   bool           `json:"subscription_allow_same_group" gorm:"not null;default:false"`
+	SubscriptionAllowWallet      bool           `json:"subscription_allow_wallet" gorm:"not null;default:false"`
+	SubscriptionWalletLimit      int64          `json:"subscription_wallet_limit" gorm:"type:bigint;not null;default:0"`
+	SubscriptionWalletUsed       int64          `json:"subscription_wallet_used" gorm:"type:bigint;not null;default:0"`
+	SubscriptionWalletCycleId    int            `json:"subscription_wallet_cycle_id" gorm:"not null;default:0;index"`
+	PlannedSubscriptionId        int            `json:"planned_subscription_id" gorm:"not null;default:0;index"`
+	PlannedSubscriptionGroup     string         `json:"planned_subscription_group" gorm:"type:varchar(64);not null;default:''"`
+	PlannedSubscriptionEffective int64          `json:"planned_subscription_effective" gorm:"type:bigint;not null;default:0;index"`
+	CancelPlannedSubscription    bool           `json:"cancel_planned_subscription" gorm:"-"`
+	DeletedAt                    gorm.DeletedAt `gorm:"index"`
 }
 
 func (token *Token) Clean() {
@@ -295,7 +310,12 @@ func (token *Token) Update() (err error) {
 		}
 	}()
 	err = DB.Model(token).Select("name", "status", "expired_time", "remain_quota", "unlimited_quota",
-		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry").Updates(token).Error
+		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry",
+		"subscription_mode", "subscription_id", "subscription_allow_renewal",
+		"subscription_allow_same_group", "subscription_allow_wallet",
+		"subscription_wallet_limit", "subscription_wallet_used", "subscription_wallet_cycle_id",
+		"planned_subscription_id", "planned_subscription_group",
+		"planned_subscription_effective").Updates(token).Error
 	return err
 }
 

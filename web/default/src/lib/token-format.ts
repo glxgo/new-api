@@ -17,12 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 export interface TokenCountUnits {
-  million: string
+  tenThousand: string
   hundredMillion: string
 }
 
 const DEFAULT_TOKEN_COUNT_UNITS: TokenCountUnits = {
-  million: 'M',
+  tenThousand: '10K',
   hundredMillion: '100M',
 }
 
@@ -37,8 +37,8 @@ export function formatTokenCount(
   if (absoluteValue >= 100_000_000) {
     return `${(value / 100_000_000).toFixed(2)}${units.hundredMillion}`
   }
-  if (absoluteValue >= 1_000_000) {
-    return `${(value / 1_000_000).toFixed(2)}${units.million}`
+  if (absoluteValue >= 10_000) {
+    return `${(value / 10_000).toFixed(2)}${units.tenThousand}`
   }
 
   return Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(value)

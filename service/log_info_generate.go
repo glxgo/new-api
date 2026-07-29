@@ -166,6 +166,23 @@ func appendBillingInfo(relayInfo *relaycommon.RelayInfo, other map[string]interf
 	if relayInfo.UserSetting.BillingPreference != "" {
 		other["billing_preference"] = relayInfo.UserSetting.BillingPreference
 	}
+	if relayInfo.TokenSubscriptionMode != "" {
+		other["token_subscription_mode"] = relayInfo.TokenSubscriptionMode
+	}
+	if relayInfo.ConfiguredSubscriptionId > 0 {
+		other["configured_subscription_id"] = relayInfo.ConfiguredSubscriptionId
+	}
+	if relayInfo.PlannedSubscriptionId > 0 {
+		other["planned_subscription_id"] = relayInfo.PlannedSubscriptionId
+	}
+	if relayInfo.SubscriptionWalletFallback {
+		other["wallet_fallback_enabled"] = true
+		other["wallet_fallback_limit"] = relayInfo.SubscriptionWalletFallbackLimit
+		other["wallet_fallback_used_before"] = relayInfo.SubscriptionWalletFallbackSpent
+	}
+	if relayInfo.SubscriptionWalletFallbackUsed {
+		other["wallet_fallback_applied"] = true
+	}
 	other["channel_cost_rule_version"] = 2
 	if relayInfo.ChannelMeta != nil {
 		other["channel_cost_channel_id"] = relayInfo.ChannelId

@@ -63,6 +63,7 @@ import {
 import {
   createPlan,
   updatePlan,
+  getAdminPlans,
   getGroups,
   createWaffoPancakeSubscriptionProduct,
   listWaffoPancakeSubscriptionProductOptions,
@@ -98,6 +99,7 @@ export function SubscriptionsMutateDrawer({
   const { triggerRefresh } = useSubscriptions()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [groupOptions, setGroupOptions] = useState<string[]>([])
+  const [renewalPlanOptions, setRenewalPlanOptions] = useState<PlanRecord[]>([])
   const [creatingPancakeProduct, setCreatingPancakeProduct] = useState(false)
   const [pancakeProducts, setPancakeProducts] = useState<
     { id: string; name: string; status: string }[]
@@ -121,6 +123,18 @@ export function SubscriptionsMutateDrawer({
           if (res.success) setGroupOptions(res.data || [])
         })
         .catch(() => {})
+      getAdminPlans()
+        .then((res) => {
+          if (res.success) {
+            setRenewalPlanOptions(
+              (res.data || []).filter(
+                (record) =>
+                  record.plan.id !== currentRow?.plan?.id && record.plan.enabled
+              )
+            )
+          }
+        })
+        .catch(() => setRenewalPlanOptions([]))
       // Best-effort — empty list still lets the operator use "+ Create".
       listWaffoPancakeSubscriptionProductOptions()
         .then((res) => {
@@ -558,6 +572,65 @@ export function SubscriptionsMutateDrawer({
                           )}
                         />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name='renewal_plan_id'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Renewal replacement plan')}</FormLabel>
+                      <Select
+                        items={[
+                          {
+                            value: '__none__',
+                            label: t('No replacement plan'),
+                          },
+                          ...renewalPlanOptions.map((record) => ({
+                            value: String(record.plan.id),
+                            label: `${record.plan.title} (#${record.plan.id})`,
+                          })),
+                        ]}
+                        value={
+                          field.value && field.value > 0
+                            ? String(field.value)
+                            : '__none__'
+                        }
+                        onValueChange={(value) =>
+                          field.onChange(
+                            value === '__none__' ? null : Number(value)
+                          )
+                        }
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent alignItemWithTrigger={false}>
+                          <SelectGroup>
+                            <SelectItem value='__none__'>
+                              {t('No replacement plan')}
+                            </SelectItem>
+                            {renewalPlanOptions.map((record) => (
+                              <SelectItem
+                                key={record.plan.id}
+                                value={String(record.plan.id)}
+                              >
+                                {record.plan.title} (#{record.plan.id})
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        {t(
+                          'Used only when this plan is disabled. Renewal will use the replacement plan current price and entitlements, and the user must confirm them.'
+                        )}
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

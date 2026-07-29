@@ -217,6 +217,13 @@ export interface LogOtherData {
   subscription_consumed?: number
   subscription_remain?: number
   subscription_total?: number
+  token_subscription_mode?: string
+  configured_subscription_id?: number
+  planned_subscription_id?: number
+  wallet_fallback_enabled?: boolean
+  wallet_fallback_applied?: boolean
+  wallet_fallback_limit?: number
+  wallet_fallback_used_before?: number
 }
 
 /**

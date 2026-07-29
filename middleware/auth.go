@@ -422,6 +422,16 @@ func TokenAuth() func(c *gin.Context) {
 
 		userCache.WriteContext(c)
 
+		if _, transitionErr := model.ApplyDueTokenSubscriptionTransition(token); transitionErr != nil {
+			abortWithOpenAiMessage(
+				c,
+				http.StatusConflict,
+				"续费订阅已生效，但 API Key 分组与归属切换失败，请在控制台重新确认",
+				types.ErrorCode("subscription_transition_failed"),
+			)
+			return
+		}
+
 		userGroup := userCache.Group
 		tokenGroup := token.Group
 		if tokenGroup != "" {

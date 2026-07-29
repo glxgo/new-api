@@ -28,6 +28,7 @@ import {
   Copy,
   Link,
   Loader2,
+  History,
   MoreHorizontal as DotsHorizontalIcon,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -58,6 +59,7 @@ import { updateApiKeyStatus } from '../api'
 import { API_KEY_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
 import { apiKeySchema } from '../types'
 import { useApiKeys } from './api-keys-provider'
+import { ApiKeySubscriptionHistoryDialog } from './dialogs/api-key-subscription-history-dialog'
 
 function getServerAddress(): string {
   try {
@@ -103,6 +105,7 @@ export function DataTableRowActions<TData>({
   const isEnabled = apiKey.status === API_KEY_STATUS.ENABLED
   const { chatPresets, serverAddress } = useChatPresets()
   const [isTogglingStatus, setIsTogglingStatus] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const hasChatPresets = chatPresets.length > 0
   const compact = display === 'compact'
 
@@ -274,6 +277,12 @@ export function DataTableRowActions<TData>({
                 <Edit size={16} />
               </DropdownMenuShortcut>
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setHistoryOpen(true)}>
+              {t('Subscription ownership history')}
+              <DropdownMenuShortcut>
+                <History size={16} />
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
             <DropdownMenuItem
               onClick={async () => {
                 const realKey = await resolveRealKey(apiKey.id)
@@ -324,6 +333,11 @@ export function DataTableRowActions<TData>({
           </DropdownMenuContent>
         </DropdownMenu>
       )}
+      <ApiKeySubscriptionHistoryDialog
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        apiKey={apiKey}
+      />
     </div>
   )
 }

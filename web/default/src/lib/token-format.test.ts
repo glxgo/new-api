@@ -21,18 +21,19 @@ import { describe, test } from 'node:test'
 import { formatTokenCount } from './token-format.ts'
 
 const units = {
-  million: '百万',
+  tenThousand: '万',
   hundredMillion: '亿',
 }
 
 describe('formatTokenCount', () => {
-  test('keeps sub-million values as grouped integers', () => {
-    assert.equal(formatTokenCount(999_999, units, 'en-US'), '999,999')
+  test('keeps values below ten thousand as grouped integers', () => {
+    assert.equal(formatTokenCount(9_999, units, 'en-US'), '9,999')
   })
 
-  test('uses the million unit with exactly two decimals', () => {
-    assert.equal(formatTokenCount(1_000_000, units, 'en-US'), '1.00百万')
-    assert.equal(formatTokenCount(12_345_678, units, 'en-US'), '12.35百万')
+  test('uses the ten-thousand unit with exactly two decimals', () => {
+    assert.equal(formatTokenCount(10_000, units, 'en-US'), '1.00万')
+    assert.equal(formatTokenCount(1_000_000, units, 'en-US'), '100.00万')
+    assert.equal(formatTokenCount(12_345_678, units, 'en-US'), '1234.57万')
   })
 
   test('uses the hundred-million unit with exactly two decimals', () => {

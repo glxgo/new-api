@@ -171,6 +171,82 @@ export function useApiKeysColumns(): ColumnDef<ApiKey>[] {
       meta: { mobileHidden: true },
     },
     {
+      id: 'subscription_binding',
+      header: t('Quota ownership'),
+      cell: ({ row }) => {
+        const apiKey = row.original
+        const isBound =
+          apiKey.subscription_mode === 'instance' && apiKey.subscription_id > 0
+        if (!isBound) {
+          return (
+            <StatusBadge
+              label={t('Automatic allocation')}
+              variant='neutral'
+              copyable={false}
+              className='-ml-1.5'
+            />
+          )
+        }
+        const policies = [
+          apiKey.subscription_allow_renewal && t('Renewed successor'),
+          apiKey.subscription_allow_same_group && t('Same-group instance'),
+          apiKey.subscription_allow_wallet && t('Wallet'),
+        ].filter(Boolean)
+        return (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <div className='flex max-w-[180px] flex-col items-start gap-1' />
+              }
+            >
+              <StatusBadge
+                label={`${t('Instance')} #${apiKey.subscription_id}`}
+                variant='success'
+                copyable={false}
+                className='-ml-1.5'
+              />
+              <span className='text-muted-foreground max-w-full truncate text-[10px]'>
+                {policies.length > 0
+                  ? policies.join(' → ')
+                  : t('Stop after exhaustion')}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className='max-w-72'>
+              <div className='space-y-1 text-xs'>
+                <div>
+                  {t('Configured ownership')}:{' '}
+                  <span className='font-mono'>#{apiKey.subscription_id}</span>
+                </div>
+                <div>
+                  {t('Continuation')}:{' '}
+                  {policies.length > 0
+                    ? policies.join(' → ')
+                    : t('Stop after exhaustion')}
+                </div>
+                {apiKey.planned_subscription_id > 0 && (
+                  <div>
+                    {t('Scheduled successor')}:{' '}
+                    <span className='font-mono'>
+                      #{apiKey.planned_subscription_id}
+                    </span>
+                  </div>
+                )}
+                {apiKey.subscription_allow_wallet && (
+                  <div>
+                    {t('Wallet fallback used')}:{' '}
+                    {formatQuota(apiKey.subscription_wallet_used)} /{' '}
+                    {formatQuota(apiKey.subscription_wallet_limit)}
+                  </div>
+                )}
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        )
+      },
+      size: 190,
+      meta: { mobileHidden: true },
+    },
+    {
       id: 'model_limits',
       accessorKey: 'model_limits',
       header: t('Models'),

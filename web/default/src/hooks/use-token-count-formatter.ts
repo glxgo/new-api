@@ -24,7 +24,7 @@ export function useTokenCountFormatter() {
   const { t, i18n } = useTranslation()
   const units = useMemo<TokenCountUnits>(
     () => ({
-      million: t('Million Token Unit'),
+      tenThousand: t('Ten Thousand Token Unit'),
       hundredMillion: t('Hundred Million Token Unit'),
     }),
     [t]

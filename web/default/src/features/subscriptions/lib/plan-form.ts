@@ -45,6 +45,7 @@ export function getPlanFormSchema(t: TFunction) {
     total_amount: z.coerce.number().min(0),
     upgrade_group: z.string().optional(),
     allowed_group: z.string().optional(),
+    renewal_plan_id: z.coerce.number().nullable().optional(),
     number_pool: z.string().optional(),
     model_limit: z.string().optional(),
     plan_version: z.string().optional(),
@@ -77,6 +78,7 @@ export const PLAN_FORM_DEFAULTS: PlanFormValues = {
   total_amount: 0,
   upgrade_group: '',
   allowed_group: '',
+  renewal_plan_id: null,
   number_pool: '',
   model_limit: '',
   plan_version: '',
@@ -107,6 +109,7 @@ export function planToFormValues(plan: SubscriptionPlan): PlanFormValues {
     total_amount: quotaUnitsToDollars(Number(plan.total_amount || 0)),
     upgrade_group: plan.upgrade_group || '',
     allowed_group: plan.allowed_group || '',
+    renewal_plan_id: plan.renewal_plan_id || null,
     number_pool: plan.number_pool || '',
     model_limit: plan.model_limit || '',
     plan_version: plan.plan_version || '',
@@ -138,6 +141,10 @@ export function formValuesToPlanPayload(values: PlanFormValues): PlanPayload {
       total_amount: parseQuotaFromDollars(Number(values.total_amount || 0)),
       upgrade_group: values.upgrade_group || '',
       allowed_group: values.allowed_group || '',
+      renewal_plan_id:
+        values.renewal_plan_id && values.renewal_plan_id > 0
+          ? values.renewal_plan_id
+          : null,
       suitable_for: values.suitable_for || '',
       number_pool: values.number_pool || '',
       model_limit: values.model_limit || '',

@@ -27,6 +27,10 @@ import type {
   SubscriptionPayRequest,
   SelfSubscriptionData,
   SubscriberSummary,
+  SubscriptionRenewalPreview,
+  SubscriptionTokenBindingItem,
+  BatchSubscriptionBindingPayload,
+  UserSubscription,
 } from './types'
 
 // ============================================================================
@@ -198,6 +202,46 @@ export async function getSelfSubscriptionFull(): Promise<
   ApiResponse<SelfSubscriptionData>
 > {
   const res = await api.get('/api/subscription/self')
+  return res.data
+}
+
+export async function updateSubscriptionRemark(
+  subscriptionId: number,
+  remark: string
+): Promise<ApiResponse<UserSubscription>> {
+  const res = await api.patch(
+    `/api/subscription/self/instances/${subscriptionId}/remark`,
+    { remark }
+  )
+  return res.data
+}
+
+export async function getSubscriptionRenewalPreview(
+  subscriptionId: number
+): Promise<ApiResponse<SubscriptionRenewalPreview>> {
+  const res = await api.get(
+    `/api/subscription/self/instances/${subscriptionId}/renewal-preview`
+  )
+  return res.data
+}
+
+export async function getSubscriptionTokenBindings(
+  subscriptionId: number
+): Promise<ApiResponse<SubscriptionTokenBindingItem[]>> {
+  const res = await api.get(
+    `/api/subscription/self/instances/${subscriptionId}/keys`
+  )
+  return res.data
+}
+
+export async function replaceSubscriptionTokenBindings(
+  subscriptionId: number,
+  payload: BatchSubscriptionBindingPayload
+): Promise<ApiResponse> {
+  const res = await api.put(
+    `/api/subscription/self/instances/${subscriptionId}/keys`,
+    payload
+  )
   return res.data
 }
 

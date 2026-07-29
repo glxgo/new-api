@@ -20,14 +20,27 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm, type SubmitErrorHandler } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, KeyRound, Settings2, WalletCards } from 'lucide-react'
+import {
+  ArrowRight,
+  CalendarClock,
+  ChevronDown,
+  CircleDollarSign,
+  KeyRound,
+  Link2,
+  Settings2,
+  ShieldCheck,
+  WalletCards,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { getUserModels, getUserGroups } from '@/lib/api'
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
+import { formatQuota } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useStatus } from '@/hooks/use-status'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Collapsible,
   CollapsibleContent,
@@ -51,6 +64,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { DateTimePicker } from '@/components/datetime-picker'
@@ -62,6 +76,7 @@ import {
 import { MultiSelect } from '@/components/multi-select'
 import Stepper, { Step } from '@/components/reactbits/stepper'
 import { getSelfSubscriptionFull } from '@/features/subscriptions/api'
+import type { UserSubscription } from '@/features/subscriptions/types'
 import { createApiKey, updateApiKey, getApiKey } from '../api'
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
 import {
@@ -84,6 +99,19 @@ type ApiKeyMutateDrawerProps = {
   currentRow?: ApiKey
 }
 
+function subscriptionBindingSignature(values: ApiKeyFormValues): string {
+  return JSON.stringify({
+    mode: values.subscription_mode,
+    subscriptionId: values.subscription_id,
+    allowRenewal: values.subscription_allow_renewal,
+    allowSameGroup: values.subscription_allow_same_group,
+    allowWallet: values.subscription_allow_wallet,
+    walletLimit: values.subscription_wallet_limit_dollars,
+    keepPlanned: values.keep_planned_subscription,
+    group: values.group,
+  })
+}
+
 export function ApiKeysMutateDrawer({
   open,
   onOpenChange,
@@ -96,6 +124,10 @@ export function ApiKeysMutateDrawer({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const submittingRef = useRef(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [subscriptionChoiceConfirmed, setSubscriptionChoiceConfirmed] =
+    useState(false)
+  const [initialBindingSignature, setInitialBindingSignature] = useState('')
+  const [changeAcknowledged, setChangeAcknowledged] = useState(false)
   // Create-mode Stepper: key bumps remount (reset) the Stepper; resumeStep picks
   // which step it lands on after a remount (used to recover from validation/API
   // failures so the user isn't stuck on the collapsed "completed" view).
@@ -173,7 +205,11 @@ export function ApiKeysMutateDrawer({
     if (open && isUpdate && currentRow) {
       getApiKey(currentRow.id).then((result) => {
         if (result.success && result.data) {
-          form.reset(transformApiKeyToFormDefaults(result.data))
+          const defaults = transformApiKeyToFormDefaults(result.data)
+          form.reset(defaults)
+          setInitialBindingSignature(subscriptionBindingSignature(defaults))
+          setChangeAcknowledged(false)
+          setSubscriptionChoiceConfirmed(true)
         }
       })
     } else if (open && !isUpdate) {
@@ -183,6 +219,9 @@ export function ApiKeysMutateDrawer({
       // Start a fresh Stepper each time the create drawer opens.
       setResumeStep(1)
       setStepperKey((k) => k + 1)
+      setSubscriptionChoiceConfirmed(false)
+      setInitialBindingSignature('')
+      setChangeAcknowledged(false)
     }
   }, [open, isUpdate, currentRow, form, defaultUseAutoGroup, backendHasAuto])
 
@@ -203,6 +242,15 @@ export function ApiKeysMutateDrawer({
   }, [groups, form])
 
   const onSubmit = async (data: ApiKeyFormValues) => {
+    if (
+      isUpdate &&
+      initialBindingSignature &&
+      subscriptionBindingSignature(data) !== initialBindingSignature &&
+      !changeAcknowledged
+    ) {
+      toast.error(t('Please acknowledge the subscription ownership change'))
+      return
+    }
     if (submittingRef.current) return
     submittingRef.current = true
     setIsSubmitting(true)
@@ -253,13 +301,13 @@ export function ApiKeysMutateDrawer({
         } else {
           // Nothing got created — un-collapse the Stepper back to the final
           // step so the user can adjust and retry.
-          resetStepperTo(3)
+          resetStepperTo(hasSubscriptionStep ? 4 : 3)
         }
       }
     } catch (_error) {
       toast.error(t(ERROR_MESSAGES.UNEXPECTED))
       if (!isUpdate) {
-        resetStepperTo(3)
+        resetStepperTo(hasSubscriptionStep ? 4 : 3)
       }
     } finally {
       submittingRef.current = false
@@ -279,14 +327,27 @@ export function ApiKeysMutateDrawer({
         'expired_time',
         'tokenCount',
       ]
-      const step2Keys = ['remain_quota_dollars', 'unlimited_quota']
-      const step3Keys = ['model_limits', 'allow_ips']
+      const subscriptionKeys = [
+        'subscription_mode',
+        'subscription_id',
+        'subscription_allow_renewal',
+        'subscription_allow_same_group',
+        'subscription_allow_wallet',
+        'subscription_wallet_limit_dollars',
+      ]
+      const quotaKeys = ['remain_quota_dollars', 'unlimited_quota']
+      const advancedKeys = ['model_limits', 'allow_ips']
       let target = 1
       if (!errorKeys.some((k) => step1Keys.includes(k))) {
-        if (errorKeys.some((k) => step2Keys.includes(k))) {
+        if (
+          hasSubscriptionStep &&
+          errorKeys.some((k) => subscriptionKeys.includes(k))
+        ) {
           target = 2
-        } else if (errorKeys.some((k) => step3Keys.includes(k))) {
-          target = 3
+        } else if (errorKeys.some((k) => quotaKeys.includes(k))) {
+          target = hasSubscriptionStep ? 3 : 2
+        } else if (errorKeys.some((k) => advancedKeys.includes(k))) {
+          target = hasSubscriptionStep ? 4 : 3
         }
       }
       resetStepperTo(target)
@@ -316,6 +377,84 @@ export function ApiKeysMutateDrawer({
     : t('Enter quota in {{currency}}', { currency: currencyLabel })
   const selectedGroup = form.watch('group')
   const unlimitedQuota = form.watch('unlimited_quota')
+  const subscriptionMode = form.watch('subscription_mode')
+  const selectedSubscriptionId = form.watch('subscription_id')
+  const allowRenewal = form.watch('subscription_allow_renewal')
+  const allowSameGroup = form.watch('subscription_allow_same_group')
+  const allowWallet = form.watch('subscription_allow_wallet')
+  const hasSubscriptionStep = subscribedGroups.includes(selectedGroup)
+  const continuationEnabled = allowRenewal || allowSameGroup || allowWallet
+  const currentBindingSignature = subscriptionBindingSignature(form.getValues())
+  const bindingChanged =
+    isUpdate &&
+    initialBindingSignature !== '' &&
+    currentBindingSignature !== initialBindingSignature
+
+  useEffect(() => {
+    setChangeAcknowledged(false)
+  }, [currentBindingSignature])
+
+  const subscriptionInstances = useMemo(() => {
+    const records = selfSubQuery.data?.data?.all_subscriptions || []
+    const now = Date.now() / 1000
+    return records
+      .map((record) => record.subscription)
+      .filter((subscription): subscription is UserSubscription => {
+        if (!subscription) return false
+        const compatible =
+          !subscription.allowed_group ||
+          subscription.allowed_group === selectedGroup
+        const isCurrent = isUpdate && subscription.id === selectedSubscriptionId
+        if (!compatible && !isCurrent) return false
+        const total = Number(subscription.amount_total || 0)
+        const used = Number(subscription.amount_used || 0)
+        const cap = Number(subscription.amount_cap || 0)
+        const capUsed = Number(subscription.amount_cap_used || 0)
+        const usable =
+          subscription.status === 'active' &&
+          subscription.start_time <= now &&
+          subscription.end_time > now &&
+          (total <= 0 || used < total) &&
+          (cap <= 0 || capUsed < cap)
+        return usable || isCurrent
+      })
+      .sort((a, b) => a.end_time - b.end_time || a.id - b.id)
+  }, [selfSubQuery.data, selectedGroup, selectedSubscriptionId, isUpdate])
+
+  const selectedSubscription = subscriptionInstances.find(
+    (subscription) => subscription.id === selectedSubscriptionId
+  )
+
+  useEffect(() => {
+    if (!open || isUpdate) return
+    setSubscriptionChoiceConfirmed(false)
+  }, [selectedGroup, open, isUpdate])
+
+  useEffect(() => {
+    if (!open) return
+    if (!hasSubscriptionStep && !isUpdate) {
+      form.setValue('subscription_mode', 'auto')
+      form.setValue('subscription_id', 0)
+      return
+    }
+    if (
+      subscriptionMode === 'instance' &&
+      selectedSubscriptionId > 0 &&
+      !subscriptionInstances.some(
+        (subscription) => subscription.id === selectedSubscriptionId
+      )
+    ) {
+      form.setValue('subscription_id', 0, { shouldValidate: true })
+    }
+  }, [
+    form,
+    hasSubscriptionStep,
+    isUpdate,
+    open,
+    selectedSubscriptionId,
+    subscriptionInstances,
+    subscriptionMode,
+  ])
 
   // Shared field groups — rendered both in the edit-mode one-shot form and the
   // create-mode Stepper steps, so field/validation/submit logic stays single-source.
@@ -472,6 +611,416 @@ export function ApiKeysMutateDrawer({
     </>
   )
 
+  const subscriptionFields = (
+    <div className='space-y-5'>
+      <FormField
+        control={form.control}
+        name='subscription_mode'
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('Quota source')}</FormLabel>
+            <FormControl>
+              <RadioGroup
+                value={
+                  subscriptionChoiceConfirmed || isUpdate ? field.value : ''
+                }
+                onValueChange={(value) => {
+                  field.onChange(value)
+                  setSubscriptionChoiceConfirmed(true)
+                  if (value === 'auto') {
+                    form.setValue('subscription_id', 0)
+                  }
+                }}
+                className='grid gap-3 sm:grid-cols-2'
+              >
+                <label
+                  className={cn(
+                    'border-border bg-card hover:border-primary/40 flex cursor-pointer gap-3 rounded-xl border p-4 transition-colors',
+                    field.value === 'auto' &&
+                      subscriptionChoiceConfirmed &&
+                      'border-primary bg-primary/5'
+                  )}
+                >
+                  <RadioGroupItem value='auto' className='mt-0.5' />
+                  <span className='space-y-1'>
+                    <span className='flex items-center gap-2 text-sm font-semibold'>
+                      <ShieldCheck className='text-primary size-4' />
+                      {t('System automatic allocation')}
+                    </span>
+                    <span className='text-muted-foreground block text-xs leading-5'>
+                      {t(
+                        'Keep the current allocation behavior and let the system choose an available funding source.'
+                      )}
+                    </span>
+                  </span>
+                </label>
+                <label
+                  className={cn(
+                    'border-border bg-card hover:border-primary/40 flex cursor-pointer gap-3 rounded-xl border p-4 transition-colors',
+                    field.value === 'instance' &&
+                      subscriptionChoiceConfirmed &&
+                      'border-primary bg-primary/5'
+                  )}
+                >
+                  <RadioGroupItem value='instance' className='mt-0.5' />
+                  <span className='space-y-1'>
+                    <span className='flex items-center gap-2 text-sm font-semibold'>
+                      <Link2 className='text-primary size-4' />
+                      {t('Specify subscription instance')}
+                    </span>
+                    <span className='text-muted-foreground block text-xs leading-5'>
+                      {t(
+                        'Bind this API Key to one purchased subscription instance for project-level quota isolation.'
+                      )}
+                    </span>
+                  </span>
+                </label>
+              </RadioGroup>
+            </FormControl>
+            {!subscriptionChoiceConfirmed && !isUpdate && (
+              <FormDescription className='text-warning'>
+                {t('Please make this choice yourself before continuing.')}
+              </FormDescription>
+            )}
+          </FormItem>
+        )}
+      />
+
+      {subscriptionMode === 'instance' && (
+        <>
+          <FormField
+            control={form.control}
+            name='subscription_id'
+            render={({ field }) => (
+              <FormItem>
+                <div className='flex items-end justify-between gap-3'>
+                  <div>
+                    <FormLabel>{t('Subscription instance')}</FormLabel>
+                    <FormDescription>
+                      {t(
+                        'Instance notes help distinguish subscriptions purchased for different projects.'
+                      )}
+                    </FormDescription>
+                  </div>
+                  <span className='text-muted-foreground text-xs'>
+                    {t('{{count}} available', {
+                      count: subscriptionInstances.length,
+                    })}
+                  </span>
+                </div>
+                <FormControl>
+                  <RadioGroup
+                    value={field.value > 0 ? String(field.value) : ''}
+                    onValueChange={(value) => field.onChange(Number(value))}
+                    className='max-h-72 gap-2 overflow-y-auto pr-1'
+                  >
+                    {subscriptionInstances.map((subscription) => {
+                      const now = Date.now() / 1000
+                      const total = Number(subscription.amount_total || 0)
+                      const used = Number(subscription.amount_used || 0)
+                      const remaining =
+                        total > 0 ? Math.max(0, total - used) : 0
+                      const incompatible =
+                        !!subscription.allowed_group &&
+                        subscription.allowed_group !== selectedGroup
+                      const unavailable =
+                        incompatible ||
+                        subscription.status !== 'active' ||
+                        subscription.start_time > now ||
+                        subscription.end_time <= now ||
+                        (total > 0 && remaining <= 0)
+                      return (
+                        <label
+                          key={subscription.id}
+                          className={cn(
+                            'border-border bg-card grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 rounded-xl border p-3 transition-colors',
+                            field.value === subscription.id &&
+                              'border-primary bg-primary/5',
+                            unavailable &&
+                              'bg-muted/40 cursor-not-allowed opacity-65'
+                          )}
+                        >
+                          <RadioGroupItem
+                            value={String(subscription.id)}
+                            disabled={unavailable}
+                            className='mt-1'
+                          />
+                          <span className='min-w-0'>
+                            <span className='flex flex-wrap items-center gap-2'>
+                              <span className='font-mono text-xs font-semibold'>
+                                #{subscription.id}
+                              </span>
+                              <span className='truncate text-sm font-medium'>
+                                {subscription.plan_title ||
+                                  t('Subscription instance')}
+                              </span>
+                            </span>
+                            <span className='text-muted-foreground mt-1 block truncate text-xs'>
+                              {subscription.remark || t('No instance note yet')}
+                            </span>
+                            {incompatible && (
+                              <span className='text-destructive mt-1 block text-xs'>
+                                {t(
+                                  'This instance only supports group {{group}}. Choose another instance or automatic allocation before saving.',
+                                  { group: subscription.allowed_group }
+                                )}
+                              </span>
+                            )}
+                          </span>
+                          <span className='text-right'>
+                            <span className='text-foreground block font-mono text-xs font-semibold'>
+                              {total > 0
+                                ? formatQuota(remaining)
+                                : t('Unlimited')}
+                            </span>
+                            <span className='text-muted-foreground mt-1 flex items-center justify-end gap-1 text-[10px]'>
+                              <CalendarClock className='size-3' />
+                              {new Date(
+                                subscription.end_time * 1000
+                              ).toLocaleDateString()}
+                            </span>
+                          </span>
+                        </label>
+                      )
+                    })}
+                    {subscriptionInstances.length === 0 && (
+                      <div className='border-border bg-muted/30 rounded-xl border border-dashed p-6 text-center'>
+                        <p className='text-sm font-medium'>
+                          {t('No compatible subscription instance')}
+                        </p>
+                        <p className='text-muted-foreground mt-1 text-xs'>
+                          {t(
+                            'Choose system automatic allocation or purchase a compatible subscription first.'
+                          )}
+                        </p>
+                      </div>
+                    )}
+                  </RadioGroup>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          {selectedSubscription && (
+            <div className='border-border bg-muted/20 space-y-4 rounded-xl border p-4'>
+              <div>
+                <div className='text-sm font-semibold'>
+                  {t('When this instance is exhausted')}
+                </div>
+                <div className='text-muted-foreground mt-1 text-xs'>
+                  {t(
+                    'This setting controls the funding source after the selected instance becomes unavailable.'
+                  )}
+                </div>
+              </div>
+              <RadioGroup
+                value={continuationEnabled ? 'continue' : 'stop'}
+                onValueChange={(value) => {
+                  if (value === 'stop') {
+                    form.setValue('subscription_allow_renewal', false)
+                    form.setValue('subscription_allow_same_group', false)
+                    form.setValue('subscription_allow_wallet', false)
+                  } else if (!continuationEnabled) {
+                    form.setValue('subscription_allow_renewal', true)
+                  }
+                }}
+                className='grid gap-2 sm:grid-cols-2'
+              >
+                <label className='bg-background flex cursor-pointer items-center gap-3 rounded-lg border p-3'>
+                  <RadioGroupItem value='stop' />
+                  <span className='text-sm font-medium'>
+                    {t('Stop requests immediately')}
+                  </span>
+                </label>
+                <label className='bg-background flex cursor-pointer items-center gap-3 rounded-lg border p-3'>
+                  <RadioGroupItem value='continue' />
+                  <span className='text-sm font-medium'>
+                    {t('Allow continuation')}
+                  </span>
+                </label>
+              </RadioGroup>
+
+              {continuationEnabled && (
+                <div className='space-y-2'>
+                  <FormField
+                    control={form.control}
+                    name='subscription_allow_renewal'
+                    render={({ field }) => (
+                      <FormItem className={sideDrawerSwitchItemClassName()}>
+                        <div className='flex flex-col gap-0.5'>
+                          <FormLabel className='text-sm'>
+                            {t('Continue to renewed successor instance')}
+                          </FormLabel>
+                          <FormDescription className='text-xs'>
+                            {t(
+                              'Only follows the explicit successor created by Renew; it never guesses by plan name.'
+                            )}
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name='subscription_allow_same_group'
+                    render={({ field }) => (
+                      <FormItem className={sideDrawerSwitchItemClassName()}>
+                        <div className='flex flex-col gap-0.5'>
+                          <FormLabel className='text-sm'>
+                            {t('Continue to another instance in this group')}
+                          </FormLabel>
+                          <FormDescription className='text-xs'>
+                            {t(
+                              'Uses the compatible instance that expires first after the renewal chain.'
+                            )}
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name='subscription_allow_wallet'
+                    render={({ field }) => (
+                      <FormItem className={sideDrawerSwitchItemClassName()}>
+                        <div className='flex flex-col gap-0.5'>
+                          <FormLabel className='flex items-center gap-2 text-sm'>
+                            <CircleDollarSign className='size-4' />
+                            {t('Continue with wallet balance')}
+                          </FormLabel>
+                          <FormDescription className='text-xs'>
+                            {t(
+                              'This may create charges outside the subscription and is always used last.'
+                            )}
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  {allowWallet && (
+                    <FormField
+                      control={form.control}
+                      name='subscription_wallet_limit_dollars'
+                      render={({ field }) => (
+                        <FormItem className='border-warning/40 bg-warning/5 rounded-lg border p-3'>
+                          <FormLabel>
+                            {t('Wallet fallback limit ({{currency}})', {
+                              currency: currencyLabel,
+                            })}
+                          </FormLabel>
+                          <FormControl>
+                            <Input
+                              type='number'
+                              min='0'
+                              step={tokensOnly ? 1 : 0.01}
+                              value={field.value}
+                              onChange={(event) =>
+                                field.onChange(
+                                  Number.parseFloat(event.target.value) || 0
+                                )
+                              }
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            {t(
+                              'Requests stop when this Key reaches the limit; unlimited fallback is not allowed.'
+                            )}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+                </div>
+              )}
+
+              <div className='bg-background text-muted-foreground flex flex-wrap items-center gap-1.5 rounded-lg border px-3 py-2 text-xs'>
+                <span>{t('Order')}:</span>
+                {allowRenewal && (
+                  <>
+                    <span className='text-foreground font-medium'>
+                      {t('Renewed successor')}
+                    </span>
+                    <ArrowRight className='size-3' />
+                  </>
+                )}
+                {allowSameGroup && (
+                  <>
+                    <span className='text-foreground font-medium'>
+                      {t('Other group instance')}
+                    </span>
+                    <ArrowRight className='size-3' />
+                  </>
+                )}
+                {allowWallet && (
+                  <span className='text-foreground font-medium'>
+                    {t('Wallet balance')}
+                  </span>
+                )}
+                {!continuationEnabled && (
+                  <span className='text-foreground font-medium'>
+                    {t('Stop requests')}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {subscriptionMode === 'auto' &&
+        isUpdate &&
+        (currentRow?.planned_subscription_id || 0) > 0 && (
+          <FormField
+            control={form.control}
+            name='keep_planned_subscription'
+            render={({ field }) => (
+              <FormItem className='border-warning/40 bg-warning/5 rounded-xl border p-4'>
+                <div className='flex items-start justify-between gap-3'>
+                  <div>
+                    <FormLabel>
+                      {t('Keep the scheduled renewal binding')}
+                    </FormLabel>
+                    <FormDescription className='mt-1'>
+                      {t(
+                        'Default is off: returning to automatic allocation also cancels the scheduled successor. Turn this on only if you want this Key to bind again when instance #{{id}} becomes active.',
+                        { id: currentRow?.planned_subscription_id }
+                      )}
+                    </FormDescription>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </div>
+              </FormItem>
+            )}
+          />
+        )}
+    </div>
+  )
+
   const quotaFields = (
     <>
       {!unlimitedQuota && (
@@ -617,6 +1166,39 @@ export function ApiKeysMutateDrawer({
                 {basicInfoFields}
               </SideDrawerSection>
 
+              {(isUpdate || hasSubscriptionStep) && (
+                <SideDrawerSection>
+                  <SideDrawerSectionHeader
+                    title={t('Subscription ownership')}
+                    description={t(
+                      'Choose the quota source and continuation behavior'
+                    )}
+                    icon={<Link2 className='size-4' />}
+                  />
+                  {subscriptionFields}
+                  {bindingChanged && (
+                    <Alert className='border-warning/50 bg-warning/5'>
+                      <AlertDescription className='space-y-2'>
+                        <p>
+                          {t(
+                            'You changed this existing Key’s group, subscription instance, or continuation policy. The new choice will replace the previous one after saving.'
+                          )}
+                        </p>
+                        <label className='flex items-center gap-2 font-medium'>
+                          <Checkbox
+                            checked={changeAcknowledged}
+                            onCheckedChange={(checked) =>
+                              setChangeAcknowledged(checked === true)
+                            }
+                          />
+                          {t('I have reviewed and accept this change')}
+                        </label>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                </SideDrawerSection>
+              )}
+
               <SideDrawerSection>
                 <SideDrawerSectionHeader
                   title={t('Quota Settings')}
@@ -678,6 +1260,24 @@ export function ApiKeysMutateDrawer({
                     ])
                     return Boolean(okName && okGroup)
                   }
+                  if (hasSubscriptionStep && step === 2) {
+                    if (!subscriptionChoiceConfirmed) {
+                      toast.error(t('Please choose the quota source yourself'))
+                      return false
+                    }
+                    const fields: Array<
+                      | 'subscription_mode'
+                      | 'subscription_id'
+                      | 'subscription_wallet_limit_dollars'
+                    > = ['subscription_mode']
+                    if (form.getValues('subscription_mode') === 'instance') {
+                      fields.push('subscription_id')
+                      if (form.getValues('subscription_allow_wallet')) {
+                        fields.push('subscription_wallet_limit_dollars')
+                      }
+                    }
+                    return form.trigger(fields)
+                  }
                   return true
                 }}
                 backButtonText={t('Previous')}
@@ -694,6 +1294,20 @@ export function ApiKeysMutateDrawer({
                     {basicInfoFields}
                   </SideDrawerSection>
                 </Step>
+                {hasSubscriptionStep && (
+                  <Step>
+                    <SideDrawerSection>
+                      <SideDrawerSectionHeader
+                        title={t('Subscription ownership')}
+                        description={t(
+                          'Choose the instance and what happens after it is exhausted'
+                        )}
+                        icon={<Link2 className='size-4' />}
+                      />
+                      {subscriptionFields}
+                    </SideDrawerSection>
+                  </Step>
+                )}
                 <Step>
                   <SideDrawerSection>
                     <SideDrawerSectionHeader

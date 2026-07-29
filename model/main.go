@@ -254,6 +254,9 @@ func migrateDB() error {
 	if err := migrateTokenModelLimitsToText(); err != nil {
 		return err
 	}
+	if err := prepareUserSubscriptionRenewalSQLiteMigration(); err != nil {
+		return err
+	}
 
 	err := DB.AutoMigrate(
 		&Channel{},
@@ -277,6 +280,7 @@ func migrateDB() error {
 		&Checkin{},
 		&SubscriptionOrder{},
 		&UserSubscription{},
+		&TokenSubscriptionBindingHistory{},
 		&SubscriptionPreConsumeRecord{},
 		&CustomOAuthProvider{},
 		&UserOAuthBinding{},
@@ -311,6 +315,9 @@ func migrateDB() error {
 }
 
 func migrateDBFast() error {
+	if err := prepareUserSubscriptionRenewalSQLiteMigration(); err != nil {
+		return err
+	}
 
 	var wg sync.WaitGroup
 
@@ -339,6 +346,7 @@ func migrateDBFast() error {
 		{&Checkin{}, "Checkin"},
 		{&SubscriptionOrder{}, "SubscriptionOrder"},
 		{&UserSubscription{}, "UserSubscription"},
+		{&TokenSubscriptionBindingHistory{}, "TokenSubscriptionBindingHistory"},
 		{&SubscriptionPreConsumeRecord{}, "SubscriptionPreConsumeRecord"},
 		{&CustomOAuthProvider{}, "CustomOAuthProvider"},
 		{&UserOAuthBinding{}, "UserOAuthBinding"},
@@ -414,6 +422,16 @@ type sqliteColumnDef struct {
 	DDL  string
 }
 
+func prepareUserSubscriptionRenewalSQLiteMigration() error {
+	if !common.UsingSQLite || !DB.Migrator().HasTable(&UserSubscription{}) {
+		return nil
+	}
+	if DB.Migrator().HasColumn(&UserSubscription{}, "renewed_from_id") {
+		return nil
+	}
+	return DB.Exec("ALTER TABLE `user_subscriptions` ADD `renewed_from_id` integer DEFAULT null").Error
+}
+
 func ensureSubscriptionPlanTableSQLite() error {
 	if !common.UsingSQLite {
 		return nil
@@ -425,6 +443,7 @@ func ensureSubscriptionPlanTableSQLite() error {
 ` + "`title`" + ` varchar(128) NOT NULL,
 ` + "`subtitle`" + ` varchar(255) DEFAULT '',
 ` + "`suitable_for`" + ` varchar(255) DEFAULT '',
+` + "`description`" + ` text,
 ` + "`price_amount`" + ` decimal(10,6) NOT NULL,
 ` + "`currency`" + ` varchar(8) NOT NULL DEFAULT 'USD',
 ` + "`duration_unit`" + ` varchar(16) NOT NULL DEFAULT 'month',
@@ -438,15 +457,24 @@ func ensureSubscriptionPlanTableSQLite() error {
 ` + "`waffo_pancake_product_id`" + ` varchar(128) DEFAULT '',
 ` + "`max_purchase_per_user`" + ` integer DEFAULT 0,
 ` + "`upgrade_group`" + ` varchar(64) DEFAULT '',
+` + "`allowed_group`" + ` varchar(64) DEFAULT '',
+` + "`renewal_plan_id`" + ` integer DEFAULT null,
 ` + "`number_pool`" + ` varchar(255) DEFAULT '',
+` + "`model_limit`" + ` varchar(255) DEFAULT '',
+` + "`plan_version`" + ` varchar(32) DEFAULT '',
+` + "`recommended`" + ` numeric DEFAULT false,
+` + "`min_ratio`" + ` real DEFAULT 0,
 ` + "`total_amount`" + ` bigint NOT NULL DEFAULT 0,
+` + "`amount_cap`" + ` bigint NOT NULL DEFAULT 0,
 ` + "`quota_reset_period`" + ` varchar(16) DEFAULT 'never',
 ` + "`quota_reset_custom_seconds`" + ` bigint DEFAULT 0,
 ` + "`created_at`" + ` bigint,
 ` + "`updated_at`" + ` bigint,
 PRIMARY KEY (` + "`id`" + `)
 )`
-		return DB.Exec(createSQL).Error
+		if err := DB.Exec(createSQL).Error; err != nil {
+			return err
+		}
 	}
 	var cols []struct {
 		Name string `gorm:"column:name"`
@@ -462,6 +490,7 @@ PRIMARY KEY (` + "`id`" + `)
 		{Name: "title", DDL: "`title` varchar(128) NOT NULL"},
 		{Name: "subtitle", DDL: "`subtitle` varchar(255) DEFAULT ''"},
 		{Name: "suitable_for", DDL: "`suitable_for` varchar(255) DEFAULT ''"},
+		{Name: "description", DDL: "`description` text"},
 		{Name: "price_amount", DDL: "`price_amount` decimal(10,6) NOT NULL"},
 		{Name: "currency", DDL: "`currency` varchar(8) NOT NULL DEFAULT 'USD'"},
 		{Name: "duration_unit", DDL: "`duration_unit` varchar(16) NOT NULL DEFAULT 'month'"},
@@ -475,8 +504,15 @@ PRIMARY KEY (` + "`id`" + `)
 		{Name: "waffo_pancake_product_id", DDL: "`waffo_pancake_product_id` varchar(128) DEFAULT ''"},
 		{Name: "max_purchase_per_user", DDL: "`max_purchase_per_user` integer DEFAULT 0"},
 		{Name: "upgrade_group", DDL: "`upgrade_group` varchar(64) DEFAULT ''"},
+		{Name: "allowed_group", DDL: "`allowed_group` varchar(64) DEFAULT ''"},
+		{Name: "renewal_plan_id", DDL: "`renewal_plan_id` integer DEFAULT null"},
 		{Name: "number_pool", DDL: "`number_pool` varchar(255) DEFAULT ''"},
+		{Name: "model_limit", DDL: "`model_limit` varchar(255) DEFAULT ''"},
+		{Name: "plan_version", DDL: "`plan_version` varchar(32) DEFAULT ''"},
+		{Name: "recommended", DDL: "`recommended` numeric DEFAULT false"},
+		{Name: "min_ratio", DDL: "`min_ratio` real DEFAULT 0"},
 		{Name: "total_amount", DDL: "`total_amount` bigint NOT NULL DEFAULT 0"},
+		{Name: "amount_cap", DDL: "`amount_cap` bigint NOT NULL DEFAULT 0"},
 		{Name: "quota_reset_period", DDL: "`quota_reset_period` varchar(16) DEFAULT 'never'"},
 		{Name: "quota_reset_custom_seconds", DDL: "`quota_reset_custom_seconds` bigint DEFAULT 0"},
 		{Name: "created_at", DDL: "`created_at` bigint"},
@@ -490,7 +526,9 @@ PRIMARY KEY (` + "`id`" + `)
 			return err
 		}
 	}
-	return nil
+	return DB.Exec(
+		"CREATE INDEX IF NOT EXISTS `idx_subscription_plans_renewal_plan_id` ON `subscription_plans` (`renewal_plan_id`)",
+	).Error
 }
 
 // migrateTokenModelLimitsToText migrates model_limits column from varchar(1024) to text

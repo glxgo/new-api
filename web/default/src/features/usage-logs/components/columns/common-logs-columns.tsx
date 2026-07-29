@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useState } from 'react'
 import { type ColumnDef } from '@tanstack/react-table'
-import { Sparkles, KeyRound } from 'lucide-react'
+import { Sparkles, KeyRound, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
@@ -166,7 +166,8 @@ function EffortBadge({ effort }: { effort?: string | null }) {
 function FastBadge({ serviceTier }: { serviceTier?: string | null }) {
   if (serviceTier !== 'priority') return null
   return (
-    <span className='inline-flex w-fit origin-center scale-[0.667] items-center rounded border border-rose-500/40 bg-rose-500/15 px-1.5 py-0.5 text-xs leading-none font-semibold text-rose-600 dark:text-rose-400'>
+    <span className='inline-flex w-fit origin-center scale-[0.667] items-center gap-0.5 rounded border border-rose-500/40 bg-rose-500/15 px-1.5 py-0.5 text-xs leading-none font-semibold text-rose-600 dark:text-rose-400'>
+      <Zap className='size-3 fill-current' aria-hidden='true' />
       FAST
     </span>
   )
@@ -677,18 +678,13 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         const other = parseLogOther(log.other)
 
         return (
-          <div className='grid w-fit grid-cols-[auto_auto] items-center gap-x-1 gap-y-0'>
-            <div className='col-start-1 row-start-1'>
-              <ModelBadge
-                modelName={modelInfo.name}
-                actualModel={modelInfo.actualModel}
-              />
-            </div>
-            <div className='col-start-2 row-start-1'>
-              <EffortBadge effort={other?.reasoning_effort} />
-            </div>
+          <div className='flex w-fit flex-col items-center gap-0'>
+            <ModelBadge
+              modelName={modelInfo.name}
+              actualModel={modelInfo.actualModel}
+            />
             {other?.service_tier === 'priority' && (
-              <div className='col-start-1 row-start-2 -mt-0.5 flex justify-center'>
+              <div className='-mt-0.5 flex justify-center'>
                 <FastBadge serviceTier={other.service_tier} />
               </div>
             )}
@@ -696,6 +692,23 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         )
       },
       meta: { mobileTitle: true },
+    },
+    {
+      id: 'reasoning_effort',
+      header: t('Reasoning Effort'),
+      accessorFn: (log) => parseLogOther(log.other)?.reasoning_effort ?? '',
+      cell: ({ row }) => {
+        const log = row.original
+        if (!isDisplayableLogType(log.type)) return null
+
+        const effort = parseLogOther(log.other)?.reasoning_effort
+        return effort ? (
+          <EffortBadge effort={effort} />
+        ) : (
+          <span className='text-muted-foreground/50 text-xs'>-</span>
+        )
+      },
+      size: 88,
     },
     {
       id: 'first_token_time',

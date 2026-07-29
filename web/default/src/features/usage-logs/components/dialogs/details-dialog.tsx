@@ -55,7 +55,10 @@ import {
   getResponseTimeColor,
   renderAuditContent,
 } from '../../lib/format'
-import { getPriorityBillingSummary } from '../../lib/priority-billing'
+import {
+  getPriorityBillingAmounts,
+  getPriorityBillingSummary,
+} from '../../lib/priority-billing'
 import { resolveFirstTokenMs } from '../../lib/timing'
 import {
   getLogTypeConfig,
@@ -156,6 +159,10 @@ function BillingBreakdown(props: {
   const isTieredExpr = other.billing_mode === 'tiered_expr'
   const tieredSummary = getTieredBillingSummary(other)
   const priorityBilling = getPriorityBillingSummary(other)
+  const priorityAmounts = getPriorityBillingAmounts(
+    log.quota,
+    priorityBilling?.multiplier ?? null
+  )
 
   const rows: Array<{ label: string; value: string }> = []
   const priceOpts = { digitsLarge: 4, digitsSmall: 6, abbreviate: false }
@@ -322,12 +329,16 @@ function BillingBreakdown(props: {
   if (priorityBilling) {
     rows.push({
       label: t('Service Tier'),
-      value: 'FAST · priority',
+      value: '⚡ FAST · priority',
     })
-    if (priorityBilling.multiplier != null) {
+    if (priorityAmounts) {
       rows.push({
-        label: t('FAST Billing Multiplier'),
-        value: `${priorityBilling.multiplier}x · ${t('Included in Total Cost')}`,
+        label: t('Original Price (1x)'),
+        value: formatLogQuota(priorityAmounts.originalQuota),
+      })
+      rows.push({
+        label: t('FAST Billed Price (2x)'),
+        value: formatLogQuota(priorityAmounts.fastQuota),
       })
     }
   }
@@ -1116,6 +1127,44 @@ export function DetailsDialog(props: DetailsDialogProps) {
               <DetailRow
                 label={t('Remaining')}
                 value={`${formatLogQuota(other.subscription_remain)}${other.subscription_total != null ? ` / ${formatLogQuota(other.subscription_total)}` : ''}`}
+                mono
+              />
+            )}
+          </DetailSection>
+        )}
+
+        {other?.token_subscription_mode === 'instance' && (
+          <DetailSection label={t('API Key Subscription Policy')}>
+            <DetailRow
+              label={t('Configured instance')}
+              value={
+                other.configured_subscription_id
+                  ? `#${other.configured_subscription_id}`
+                  : t('None')
+              }
+              mono
+            />
+            <DetailRow
+              label={t('Actual billing source')}
+              value={
+                other.wallet_fallback_applied
+                  ? t('Wallet fallback')
+                  : isSubscription
+                    ? `${t('Subscription instance')} #${other.subscription_id || ''}`
+                    : t('Wallet')
+              }
+            />
+            {other.planned_subscription_id && (
+              <DetailRow
+                label={t('Scheduled successor')}
+                value={`#${other.planned_subscription_id}`}
+                mono
+              />
+            )}
+            {other.wallet_fallback_enabled && (
+              <DetailRow
+                label={t('Wallet fallback progress before request')}
+                value={`${formatLogQuota(other.wallet_fallback_used_before || 0)} / ${formatLogQuota(other.wallet_fallback_limit || 0)}`}
                 mono
               />
             )}

@@ -41,6 +41,7 @@ export const subscriptionPlanSchema = z.object({
   total_amount: z.number(),
   upgrade_group: z.string().optional(),
   allowed_group: z.string().optional(),
+  renewal_plan_id: z.number().nullable().optional(),
   number_pool: z.string().optional(),
   model_limit: z.string().optional(),
   plan_version: z.enum(['starter', 'advanced', 'pro', 'enterprise']).optional(),
@@ -76,6 +77,9 @@ export const userSubscriptionSchema = z.object({
   id: z.number(),
   user_id: z.number(),
   plan_id: z.number(),
+  plan_title: z.string().optional(),
+  remark: z.string().optional(),
+  renewed_from_id: z.number().nullable().optional(),
   status: z.string(),
   source: z.string().optional(),
   start_time: z.number(),
@@ -111,6 +115,52 @@ export interface PlanPayload {
 export interface SubscriptionPayRequest {
   plan_id: number
   payment_method?: string
+  renew_from_subscription_id?: number
+}
+
+export interface RenewalBindingChange {
+  token_id: number
+  token_name: string
+  from_group: string
+  to_group: string
+  effective_at: number
+  applied_immediately?: boolean
+}
+
+export interface SubscriptionRenewalPreview {
+  from_subscription: UserSubscription
+  plan: SubscriptionPlan
+  is_replacement: boolean
+  binding_changes: RenewalBindingChange[]
+  start_time: number
+  end_time: number
+}
+
+export interface SubscriptionTokenBindingItem {
+  id: number
+  name: string
+  group: string
+  status: number
+  subscription_mode: 'auto' | 'instance'
+  subscription_id: number
+  subscription_allow_renewal: boolean
+  subscription_allow_same_group: boolean
+  subscription_allow_wallet: boolean
+  subscription_wallet_limit: number
+  subscription_wallet_used: number
+  planned_subscription_id: number
+  planned_subscription_effective: number
+  compatible: boolean
+  incompatibility_reason: string
+}
+
+export interface BatchSubscriptionBindingPayload {
+  token_ids: number[]
+  subscription_allow_renewal: boolean
+  subscription_allow_same_group: boolean
+  subscription_allow_wallet: boolean
+  subscription_wallet_limit: number
+  keep_planned_token_ids?: number[]
 }
 
 export interface SubscriptionPayResponse {

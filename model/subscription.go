@@ -201,6 +201,10 @@ type SubscriptionPlan struct {
 
 	// AllowedGroup: 订阅级分组限制。非空时订阅额度只能用于该分组(不改 user.group, 与 UpgradeGroup 互斥)
 	AllowedGroup string `json:"allowed_group" gorm:"type:varchar(64);default:''"`
+	// RenewalPlanId explicitly points to the currently sellable replacement
+	// used when this plan itself can no longer be renewed. Nil means no
+	// replacement; never infer one from title/group similarity.
+	RenewalPlanId *int `json:"renewal_plan_id" gorm:"default:null;index"`
 
 	// NumberPool: 号池(权益列表展示, 如"旗舰池/高质量池")
 	NumberPool string `json:"number_pool" gorm:"type:varchar(255);default:''"`
@@ -247,6 +251,46 @@ func (p *SubscriptionPlan) NormalizeDefaults() {
 	}
 }
 
+func BuildSubscriptionPlanSnapshot(plan *SubscriptionPlan) (string, error) {
+	if plan == nil || plan.Id <= 0 {
+		return "", errors.New("invalid plan")
+	}
+	snapshot := *plan
+	snapshot.NormalizeDefaults()
+	data, err := common.Marshal(snapshot)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func ParseSubscriptionPlanSnapshot(snapshot string) (*SubscriptionPlan, error) {
+	if strings.TrimSpace(snapshot) == "" {
+		return nil, errors.New("subscription plan snapshot is empty")
+	}
+	var plan SubscriptionPlan
+	if err := common.UnmarshalJsonStr(snapshot, &plan); err != nil {
+		return nil, err
+	}
+	if plan.Id <= 0 {
+		return nil, errors.New("subscription plan snapshot has invalid plan id")
+	}
+	plan.NormalizeDefaults()
+	return &plan, nil
+}
+
+func planForUserSubscriptionTx(tx *gorm.DB, sub *UserSubscription) (*SubscriptionPlan, error) {
+	if sub == nil {
+		return nil, errors.New("subscription is nil")
+	}
+	if strings.TrimSpace(sub.PlanSnapshot) != "" {
+		if plan, err := ParseSubscriptionPlanSnapshot(sub.PlanSnapshot); err == nil {
+			return plan, nil
+		}
+	}
+	return getSubscriptionPlanByIdTx(tx, sub.PlanId)
+}
+
 // Subscription order (payment -> webhook -> create UserSubscription)
 type SubscriptionOrder struct {
 	Id     int     `json:"id"`
@@ -261,14 +305,46 @@ type SubscriptionOrder struct {
 	CreateTime      int64  `json:"create_time"`
 	CompleteTime    int64  `json:"complete_time"`
 
-	ProviderPayload string `json:"provider_payload" gorm:"type:text"`
+	ProviderPayload         string `json:"provider_payload" gorm:"type:text"`
+	PlanSnapshot            string `json:"plan_snapshot" gorm:"type:text"`
+	RenewFromSubscriptionId *int   `json:"renew_from_subscription_id" gorm:"default:null;index"`
+	RenewalBindingSnapshot  string `json:"renewal_binding_snapshot" gorm:"type:text"`
 }
 
 func (o *SubscriptionOrder) Insert() error {
 	if o.CreateTime == 0 {
 		o.CreateTime = common.GetTimestamp()
 	}
-	return DB.Create(o).Error
+	if o.RenewFromSubscriptionId == nil || *o.RenewFromSubscriptionId <= 0 {
+		return DB.Create(o).Error
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var source UserSubscription
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").
+			Where("id = ? AND user_id = ?", *o.RenewFromSubscriptionId, o.UserId).
+			First(&source).Error; err != nil {
+			return err
+		}
+		var successorCount int64
+		if err := tx.Model(&UserSubscription{}).
+			Where("renewed_from_id = ?", source.Id).
+			Count(&successorCount).Error; err != nil {
+			return err
+		}
+		if successorCount > 0 {
+			return ErrSubscriptionRenewalAlreadyExists
+		}
+		var pendingCount int64
+		if err := tx.Model(&SubscriptionOrder{}).
+			Where("renew_from_subscription_id = ? AND status = ?", source.Id, common.TopUpStatusPending).
+			Count(&pendingCount).Error; err != nil {
+			return err
+		}
+		if pendingCount > 0 {
+			return ErrSubscriptionRenewalOrderPending
+		}
+		return tx.Create(o).Error
+	})
 }
 
 func (o *SubscriptionOrder) Update() error {
@@ -286,11 +362,38 @@ func GetSubscriptionOrderByTradeNo(tradeNo string) *SubscriptionOrder {
 	return &order
 }
 
+func NewSubscriptionOrderFromPlan(userId int, plan *SubscriptionPlan, tradeNo, paymentMethod, paymentProvider string) (*SubscriptionOrder, error) {
+	if userId <= 0 || plan == nil || plan.Id <= 0 || strings.TrimSpace(tradeNo) == "" {
+		return nil, errors.New("invalid subscription order args")
+	}
+	snapshot, err := BuildSubscriptionPlanSnapshot(plan)
+	if err != nil {
+		return nil, err
+	}
+	return &SubscriptionOrder{
+		UserId:          userId,
+		PlanId:          plan.Id,
+		Money:           plan.PriceAmount,
+		TradeNo:         tradeNo,
+		PaymentMethod:   paymentMethod,
+		PaymentProvider: paymentProvider,
+		Status:          common.TopUpStatusPending,
+		CreateTime:      common.GetTimestamp(),
+		PlanSnapshot:    snapshot,
+	}, nil
+}
+
 // User subscription instance
 type UserSubscription struct {
 	Id     int `json:"id"`
 	UserId int `json:"user_id" gorm:"index;index:idx_user_sub_active,priority:1"`
 	PlanId int `json:"plan_id" gorm:"index"`
+	// PlanSnapshot freezes the purchased entitlements for reset/runtime logic.
+	// Existing rows may be empty and continue to use the historical fallback.
+	PlanSnapshot  string `json:"-" gorm:"type:text"`
+	PlanTitle     string `json:"plan_title" gorm:"type:varchar(128);not null;default:''"`
+	Remark        string `json:"remark" gorm:"type:varchar(128);not null;default:''"`
+	RenewedFromId *int   `json:"renewed_from_id" gorm:"default:null;uniqueIndex"`
 
 	AmountTotal int64 `json:"amount_total" gorm:"type:bigint;not null;default:0"`
 	AmountUsed  int64 `json:"amount_used" gorm:"type:bigint;not null;default:0"`
@@ -504,8 +607,8 @@ func downgradeUserGroupForSubscriptionTx(tx *gorm.DB, sub *UserSubscription, now
 		return "", nil
 	}
 	var activeSub UserSubscription
-	activeQuery := tx.Where("user_id = ? AND status = ? AND end_time > ? AND id <> ? AND upgrade_group <> ''",
-		sub.UserId, "active", now, sub.Id).
+	activeQuery := tx.Where("user_id = ? AND status = ? AND start_time <= ? AND end_time > ? AND id <> ? AND upgrade_group <> ''",
+		sub.UserId, "active", now, now, sub.Id).
 		Order("end_time desc, id desc").
 		Limit(1).
 		Find(&activeSub)
@@ -524,6 +627,18 @@ func downgradeUserGroupForSubscriptionTx(tx *gorm.DB, sub *UserSubscription, now
 }
 
 func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *SubscriptionPlan, source string, paidRevenueQuota ...int64) (*UserSubscription, error) {
+	return CreateUserSubscriptionFromPlanWithOptionsTx(tx, userId, plan, source, CreateUserSubscriptionOptions{}, paidRevenueQuota...)
+}
+
+type CreateUserSubscriptionOptions struct {
+	StartTime         int64
+	RenewedFromId     *int
+	Remark            string
+	PlanSnapshot      string
+	SkipPurchaseLimit bool
+}
+
+func CreateUserSubscriptionFromPlanWithOptionsTx(tx *gorm.DB, userId int, plan *SubscriptionPlan, source string, options CreateUserSubscriptionOptions, paidRevenueQuota ...int64) (*UserSubscription, error) {
 	if tx == nil {
 		return nil, errors.New("tx is nil")
 	}
@@ -533,7 +648,7 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 	if userId <= 0 {
 		return nil, errors.New("invalid user id")
 	}
-	if plan.MaxPurchasePerUser > 0 {
+	if plan.MaxPurchasePerUser > 0 && !options.SkipPurchaseLimit {
 		var count int64
 		if err := tx.Model(&UserSubscription{}).
 			Where("user_id = ? AND plan_id = ?", userId, plan.Id).
@@ -544,7 +659,10 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 			return nil, errors.New("已达到该套餐购买上限")
 		}
 	}
-	nowUnix := GetDBTimestamp()
+	nowUnix := options.StartTime
+	if nowUnix <= 0 {
+		nowUnix = GetDBTimestamp()
+	}
 	now := time.Unix(nowUnix, 0)
 	endUnix, err := calcPlanEndTime(now, plan)
 	if err != nil {
@@ -575,9 +693,21 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 	if len(paidRevenueQuota) > 0 && paidRevenueQuota[0] > 0 {
 		revenueQuota = paidRevenueQuota[0]
 	}
+	planSnapshot := strings.TrimSpace(options.PlanSnapshot)
+	if planSnapshot == "" {
+		var snapshotErr error
+		planSnapshot, snapshotErr = BuildSubscriptionPlanSnapshot(plan)
+		if snapshotErr != nil {
+			return nil, snapshotErr
+		}
+	}
 	sub := &UserSubscription{
 		UserId:           userId,
 		PlanId:           plan.Id,
+		PlanSnapshot:     planSnapshot,
+		PlanTitle:        plan.Title,
+		Remark:           strings.TrimSpace(options.Remark),
+		RenewedFromId:    options.RenewedFromId,
 		AmountTotal:      plan.TotalAmount,
 		AmountUsed:       0,
 		AmountCap:        plan.AmountCap,
@@ -618,6 +748,7 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 	var logMoney float64
 	var logPaymentMethod string
 	var upgradeGroup string
+	var renewalTokenKeys []string
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var order SubscriptionOrder
 		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where(refCol+" = ?", tradeNo).First(&order).Error; err != nil {
@@ -632,9 +763,18 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if order.Status != common.TopUpStatusPending {
 			return ErrSubscriptionOrderStatusInvalid
 		}
-		plan, err := GetSubscriptionPlanById(order.PlanId)
+		plan, err := ParseSubscriptionPlanSnapshot(order.PlanSnapshot)
 		if err != nil {
-			return err
+			// Backward compatibility for orders created before full snapshots
+			// were introduced.
+			plan, err = GetSubscriptionPlanById(order.PlanId)
+			if err != nil {
+				return err
+			}
+			order.PlanSnapshot, err = BuildSubscriptionPlanSnapshot(plan)
+			if err != nil {
+				return err
+			}
 		}
 		if !plan.Enabled {
 			// still allow completion for already purchased orders
@@ -644,9 +784,23 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if quotaErr != nil {
 			return quotaErr
 		}
-		_, err = CreateUserSubscriptionFromPlanTx(tx, order.UserId, plan, "order", int64(revenueQuota))
-		if err != nil {
-			return err
+		if order.RenewFromSubscriptionId != nil && *order.RenewFromSubscriptionId > 0 {
+			_, renewalTokenKeys, err = createRenewalSubscriptionFromOrderTx(tx, &order, plan, int64(revenueQuota))
+			if err != nil {
+				return err
+			}
+		} else {
+			_, err = CreateUserSubscriptionFromPlanWithOptionsTx(
+				tx,
+				order.UserId,
+				plan,
+				"order",
+				CreateUserSubscriptionOptions{PlanSnapshot: order.PlanSnapshot},
+				int64(revenueQuota),
+			)
+			if err != nil {
+				return err
+			}
 		}
 		if err := upsertSubscriptionTopUpTx(tx, &order); err != nil {
 			return err
@@ -686,6 +840,11 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 	}
 	if logUserId > 0 {
 		_ = InvalidateUserCache(logUserId)
+		if common.RedisEnabled {
+			for _, tokenKey := range renewalTokenKeys {
+				_ = cacheDeleteToken(tokenKey)
+			}
+		}
 		msg := fmt.Sprintf("订阅购买成功，套餐: %s，支付金额: %.2f，支付方式: %s", logPlanTitle, logMoney, logPaymentMethod)
 		RecordLog(logUserId, LogTypeTopup, msg)
 	}
@@ -797,6 +956,10 @@ func calcSubscriptionBalanceQuota(priceAmount float64) (int, error) {
 
 // PurchaseSubscriptionWithBalance creates a subscription by deducting the user's wallet quota.
 func PurchaseSubscriptionWithBalance(userId int, planId int) error {
+	return PurchaseSubscriptionWithBalanceRenewal(userId, planId, 0)
+}
+
+func PurchaseSubscriptionWithBalanceRenewal(userId int, planId int, renewFromSubscriptionId int) error {
 	if userId <= 0 || planId <= 0 {
 		return errors.New("invalid userId or planId")
 	}
@@ -806,10 +969,38 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 	var chargedQuota int
 	var upgradeGroup string
 	var tradeNo string
+	var renewalTokenKeys []string
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		plan, err := getSubscriptionPlanByIdTx(tx, planId)
-		if err != nil {
-			return err
+		var plan *SubscriptionPlan
+		var err error
+		if renewFromSubscriptionId > 0 {
+			var source UserSubscription
+			if err := tx.Set("gorm:query_option", "FOR UPDATE").
+				Where("id = ? AND user_id = ?", renewFromSubscriptionId, userId).
+				First(&source).Error; err != nil {
+				return err
+			}
+			plan, err = getSubscriptionPlanByIdTx(tx, source.PlanId)
+			if err != nil {
+				return err
+			}
+			if !plan.Enabled {
+				if plan.RenewalPlanId == nil || *plan.RenewalPlanId <= 0 {
+					return ErrSubscriptionRenewalNotAvailable
+				}
+				plan, err = getSubscriptionPlanByIdTx(tx, *plan.RenewalPlanId)
+				if err != nil {
+					return err
+				}
+			}
+			if plan.Id != planId {
+				return errors.New("续费套餐已变化，请刷新后重新确认")
+			}
+		} else {
+			plan, err = getSubscriptionPlanByIdTx(tx, planId)
+			if err != nil {
+				return err
+			}
 		}
 		if !plan.Enabled {
 			return errors.New("套餐未启用")
@@ -840,23 +1031,39 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 			}
 		}
 
-		if _, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, PaymentMethodBalance, int64(requiredQuota)); err != nil {
-			return err
-		}
-
 		now := common.GetTimestamp()
 		tradeNo = fmt.Sprintf("SUBBALUSR%dNO%s%d", userId, common.GetRandomString(6), time.Now().UnixNano())
-		order := &SubscriptionOrder{
-			UserId:          userId,
-			PlanId:          plan.Id,
-			Money:           plan.PriceAmount,
-			TradeNo:         tradeNo,
-			PaymentMethod:   PaymentMethodBalance,
-			PaymentProvider: PaymentProviderBalance,
-			Status:          common.TopUpStatusSuccess,
-			CreateTime:      now,
-			CompleteTime:    now,
-			ProviderPayload: fmt.Sprintf("charged_quota=%d", requiredQuota),
+		order, err := NewSubscriptionOrderFromPlan(
+			userId, plan, tradeNo, PaymentMethodBalance, PaymentProviderBalance,
+		)
+		if err != nil {
+			return err
+		}
+		order.Status = common.TopUpStatusSuccess
+		order.CreateTime = now
+		order.CompleteTime = now
+		order.ProviderPayload = fmt.Sprintf("charged_quota=%d", requiredQuota)
+		if renewFromSubscriptionId > 0 {
+			order.RenewFromSubscriptionId = &renewFromSubscriptionId
+			if _, renewalTokenKeys, err = createRenewalSubscriptionFromOrderTx(
+				tx,
+				order,
+				plan,
+				int64(requiredQuota),
+			); err != nil {
+				return err
+			}
+		} else {
+			if _, err := CreateUserSubscriptionFromPlanWithOptionsTx(
+				tx,
+				userId,
+				plan,
+				PaymentMethodBalance,
+				CreateUserSubscriptionOptions{PlanSnapshot: order.PlanSnapshot},
+				int64(requiredQuota),
+			); err != nil {
+				return err
+			}
 		}
 		if err := tx.Create(order).Error; err != nil {
 			return err
@@ -880,6 +1087,11 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 	if upgradeGroup != "" {
 		_ = UpdateUserGroupCache(userId, upgradeGroup)
 	}
+	if common.RedisEnabled {
+		for _, tokenKey := range renewalTokenKeys {
+			_ = cacheDeleteToken(tokenKey)
+		}
+	}
 	msg := fmt.Sprintf("使用余额购买订阅成功，套餐: %s，支付金额: %.2f，扣除额度: %d", logPlanTitle, logMoney, chargedQuota)
 	RecordLog(userId, LogTypeTopup, msg)
 	return nil
@@ -892,7 +1104,7 @@ func GetAllActiveUserSubscriptions(userId int) ([]SubscriptionSummary, error) {
 	}
 	now := common.GetTimestamp()
 	var subs []UserSubscription
-	err := DB.Where("user_id = ? AND status = ? AND end_time > ?", userId, "active", now).
+	err := DB.Where("user_id = ? AND status = ? AND start_time <= ? AND end_time > ?", userId, "active", now, now).
 		Order("end_time desc, id desc").
 		Find(&subs).Error
 	if err != nil {
@@ -910,7 +1122,7 @@ func HasActiveUserSubscription(userId int) (bool, error) {
 	now := common.GetTimestamp()
 	var count int64
 	if err := DB.Model(&UserSubscription{}).
-		Where("user_id = ? AND status = ? AND end_time > ?", userId, "active", now).
+		Where("user_id = ? AND status = ? AND start_time <= ? AND end_time > ?", userId, "active", now, now).
 		Count(&count).Error; err != nil {
 		return false, err
 	}
@@ -925,7 +1137,7 @@ func HasActiveUserSubscriptionByGroup(userId int, group string) (bool, error) {
 	now := common.GetTimestamp()
 	var count int64
 	if err := DB.Model(&UserSubscription{}).
-		Where("user_id = ? AND status = ? AND end_time > ? AND allowed_group = ?", userId, "active", now, group).
+		Where("user_id = ? AND status = ? AND start_time <= ? AND end_time > ? AND allowed_group = ?", userId, "active", now, now, group).
 		Count(&count).Error; err != nil {
 		return false, err
 	}
@@ -940,7 +1152,7 @@ func GetActiveUserSubscriptionAllowedGroups(userId int) ([]string, error) {
 	now := common.GetTimestamp()
 	var groups []string
 	err := DB.Model(&UserSubscription{}).
-		Where("user_id = ? AND status = ? AND end_time > ? AND allowed_group != ''", userId, "active", now).
+		Where("user_id = ? AND status = ? AND start_time <= ? AND end_time > ? AND allowed_group != ''", userId, "active", now, now).
 		Distinct("allowed_group").
 		Pluck("allowed_group", &groups).Error
 	if err != nil {
@@ -1062,6 +1274,27 @@ func AdminDeleteUserSubscription(userSubscriptionId int) (string, error) {
 			Where("id = ?", userSubscriptionId).First(&sub).Error; err != nil {
 			return err
 		}
+		var relationCount int64
+		relationQueries := []*gorm.DB{
+			tx.Model(&Token{}).Where("subscription_id = ? OR planned_subscription_id = ?", userSubscriptionId, userSubscriptionId),
+			tx.Model(&SubscriptionPreConsumeRecord{}).Where("user_subscription_id = ?", userSubscriptionId),
+			tx.Model(&TokenSubscriptionBindingHistory{}).Where("from_subscription_id = ? OR to_subscription_id = ?", userSubscriptionId, userSubscriptionId),
+			tx.Model(&UserSubscription{}).Where("renewed_from_id = ?", userSubscriptionId),
+			tx.Model(&SubscriptionOrder{}).Where("renew_from_subscription_id = ?", userSubscriptionId),
+		}
+		for _, query := range relationQueries {
+			var count int64
+			if err := query.Count(&count).Error; err != nil {
+				return err
+			}
+			relationCount += count
+		}
+		if sub.RenewedFromId != nil {
+			relationCount++
+		}
+		if relationCount > 0 {
+			return errors.New("该订阅实例存在 API Key 绑定、续费、计费或审计记录，只能作废，不能彻底删除")
+		}
 		userId = sub.UserId
 		target, err := downgradeUserGroupForSubscriptionTx(tx, &sub, now)
 		if err != nil {
@@ -1072,12 +1305,6 @@ func AdminDeleteUserSubscription(userSubscriptionId int) (string, error) {
 			downgradeGroup = target
 		}
 		if err := tx.Where("id = ?", userSubscriptionId).Delete(&UserSubscription{}).Error; err != nil {
-			return err
-		}
-		// 管理员硬删除代表订阅作废：不结算利润，同时删除该订阅的
-		// 请求成本明细，避免留下永远无法归属的孤儿记录。
-		if err := tx.Where("user_subscription_id = ?", userSubscriptionId).
-			Delete(&SubscriptionPreConsumeRecord{}).Error; err != nil {
 			return err
 		}
 		return nil
@@ -1109,6 +1336,88 @@ type SubscriptionPreConsumeResult struct {
 	AmountTotal        int64
 	AmountUsedBefore   int64
 	AmountUsedAfter    int64
+}
+
+func subscriptionCandidatesTx(tx *gorm.DB, userId int, usingGroup string, now int64, binding *Token) ([]UserSubscription, error) {
+	if tx == nil {
+		return nil, errors.New("tx is nil")
+	}
+	if binding == nil || NormalizeTokenSubscriptionMode(binding.SubscriptionMode) != TokenSubscriptionModeInstance ||
+		binding.SubscriptionId <= 0 {
+		var subs []UserSubscription
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").
+			Where("user_id = ? AND status = ? AND start_time <= ? AND end_time > ? AND (allowed_group = '' OR allowed_group = ?)", userId, "active", now, now, usingGroup).
+			Order("end_time asc, id asc").
+			Find(&subs).Error; err != nil {
+			return nil, err
+		}
+		return subs, nil
+	}
+
+	candidates := make([]UserSubscription, 0, 8)
+	seen := map[int]struct{}{}
+	appendById := func(id int) error {
+		if id <= 0 {
+			return nil
+		}
+		if _, ok := seen[id]; ok {
+			return nil
+		}
+		var sub UserSubscription
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").
+			Where("id = ? AND user_id = ?", id, userId).
+			First(&sub).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		seen[id] = struct{}{}
+		candidates = append(candidates, sub)
+		return nil
+	}
+	if err := appendById(binding.SubscriptionId); err != nil {
+		return nil, err
+	}
+
+	if binding.SubscriptionAllowRenewal {
+		cursor := binding.SubscriptionId
+		for hop := 0; hop < 64; hop++ {
+			var successor UserSubscription
+			result := tx.Set("gorm:query_option", "FOR UPDATE").
+				Where("renewed_from_id = ? AND user_id = ?", cursor, userId).
+				Limit(1).
+				Find(&successor)
+			if result.Error != nil {
+				return nil, result.Error
+			}
+			if result.RowsAffected == 0 {
+				break
+			}
+			if err := appendById(successor.Id); err != nil {
+				return nil, err
+			}
+			cursor = successor.Id
+		}
+	}
+
+	if binding.SubscriptionAllowSameGroup {
+		var sameGroup []UserSubscription
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").
+			Where("user_id = ? AND status = ? AND start_time <= ? AND end_time > ? AND (allowed_group = '' OR allowed_group = ?)", userId, "active", now, now, usingGroup).
+			Order("end_time asc, id asc").
+			Find(&sameGroup).Error; err != nil {
+			return nil, err
+		}
+		for _, sub := range sameGroup {
+			if _, ok := seen[sub.Id]; ok {
+				continue
+			}
+			seen[sub.Id] = struct{}{}
+			candidates = append(candidates, sub)
+		}
+	}
+	return candidates, nil
 }
 
 // ExpireDueSubscriptions marks expired subscriptions and handles group downgrade.
@@ -1151,8 +1460,8 @@ func ExpireDueSubscriptions(limit int) (int, error) {
 
 			// If there's an active upgraded subscription, keep current group.
 			var activeSub UserSubscription
-			activeQuery := tx.Where("user_id = ? AND status = ? AND end_time > ? AND upgrade_group <> ''",
-				userId, "active", now).
+			activeQuery := tx.Where("user_id = ? AND status = ? AND start_time <= ? AND end_time > ? AND upgrade_group <> ''",
+				userId, "active", now, now).
 				Order("end_time desc, id desc").
 				Limit(1).
 				Find(&activeSub)
@@ -1315,6 +1624,14 @@ func maybeResetUserSubscriptionWithPlanTx(tx *gorm.DB, sub *UserSubscription, pl
 
 // PreConsumeUserSubscription pre-consumes from any active subscription total quota.
 func PreConsumeUserSubscription(requestId string, userId int, modelName string, quotaType int, amount int64, usingGroup string) (*SubscriptionPreConsumeResult, error) {
+	return PreConsumeUserSubscriptionForToken(requestId, userId, modelName, quotaType, amount, usingGroup, nil)
+}
+
+// PreConsumeUserSubscriptionForToken respects a concrete API Key binding. Its
+// candidate order is the configured instance, explicit renewal successors,
+// then other same-group instances. Wallet fallback remains a separate funding
+// source and is never mixed into this transaction.
+func PreConsumeUserSubscriptionForToken(requestId string, userId int, modelName string, quotaType int, amount int64, usingGroup string, binding *Token) (*SubscriptionPreConsumeResult, error) {
 	if userId <= 0 {
 		return nil, errors.New("invalid userId")
 	}
@@ -1328,6 +1645,7 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 
 	returnValue := &SubscriptionPreConsumeResult{}
 
+	tokenKeyToInvalidate := ""
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var existing SubscriptionPreConsumeRecord
 		query := tx.Where("request_id = ?", requestId).Limit(1).Find(&existing)
@@ -1350,11 +1668,8 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 			return nil
 		}
 
-		var subs []UserSubscription
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").
-			Where("user_id = ? AND status = ? AND end_time > ? AND (allowed_group = '' OR allowed_group = ?)", userId, "active", now, usingGroup).
-			Order("end_time asc, id asc").
-			Find(&subs).Error; err != nil {
+		subs, err := subscriptionCandidatesTx(tx, userId, usingGroup, now, binding)
+		if err != nil {
 			return errors.New("no active subscription")
 		}
 		if len(subs) == 0 {
@@ -1362,7 +1677,13 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 		}
 		for _, candidate := range subs {
 			sub := candidate
-			plan, err := getSubscriptionPlanByIdTx(tx, sub.PlanId)
+			if sub.Status != "active" || sub.StartTime > now || sub.EndTime <= now {
+				continue
+			}
+			if allowed := strings.TrimSpace(sub.AllowedGroup); allowed != "" && allowed != strings.TrimSpace(usingGroup) {
+				continue
+			}
+			plan, err := planForUserSubscriptionTx(tx, &sub)
 			if err != nil {
 				return err
 			}
@@ -1416,6 +1737,44 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 			if err := tx.Save(&sub).Error; err != nil {
 				return err
 			}
+			if binding != nil &&
+				NormalizeTokenSubscriptionMode(binding.SubscriptionMode) == TokenSubscriptionModeInstance &&
+				binding.Id > 0 &&
+				sub.Id != binding.SubscriptionId {
+				var lockedToken Token
+				if err := tx.Set("gorm:query_option", "FOR UPDATE").
+					Where("id = ? AND user_id = ?", binding.Id, userId).
+					First(&lockedToken).Error; err != nil {
+					return err
+				}
+				before := lockedToken
+				lockedToken.SubscriptionId = sub.Id
+				lockedToken.SubscriptionWalletCycleId = sub.Id
+				lockedToken.SubscriptionWalletUsed = 0
+				if err := tx.Model(&Token{}).Where("id = ?", lockedToken.Id).
+					Updates(map[string]any{
+						"subscription_id":              sub.Id,
+						"subscription_wallet_cycle_id": sub.Id,
+						"subscription_wallet_used":     0,
+					}).Error; err != nil {
+					return err
+				}
+				action := TokenSubscriptionActionAutoSameGroup
+				if sub.RenewedFromId != nil {
+					action = TokenSubscriptionActionAutoRenew
+				}
+				history := bindingHistoryFromTokens(
+					&before,
+					&lockedToken,
+					"system",
+					action,
+					"configured subscription unavailable",
+				)
+				if err := tx.Create(history).Error; err != nil {
+					return err
+				}
+				tokenKeyToInvalidate = lockedToken.Key
+			}
 			returnValue.UserSubscriptionId = sub.Id
 			returnValue.PreConsumed = amount
 			returnValue.AmountTotal = sub.AmountTotal
@@ -1427,6 +1786,9 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 	})
 	if err != nil {
 		return nil, err
+	}
+	if common.RedisEnabled && tokenKeyToInvalidate != "" {
+		_ = cacheDeleteToken(tokenKeyToInvalidate)
 	}
 	return returnValue, nil
 }
@@ -1590,7 +1952,7 @@ func ResetDueSubscriptions(limit int) (int, error) {
 	resetCount := 0
 	for _, sub := range subs {
 		subCopy := sub
-		plan, err := getSubscriptionPlanByIdTx(nil, sub.PlanId)
+		plan, err := planForUserSubscriptionTx(nil, &subCopy)
 		if err != nil || plan == nil {
 			continue
 		}

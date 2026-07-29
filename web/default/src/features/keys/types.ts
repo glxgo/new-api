@@ -42,6 +42,17 @@ export const apiKeySchema = z.object({
     }, z.boolean())
     .optional()
     .default(false),
+  subscription_mode: z.enum(['auto', 'instance']).optional().default('auto'),
+  subscription_id: z.number().optional().default(0),
+  subscription_allow_renewal: z.boolean().optional().default(false),
+  subscription_allow_same_group: z.boolean().optional().default(false),
+  subscription_allow_wallet: z.boolean().optional().default(false),
+  subscription_wallet_limit: z.number().optional().default(0),
+  subscription_wallet_used: z.number().optional().default(0),
+  subscription_wallet_cycle_id: z.number().optional().default(0),
+  planned_subscription_id: z.number().optional().default(0),
+  planned_subscription_group: z.string().optional().default(''),
+  planned_subscription_effective: z.number().optional().default(0),
   model_limits_enabled: z.boolean(),
   model_limits: z.string().nullish().default(''),
   allow_ips: z.string().nullish().default(''),
@@ -92,6 +103,27 @@ export interface ApiKeyFormData {
   allow_ips: string
   group: string
   cross_group_retry: boolean
+  subscription_mode: 'auto' | 'instance'
+  subscription_id: number
+  subscription_allow_renewal: boolean
+  subscription_allow_same_group: boolean
+  subscription_allow_wallet: boolean
+  subscription_wallet_limit: number
+  cancel_planned_subscription: boolean
+}
+
+export interface ApiKeySubscriptionHistory {
+  id: number
+  token_id: number
+  actor_type: string
+  action: string
+  from_subscription_id: number
+  to_subscription_id: number
+  from_group: string
+  to_group: string
+  continuation_summary: string
+  reason: string
+  created_at: number
 }
 
 // ============================================================================

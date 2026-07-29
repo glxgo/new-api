@@ -15,7 +15,7 @@
     "Ephemeral Requests": "Ephemeral Requests",
     "First Token Time": "First Token Time",
     "Hundred Million Token Unit": "億",
-    "Million Token Unit": "百万",
+    "Ten Thousand Token Unit": "万",
     "Generation Time": "Generation Time",
     "No distillation or substitution": "No distillation or substitution",
     "No hidden multipliers or fees": "No hidden multipliers or fees",
@@ -595,6 +595,8 @@
     "Billing & Payment": "請求と支払い",
     "Billing currency": "請求通貨",
     "Billing Details": "課金詳細",
+    "Original Price (1x)": "通常料金 (1x)",
+    "FAST Billed Price (2x)": "FAST請求額 (2x)",
     "FAST Billing Multiplier": "FAST 課金倍率",
     "Included in Total Cost": "合計コストに反映済み",
     "Service Tier": "サービスティア",
@@ -4928,6 +4930,9 @@
     "Receipts can be exported after topup. VAT invoices are not provided; for overseas Proforma invoices, contact support@quantumnous.com.": "充值后可导出收据。暂不提供增值税发票；海外形式发票（Proforma）请联系 support@quantumnous.com。",
     "Consumption is billed in USD. Recharge ratio 1¥ : 1$.": "消费按照美金计算，充值比例 1¥ : 1$ 兑换。",
     "For invoice service after topup, contact group admin.": "充值后，如需开票服务，可联系群管理开具发票。",
-    "If unsatisfied, the balance can be refunded at \"Withdraw\"; the buyer covers the payment channel fees.": "如果使用不满意，本站充值的余额可在「提现」处申请退款，但需要由买方承担支付渠道费用。"
+    "If unsatisfied, the balance can be refunded at \"Withdraw\"; the buyer covers the payment channel fees.": "如果使用不满意，本站充值的余额可在「提现」处申请退款，但需要由买方承担支付渠道费用。",
+    "Current instance": "現在のインスタンス",
+    "Available subscription instances": "利用可能なサブスクリプションインスタンス",
+    "Change subscription instance": "サブスクリプションインスタンスを切り替える"
   }
 }

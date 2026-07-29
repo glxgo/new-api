@@ -24,6 +24,7 @@ import type {
   GetApiKeysResponse,
   SearchApiKeysParams,
   ApiKeyFormData,
+  ApiKeySubscriptionHistory,
 } from './types'
 
 // ============================================================================
@@ -56,6 +57,13 @@ export async function searchApiKeys(
 // Get single API key by ID
 export async function getApiKey(id: number): Promise<ApiResponse<ApiKey>> {
   const res = await api.get(`/api/token/${id}`)
+  return res.data
+}
+
+export async function getApiKeySubscriptionHistory(
+  id: number
+): Promise<ApiResponse<ApiKeySubscriptionHistory[]>> {
+  const res = await api.get(`/api/token/${id}/subscription-history`)
   return res.data
 }
 

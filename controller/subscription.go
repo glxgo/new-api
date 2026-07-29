@@ -25,7 +25,8 @@ type BillingPreferenceRequest struct {
 }
 
 type SubscriptionBalancePayRequest struct {
-	PlanId int `json:"plan_id"`
+	PlanId                  int `json:"plan_id"`
+	RenewFromSubscriptionId int `json:"renew_from_subscription_id"`
 }
 
 // ---- User APIs ----
@@ -120,7 +121,7 @@ func SubscriptionRequestBalancePay(c *gin.Context) {
 		return
 	}
 
-	if err := model.PurchaseSubscriptionWithBalance(userId, req.PlanId); err != nil {
+	if err := model.PurchaseSubscriptionWithBalanceRenewal(userId, req.PlanId, req.RenewFromSubscriptionId); err != nil {
 		common.ApiError(c, err)
 		return
 	}
@@ -242,6 +243,19 @@ func AdminCreateSubscriptionPlan(c *gin.Context) {
 		return
 	}
 	req.Plan.PlanVersion = model.NormalizePlanVersion(req.Plan.PlanVersion)
+	if req.Plan.RenewalPlanId != nil && *req.Plan.RenewalPlanId > 0 {
+		replacement, err := model.GetSubscriptionPlanById(*req.Plan.RenewalPlanId)
+		if err != nil {
+			common.ApiErrorMsg(c, "续费替代套餐不存在")
+			return
+		}
+		if !replacement.Enabled {
+			common.ApiErrorMsg(c, "续费替代套餐必须处于启用状态")
+			return
+		}
+	} else {
+		req.Plan.RenewalPlanId = nil
+	}
 	err := model.DB.Create(&req.Plan).Error
 	if err != nil {
 		common.ApiError(c, err)
@@ -318,6 +332,23 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 		return
 	}
 	req.Plan.PlanVersion = model.NormalizePlanVersion(req.Plan.PlanVersion)
+	if req.Plan.RenewalPlanId != nil && *req.Plan.RenewalPlanId > 0 {
+		if *req.Plan.RenewalPlanId == id {
+			common.ApiErrorMsg(c, "续费替代套餐不能指向自身")
+			return
+		}
+		replacement, err := model.GetSubscriptionPlanById(*req.Plan.RenewalPlanId)
+		if err != nil {
+			common.ApiErrorMsg(c, "续费替代套餐不存在")
+			return
+		}
+		if !replacement.Enabled {
+			common.ApiErrorMsg(c, "续费替代套餐必须处于启用状态")
+			return
+		}
+	} else {
+		req.Plan.RenewalPlanId = nil
+	}
 
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		// update plan (allow zero values updates with map)
@@ -348,6 +379,7 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 			"plan_version":               req.Plan.PlanVersion,
 			"suitable_for":               req.Plan.SuitableFor,
 			"number_pool":                req.Plan.NumberPool,
+			"renewal_plan_id":            req.Plan.RenewalPlanId,
 			"updated_at":                 common.GetTimestamp(),
 		}
 		if req.Plan.AllowBalancePay != nil {

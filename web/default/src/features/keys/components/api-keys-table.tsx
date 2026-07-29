@@ -71,9 +71,10 @@ import {
   ERROR_MESSAGES,
 } from '../constants'
 import { type ApiKey } from '../types'
-import { ApiKeyGroupCell } from './api-keys-cells'
+import { ApiKeySubscriptionCombobox } from './api-key-subscription-combobox'
 import {
   ApiKeyCell,
+  ApiKeyGroupCell,
   IpRestrictionsCell,
   ModelLimitsCell,
 } from './api-keys-cells'
@@ -457,9 +458,20 @@ function ApiKeysDesktopWorkspace({
         </div>
 
         <div className='border-border/70 bg-muted/15 mt-5 space-y-3 rounded-xl border p-4'>
-          <div className='grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 text-xs'>
-            <span className='text-muted-foreground'>{t('Group')}</span>
-            <ApiKeyGroupCell apiKey={apiKey} />
+          <div className='grid gap-3 text-xs 2xl:grid-cols-2'>
+            <div className='grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3'>
+              <span className='text-muted-foreground'>{t('Group')}</span>
+              <ApiKeyGroupCell apiKey={apiKey} />
+            </div>
+            {apiKey.subscription_mode === 'instance' &&
+              apiKey.subscription_id > 0 && (
+                <div className='grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 2xl:justify-self-end'>
+                  <span className='text-muted-foreground'>
+                    {t('Subscription instance')}
+                  </span>
+                  <ApiKeySubscriptionCombobox apiKey={apiKey} />
+                </div>
+              )}
           </div>
           <div className='grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 text-xs'>
             <span className='text-muted-foreground'>{t('API Key')}</span>

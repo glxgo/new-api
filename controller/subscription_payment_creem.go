@@ -17,7 +17,8 @@ import (
 )
 
 type SubscriptionCreemPayRequest struct {
-	PlanId int `json:"plan_id"`
+	PlanId                  int `json:"plan_id"`
+	RenewFromSubscriptionId int `json:"renew_from_subscription_id"`
 }
 
 func SubscriptionRequestCreemPay(c *gin.Context) {
@@ -41,7 +42,8 @@ func SubscriptionRequestCreemPay(c *gin.Context) {
 		return
 	}
 
-	plan, err := model.GetSubscriptionPlanById(req.PlanId)
+	userId := c.GetInt("id")
+	plan, err := resolveSubscriptionPlanForPayment(userId, req.PlanId, req.RenewFromSubscriptionId)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -59,7 +61,6 @@ func SubscriptionRequestCreemPay(c *gin.Context) {
 		return
 	}
 
-	userId := c.GetInt("id")
 	user, err := model.GetUserById(userId, false)
 	if err != nil {
 		common.ApiError(c, err)
@@ -70,7 +71,7 @@ func SubscriptionRequestCreemPay(c *gin.Context) {
 		return
 	}
 
-	if plan.MaxPurchasePerUser > 0 {
+	if req.RenewFromSubscriptionId <= 0 && plan.MaxPurchasePerUser > 0 {
 		count, err := model.CountUserSubscriptionsByPlan(userId, plan.Id)
 		if err != nil {
 			common.ApiError(c, err)
@@ -86,15 +87,16 @@ func SubscriptionRequestCreemPay(c *gin.Context) {
 	referenceId := "sub_ref_" + common.Sha1([]byte(reference+time.Now().String()+user.Username))
 
 	// create pending order first
-	order := &model.SubscriptionOrder{
-		UserId:          userId,
-		PlanId:          plan.Id,
-		Money:           plan.PriceAmount,
-		TradeNo:         referenceId,
-		PaymentMethod:   model.PaymentMethodCreem,
-		PaymentProvider: model.PaymentProviderCreem,
-		CreateTime:      time.Now().Unix(),
-		Status:          common.TopUpStatusPending,
+	order, err := model.NewSubscriptionOrderFromPlan(
+		userId, plan, referenceId, model.PaymentMethodCreem, model.PaymentProviderCreem,
+	)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if err := configureSubscriptionOrderRenewal(order, userId, req.RenewFromSubscriptionId); err != nil {
+		common.ApiError(c, err)
+		return
 	}
 	if err := order.Insert(); err != nil {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})

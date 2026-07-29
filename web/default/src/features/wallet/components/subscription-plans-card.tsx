@@ -17,7 +17,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Crown, RefreshCw, Check } from 'lucide-react'
+import {
+  Crown,
+  RefreshCw,
+  Check,
+  Pencil,
+  Settings2,
+  RotateCw,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { formatQuota } from '@/lib/format'
@@ -45,8 +52,11 @@ import { dotColorMap, textColorMap } from '@/components/status-badge'
 import {
   getPublicPlans,
   getSelfSubscriptionFull,
+  getSubscriptionRenewalPreview,
   updateBillingPreference,
 } from '@/features/subscriptions/api'
+import { SubscriptionInstanceManagementDialog } from '@/features/subscriptions/components/dialogs/subscription-instance-management-dialog'
+import { SubscriptionInstanceRemarkDialog } from '@/features/subscriptions/components/dialogs/subscription-instance-remark-dialog'
 import { SubscriptionPurchaseDialog } from '@/features/subscriptions/components/dialogs/subscription-purchase-dialog'
 import {
   versionLabelOf,
@@ -55,6 +65,8 @@ import {
 import { formatDuration, formatResetPeriod } from '@/features/subscriptions/lib'
 import type {
   PlanRecord,
+  SubscriptionRenewalPreview,
+  UserSubscription,
   UserSubscriptionRecord,
 } from '@/features/subscriptions/types'
 import type { PaymentMethod, TopupInfo } from '../types'
@@ -109,9 +121,17 @@ export function SubscriptionPlansCard({
     useState('subscription_first')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [subscriptionReferenceTime, setSubscriptionReferenceTime] = useState(0)
 
   const [purchaseOpen, setPurchaseOpen] = useState(false)
   const [selectedPlan, setSelectedPlan] = useState<PlanRecord | null>(null)
+  const [renewalPreview, setRenewalPreview] =
+    useState<SubscriptionRenewalPreview | null>(null)
+  const [renewingId, setRenewingId] = useState<number | null>(null)
+  const [selectedSubscription, setSelectedSubscription] =
+    useState<UserSubscription | null>(null)
+  const [managementOpen, setManagementOpen] = useState(false)
+  const [remarkOpen, setRemarkOpen] = useState(false)
   const [descPlan, setDescPlan] = useState<PlanRecord | null>(null)
 
   const enableStripe = !!topupInfo?.enable_stripe_topup
@@ -138,6 +158,7 @@ export function SubscriptionPlansCard({
     try {
       const res = await getSelfSubscriptionFull()
       if (res.success && res.data) {
+        setSubscriptionReferenceTime(Date.now() / 1000)
         setBillingPreference(
           res.data.billing_preference || 'subscription_first'
         )
@@ -223,8 +244,7 @@ export function SubscriptionPlansCard({
   const getRemainingDays = (sub: UserSubscriptionRecord) => {
     const endTime = sub?.subscription?.end_time || 0
     if (!endTime) return 0
-    const now = Date.now() / 1000
-    return Math.max(0, Math.ceil((endTime - now) / 86400))
+    return Math.max(0, Math.ceil((endTime - subscriptionReferenceTime) / 86400))
   }
 
   const getUsagePercent = (sub: UserSubscriptionRecord) => {
@@ -232,6 +252,24 @@ export function SubscriptionPlansCard({
     const used = Number(sub?.subscription?.amount_used || 0)
     if (total <= 0) return 0
     return Math.round((used / total) * 100)
+  }
+
+  const handleRenew = async (subscription: UserSubscription) => {
+    setRenewingId(subscription.id)
+    try {
+      const res = await getSubscriptionRenewalPreview(subscription.id)
+      if (!res.success || !res.data) {
+        toast.error(res.message || t('Renewal is not available'))
+        return
+      }
+      setRenewalPreview(res.data)
+      setSelectedPlan({ plan: res.data.plan })
+      setPurchaseOpen(true)
+    } catch {
+      toast.error(t('Renewal is not available'))
+    } finally {
+      setRenewingId(null)
+    }
   }
 
   if (loading) {
@@ -409,7 +447,9 @@ export function SubscriptionPlansCard({
                     capTotal > 0 ? Math.round((capUsed / capTotal) * 100) : 0
                   const allowedGroup = subscription?.allowed_group || ''
                   const planTitle =
-                    planTitleMap.get(subscription?.plan_id) || ''
+                    subscription?.plan_title ||
+                    planTitleMap.get(subscription?.plan_id) ||
+                    ''
                   const remainDays = getRemainingDays(sub)
                   const usagePercent = getUsagePercent(sub)
                   const remainPercent =
@@ -422,11 +462,14 @@ export function SubscriptionPlansCard({
                       : pct >= 70
                         ? 'bg-warning'
                         : 'bg-success'
-                  const now = Date.now() / 1000
+                  const now = subscriptionReferenceTime
                   const isExpired = (subscription?.end_time || 0) < now
+                  const isUpcoming = (subscription?.start_time || 0) > now
                   const isCancelled = subscription?.status === 'cancelled'
                   const isActive =
-                    subscription?.status === 'active' && !isExpired
+                    subscription?.status === 'active' &&
+                    !isExpired &&
+                    !isUpcoming
 
                   return (
                     <div
@@ -453,7 +496,11 @@ export function SubscriptionPlansCard({
                             </span>
                           ) : (
                             <span className='bg-muted text-muted-foreground shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium'>
-                              {isCancelled ? t('Cancelled') : t('Expired')}
+                              {isCancelled
+                                ? t('Cancelled')
+                                : isUpcoming
+                                  ? t('Upcoming')
+                                  : t('Expired')}
                             </span>
                           )}
                         </div>
@@ -570,6 +617,62 @@ export function SubscriptionPlansCard({
                               ).toLocaleString()}
                             </div>
                           )}
+
+                        {subscription?.remark && (
+                          <div className='bg-muted/60 rounded-md px-2 py-1.5 text-[11px]'>
+                            <span className='text-muted-foreground'>
+                              {t('Remark')}：
+                            </span>
+                            {subscription.remark}
+                          </div>
+                        )}
+
+                        <div className='grid grid-cols-3 gap-1.5 pt-1'>
+                          <Button
+                            type='button'
+                            variant='outline'
+                            size='sm'
+                            className='h-7 px-2 text-[11px]'
+                            disabled={!isActive}
+                            onClick={() => {
+                              setSelectedSubscription(subscription)
+                              setManagementOpen(true)
+                            }}
+                          >
+                            <Settings2 className='mr-1 h-3 w-3' />
+                            {t('Manage')}
+                          </Button>
+                          <Button
+                            type='button'
+                            variant='outline'
+                            size='sm'
+                            className='h-7 px-2 text-[11px]'
+                            onClick={() => {
+                              setSelectedSubscription(subscription)
+                              setRemarkOpen(true)
+                            }}
+                          >
+                            <Pencil className='mr-1 h-3 w-3' />
+                            {t('Remark')}
+                          </Button>
+                          <Button
+                            type='button'
+                            size='sm'
+                            className='h-7 px-2 text-[11px]'
+                            disabled={
+                              isCancelled || renewingId === subscription.id
+                            }
+                            onClick={() => handleRenew(subscription)}
+                          >
+                            <RotateCw
+                              className={cn(
+                                'mr-1 h-3 w-3',
+                                renewingId === subscription.id && 'animate-spin'
+                              )}
+                            />
+                            {t('Renew')}
+                          </Button>
+                        </div>
                       </div>
 
                       {/* 底部能量条已移除 */}
@@ -763,6 +866,7 @@ export function SubscriptionPlansCard({
                               ) {
                                 setDescPlan(p)
                               } else {
+                                setRenewalPreview(null)
                                 setSelectedPlan(p)
                                 setPurchaseOpen(true)
                               }
@@ -825,6 +929,7 @@ export function SubscriptionPlansCard({
                 size='sm'
                 onClick={() => {
                   localStorage.setItem(`sub-desc-hide-${descPlan.plan.id}`, '1')
+                  setRenewalPreview(null)
                   setSelectedPlan(descPlan)
                   setPurchaseOpen(true)
                   setDescPlan(null)
@@ -835,6 +940,7 @@ export function SubscriptionPlansCard({
               <Button
                 size='sm'
                 onClick={() => {
+                  setRenewalPreview(null)
                   setSelectedPlan(descPlan)
                   setPurchaseOpen(true)
                   setDescPlan(null)
@@ -856,6 +962,7 @@ export function SubscriptionPlansCard({
           }
         }}
         plan={selectedPlan}
+        renewalPreview={renewalPreview}
         enableStripe={enableStripe}
         enableCreem={enableCreem}
         enableWaffoPancake={enableWaffoPancake}
@@ -873,6 +980,18 @@ export function SubscriptionPlansCard({
             ? planPurchaseCountMap.get(selectedPlan.plan.id)
             : undefined
         }
+      />
+      <SubscriptionInstanceManagementDialog
+        open={managementOpen}
+        onOpenChange={setManagementOpen}
+        subscription={selectedSubscription}
+        onSaved={fetchSelfSubscription}
+      />
+      <SubscriptionInstanceRemarkDialog
+        open={remarkOpen}
+        onOpenChange={setRemarkOpen}
+        subscription={selectedSubscription}
+        onSaved={fetchSelfSubscription}
       />
     </>
   )

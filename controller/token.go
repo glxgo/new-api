@@ -31,6 +31,37 @@ func buildMaskedTokenResponses(tokens []*model.Token) []*model.Token {
 	return maskedTokens
 }
 
+func decodeTokenMutation(c *gin.Context, token *model.Token) (bool, error) {
+	body, err := c.GetRawData()
+	if err != nil {
+		return false, err
+	}
+	if err := common.Unmarshal(body, token); err != nil {
+		return false, err
+	}
+	var fields map[string]any
+	if err := common.Unmarshal(body, &fields); err != nil {
+		return false, err
+	}
+	_, bindingProvided := fields["subscription_mode"]
+	return bindingProvided, nil
+}
+
+func tokenBindingInput(token *model.Token) model.TokenSubscriptionBindingInput {
+	if token == nil {
+		return model.TokenSubscriptionBindingInput{Mode: model.TokenSubscriptionModeAuto}
+	}
+	return model.TokenSubscriptionBindingInput{
+		Mode:           token.SubscriptionMode,
+		SubscriptionId: token.SubscriptionId,
+		AllowRenewal:   token.SubscriptionAllowRenewal,
+		AllowSameGroup: token.SubscriptionAllowSameGroup,
+		AllowWallet:    token.SubscriptionAllowWallet,
+		WalletLimit:    token.SubscriptionWalletLimit,
+		CancelPlanned:  token.CancelPlannedSubscription,
+	}
+}
+
 func GetAllTokens(c *gin.Context) {
 	userId := c.GetInt("id")
 	pageInfo := common.GetPageQuery(c)
@@ -166,7 +197,7 @@ func GetTokenUsage(c *gin.Context) {
 
 func AddToken(c *gin.Context) {
 	token := model.Token{}
-	err := c.ShouldBindJSON(&token)
+	bindingProvided, err := decodeTokenMutation(c, &token)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -208,6 +239,18 @@ func AddToken(c *gin.Context) {
 		})
 		return
 	}
+	bindingInput := tokenBindingInput(&token)
+	if !bindingProvided {
+		bindingInput.Mode = model.TokenSubscriptionModeAuto
+	}
+	if err := model.ValidateTokenSubscriptionBindingInput(
+		c.GetInt("id"),
+		strings.TrimSpace(token.Group),
+		bindingInput,
+	); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	key, err := common.GenerateKey()
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgTokenGenerateFailed)
@@ -229,10 +272,14 @@ func AddToken(c *gin.Context) {
 		Group:              strings.TrimSpace(token.Group),
 		CrossGroupRetry:    token.CrossGroupRetry,
 	}
+	model.ApplyTokenSubscriptionBindingInput(&cleanToken, bindingInput)
 	err = cleanToken.Insert()
 	if err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	if err := model.RecordInitialTokenSubscriptionBinding(&cleanToken, "API key created"); err != nil {
+		common.SysLog("failed to record initial token subscription binding: " + err.Error())
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -258,7 +305,7 @@ func UpdateToken(c *gin.Context) {
 	userId := c.GetInt("id")
 	statusOnly := c.Query("status_only")
 	token := model.Token{}
-	err := c.ShouldBindJSON(&token)
+	bindingProvided, err := decodeTokenMutation(c, &token)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -303,6 +350,28 @@ func UpdateToken(c *gin.Context) {
 			})
 			return
 		}
+		bindingInput := tokenBindingInput(&token)
+		if bindingProvided {
+			if err := model.ValidateTokenSubscriptionBindingInput(
+				userId,
+				strings.TrimSpace(token.Group),
+				bindingInput,
+			); err != nil {
+				common.ApiError(c, err)
+				return
+			}
+		} else if model.NormalizeTokenSubscriptionMode(cleanToken.SubscriptionMode) == model.TokenSubscriptionModeInstance &&
+			cleanToken.SubscriptionId > 0 {
+			if _, err := model.ValidateSubscriptionForToken(
+				userId,
+				strings.TrimSpace(token.Group),
+				cleanToken.SubscriptionId,
+				false,
+			); err != nil {
+				common.ApiError(c, err)
+				return
+			}
+		}
 		// If you add more fields, please also update token.Update()
 		cleanToken.Name = token.Name
 		cleanToken.ExpiredTime = token.ExpiredTime
@@ -314,10 +383,24 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.Group = strings.TrimSpace(token.Group)
 		cleanToken.CrossGroupRetry = token.CrossGroupRetry
 	}
-	err = cleanToken.Update()
-	if err != nil {
-		common.ApiError(c, err)
-		return
+	if statusOnly == "" && bindingProvided {
+		updated, bindingErr := model.UpdateTokenWithSubscriptionBinding(
+			userId,
+			cleanToken,
+			tokenBindingInput(&token),
+			"user",
+		)
+		if bindingErr != nil {
+			common.ApiError(c, bindingErr)
+			return
+		}
+		cleanToken = updated
+	} else {
+		err = cleanToken.Update()
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
