@@ -20,8 +20,9 @@ For commercial licensing, please contact support@quantumnous.com
 import { useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Zap } from 'lucide-react'
-import { formatTimestampToDate, formatTokens } from '@/lib/format'
+import { formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { useTokenCountFormatter } from '@/hooks/use-token-count-formatter'
 import {
   Tooltip,
   TooltipContent,
@@ -45,6 +46,7 @@ export function CacheTooltip({
   label: string
   color: string
 }) {
+  const formatTokenCount = useTokenCountFormatter()
   if (tokens <= 0) return null
 
   return (
@@ -55,7 +57,7 @@ export function CacheTooltip({
         ></TooltipTrigger>
         <TooltipContent side='top'>
           <p className='text-xs'>
-            {label}: {formatTokens(tokens)}
+            {label}: {formatTokenCount(tokens)}
           </p>
         </TooltipContent>
       </Tooltip>

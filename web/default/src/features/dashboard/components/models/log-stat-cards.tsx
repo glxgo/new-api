@@ -20,6 +20,7 @@ import { useEffect, useState } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatNumber, formatQuota } from '@/lib/format'
 import { computeTimeRange } from '@/lib/time'
+import { useTokenCountFormatter } from '@/hooks/use-token-count-formatter'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getUserQuotaDates } from '@/features/dashboard/api'
 import { useModelStatCardsConfig } from '@/features/dashboard/hooks/use-dashboard-config'
@@ -50,6 +51,7 @@ interface LogStatCardsProps {
 
 export function LogStatCards(props: LogStatCardsProps) {
   const statCardsConfig = useModelStatCardsConfig()
+  const formatTokenCount = useTokenCountFormatter()
   const user = useAuthStore((state) => state.auth.user)
   const isAdmin = !!(user?.role && user.role >= 10)
   const [stats, setStats] = useState<{
@@ -118,7 +120,9 @@ export function LogStatCards(props: LogStatCardsProps) {
     value:
       config.key === 'quota'
         ? formatQuota(config.getValue(adaptedStats, timeRangeMinutes))
-        : formatNumber(config.getValue(adaptedStats, timeRangeMinutes)),
+        : config.key === 'tokens' || config.key === 'avgTpm'
+          ? formatTokenCount(config.getValue(adaptedStats, timeRangeMinutes))
+          : formatNumber(config.getValue(adaptedStats, timeRangeMinutes)),
     desc: config.description,
     icon: config.icon,
   }))

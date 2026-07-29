@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/setting/model_setting"
+	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -625,6 +626,27 @@ func (info *RelayInfo) CaptureEffectiveServiceTier(jsonData []byte) {
 	}
 	info.ServiceTier = strings.ToLower(strings.TrimSpace(gjson.GetBytes(jsonData, "service_tier").String()))
 	info.PriorityDoubled = false
+}
+
+// CaptureEffectiveReasoningEffort records the reasoning effort present in the
+// final outbound OpenAI-compatible JSON payload. Chat Completions uses the
+// top-level reasoning_effort field, while Responses and some compatible
+// providers use reasoning.effort. A model suffix is the final fallback.
+func (info *RelayInfo) CaptureEffectiveReasoningEffort(jsonData []byte) {
+	if info == nil {
+		return
+	}
+
+	effort := strings.TrimSpace(gjson.GetBytes(jsonData, "reasoning_effort").String())
+	if effort == "" {
+		effort = strings.TrimSpace(gjson.GetBytes(jsonData, "reasoning.effort").String())
+	}
+	if effort == "" {
+		effort, _ = reasoning.ParseOpenAIReasoningEffortFromModelSuffix(
+			strings.TrimSpace(gjson.GetBytes(jsonData, "model").String()),
+		)
+	}
+	info.ReasoningEffort = strings.ToLower(effort)
 }
 
 // IsOpenAIChannel reports whether the request is served by an OpenAI-type channel.

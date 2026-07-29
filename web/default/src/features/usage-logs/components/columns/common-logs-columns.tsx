@@ -28,6 +28,7 @@ import {
   formatTimestampToDate,
 } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { useTokenCountFormatter } from '@/hooks/use-token-count-formatter'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   Tooltip,
@@ -165,7 +166,7 @@ function EffortBadge({ effort }: { effort?: string | null }) {
 function FastBadge({ serviceTier }: { serviceTier?: string | null }) {
   if (serviceTier !== 'priority') return null
   return (
-    <span className='inline-flex w-fit items-center rounded border border-rose-500/40 bg-rose-500/15 px-1.5 py-0.5 text-[10px] leading-none font-semibold text-rose-600 dark:text-rose-400'>
+    <span className='inline-flex w-fit origin-center scale-[0.667] items-center rounded border border-rose-500/40 bg-rose-500/15 px-1.5 py-0.5 text-xs leading-none font-semibold text-rose-600 dark:text-rose-400'>
       FAST
     </span>
   )
@@ -371,6 +372,7 @@ function buildDetailSegments(
 
 export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
   const { t } = useTranslation()
+  const formatTokenCount = useTokenCountFormatter()
   const columns: ColumnDef<UsageLog>[] = [
     {
       accessorKey: 'created_at',
@@ -675,15 +677,21 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         const other = parseLogOther(log.other)
 
         return (
-          <div className='flex w-fit flex-col gap-0.5'>
-            <ModelBadge
-              modelName={modelInfo.name}
-              actualModel={modelInfo.actualModel}
-            />
-            <div className='flex flex-wrap gap-1'>
-              <EffortBadge effort={other?.reasoning_effort} />
-              <FastBadge serviceTier={other?.service_tier} />
+          <div className='grid w-fit grid-cols-[auto_auto] items-center gap-x-1 gap-y-0'>
+            <div className='col-start-1 row-start-1'>
+              <ModelBadge
+                modelName={modelInfo.name}
+                actualModel={modelInfo.actualModel}
+              />
             </div>
+            <div className='col-start-2 row-start-1'>
+              <EffortBadge effort={other?.reasoning_effort} />
+            </div>
+            {other?.service_tier === 'priority' && (
+              <div className='col-start-1 row-start-2 -mt-0.5 flex justify-center'>
+                <FastBadge serviceTier={other.service_tier} />
+              </div>
+            )}
           </div>
         )
       },
@@ -714,7 +722,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           />
         )
       },
-      size: 124,
+      size: 108,
     },
     {
       id: 'output_speed',
@@ -792,7 +800,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           </div>
         )
       },
-      size: 112,
+      size: 104,
     },
     {
       id: 'total_time',
@@ -846,19 +854,19 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         return (
           <div className='flex flex-col gap-0.5'>
             <span className='font-mono text-xs font-medium tabular-nums'>
-              {promptTokens.toLocaleString()} /{' '}
-              {completionTokens.toLocaleString()}
+              {formatTokenCount(promptTokens)} /{' '}
+              {formatTokenCount(completionTokens)}
             </span>
             {(cacheReadTokens > 0 || cacheWriteTokens > 0) && (
               <div className='flex items-center gap-1 text-[11px]'>
                 {cacheReadTokens > 0 && (
                   <span className='text-muted-foreground/60'>
-                    {t('Cache')}↓ {cacheReadTokens.toLocaleString()}
+                    {t('Cache')}↓ {formatTokenCount(cacheReadTokens)}
                   </span>
                 )}
                 {cacheWriteTokens > 0 && (
                   <span className='text-muted-foreground/60'>
-                    ↑ {cacheWriteTokens.toLocaleString()}
+                    ↑ {formatTokenCount(cacheWriteTokens)}
                   </span>
                 )}
               </div>
@@ -866,6 +874,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           </div>
         )
       },
+      size: 112,
     },
 
     {

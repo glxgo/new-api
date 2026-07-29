@@ -21,7 +21,7 @@ import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { useSidebarConfig } from '@/hooks/use-sidebar-config'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { EditorialFeatureStrip, SectionPageLayout } from '@/components/layout'
+import { SectionPageLayout } from '@/components/layout'
 import type { NavGroup } from '@/components/layout/types'
 import {
   UsageLogsProvider,
@@ -127,11 +127,6 @@ function UsageLogsContent() {
             ? t('API usage records')
             : t('Task Logs')}
         </SectionPageLayout.Description>
-        {activeCategory === 'common' && (
-          <SectionPageLayout.FeatureStrip>
-            <EditorialFeatureStrip />
-          </SectionPageLayout.FeatureStrip>
-        )}
         <SectionPageLayout.Content>
           <div className='flex h-full min-h-0 flex-col gap-4'>
             {showTaskSwitcher && (

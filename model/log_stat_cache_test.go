@@ -37,9 +37,17 @@ func TestSumUsedQuotaCachesIdenticalFiltersBriefly(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&baseLog).Error)
 
+	historicLog := baseLog
+	historicLog.Id = 0
+	historicLog.CreatedAt = now - 300
+	historicLog.Quota = 25
+	historicLog.PromptTokens = 15
+	historicLog.CompletionTokens = 25
+	require.NoError(t, db.Create(&historicLog).Error)
+
 	first, err := SumUsedQuota(
 		LogTypeConsume,
-		now-60,
+		now-3600,
 		now,
 		baseLog.ModelName,
 		baseLog.Username,
@@ -48,7 +56,7 @@ func TestSumUsedQuotaCachesIdenticalFiltersBriefly(t *testing.T) {
 		"",
 	)
 	require.NoError(t, err)
-	require.Equal(t, Stat{Quota: 100, Rpm: 1, Tpm: 30}, first)
+	require.Equal(t, Stat{Quota: 125, Rpm: 1, Tpm: 30, Tokens: 70}, first)
 
 	secondLog := baseLog
 	secondLog.Id = 0
@@ -57,7 +65,7 @@ func TestSumUsedQuotaCachesIdenticalFiltersBriefly(t *testing.T) {
 
 	cached, err := SumUsedQuota(
 		LogTypeConsume,
-		now-60,
+		now-3600,
 		now,
 		baseLog.ModelName,
 		baseLog.Username,
@@ -70,7 +78,7 @@ func TestSumUsedQuotaCachesIdenticalFiltersBriefly(t *testing.T) {
 
 	freshFilter, err := SumUsedQuota(
 		LogTypeConsume,
-		now-60,
+		now-3600,
 		now,
 		baseLog.ModelName,
 		baseLog.Username,
@@ -79,5 +87,5 @@ func TestSumUsedQuotaCachesIdenticalFiltersBriefly(t *testing.T) {
 		"",
 	)
 	require.NoError(t, err)
-	require.Equal(t, Stat{Quota: 150, Rpm: 2, Tpm: 60}, freshFilter)
+	require.Equal(t, Stat{Quota: 175, Rpm: 2, Tpm: 60, Tokens: 100}, freshFilter)
 }

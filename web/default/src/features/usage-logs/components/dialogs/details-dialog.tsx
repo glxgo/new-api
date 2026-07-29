@@ -33,9 +33,10 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
-import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
+import { formatLogQuota, formatUseTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
+import { useTokenCountFormatter } from '@/hooks/use-token-count-formatter'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Dialog } from '@/components/dialog'
@@ -54,6 +55,7 @@ import {
   getResponseTimeColor,
   renderAuditContent,
 } from '../../lib/format'
+import { getPriorityBillingSummary } from '../../lib/priority-billing'
 import { resolveFirstTokenMs } from '../../lib/timing'
 import {
   getLogTypeConfig,
@@ -153,6 +155,7 @@ function BillingBreakdown(props: {
   const isClaude = other.claude === true
   const isTieredExpr = other.billing_mode === 'tiered_expr'
   const tieredSummary = getTieredBillingSummary(other)
+  const priorityBilling = getPriorityBillingSummary(other)
 
   const rows: Array<{ label: string; value: string }> = []
   const priceOpts = { digitsLarge: 4, digitsSmall: 6, abbreviate: false }
@@ -316,6 +319,19 @@ function BillingBreakdown(props: {
     })
   }
 
+  if (priorityBilling) {
+    rows.push({
+      label: t('Service Tier'),
+      value: 'FAST · priority',
+    })
+    if (priorityBilling.multiplier != null) {
+      rows.push({
+        label: t('FAST Billing Multiplier'),
+        value: `${priorityBilling.multiplier}x · ${t('Included in Total Cost')}`,
+      })
+    }
+  }
+
   rows.push({
     label: t('Total Cost'),
     value: formatLogQuota(log.quota),
@@ -334,6 +350,7 @@ function BillingBreakdown(props: {
 
 function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
   const { t } = useTranslation()
+  const formatTokenCount = useTokenCountFormatter()
   const { log, other } = props
 
   const promptTokens = log.prompt_tokens || 0
@@ -348,44 +365,44 @@ function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
 
   const rows: Array<{ label: string; value: string }> = []
 
-  rows.push({ label: t('Input Tokens'), value: promptTokens.toLocaleString() })
+  rows.push({ label: t('Input Tokens'), value: formatTokenCount(promptTokens) })
   rows.push({
     label: t('Output Tokens'),
-    value: completionTokens.toLocaleString(),
+    value: formatTokenCount(completionTokens),
   })
 
   if (cacheRead > 0) {
     rows.push({
       label: t('Cache Read'),
-      value: cacheRead.toLocaleString(),
+      value: formatTokenCount(cacheRead),
     })
   }
 
   if (cacheWrite > 0 && cacheWrite5m === 0 && cacheWrite1h === 0) {
     rows.push({
       label: t('Cache Write'),
-      value: cacheWrite.toLocaleString(),
+      value: formatTokenCount(cacheWrite),
     })
   }
 
   if (cacheWrite5m > 0) {
     rows.push({
       label: t('Cache Write (5m)'),
-      value: cacheWrite5m.toLocaleString(),
+      value: formatTokenCount(cacheWrite5m),
     })
   }
 
   if (cacheWrite1h > 0) {
     rows.push({
       label: t('Cache Write (1h)'),
-      value: cacheWrite1h.toLocaleString(),
+      value: formatTokenCount(cacheWrite1h),
     })
   }
 
   if (other.image && other.image_output) {
     rows.push({
       label: t('Image Tokens'),
-      value: other.image_output.toLocaleString(),
+      value: formatTokenCount(other.image_output),
     })
   }
 
@@ -407,6 +424,7 @@ interface DetailsDialogProps {
 
 export function DetailsDialog(props: DetailsDialogProps) {
   const { t } = useTranslation()
+  const formatTokenCount = useTokenCountFormatter()
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
   const details = props.log.content ?? ''
   const other = parseLogOther(props.log.other)
@@ -884,28 +902,28 @@ export function DetailsDialog(props: DetailsDialogProps) {
             {other.audio_input != null && other.audio_input > 0 && (
               <DetailRow
                 label={t('Audio Input')}
-                value={formatTokens(other.audio_input)}
+                value={formatTokenCount(other.audio_input)}
                 mono
               />
             )}
             {other.audio_output != null && other.audio_output > 0 && (
               <DetailRow
                 label={t('Audio Output')}
-                value={formatTokens(other.audio_output)}
+                value={formatTokenCount(other.audio_output)}
                 mono
               />
             )}
             {other.text_input != null && other.text_input > 0 && (
               <DetailRow
                 label={t('Text Input')}
-                value={formatTokens(other.text_input)}
+                value={formatTokenCount(other.text_input)}
                 mono
               />
             )}
             {other.text_output != null && other.text_output > 0 && (
               <DetailRow
                 label={t('Text Output')}
-                value={formatTokens(other.text_output)}
+                value={formatTokenCount(other.text_output)}
                 mono
               />
             )}

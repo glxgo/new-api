@@ -18,10 +18,11 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
-import { Activity, Gauge, ReceiptText, Waypoints } from 'lucide-react'
+import { Activity, Gauge, Layers, ReceiptText, Waypoints } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { formatLogQuota } from '@/lib/format'
 import { useIsAdmin } from '@/hooks/use-admin'
+import { useTokenCountFormatter } from '@/hooks/use-token-count-formatter'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getLogStats, getUserLogStats } from '../api'
 import { DEFAULT_LOG_STATS } from '../constants'
@@ -39,16 +40,16 @@ function StatCard(props: {
   const Icon = props.icon
 
   return (
-    <div className='group border-border/70 bg-background/80 hover:border-foreground/20 flex min-h-24 items-center gap-3 rounded-xl border px-4 py-3 transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] dark:hover:shadow-[0_8px_24px_rgba(0,0,0,0.4)]'>
-      <span className='border-border/70 bg-muted/25 group-hover:bg-muted/50 flex size-9 shrink-0 items-center justify-center rounded-lg border transition-[transform,background-color] duration-200 group-hover:scale-105'>
-        <Icon className='text-foreground/80 size-4' />
+    <div className='group border-border/70 bg-background/80 hover:border-foreground/20 flex min-h-20 items-center gap-2.5 rounded-lg border px-3 py-2.5 transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] dark:hover:shadow-[0_8px_24px_rgba(0,0,0,0.4)]'>
+      <span className='border-border/70 bg-muted/25 group-hover:bg-muted/50 flex size-8 shrink-0 items-center justify-center rounded-md border transition-[transform,background-color] duration-200 group-hover:scale-105'>
+        <Icon className='text-foreground/80 size-3.5' />
       </span>
       <div className='min-w-0'>
         <p className='text-muted-foreground text-xs'>{props.label}</p>
-        <p className='mt-0.5 truncate font-mono text-xl font-semibold tracking-tight tabular-nums'>
+        <p className='truncate font-mono text-lg font-semibold tracking-tight tabular-nums'>
           {props.value}
         </p>
-        <p className='text-muted-foreground mt-0.5 truncate text-[11px]'>
+        <p className='text-muted-foreground truncate text-[10px]'>
           {props.helper}
         </p>
       </div>
@@ -64,6 +65,7 @@ interface CommonLogsStatsProps {
 export function CommonLogsStats(props: CommonLogsStatsProps) {
   const { t } = useTranslation()
   const isAdmin = useIsAdmin()
+  const formatTokenCount = useTokenCountFormatter()
   const searchParams = route.useSearch()
   const { sensitiveVisible } = useUsageLogsContext()
 
@@ -93,16 +95,16 @@ export function CommonLogsStats(props: CommonLogsStatsProps) {
 
   if (!props.enabled || isPending) {
     return (
-      <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4'>
-        {Array.from({ length: 4 }).map((_, index) => (
-          <Skeleton key={index} className='h-24 rounded-xl' />
+      <div className='grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-5'>
+        {Array.from({ length: 5 }).map((_, index) => (
+          <Skeleton key={index} className='h-20 rounded-lg' />
         ))}
       </div>
     )
   }
 
   return (
-    <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4'>
+    <div className='grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-5'>
       <StatCard
         label={t('Request Count')}
         value={props.totalCount}
@@ -116,6 +118,12 @@ export function CommonLogsStats(props: CommonLogsStatsProps) {
         icon={Waypoints}
       />
       <StatCard
+        label={t('Total Tokens')}
+        value={stats?.tokens == null ? '—' : formatTokenCount(stats.tokens)}
+        helper={t('Statistical tokens')}
+        icon={Layers}
+      />
+      <StatCard
         label={t('RPM')}
         value={stats?.rpm || 0}
         helper={t('Requests per minute')}
@@ -123,7 +131,7 @@ export function CommonLogsStats(props: CommonLogsStatsProps) {
       />
       <StatCard
         label={t('TPM')}
-        value={stats?.tpm || 0}
+        value={formatTokenCount(stats?.tpm || 0)}
         helper={t('Tokens per minute')}
         icon={Activity}
       />

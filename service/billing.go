@@ -26,13 +26,14 @@ func PreConsumeBilling(c *gin.Context, preConsumedQuota int, relayInfo *relaycom
 	return nil
 }
 
-// PreparePriorityBillingForOutbound captures the effective service tier from
-// the final payload and reserves the full predictable priority surcharge before
-// any upstream request is sent.
+// PreparePriorityBillingForOutbound captures final outbound request metadata
+// used by billing and logs, then reserves the full predictable priority
+// surcharge before any upstream request is sent.
 func PreparePriorityBillingForOutbound(relayInfo *relaycommon.RelayInfo, jsonData []byte) *types.NewAPIError {
 	if relayInfo == nil {
 		return nil
 	}
+	relayInfo.CaptureEffectiveReasoningEffort(jsonData)
 	relayInfo.CaptureEffectiveServiceTier(jsonData)
 	targetQuota := relayInfo.ApplyPrioritySurcharge(relayInfo.PriceData.QuotaToPreConsume)
 	if !relayInfo.PriorityDoubled || relayInfo.Billing == nil {
