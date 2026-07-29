@@ -31,10 +31,11 @@ type UserBase struct {
 	SecurityStrikeCount      int    `json:"security_strike_count"`
 	SecuritySuspendedUntil   int64  `json:"security_suspended_until"`
 	SecurityPermanentBan     bool   `json:"security_permanent_ban"`
+	SecurityWhitelisted      bool   `json:"security_whitelisted"`
 	CapacityPolicyVersion    int    `json:"capacity_policy_version"`
 }
 
-const userCapacityPolicyVersion = 2
+const userCapacityPolicyVersion = 3
 
 func (user *UserBase) EffectiveConcurrencyLimit() int {
 	if user != nil && user.ConcurrencyLimitOverride && user.ConcurrencyLimit > 0 {
@@ -156,6 +157,7 @@ func GetUserCache(userId int) (userCache *UserBase, err error) {
 		SecurityStrikeCount:      user.SecurityStrikeCount,
 		SecuritySuspendedUntil:   user.SecuritySuspendedUntil,
 		SecurityPermanentBan:     user.SecurityPermanentBan,
+		SecurityWhitelisted:      user.SecurityWhitelisted,
 		CapacityPolicyVersion:    userCapacityPolicyVersion,
 	}
 

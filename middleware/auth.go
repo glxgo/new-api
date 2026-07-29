@@ -382,7 +382,8 @@ func TokenAuth() func(c *gin.Context) {
 				common.TranslateMessage(c, i18n.MsgDatabaseError))
 			return
 		}
-		if userCache.SecurityPermanentBan {
+		securityEnforcementActive := common.CyberPolicyEnforcementEnabled && !userCache.SecurityWhitelisted
+		if securityEnforcementActive && userCache.SecurityPermanentBan {
 			abortWithOpenAiMessage(
 				c,
 				http.StatusForbidden,
@@ -396,7 +397,7 @@ func TokenAuth() func(c *gin.Context) {
 			return
 		}
 		now := time.Now().Unix()
-		if userCache.SecuritySuspendedUntil > now {
+		if securityEnforcementActive && userCache.SecuritySuspendedUntil > now {
 			retryAfter := userCache.SecuritySuspendedUntil - now
 			c.Header("Retry-After", strconv.FormatInt(retryAfter, 10))
 			abortWithOpenAiMessage(

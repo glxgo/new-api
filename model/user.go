@@ -71,6 +71,7 @@ type User struct {
 	SecurityStrikeCount      int            `json:"security_strike_count" gorm:"not null;default:0;column:security_strike_count"`
 	SecuritySuspendedUntil   int64          `json:"security_suspended_until" gorm:"not null;default:0;column:security_suspended_until;index"`
 	SecurityPermanentBan     bool           `json:"security_permanent_ban" gorm:"not null;default:false;column:security_permanent_ban;index"`
+	SecurityWhitelisted      bool           `json:"security_whitelisted" gorm:"not null;default:false;column:security_whitelisted;index"`
 }
 
 func (user *User) EffectiveConcurrencyLimit() int {
@@ -128,6 +129,7 @@ func (user *User) ToBaseUser() *UserBase {
 		SecurityStrikeCount:      user.SecurityStrikeCount,
 		SecuritySuspendedUntil:   user.SecuritySuspendedUntil,
 		SecurityPermanentBan:     user.SecurityPermanentBan,
+		SecurityWhitelisted:      user.SecurityWhitelisted,
 		CapacityPolicyVersion:    userCapacityPolicyVersion,
 	}
 	return cache

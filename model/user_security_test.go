@@ -3,6 +3,7 @@ package model
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -78,4 +79,83 @@ func TestCyberPolicyRequestIdIsIdempotent(t *testing.T) {
 	var stored User
 	require.NoError(t, db.First(&stored, user.Id).Error)
 	require.Equal(t, 1, stored.SecurityStrikeCount)
+}
+
+func TestCyberPolicySkipsWhitelistedUser(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&User{}, &UserSecurityIncident{}))
+	oldDB := DB
+	DB = db
+	t.Cleanup(func() { DB = oldDB })
+
+	user := User{
+		Username:            "security-whitelisted",
+		Password:            "hashed-password",
+		AffCode:             "sec3",
+		SecurityWhitelisted: true,
+	}
+	require.NoError(t, db.Create(&user).Error)
+
+	result, err := ApplyCyberPolicyViolation(user.Id, 3, "whitelisted-request", "gpt", "cyber_policy", 1_700_000_000)
+	require.NoError(t, err)
+	require.False(t, result.Counted)
+	require.Zero(t, result.StrikeNumber)
+
+	var incidents int64
+	require.NoError(t, db.Model(&UserSecurityIncident{}).Count(&incidents).Error)
+	require.Zero(t, incidents)
+}
+
+func TestCyberPolicySkipsWhenEnforcementDisabled(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&User{}, &UserSecurityIncident{}))
+	oldDB := DB
+	DB = db
+	oldEnabled := common.CyberPolicyEnforcementEnabled
+	common.CyberPolicyEnforcementEnabled = false
+	t.Cleanup(func() {
+		DB = oldDB
+		common.CyberPolicyEnforcementEnabled = oldEnabled
+	})
+
+	user := User{Username: "security-disabled", Password: "hashed-password", AffCode: "sec4"}
+	require.NoError(t, db.Create(&user).Error)
+
+	result, err := ApplyCyberPolicyViolation(user.Id, 4, "disabled-request", "gpt", "cyber_policy", 1_700_000_000)
+	require.NoError(t, err)
+	require.False(t, result.Counted)
+	require.Zero(t, result.StrikeNumber)
+
+	var incidents int64
+	require.NoError(t, db.Model(&UserSecurityIncident{}).Count(&incidents).Error)
+	require.Zero(t, incidents)
+}
+
+func TestSetUserSecurityWhitelistClearsRestriction(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&User{}))
+	oldDB := DB
+	DB = db
+	t.Cleanup(func() { DB = oldDB })
+
+	user := User{
+		Username:               "security-whitelist-reset",
+		Password:               "hashed-password",
+		AffCode:                "sec5",
+		SecurityStrikeCount:    3,
+		SecuritySuspendedUntil: 1_800_000_000,
+		SecurityPermanentBan:   true,
+	}
+	require.NoError(t, db.Create(&user).Error)
+	require.NoError(t, SetUserSecurityWhitelist(user.Id, true))
+
+	var stored User
+	require.NoError(t, db.First(&stored, user.Id).Error)
+	require.True(t, stored.SecurityWhitelisted)
+	require.Zero(t, stored.SecurityStrikeCount)
+	require.Zero(t, stored.SecuritySuspendedUntil)
+	require.False(t, stored.SecurityPermanentBan)
 }

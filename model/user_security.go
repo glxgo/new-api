@@ -73,6 +73,9 @@ func ApplyCyberPolicyViolation(userId int, tokenId int, requestId string, modelN
 		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", userId).First(&user).Error; err != nil {
 			return err
 		}
+		if !common.CyberPolicyEnforcementEnabled || user.SecurityWhitelisted {
+			return nil
+		}
 
 		var existing UserSecurityIncident
 		if err := tx.Where("request_id = ?", requestId).First(&existing).Error; err == nil {
@@ -157,6 +160,31 @@ func ResetUserSecurityRestriction(userId int) error {
 	}
 	if err := InvalidateUserCache(userId); err != nil {
 		common.SysLog(fmt.Sprintf("failed to invalidate reset security cache for user %d: %s", userId, err.Error()))
+	}
+	return nil
+}
+
+func SetUserSecurityWhitelist(userId int, enabled bool) error {
+	if userId <= 0 {
+		return errors.New("invalid user id")
+	}
+	updates := map[string]interface{}{
+		"security_whitelisted": enabled,
+	}
+	if enabled {
+		updates["security_strike_count"] = 0
+		updates["security_suspended_until"] = 0
+		updates["security_permanent_ban"] = false
+	}
+	result := DB.Model(&User{}).Where("id = ?", userId).Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("user %d not found", userId)
+	}
+	if err := InvalidateUserCache(userId); err != nil {
+		common.SysLog(fmt.Sprintf("failed to invalidate security whitelist cache for user %d: %s", userId, err.Error()))
 	}
 	return nil
 }
