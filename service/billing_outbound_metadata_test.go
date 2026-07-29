@@ -3,7 +3,11 @@ package service
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/types"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPreparePriorityBillingForOutboundCapturesReasoningEffort(t *testing.T) {
@@ -40,4 +44,31 @@ func TestPreparePriorityBillingForOutboundCapturesReasoningEffort(t *testing.T) 
 			}
 		})
 	}
+}
+
+func TestPreparePriorityBillingForOutboundReservesTieredPrioritySurcharge(t *testing.T) {
+	funding := &priorityFundingStub{}
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType: constant.ChannelTypeOpenAI,
+		},
+		PriceData: types.PriceData{
+			QuotaToPreConsume: 100,
+		},
+		TieredBillingSnapshot: &billingexpr.BillingSnapshot{
+			BillingMode: "tiered_expr",
+			ExprString:  `tier("base", p*5+c*25)`,
+		},
+		IsPlayground: true,
+	}
+	info.Billing = &BillingSession{
+		relayInfo: info,
+		funding:   funding,
+		trusted:   true,
+	}
+
+	require.Nil(t, PreparePriorityBillingForOutbound(info, []byte(`{"service_tier":"priority"}`)))
+	require.True(t, info.PriorityDoubled)
+	require.Equal(t, 200, info.Billing.GetPreConsumedQuota())
+	require.Equal(t, 200, funding.settled)
 }

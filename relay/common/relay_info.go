@@ -662,8 +662,8 @@ func (info *RelayInfo) IsOpenAIChannel() bool {
 }
 
 // ApplyPrioritySurcharge doubles billed quota for an effective OpenAI
-// service_tier "priority" payload. Tiered expressions are self-contained
-// billing contracts and are never modified here.
+// service_tier "priority" payload. A tiered expression owns this multiplier
+// only when it explicitly reads the same effective service_tier value.
 func (info *RelayInfo) ApplyPrioritySurcharge(quota int) int {
 	if info != nil {
 		info.PriorityDoubled = false
@@ -674,10 +674,15 @@ func (info *RelayInfo) ApplyPrioritySurcharge(quota int) int {
 	if !info.IsOpenAIChannel() || info.ServiceTier != "priority" {
 		return quota
 	}
-	// tiered_expr is a self-contained billing contract. Priority multipliers for
-	// tiered models must be expressed in that contract rather than stacked here.
-	if info.TieredBillingSnapshot != nil {
-		return quota
+	if snap := info.TieredBillingSnapshot; snap != nil &&
+		billingexpr.UsesRequestParam(snap.ExprString, "service_tier") &&
+		info.BillingRequestInput != nil {
+		exprServiceTier := strings.ToLower(strings.TrimSpace(
+			gjson.GetBytes(info.BillingRequestInput.Body, "service_tier").String(),
+		))
+		if exprServiceTier == info.ServiceTier {
+			return quota
+		}
 	}
 	info.PriorityDoubled = true
 	return quota * 2

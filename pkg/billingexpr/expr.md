@@ -18,6 +18,13 @@ The expression is the billing contract between the administrator and the system.
 
 5. **Version-aware** — Expressions carry a version tag (`v1:`, default when omitted). The version controls the compile environment, token normalization, and quota conversion formula, enabling future evolution without breaking existing expressions.
 
+6. **FAST platform surcharge** — For effective OpenAI `service_tier=priority`
+   requests, the platform applies the 2× FAST surcharge after evaluating the
+   expression, so the expression result remains the visible original price.
+   If an expression explicitly reads `param("service_tier")` and receives the
+   same effective value, that expression owns the multiplier and the platform
+   does not stack another 2× charge.
+
 ---
 
 ## Expression Language

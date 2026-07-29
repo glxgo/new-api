@@ -338,6 +338,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 
 	var tieredResult *billingexpr.TieredResult
 	tieredBillingApplied := false
+	tieredQuotaForPriority := 0
 	if originUsage != nil {
 		var tieredUsedVars map[string]bool
 		if snap := relayInfo.TieredBillingSnapshot; snap != nil {
@@ -347,13 +348,21 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		if tieredOk {
 			tieredBillingApplied = true
 			tieredResult = tieredRes
+			tieredQuotaForPriority = tieredQuota
 			summary.Quota = composeTieredTextQuota(relayInfo, summary, tieredQuota, tieredRes)
 		}
 	}
 
-	// Priority (fast) surcharge applies only to non-tiered billing. tiered_expr
-	// models own their complete price contract and are left unchanged.
-	summary.Quota = relayInfo.ApplyPrioritySurcharge(summary.Quota)
+	// Priority (fast) is applied after dynamic settlement so the expression
+	// result is the visible original price. Expressions that explicitly read
+	// the same effective service_tier own the multiplier and are not stacked.
+	summary.Quota = applyPriorityAfterTieredSettle(
+		relayInfo,
+		summary.Quota,
+		tieredQuotaForPriority,
+		tieredBillingApplied,
+		tieredResult,
+	)
 	summary.Cost = CalcCostFromChannelRatio(summary.Quota, relayInfo.ChannelCostRatioPPM)
 
 	if summary.WebSearchCallCount > 0 {

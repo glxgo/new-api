@@ -95,6 +95,7 @@ func calculateCyberPolicyOrderSummary(ctx *gin.Context, relayInfo *relaycommon.R
 
 	var tieredResult *billingexpr.TieredResult
 	tieredBillingApplied := false
+	tieredQuotaForPriority := 0
 	var tieredUsedVars map[string]bool
 	if snap := relayInfo.TieredBillingSnapshot; snap != nil {
 		tieredUsedVars = billingexpr.UsedVars(snap.ExprString)
@@ -105,9 +106,16 @@ func calculateCyberPolicyOrderSummary(ctx *gin.Context, relayInfo *relaycommon.R
 	); tieredOK {
 		tieredBillingApplied = true
 		tieredResult = result
+		tieredQuotaForPriority = tieredQuota
 		summary.Quota = composeTieredTextQuota(relayInfo, summary, tieredQuota, result)
 	}
-	summary.Quota = relayInfo.ApplyPrioritySurcharge(summary.Quota)
+	summary.Quota = applyPriorityAfterTieredSettle(
+		relayInfo,
+		summary.Quota,
+		tieredQuotaForPriority,
+		tieredBillingApplied,
+		tieredResult,
+	)
 	summary.Cost = CalcCostFromChannelRatio(summary.Quota, relayInfo.ChannelCostRatioPPM)
 	return summary, tieredBillingApplied, tieredResult
 }

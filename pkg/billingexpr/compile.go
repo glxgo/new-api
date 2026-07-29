@@ -27,9 +27,10 @@ func ParseExprVersion(exprStr string) (version int, body string) {
 }
 
 type cachedEntry struct {
-	prog     *vm.Program
-	usedVars map[string]bool
-	version  int
+	prog              *vm.Program
+	usedVars          map[string]bool
+	usedRequestParams map[string]bool
+	version           int
 }
 
 var (
@@ -39,30 +40,30 @@ var (
 
 // compileEnvPrototypeV1 is the v1 type-checking prototype used at compile time.
 var compileEnvPrototypeV1 = map[string]interface{}{
-	"p":    float64(0),
-	"c":    float64(0),
-	"len":  float64(0),
-	"cr":   float64(0),
-	"cc":   float64(0),
-	"cc1h": float64(0),
-	"img":  float64(0),
-	"img_o": float64(0),
-	"ai":   float64(0),
-	"ao":   float64(0),
-	"tier":                   func(string, float64) float64 { return 0 },
-	"header":                 func(string) string { return "" },
-	"param":                  func(string) interface{} { return nil },
-	"has":                    func(interface{}, string) bool { return false },
-	"hour":                   func(string) int { return 0 },
-	"minute":                 func(string) int { return 0 },
-	"weekday":                func(string) int { return 0 },
-	"month":                  func(string) int { return 0 },
-	"day":                    func(string) int { return 0 },
-	"max":                    math.Max,
-	"min":                    math.Min,
-	"abs":                    math.Abs,
-	"ceil":                   math.Ceil,
-	"floor":                  math.Floor,
+	"p":       float64(0),
+	"c":       float64(0),
+	"len":     float64(0),
+	"cr":      float64(0),
+	"cc":      float64(0),
+	"cc1h":    float64(0),
+	"img":     float64(0),
+	"img_o":   float64(0),
+	"ai":      float64(0),
+	"ao":      float64(0),
+	"tier":    func(string, float64) float64 { return 0 },
+	"header":  func(string) string { return "" },
+	"param":   func(string) interface{} { return nil },
+	"has":     func(interface{}, string) bool { return false },
+	"hour":    func(string) int { return 0 },
+	"minute":  func(string) int { return 0 },
+	"weekday": func(string) int { return 0 },
+	"month":   func(string) int { return 0 },
+	"day":     func(string) int { return 0 },
+	"max":     math.Max,
+	"min":     math.Min,
+	"abs":     math.Abs,
+	"ceil":    math.Ceil,
+	"floor":   math.Floor,
 }
 
 func getCompileEnv(version int) map[string]interface{} {
@@ -99,12 +100,18 @@ func compileFromCacheByHash(exprStr, hash string) (*vm.Program, error) {
 	}
 
 	vars := extractUsedVars(prog)
+	requestParams := extractUsedRequestParams(prog)
 
 	cacheMu.Lock()
 	if len(cache) >= maxCacheSize {
 		cache = make(map[string]*cachedEntry, 64)
 	}
-	cache[hash] = &cachedEntry{prog: prog, usedVars: vars, version: version}
+	cache[hash] = &cachedEntry{
+		prog:              prog,
+		usedVars:          vars,
+		usedRequestParams: requestParams,
+		version:           version,
+	}
 	cacheMu.Unlock()
 
 	return prog, nil
@@ -139,6 +146,29 @@ func extractUsedVars(prog *vm.Program) map[string]bool {
 	return vars
 }
 
+func extractUsedRequestParams(prog *vm.Program) map[string]bool {
+	params := make(map[string]bool)
+	ast.Find(prog.Node(), func(n ast.Node) bool {
+		call, ok := n.(*ast.CallNode)
+		if !ok || len(call.Arguments) == 0 {
+			return false
+		}
+		callee, ok := call.Callee.(*ast.IdentifierNode)
+		if !ok || callee.Value != "param" {
+			return false
+		}
+		path, ok := call.Arguments[0].(*ast.StringNode)
+		if !ok {
+			return false
+		}
+		if value := strings.TrimSpace(path.Value); value != "" {
+			params[value] = true
+		}
+		return false
+	})
+	return params
+}
+
 // UsedVars returns the set of identifier names referenced by an expression.
 // The result is cached alongside the compiled program. Returns nil for empty input.
 func UsedVars(exprStr string) map[string]bool {
@@ -164,6 +194,24 @@ func UsedVars(exprStr string) map[string]bool {
 		return entry.usedVars
 	}
 	return nil
+}
+
+// UsesRequestParam reports whether an expression reads the exact JSON path
+// through param("path"). The result is derived from the compiled AST and
+// cached with the expression program.
+func UsesRequestParam(exprStr, path string) bool {
+	path = strings.TrimSpace(path)
+	if exprStr == "" || path == "" {
+		return false
+	}
+	hash := ExprHashString(exprStr)
+	if _, err := compileFromCacheByHash(exprStr, hash); err != nil {
+		return false
+	}
+	cacheMu.RLock()
+	entry, ok := cache[hash]
+	cacheMu.RUnlock()
+	return ok && entry.usedRequestParams[path]
 }
 
 // InvalidateCache clears the compiled-expression cache.

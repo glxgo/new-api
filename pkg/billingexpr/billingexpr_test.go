@@ -14,6 +14,23 @@ import (
 
 const claudeExpr = `p <= 200000 ? tier("standard", p * 1.5 + c * 7.5) : tier("long_context", p * 3.0 + c * 11.25)`
 
+func TestUsesRequestParam(t *testing.T) {
+	expr := `param("service_tier") == "priority" ? tier("fast", p*2) : tier("base", p)`
+
+	if !billingexpr.UsesRequestParam(expr, "service_tier") {
+		t.Fatal("expected service_tier request parameter to be detected")
+	}
+	if billingexpr.UsesRequestParam(expr, "stream") {
+		t.Fatal("did not expect unrelated stream request parameter")
+	}
+	if billingexpr.UsesRequestParam(`tier("service_tier", p)`, "service_tier") {
+		t.Fatal("string content must not be treated as a param() reference")
+	}
+	if billingexpr.UsesRequestParam(`param("service_tier"`, "service_tier") {
+		t.Fatal("invalid expressions must not report request parameters")
+	}
+}
+
 func TestClaude_StandardTier(t *testing.T) {
 	cost, trace, err := billingexpr.RunExpr(claudeExpr, billingexpr.TokenParams{P: 100000, C: 5000})
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -379,6 +380,100 @@ func TestTryTieredSettle_RatioMode_EmptyBillingMode(t *testing.T) {
 	ok, _, _ := TryTieredSettle(info, billingexpr.TokenParams{P: 1000, C: 500})
 	if ok {
 		t.Fatal("expected TryTieredSettle to return false for empty billing mode")
+	}
+}
+
+func TestTryTieredSettlePriorityAppliesPlatformSurcharge(t *testing.T) {
+	exprStr := `tier("base", p)`
+	relayInfo := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType: constant.ChannelTypeOpenAI,
+		},
+		ServiceTier: "priority",
+		TieredBillingSnapshot: &billingexpr.BillingSnapshot{
+			BillingMode:   "tiered_expr",
+			ExprString:    exprStr,
+			ExprHash:      billingexpr.ExprHashString(exprStr),
+			GroupRatio:    1,
+			QuotaPerUnit:  500000,
+			ExprVersion:   billingexpr.DefaultExprVersion,
+			EstimatedTier: "base",
+		},
+	}
+
+	ok, quota, result := TryTieredSettle(relayInfo, billingexpr.TokenParams{
+		P:   1000,
+		Len: 1000,
+	})
+	if !ok || result == nil {
+		t.Fatalf("expected successful tiered settlement, ok=%v result=%+v", ok, result)
+	}
+	if quota != 500 {
+		t.Fatalf("tiered quota = %d, want 500", quota)
+	}
+	if doubled := relayInfo.ApplyPrioritySurcharge(quota); doubled != 1000 {
+		t.Fatalf("priority quota = %d, want 1000", doubled)
+	}
+	if !relayInfo.PriorityDoubled {
+		t.Fatal("expected priority surcharge audit flag")
+	}
+}
+
+func TestTryTieredSettleSecondTierAndPriorityStackToFourTimesBase(t *testing.T) {
+	exprStr := `len <= 272000 ? tier("base", p) : tier("tier_2", p * 2)`
+	relayInfo := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType: constant.ChannelTypeOpenAI,
+		},
+		ServiceTier: "priority",
+		TieredBillingSnapshot: &billingexpr.BillingSnapshot{
+			BillingMode:   "tiered_expr",
+			ExprString:    exprStr,
+			ExprHash:      billingexpr.ExprHashString(exprStr),
+			GroupRatio:    1,
+			QuotaPerUnit:  500000,
+			ExprVersion:   billingexpr.DefaultExprVersion,
+			EstimatedTier: "tier_2",
+		},
+	}
+
+	ok, tieredQuota, result := TryTieredSettle(relayInfo, billingexpr.TokenParams{
+		P:   1000,
+		Len: 300000,
+	})
+	if !ok || result == nil {
+		t.Fatalf("expected successful tiered settlement, ok=%v result=%+v", ok, result)
+	}
+
+	const firstTierBaseQuota = 500
+	if tieredQuota != firstTierBaseQuota*2 {
+		t.Fatalf("second-tier quota = %d, want %d", tieredQuota, firstTierBaseQuota*2)
+	}
+	if finalQuota := relayInfo.ApplyPrioritySurcharge(tieredQuota); finalQuota != firstTierBaseQuota*4 {
+		t.Fatalf("second-tier FAST quota = %d, want %d", finalQuota, firstTierBaseQuota*4)
+	}
+	if !relayInfo.PriorityDoubled {
+		t.Fatal("expected priority surcharge audit flag")
+	}
+}
+
+func TestApplyPriorityAfterTieredSettleDoesNotDoubleFallbackTwice(t *testing.T) {
+	relayInfo := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType: constant.ChannelTypeOpenAI,
+		},
+		ServiceTier:     "priority",
+		PriorityDoubled: true,
+	}
+
+	if quota := applyPriorityAfterTieredSettle(relayInfo, 200, 200, true, nil); quota != 200 {
+		t.Fatalf("fallback quota = %d, want already-reserved 200", quota)
+	}
+	if !relayInfo.PriorityDoubled {
+		t.Fatal("fallback must preserve the priority audit flag")
+	}
+	if quota := applyPriorityAfterTieredSettle(relayInfo, 210, 200, true, nil); quota != 220 {
+		t.Fatalf("fallback with extra quota = %d, want 220", quota)
 	}
 }
 
