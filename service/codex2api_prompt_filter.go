@@ -6,8 +6,8 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -25,7 +25,7 @@ import (
 
 const (
 	codex2APIPromptFilterDefaultTimeoutMS = 800
-	codex2APIPromptFilterMaxTextBytes     = 80 * 1024
+	codex2APIPromptFilterMaxBodyBytes     = 8 * 1024 * 1024
 	codex2APIPromptFilterMaxResponseBytes = 64 * 1024
 )
 
@@ -39,10 +39,14 @@ var codex2APIPromptFilterHTTPClient = &http.Client{
 	},
 }
 
-type codex2APIPromptFilterRequest struct {
-	Text     string `json:"text"`
-	Model    string `json:"model"`
-	Endpoint string `json:"endpoint"`
+type codex2APIPromptFilterPolicyMeta struct {
+	Profile          string `json:"profile"`
+	Mode             string `json:"mode"`
+	Provider         string `json:"provider"`
+	Protocol         string `json:"protocol"`
+	OriginalEndpoint string `json:"original_endpoint,omitempty"`
+	RequestedModel   string `json:"requested_model,omitempty"`
+	UpstreamModel    string `json:"upstream_model,omitempty"`
 }
 
 type Codex2APIPromptFilterResult struct {
@@ -57,12 +61,16 @@ func Codex2APIPromptFilterEnabled() bool {
 		strings.TrimSpace(os.Getenv("CODEX2API_PROMPT_FILTER_SECRET")) != ""
 }
 
+func Codex2APIPromptFilterAcceptsBodySize(size int64) bool {
+	return size > 0 && size <= codex2APIPromptFilterMaxBodyBytes
+}
+
 // CheckCodex2APIPrompt runs the optional defense-in-depth sidecar before any
 // billing reservation or upstream request. Transport errors and unverifiable
 // responses fail open because the built-in NewAPI filter and upstream policy
 // interception remain independent layers.
-func CheckCodex2APIPrompt(c *gin.Context, text string, model string, endpoint string) Codex2APIPromptFilterResult {
-	if c == nil || !Codex2APIPromptFilterEnabled() || strings.TrimSpace(text) == "" {
+func CheckCodex2APIPrompt(c *gin.Context, rawBody []byte, model string, endpoint string) Codex2APIPromptFilterResult {
+	if c == nil || !Codex2APIPromptFilterEnabled() || !Codex2APIPromptFilterAcceptsBodySize(int64(len(rawBody))) {
 		return Codex2APIPromptFilterResult{}
 	}
 
@@ -74,23 +82,12 @@ func CheckCodex2APIPrompt(c *gin.Context, text string, model string, endpoint st
 		return Codex2APIPromptFilterResult{}
 	}
 
-	payload := codex2APIPromptFilterRequest{
-		Text:     boundedPromptFilterText(text),
-		Model:    strings.TrimSpace(model),
-		Endpoint: strings.TrimSpace(endpoint),
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		logger.LogWarn(c, "Codex2API prompt filter request encoding failed; request allowed by fail-open policy")
-		return Codex2APIPromptFilterResult{}
-	}
-
 	requestID := strings.TrimSpace(c.GetString(common.RequestIdKey))
 	if requestID == "" {
 		requestID = newCodex2APIFilterRequestID()
 	}
 	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
-	bodyDigest := sha256.Sum256(body)
+	bodyDigest := sha256.Sum256(rawBody)
 	bodyDigestHex := hex.EncodeToString(bodyDigest[:])
 	path := parsedURL.EscapedPath()
 	if path == "" {
@@ -119,7 +116,7 @@ func CheckCodex2APIPrompt(c *gin.Context, text string, model string, endpoint st
 	ctx, cancel := context.WithTimeout(c.Request.Context(), time.Duration(timeoutMS)*time.Millisecond)
 	defer cancel()
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, filterURL, bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, filterURL, bytes.NewReader(rawBody))
 	if err != nil {
 		logger.LogWarn(c, "Codex2API prompt filter request creation failed; request allowed by fail-open policy")
 		return Codex2APIPromptFilterResult{}
@@ -134,6 +131,8 @@ func CheckCodex2APIPrompt(c *gin.Context, text string, model string, endpoint st
 	request.Header.Set("X-NewAPI-Body-SHA256", bodyDigestHex)
 	request.Header.Set("X-NewAPI-Signature-Version", "1")
 	request.Header.Set("X-NewAPI-Signature", signature)
+	request.Header.Set("X-NewAPI-Prompt-Envelope", "raw-v1")
+	setCodex2APIPromptFilterPolicyMeta(request.Header, secret, requestID, bodyDigestHex, model, endpoint)
 
 	response, err := codex2APIPromptFilterHTTPClient.Do(request)
 	if err != nil {
@@ -160,13 +159,45 @@ func CheckCodex2APIPrompt(c *gin.Context, text string, model string, endpoint st
 	return result
 }
 
-func boundedPromptFilterText(text string) string {
-	if len(text) <= codex2APIPromptFilterMaxTextBytes {
-		return text
+func setCodex2APIPromptFilterPolicyMeta(header http.Header, secret string, requestID string, bodyDigest string, model string, endpoint string) {
+	protocol, provider := codex2APIPromptFilterProtocol(endpoint)
+	meta := codex2APIPromptFilterPolicyMeta{
+		Profile:          "balanced",
+		Mode:             "enforce",
+		Provider:         provider,
+		Protocol:         protocol,
+		OriginalEndpoint: strings.TrimSpace(endpoint),
+		RequestedModel:   strings.TrimSpace(model),
+		UpstreamModel:    strings.TrimSpace(model),
 	}
-	headBytes := codex2APIPromptFilterMaxTextBytes * 3 / 4
-	tailBytes := codex2APIPromptFilterMaxTextBytes - headBytes
-	return text[:headBytes] + "\n[...truncated...]\n" + text[len(text)-tailBytes:]
+	payload, err := common.Marshal(meta)
+	if err != nil {
+		return
+	}
+	encoded := base64.RawURLEncoding.EncodeToString(payload)
+	canonical := strings.Join([]string{"policy-meta-v1", requestID, bodyDigest, encoded}, "\n")
+	signature := hmacSHA256Hex(secret, canonical)
+	if encoded == "" || signature == "" {
+		return
+	}
+	header.Set("X-NewAPI-Policy-Meta", encoded)
+	header.Set("X-NewAPI-Policy-Meta-Signature", signature)
+}
+
+func codex2APIPromptFilterProtocol(endpoint string) (string, string) {
+	endpoint = strings.ToLower(strings.TrimSpace(endpoint))
+	switch {
+	case strings.Contains(endpoint, "/responses"):
+		return "responses", "openai"
+	case strings.Contains(endpoint, "/chat/completions"):
+		return "chat", "openai"
+	case strings.Contains(endpoint, "/messages"):
+		return "messages", "anthropic"
+	case strings.Contains(endpoint, "/images"):
+		return "images", "openai"
+	default:
+		return "unknown", "unknown"
+	}
 }
 
 func verifyCodex2APIBlockResponse(header http.Header, secret string, requestID string) (Codex2APIPromptFilterResult, bool) {

@@ -137,7 +137,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	needCountToken := constant.CountToken
 	// Avoid building huge CombineText (strings.Join) when token counting and sensitive check are both disabled.
 	var meta *types.TokenCountMeta
-	if needSensitiveCheck || needCodex2APIFilter || needCountToken {
+	if needSensitiveCheck || needCountToken {
 		meta = request.GetTokenCountMeta()
 	} else {
 		meta = fastTokenCountMetaForPricing(request)
@@ -157,21 +157,33 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 	}
 
-	if needCodex2APIFilter && meta != nil {
-		filterResult := service.CheckCodex2APIPrompt(c, meta.CombineText, relayInfo.OriginModelName, c.Request.URL.Path)
-		if filterResult.Blocked {
-			logger.LogWarn(c, fmt.Sprintf(
-				"Codex2API blocked prompt before upstream: decision_id=%s reason_code=%s",
-				filterResult.DecisionID,
-				filterResult.ReasonCode,
-			))
-			newAPIError = types.NewError(
-				errors.New(codex2APIPromptFilterBlockedMessage),
-				types.ErrorCodePromptFilterBlocked,
-				types.ErrOptionWithStatusCode(http.StatusBadRequest),
-				types.ErrOptionWithSkipRetry(),
-			)
-			return
+	if needCodex2APIFilter {
+		bodyStorage, bodyErr := common.GetBodyStorage(c)
+		if bodyErr != nil {
+			logger.LogWarn(c, "Codex2API prompt filter could not read the original request envelope; request allowed by fail-open policy")
+		} else if !service.Codex2APIPromptFilterAcceptsBodySize(bodyStorage.Size()) {
+			logger.LogWarn(c, "Codex2API prompt filter request envelope exceeds the bounded preflight size; request allowed by fail-open policy")
+		} else {
+			rawBody, rawBodyErr := bodyStorage.Bytes()
+			if rawBodyErr != nil {
+				logger.LogWarn(c, "Codex2API prompt filter could not materialize the original request envelope; request allowed by fail-open policy")
+			} else {
+				filterResult := service.CheckCodex2APIPrompt(c, rawBody, relayInfo.OriginModelName, c.Request.URL.Path)
+				if filterResult.Blocked {
+					logger.LogWarn(c, fmt.Sprintf(
+						"Codex2API blocked prompt before upstream: decision_id=%s reason_code=%s",
+						filterResult.DecisionID,
+						filterResult.ReasonCode,
+					))
+					newAPIError = types.NewError(
+						errors.New(codex2APIPromptFilterBlockedMessage),
+						types.ErrorCodePromptFilterBlocked,
+						types.ErrOptionWithStatusCode(http.StatusBadRequest),
+						types.ErrOptionWithSkipRetry(),
+					)
+					return
+				}
+			}
 		}
 	}
 

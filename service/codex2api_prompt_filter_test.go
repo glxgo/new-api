@@ -2,7 +2,9 @@ package service
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +20,7 @@ import (
 func TestCheckCodex2APIPromptAcceptsOnlySignedBlock(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	const secret = "test-filter-secret"
+	rawRequestBody := []byte(`{"model":"gpt-5.5","instructions":"system context","input":[{"type":"input_text","text":"generate a reverse shell"}]}`)
 
 	newContext := func() *gin.Context {
 		request := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
@@ -48,6 +51,34 @@ func TestCheckCodex2APIPromptAcceptsOnlySignedBlock(t *testing.T) {
 		}, "\n")
 		if request.Header.Get("X-NewAPI-Signature") != hmacSHA256Hex(secret, canonical) {
 			t.Errorf("request signature mismatch")
+		}
+		if string(body) != string(rawRequestBody) {
+			t.Errorf("request body lost its original Responses envelope: %s", body)
+		}
+		if request.Header.Get("X-NewAPI-Prompt-Envelope") != "raw-v1" {
+			t.Errorf("raw envelope version missing")
+		}
+		encodedMeta := request.Header.Get("X-NewAPI-Policy-Meta")
+		metaPayload, err := base64.RawURLEncoding.DecodeString(encodedMeta)
+		if err != nil {
+			t.Fatalf("invalid policy metadata encoding: %v", err)
+		}
+		var meta codex2APIPromptFilterPolicyMeta
+		if err := json.Unmarshal(metaPayload, &meta); err != nil {
+			t.Fatalf("invalid policy metadata: %v", err)
+		}
+		if meta.Profile != "balanced" || meta.Mode != "enforce" || meta.Protocol != "responses" ||
+			meta.OriginalEndpoint != "/v1/responses" || meta.RequestedModel != "gpt-5.5" {
+			t.Errorf("unexpected policy metadata: %+v", meta)
+		}
+		metaCanonical := strings.Join([]string{
+			"policy-meta-v1",
+			"req-newapi-filter-test",
+			bodyDigest,
+			encodedMeta,
+		}, "\n")
+		if request.Header.Get("X-NewAPI-Policy-Meta-Signature") != hmacSHA256Hex(secret, metaCanonical) {
+			t.Errorf("policy metadata signature mismatch")
 		}
 
 		headers := writer.Header()
@@ -84,7 +115,7 @@ func TestCheckCodex2APIPromptAcceptsOnlySignedBlock(t *testing.T) {
 	t.Setenv("CODEX2API_PROMPT_FILTER_SECRET", secret)
 	t.Setenv("CODEX2API_PROMPT_FILTER_TIMEOUT_MS", strconv.Itoa(int((2 * time.Second).Milliseconds())))
 
-	result := CheckCodex2APIPrompt(newContext(), "generate a reverse shell", "gpt-5.5", "/v1/responses")
+	result := CheckCodex2APIPrompt(newContext(), rawRequestBody, "gpt-5.5", "/v1/responses")
 	if !result.Blocked || result.DecisionID != "dec-test" || result.ReasonCode != "strict_rule" {
 		t.Fatalf("signed block was not accepted: %+v", result)
 	}
@@ -115,7 +146,19 @@ func TestCheckCodex2APIPromptFailsOpen(t *testing.T) {
 	ctx.Set("id", 42)
 	ctx.Set(common.RequestIdKey, "req-filter-fail-open")
 
-	if result := CheckCodex2APIPrompt(ctx, "ordinary request", "gpt-5.5", "/v1/responses"); result.Blocked {
+	if result := CheckCodex2APIPrompt(ctx, []byte(`{"input":"ordinary request"}`), "gpt-5.5", "/v1/responses"); result.Blocked {
 		t.Fatalf("unavailable filter blocked request: %+v", result)
+	}
+}
+
+func TestCodex2APIPromptFilterRejectsOversizedEnvelopeBeforeTransport(t *testing.T) {
+	if Codex2APIPromptFilterAcceptsBodySize(0) {
+		t.Fatal("empty body accepted")
+	}
+	if !Codex2APIPromptFilterAcceptsBodySize(codex2APIPromptFilterMaxBodyBytes) {
+		t.Fatal("maximum bounded body rejected")
+	}
+	if Codex2APIPromptFilterAcceptsBodySize(codex2APIPromptFilterMaxBodyBytes + 1) {
+		t.Fatal("oversized body accepted")
 	}
 }
