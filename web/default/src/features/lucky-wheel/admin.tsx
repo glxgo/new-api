@@ -41,6 +41,7 @@ import {
 } from '@/components/ui/select'
 import { SectionPageLayout } from '@/components/layout'
 import { LuckyCardManager } from './admin-card-manager'
+import { LuckyDrawHistory } from './admin-draw-history'
 import {
   compensateLuckyCards,
   getLuckyAdminOverview,
@@ -231,6 +232,8 @@ export function LuckyWheelAdmin() {
               </CardContent>
             </Card>
           </div>
+
+          <LuckyDrawHistory />
 
           <div className='grid gap-5 xl:grid-cols-2'>
             <Card>

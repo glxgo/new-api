@@ -62,6 +62,7 @@ export interface LuckyCard {
 
 export interface LuckyDraw {
   id: number
+  user_id?: number
   card_id: number
   prize_type: string
   display_usd_micros: number
@@ -69,7 +70,26 @@ export interface LuckyDraw {
   awarded_quota: number
   reward_subscription_id: number
   gift_quota_awarded: number
+  status?: string
   awarded_at: number
+}
+
+export interface LuckyAdminDraw extends LuckyDraw {
+  user_id: number
+  username: string
+  display_name: string
+  rule_set_id: number
+  status: string
+  created_at: number
+  pool_type: 'subscription' | 'recharge'
+  source_type: string
+  source_ref: string
+  source_order_id: number
+  source_subscription_id: number
+  source_cycle_key: string
+  source_effective_end_time: number
+  card_issued_at: number
+  card_expires_at: number
 }
 
 export interface LuckyPrize {

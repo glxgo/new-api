@@ -189,6 +189,75 @@ func TestRevokeUserAvailableLuckyCardsPreservesAuditHistory(t *testing.T) {
 	}))
 }
 
+func TestListLuckyAdminDrawsIncludesUserPrizeAndCardSource(t *testing.T) {
+	db := setupLuckyWheelTestDB(t)
+	now := common.GetTimestamp()
+	users := []User{
+		{Username: "alice-lucky", DisplayName: "Alice", Password: "hashed-password", AffCode: "lucky-admin-a"},
+		{Username: "bob-lucky", DisplayName: "Bob", Password: "hashed-password", AffCode: "lucky-admin-b"},
+	}
+	require.NoError(t, db.Create(&users).Error)
+	cards := []LuckyCard{
+		{
+			UserId: users[0].Id, PoolType: LuckyPoolSubscription,
+			SourceType: "subscription_purchase", SourceRef: "order-a",
+			SourceOrderId: 101, SourceSubscriptionId: 201,
+			SourceCycleKey: "purchase", SourceEffectiveEndTime: now + 86400,
+			GrantKey: "admin-history-a", Status: LuckyCardConsumed,
+			IssuedAt: now - 300, ExpiresAt: now + 86400, ConsumedAt: now - 100,
+		},
+		{
+			UserId: users[1].Id, PoolType: LuckyPoolRecharge,
+			SourceType: "wallet_topup", SourceRef: "topup-b",
+			SourceOrderId: 102, GrantKey: "admin-history-b",
+			Status: LuckyCardConsumed, IssuedAt: now - 200,
+			ExpiresAt: now + 86400, ConsumedAt: now - 50,
+		},
+	}
+	require.NoError(t, db.Create(&cards).Error)
+	draws := []LuckyDraw{
+		{
+			UserId: users[0].Id, CardId: cards[0].Id,
+			IdempotencyKey: "admin-history-draw-a", PrizeType: LuckyPrizeQuota10,
+			DisplayUsdMicros: 10_000_000, ActualUsdMicros: 10_000_000,
+			RewardSubscriptionId: 301, Status: "awarded", AwardedAt: now - 100,
+		},
+		{
+			UserId: users[1].Id, CardId: cards[1].Id,
+			IdempotencyKey: "admin-history-draw-b", PrizeType: LuckyPrizeGift5,
+			DisplayUsdMicros: 5_000_000, ActualUsdMicros: 5_000_000,
+			GiftQuotaAwarded: 5_000_000, Status: "review_required", AwardedAt: now - 50,
+		},
+	}
+	require.NoError(t, db.Create(&draws).Error)
+
+	records, total, err := ListLuckyAdminDraws(LuckyAdminDrawFilter{
+		Keyword: "alice", PrizeType: LuckyPrizeQuota10,
+		StartTime: now - 150, EndTime: now - 75, Page: 1, PageSize: 10,
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, total)
+	require.Len(t, records, 1)
+	require.Equal(t, users[0].Id, records[0].UserId)
+	require.Equal(t, "alice-lucky", records[0].Username)
+	require.Equal(t, "Alice", records[0].DisplayName)
+	require.Equal(t, LuckyPoolSubscription, records[0].PoolType)
+	require.Equal(t, "subscription_purchase", records[0].SourceType)
+	require.Equal(t, "order-a", records[0].SourceRef)
+	require.Equal(t, 201, records[0].SourceSubscriptionId)
+	require.Equal(t, 301, records[0].RewardSubscriptionId)
+
+	records, total, err = ListLuckyAdminDraws(LuckyAdminDrawFilter{
+		Keyword: fmt.Sprintf("%d", users[1].Id), Status: "review_required",
+		Page: 1, PageSize: 10,
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, total)
+	require.Len(t, records, 1)
+	require.Equal(t, LuckyPrizeGift5, records[0].PrizeType)
+	require.Equal(t, "topup-b", records[0].SourceRef)
+}
+
 func TestUnboundSubscriptionOrderUsesSavedPriority(t *testing.T) {
 	db := setupLuckyWheelTestDB(t)
 	now := common.GetTimestamp()

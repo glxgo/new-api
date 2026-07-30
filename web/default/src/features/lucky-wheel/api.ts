@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 import type {
+  LuckyAdminDraw,
   LuckyCard,
   LuckyDraw,
   LuckyRuleSet,
@@ -85,6 +86,28 @@ export async function getLuckyAdminOverview() {
         draws: number
       }>
     >('/api/lucky-wheel/admin/overview')
+  ).data
+}
+
+export interface LuckyAdminDrawFilters {
+  keyword?: string
+  prize_type?: string
+  status?: string
+  start_time?: number
+  end_time?: number
+  page?: number
+  page_size?: number
+}
+
+export async function getLuckyAdminDraws(filters: LuckyAdminDrawFilters = {}) {
+  return (
+    await api.get<ApiResponse<PageResult<LuckyAdminDraw>>>(
+      '/api/lucky-wheel/admin/draws',
+      {
+        params: filters,
+        disableDuplicate: true,
+      }
+    )
   ).data
 }
 

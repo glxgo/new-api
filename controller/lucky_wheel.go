@@ -348,20 +348,20 @@ func AdminRevokeUserLuckyCards(c *gin.Context) {
 
 func AdminListLuckyDraws(c *gin.Context) {
 	page, pageSize := luckyPagination(c)
-	query := model.DB.Model(&model.LuckyDraw{})
-	if userId, _ := strconv.Atoi(c.Query("user_id")); userId > 0 {
-		query = query.Where("user_id = ?", userId)
-	}
-	if prize := strings.TrimSpace(c.Query("prize_type")); prize != "" {
-		query = query.Where("prize_type = ?", prize)
-	}
-	var total int64
-	var draws []model.LuckyDraw
-	if err := query.Count(&total).Error; err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	if err := query.Order("id desc").Limit(pageSize).Offset((page - 1) * pageSize).Find(&draws).Error; err != nil {
+	userId, _ := strconv.Atoi(c.Query("user_id"))
+	startTime, _ := strconv.ParseInt(c.Query("start_time"), 10, 64)
+	endTime, _ := strconv.ParseInt(c.Query("end_time"), 10, 64)
+	draws, total, err := model.ListLuckyAdminDraws(model.LuckyAdminDrawFilter{
+		Keyword:   strings.TrimSpace(c.Query("keyword")),
+		UserId:    userId,
+		PrizeType: strings.TrimSpace(c.Query("prize_type")),
+		Status:    strings.TrimSpace(c.Query("status")),
+		StartTime: startTime,
+		EndTime:   endTime,
+		Page:      page,
+		PageSize:  pageSize,
+	})
+	if err != nil {
 		common.ApiError(c, err)
 		return
 	}

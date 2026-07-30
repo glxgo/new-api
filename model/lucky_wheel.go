@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -164,6 +165,113 @@ func (m *LuckyDraw) BeforeCreate(tx *gorm.DB) error {
 	now := common.GetTimestamp()
 	m.CreatedAt, m.UpdatedAt = now, now
 	return nil
+}
+
+type LuckyAdminDrawFilter struct {
+	Keyword   string
+	UserId    int
+	PrizeType string
+	Status    string
+	StartTime int64
+	EndTime   int64
+	Page      int
+	PageSize  int
+}
+
+type LuckyAdminDrawRecord struct {
+	Id                     int64  `json:"id"`
+	UserId                 int    `json:"user_id"`
+	Username               string `json:"username"`
+	DisplayName            string `json:"display_name"`
+	CardId                 int64  `json:"card_id"`
+	RuleSetId              int64  `json:"rule_set_id"`
+	PrizeType              string `json:"prize_type"`
+	DisplayUsdMicros       int64  `json:"display_usd_micros"`
+	ActualUsdMicros        int64  `json:"actual_usd_micros"`
+	AwardedQuota           int64  `json:"awarded_quota"`
+	RewardSubscriptionId   int    `json:"reward_subscription_id"`
+	GiftQuotaAwarded       int64  `json:"gift_quota_awarded"`
+	Status                 string `json:"status"`
+	AwardedAt              int64  `json:"awarded_at"`
+	CreatedAt              int64  `json:"created_at"`
+	PoolType               string `json:"pool_type"`
+	SourceType             string `json:"source_type"`
+	SourceRef              string `json:"source_ref"`
+	SourceOrderId          int    `json:"source_order_id"`
+	SourceSubscriptionId   int    `json:"source_subscription_id"`
+	SourceCycleKey         string `json:"source_cycle_key"`
+	SourceEffectiveEndTime int64  `json:"source_effective_end_time"`
+	CardIssuedAt           int64  `json:"card_issued_at"`
+	CardExpiresAt          int64  `json:"card_expires_at"`
+}
+
+func ListLuckyAdminDraws(filter LuckyAdminDrawFilter) ([]LuckyAdminDrawRecord, int64, error) {
+	if filter.Page < 1 {
+		filter.Page = 1
+	}
+	if filter.PageSize < 1 || filter.PageSize > 100 {
+		filter.PageSize = 20
+	}
+
+	buildQuery := func() *gorm.DB {
+		query := DB.Table("lucky_draws AS ld").
+			Joins("LEFT JOIN users AS u ON u.id = ld.user_id").
+			Joins("LEFT JOIN lucky_cards AS lc ON lc.id = ld.card_id")
+		if filter.UserId > 0 {
+			query = query.Where("ld.user_id = ?", filter.UserId)
+		}
+		if keyword := strings.TrimSpace(filter.Keyword); keyword != "" {
+			like := "%" + keyword + "%"
+			if numericUserId, err := strconv.Atoi(keyword); err == nil && numericUserId > 0 {
+				query = query.Where(
+					"(ld.user_id = ? OR u.username LIKE ? OR u.display_name LIKE ?)",
+					numericUserId, like, like,
+				)
+			} else {
+				query = query.Where("(u.username LIKE ? OR u.display_name LIKE ?)", like, like)
+			}
+		}
+		if filter.PrizeType != "" {
+			query = query.Where("ld.prize_type = ?", filter.PrizeType)
+		}
+		if filter.Status != "" {
+			query = query.Where("ld.status = ?", filter.Status)
+		}
+		if filter.StartTime > 0 {
+			query = query.Where("ld.awarded_at >= ?", filter.StartTime)
+		}
+		if filter.EndTime > 0 {
+			query = query.Where("ld.awarded_at <= ?", filter.EndTime)
+		}
+		return query
+	}
+
+	var total int64
+	if err := buildQuery().Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var records []LuckyAdminDrawRecord
+	err := buildQuery().
+		Select(`
+			ld.id, ld.user_id, u.username, u.display_name,
+			ld.card_id, ld.rule_set_id, ld.prize_type,
+			ld.display_usd_micros, ld.actual_usd_micros, ld.awarded_quota,
+			ld.reward_subscription_id, ld.gift_quota_awarded,
+			ld.status, ld.awarded_at, ld.created_at,
+			lc.pool_type, lc.source_type, lc.source_ref,
+			lc.source_order_id, lc.source_subscription_id, lc.source_cycle_key,
+			lc.source_effective_end_time,
+			lc.issued_at AS card_issued_at, lc.expires_at AS card_expires_at
+		`).
+		Order("ld.id DESC").
+		Limit(filter.PageSize).
+		Offset((filter.Page - 1) * filter.PageSize).
+		Scan(&records).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	return records, total, nil
 }
 
 type LuckyRechargeEvent struct {
