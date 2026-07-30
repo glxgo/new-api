@@ -25,6 +25,7 @@ import {
   FlaskConical,
   Gift,
   HandCoins,
+  ChartLine,
   Key,
   LayoutDashboard,
   ListTodo,
@@ -36,6 +37,7 @@ import {
   User,
   Users,
   Wallet,
+  Dices,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
@@ -131,6 +133,11 @@ export function useSidebarData(): SidebarData {
         title: t('Profit Dashboard'),
         url: '/profit',
         icon: BarChart3,
+      },
+      {
+        title: '幸运大转盘管理',
+        url: '/lucky-wheel-admin',
+        icon: Dices,
       }
     )
   }
@@ -168,6 +175,11 @@ export function useSidebarData(): SidebarData {
             icon: Key,
           },
           {
+            title: t('Usage Statistics'),
+            url: '/usage-statistics',
+            icon: ChartLine,
+          },
+          {
             title: t('Usage Logs'),
             url: '/usage-logs/common',
             icon: FileText,
@@ -183,6 +195,17 @@ export function useSidebarData(): SidebarData {
             activeUrls: ['/usage-logs/drawing'],
             configUrls: ['/usage-logs/drawing', '/usage-logs/task'],
             icon: ListTodo,
+          },
+        ],
+      },
+      {
+        id: 'activities',
+        title: t('Activities'),
+        items: [
+          {
+            title: t('Lucky Wheel'),
+            url: '/lucky-wheel',
+            icon: Dices,
           },
         ],
       },

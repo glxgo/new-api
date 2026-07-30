@@ -24,8 +24,22 @@ type TopUp struct {
 	CompleteTime    int64   `json:"complete_time"`
 	// BalanceAfter 充值完成后用户余额快照(quota 单位, 本金+赠金)，
 	// 仅供财务流水展示，不参与计费/扣费/退款逻辑。历史订单为 0。
-	BalanceAfter *int64 `json:"balance_after" gorm:"column:balance_after"`
-	Status       string `json:"status"`
+	BalanceAfter          *int64 `json:"balance_after" gorm:"column:balance_after"`
+	Status                string `json:"status"`
+	LuckyRuleSetId        int64  `json:"lucky_rule_set_id" gorm:"index;not null;default:0"`
+	LuckyRechargeEligible bool   `json:"lucky_recharge_eligible" gorm:"not null;default:false"`
+}
+
+func (topUp *TopUp) BeforeCreate(tx *gorm.DB) error {
+	if topUp.LuckyRuleSetId != 0 || topUp.LuckyRechargeEligible {
+		return nil
+	}
+	campaign, rule, err := GetLuckyCampaignTx(tx, false)
+	if err == nil && !campaign.IssuancePaused {
+		topUp.LuckyRuleSetId = rule.Id
+		topUp.LuckyRechargeEligible = true
+	}
+	return nil
 }
 
 const (
@@ -164,7 +178,10 @@ func Recharge(referenceId string, customerId string, callerIp string) (err error
 			return err
 		}
 
-		_, err = RecordTopUpRechargeCreditTx(tx, topUp)
+		if _, err = RecordTopUpRechargeCreditTx(tx, topUp); err != nil {
+			return err
+		}
+		_, err = RecordLuckyRechargeTx(tx, topUp)
 		return err
 	})
 
@@ -226,7 +243,10 @@ func CompleteEpayTopUp(tradeNo string, actualPaymentMethod string) (*TopUp, int,
 		if result.RowsAffected != 1 {
 			return fmt.Errorf("user %d not found", completed.UserId)
 		}
-		_, err := RecordTopUpRechargeCreditTx(tx, &completed)
+		if _, err := RecordTopUpRechargeCreditTx(tx, &completed); err != nil {
+			return err
+		}
+		_, err := RecordLuckyRechargeTx(tx, &completed)
 		return err
 	})
 	if err != nil {
@@ -457,6 +477,9 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 		if _, err := RecordTopUpRechargeCreditTx(tx, topUp); err != nil {
 			return err
 		}
+		if _, err := RecordLuckyRechargeTx(tx, topUp); err != nil {
+			return err
+		}
 
 		userId = topUp.UserId
 		payMoney = topUp.Money
@@ -535,7 +558,10 @@ func RechargeCreem(referenceId string, customerEmail string, customerName string
 			return err
 		}
 
-		_, err = RecordTopUpRechargeCreditTx(tx, topUp)
+		if _, err = RecordTopUpRechargeCreditTx(tx, topUp); err != nil {
+			return err
+		}
+		_, err = RecordLuckyRechargeTx(tx, topUp)
 		return err
 	})
 
@@ -599,7 +625,10 @@ func RechargeWaffo(tradeNo string, callerIp string) (err error) {
 			return err
 		}
 
-		_, err = RecordTopUpRechargeCreditTx(tx, topUp)
+		if _, err = RecordTopUpRechargeCreditTx(tx, topUp); err != nil {
+			return err
+		}
+		_, err = RecordLuckyRechargeTx(tx, topUp)
 		return err
 	})
 
@@ -663,7 +692,10 @@ func RechargeWaffoPancake(tradeNo string) (err error) {
 			return err
 		}
 
-		_, err = RecordTopUpRechargeCreditTx(tx, topUp)
+		if _, err = RecordTopUpRechargeCreditTx(tx, topUp); err != nil {
+			return err
+		}
+		_, err = RecordLuckyRechargeTx(tx, topUp)
 		return err
 	})
 

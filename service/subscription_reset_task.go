@@ -53,6 +53,22 @@ func runSubscriptionQuotaResetOnce() {
 	ctx := context.Background()
 	totalReset := 0
 	totalExpired := 0
+	// Advance reset epochs before expiring subscriptions so a maintenance gap
+	// cannot silently discard a reset that occurred while the source was valid.
+	for {
+		n, err := model.ResetDueSubscriptions(subscriptionResetBatchSize)
+		if err != nil {
+			logger.LogWarn(ctx, fmt.Sprintf("subscription quota reset task failed: %v", err))
+			return
+		}
+		if n == 0 {
+			break
+		}
+		totalReset += n
+		if n < subscriptionResetBatchSize {
+			break
+		}
+	}
 	for {
 		n, err := model.ExpireDueSubscriptions(subscriptionResetBatchSize)
 		if err != nil {
@@ -74,20 +90,6 @@ func runSubscriptionQuotaResetOnce() {
 			logger.LogWarn(ctx, fmt.Sprintf("subscription delayed settle task failed: %v", err))
 			break
 		}
-		if n < subscriptionResetBatchSize {
-			break
-		}
-	}
-	for {
-		n, err := model.ResetDueSubscriptions(subscriptionResetBatchSize)
-		if err != nil {
-			logger.LogWarn(ctx, fmt.Sprintf("subscription quota reset task failed: %v", err))
-			return
-		}
-		if n == 0 {
-			break
-		}
-		totalReset += n
 		if n < subscriptionResetBatchSize {
 			break
 		}

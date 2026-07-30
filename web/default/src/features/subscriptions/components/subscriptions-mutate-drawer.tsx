@@ -19,7 +19,13 @@ For commercial licensing, please contact support@quantumnous.com
 import { useEffect, useState } from 'react'
 import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { CalendarClock, CreditCard, RefreshCw, Settings2 } from 'lucide-react'
+import {
+  CalendarClock,
+  CreditCard,
+  RefreshCw,
+  Settings2,
+  Sparkles,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -987,6 +993,60 @@ export function SubscriptionsMutateDrawer({
                         />
                       </FormControl>
                       <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </SideDrawerSection>
+
+            <SideDrawerSection>
+              <h3 className='flex items-center gap-2 text-sm font-medium'>
+                <Sparkles className='h-4 w-4' />
+                幸运卡
+              </h3>
+              <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
+                <FormField
+                  control={form.control}
+                  name='lucky_card_grant_count'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>购买后立即获得</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type='number'
+                          min={0}
+                          max={100}
+                          onChange={(event) =>
+                            field.onChange(
+                              Math.max(0, parseInt(event.target.value, 10) || 0)
+                            )
+                          }
+                        />
+                      </FormControl>
+                      <FormDescription>填写 0 表示不赠送幸运卡</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name='lucky_card_on_reset'
+                  render={({ field }) => (
+                    <FormItem className={sideDrawerSwitchItemClassName()}>
+                      <div>
+                        <FormLabel>周期重置赠卡</FormLabel>
+                        <FormDescription>
+                          每个真实完成的重置周期获得 1 张
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          disabled={resetPeriod === 'never'}
+                        />
+                      </FormControl>
                     </FormItem>
                   )}
                 />

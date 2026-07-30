@@ -222,6 +222,13 @@ func AdminCreateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "总额度不能为负数")
 		return
 	}
+	if req.Plan.LuckyCardGrantCount < 0 || req.Plan.LuckyCardGrantCount > 100 {
+		common.ApiErrorMsg(c, "购买赠送幸运卡数量必须在 0 到 100 之间")
+		return
+	}
+	if req.Plan.QuotaResetPeriod == model.SubscriptionResetNever {
+		req.Plan.LuckyCardOnReset = false
+	}
 	req.Plan.UpgradeGroup = strings.TrimSpace(req.Plan.UpgradeGroup)
 	if req.Plan.UpgradeGroup != "" {
 		if _, ok := ratio_setting.GetGroupRatioCopy()[req.Plan.UpgradeGroup]; !ok {
@@ -238,6 +245,9 @@ func AdminCreateSubscriptionPlan(c *gin.Context) {
 		req.Plan.UpgradeGroup = "" // 互斥: AllowedGroup 优先, 不走全局升级
 	}
 	req.Plan.QuotaResetPeriod = model.NormalizeResetPeriod(req.Plan.QuotaResetPeriod)
+	if req.Plan.QuotaResetPeriod == model.SubscriptionResetNever {
+		req.Plan.LuckyCardOnReset = false
+	}
 	if req.Plan.QuotaResetPeriod == model.SubscriptionResetCustom && req.Plan.QuotaResetCustomSeconds <= 0 {
 		common.ApiErrorMsg(c, "自定义重置周期需大于0秒")
 		return
@@ -311,6 +321,13 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "总额度不能为负数")
 		return
 	}
+	if req.Plan.LuckyCardGrantCount < 0 || req.Plan.LuckyCardGrantCount > 100 {
+		common.ApiErrorMsg(c, "购买赠送幸运卡数量必须在 0 到 100 之间")
+		return
+	}
+	if req.Plan.QuotaResetPeriod == model.SubscriptionResetNever {
+		req.Plan.LuckyCardOnReset = false
+	}
 	req.Plan.UpgradeGroup = strings.TrimSpace(req.Plan.UpgradeGroup)
 	if req.Plan.UpgradeGroup != "" {
 		if _, ok := ratio_setting.GetGroupRatioCopy()[req.Plan.UpgradeGroup]; !ok {
@@ -327,6 +344,9 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 		req.Plan.UpgradeGroup = "" // 互斥: AllowedGroup 优先
 	}
 	req.Plan.QuotaResetPeriod = model.NormalizeResetPeriod(req.Plan.QuotaResetPeriod)
+	if req.Plan.QuotaResetPeriod == model.SubscriptionResetNever {
+		req.Plan.LuckyCardOnReset = false
+	}
 	if req.Plan.QuotaResetPeriod == model.SubscriptionResetCustom && req.Plan.QuotaResetCustomSeconds <= 0 {
 		common.ApiErrorMsg(c, "自定义重置周期需大于0秒")
 		return

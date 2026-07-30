@@ -36,6 +36,7 @@ const routerMap = {
   token: '/console/token',
   redemption: '/console/redemption',
   topup: '/console/topup',
+  lucky: '/console/lucky-wheel',
   user: '/console/user',
   subscription: '/console/subscription',
   log: '/console/log',
@@ -130,6 +131,11 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         to: '/topup',
       },
       {
+        text: '幸运大转盘',
+        itemKey: 'lucky',
+        to: '/lucky-wheel',
+      },
+      {
         text: t('个人设置'),
         itemKey: 'personal',
         to: '/personal',
@@ -138,7 +144,8 @@ const SiderBar = ({ onNavigate = () => {} }) => {
 
     // 根据配置过滤项目
     const filteredItems = items.filter((item) => {
-      const configVisible = isModuleVisible('personal', item.itemKey);
+      const configVisible =
+        item.itemKey === 'lucky' || isModuleVisible('personal', item.itemKey);
       return configVisible;
     });
 

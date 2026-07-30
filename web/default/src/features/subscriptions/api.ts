@@ -31,7 +31,29 @@ import type {
   SubscriptionTokenBindingItem,
   BatchSubscriptionBindingPayload,
   UserSubscription,
+  SubscriptionConsumptionOrder,
 } from './types'
+
+export async function getSubscriptionConsumptionOrder(
+  group: string
+): Promise<ApiResponse<SubscriptionConsumptionOrder>> {
+  const res = await api.get('/api/subscription/self/consumption-order', {
+    params: { group },
+    disableDuplicate: true,
+  })
+  return res.data
+}
+
+export async function updateSubscriptionConsumptionOrder(data: {
+  group: string
+  revision: number
+  subscription_ids: number[]
+}): Promise<ApiResponse<{ revision: number }>> {
+  const res = await api.put('/api/subscription/self/consumption-order', data, {
+    skipErrorHandler: true,
+  })
+  return res.data
+}
 
 // ============================================================================
 // Admin Plan Management

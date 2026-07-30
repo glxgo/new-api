@@ -41,6 +41,7 @@ import { Route as PricingModelIdIndexRouteImport } from './routes/pricing/$model
 import { Route as AuthenticatedWithdrawReviewIndexRouteImport } from './routes/_authenticated/withdraw-review/index'
 import { Route as AuthenticatedWalletIndexRouteImport } from './routes/_authenticated/wallet/index'
 import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
+import { Route as AuthenticatedUsageStatisticsIndexRouteImport } from './routes/_authenticated/usage-statistics/index'
 import { Route as AuthenticatedUsageLogsIndexRouteImport } from './routes/_authenticated/usage-logs/index'
 import { Route as AuthenticatedSystemSettingsIndexRouteImport } from './routes/_authenticated/system-settings/index'
 import { Route as AuthenticatedSubscriptionsIndexRouteImport } from './routes/_authenticated/subscriptions/index'
@@ -51,6 +52,8 @@ import { Route as AuthenticatedProfileIndexRouteImport } from './routes/_authent
 import { Route as AuthenticatedPlaygroundIndexRouteImport } from './routes/_authenticated/playground/index'
 import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenticated/models/index'
 import { Route as AuthenticatedModelStatusIndexRouteImport } from './routes/_authenticated/model-status/index'
+import { Route as AuthenticatedLuckyWheelIndexRouteImport } from './routes/_authenticated/lucky-wheel/index'
+import { Route as AuthenticatedLuckyWheelAdminIndexRouteImport } from './routes/_authenticated/lucky-wheel-admin/index'
 import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authenticated/keys/index'
 import { Route as AuthenticatedDividendIndexRouteImport } from './routes/_authenticated/dividend/index'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
@@ -238,6 +241,12 @@ const AuthenticatedUsersIndexRoute = AuthenticatedUsersIndexRouteImport.update({
   path: '/users/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedUsageStatisticsIndexRoute =
+  AuthenticatedUsageStatisticsIndexRouteImport.update({
+    id: '/usage-statistics/',
+    path: '/usage-statistics/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedUsageLogsIndexRoute =
   AuthenticatedUsageLogsIndexRouteImport.update({
     id: '/usage-logs/',
@@ -296,6 +305,18 @@ const AuthenticatedModelStatusIndexRoute =
   AuthenticatedModelStatusIndexRouteImport.update({
     id: '/model-status/',
     path: '/model-status/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedLuckyWheelIndexRoute =
+  AuthenticatedLuckyWheelIndexRouteImport.update({
+    id: '/lucky-wheel/',
+    path: '/lucky-wheel/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedLuckyWheelAdminIndexRoute =
+  AuthenticatedLuckyWheelAdminIndexRouteImport.update({
+    id: '/lucky-wheel-admin/',
+    path: '/lucky-wheel-admin/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedKeysIndexRoute = AuthenticatedKeysIndexRouteImport.update({
@@ -484,6 +505,8 @@ export interface FileRoutesByFullPath {
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/dividend/': typeof AuthenticatedDividendIndexRoute
   '/keys/': typeof AuthenticatedKeysIndexRoute
+  '/lucky-wheel-admin/': typeof AuthenticatedLuckyWheelAdminIndexRoute
+  '/lucky-wheel/': typeof AuthenticatedLuckyWheelIndexRoute
   '/model-status/': typeof AuthenticatedModelStatusIndexRoute
   '/models/': typeof AuthenticatedModelsIndexRoute
   '/playground/': typeof AuthenticatedPlaygroundIndexRoute
@@ -494,6 +517,7 @@ export interface FileRoutesByFullPath {
   '/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
   '/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
   '/usage-logs/': typeof AuthenticatedUsageLogsIndexRoute
+  '/usage-statistics/': typeof AuthenticatedUsageStatisticsIndexRoute
   '/users/': typeof AuthenticatedUsersIndexRoute
   '/wallet/': typeof AuthenticatedWalletIndexRoute
   '/withdraw-review/': typeof AuthenticatedWithdrawReviewIndexRoute
@@ -550,6 +574,8 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/dividend': typeof AuthenticatedDividendIndexRoute
   '/keys': typeof AuthenticatedKeysIndexRoute
+  '/lucky-wheel-admin': typeof AuthenticatedLuckyWheelAdminIndexRoute
+  '/lucky-wheel': typeof AuthenticatedLuckyWheelIndexRoute
   '/model-status': typeof AuthenticatedModelStatusIndexRoute
   '/models': typeof AuthenticatedModelsIndexRoute
   '/playground': typeof AuthenticatedPlaygroundIndexRoute
@@ -560,6 +586,7 @@ export interface FileRoutesByTo {
   '/subscriptions': typeof AuthenticatedSubscriptionsIndexRoute
   '/system-settings': typeof AuthenticatedSystemSettingsIndexRoute
   '/usage-logs': typeof AuthenticatedUsageLogsIndexRoute
+  '/usage-statistics': typeof AuthenticatedUsageStatisticsIndexRoute
   '/users': typeof AuthenticatedUsersIndexRoute
   '/wallet': typeof AuthenticatedWalletIndexRoute
   '/withdraw-review': typeof AuthenticatedWithdrawReviewIndexRoute
@@ -620,6 +647,8 @@ export interface FileRoutesById {
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/dividend/': typeof AuthenticatedDividendIndexRoute
   '/_authenticated/keys/': typeof AuthenticatedKeysIndexRoute
+  '/_authenticated/lucky-wheel-admin/': typeof AuthenticatedLuckyWheelAdminIndexRoute
+  '/_authenticated/lucky-wheel/': typeof AuthenticatedLuckyWheelIndexRoute
   '/_authenticated/model-status/': typeof AuthenticatedModelStatusIndexRoute
   '/_authenticated/models/': typeof AuthenticatedModelsIndexRoute
   '/_authenticated/playground/': typeof AuthenticatedPlaygroundIndexRoute
@@ -630,6 +659,7 @@ export interface FileRoutesById {
   '/_authenticated/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
   '/_authenticated/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
   '/_authenticated/usage-logs/': typeof AuthenticatedUsageLogsIndexRoute
+  '/_authenticated/usage-statistics/': typeof AuthenticatedUsageStatisticsIndexRoute
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
   '/_authenticated/wallet/': typeof AuthenticatedWalletIndexRoute
   '/_authenticated/withdraw-review/': typeof AuthenticatedWithdrawReviewIndexRoute
@@ -689,6 +719,8 @@ export interface FileRouteTypes {
     | '/dashboard/'
     | '/dividend/'
     | '/keys/'
+    | '/lucky-wheel-admin/'
+    | '/lucky-wheel/'
     | '/model-status/'
     | '/models/'
     | '/playground/'
@@ -699,6 +731,7 @@ export interface FileRouteTypes {
     | '/subscriptions/'
     | '/system-settings/'
     | '/usage-logs/'
+    | '/usage-statistics/'
     | '/users/'
     | '/wallet/'
     | '/withdraw-review/'
@@ -755,6 +788,8 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/dividend'
     | '/keys'
+    | '/lucky-wheel-admin'
+    | '/lucky-wheel'
     | '/model-status'
     | '/models'
     | '/playground'
@@ -765,6 +800,7 @@ export interface FileRouteTypes {
     | '/subscriptions'
     | '/system-settings'
     | '/usage-logs'
+    | '/usage-statistics'
     | '/users'
     | '/wallet'
     | '/withdraw-review'
@@ -824,6 +860,8 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard/'
     | '/_authenticated/dividend/'
     | '/_authenticated/keys/'
+    | '/_authenticated/lucky-wheel-admin/'
+    | '/_authenticated/lucky-wheel/'
     | '/_authenticated/model-status/'
     | '/_authenticated/models/'
     | '/_authenticated/playground/'
@@ -834,6 +872,7 @@ export interface FileRouteTypes {
     | '/_authenticated/subscriptions/'
     | '/_authenticated/system-settings/'
     | '/_authenticated/usage-logs/'
+    | '/_authenticated/usage-statistics/'
     | '/_authenticated/users/'
     | '/_authenticated/wallet/'
     | '/_authenticated/withdraw-review/'
@@ -1103,6 +1142,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedUsersIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/usage-statistics/': {
+      id: '/_authenticated/usage-statistics/'
+      path: '/usage-statistics'
+      fullPath: '/usage-statistics/'
+      preLoaderRoute: typeof AuthenticatedUsageStatisticsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/usage-logs/': {
       id: '/_authenticated/usage-logs/'
       path: '/usage-logs'
@@ -1171,6 +1217,20 @@ declare module '@tanstack/react-router' {
       path: '/model-status'
       fullPath: '/model-status/'
       preLoaderRoute: typeof AuthenticatedModelStatusIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/lucky-wheel/': {
+      id: '/_authenticated/lucky-wheel/'
+      path: '/lucky-wheel'
+      fullPath: '/lucky-wheel/'
+      preLoaderRoute: typeof AuthenticatedLuckyWheelIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/lucky-wheel-admin/': {
+      id: '/_authenticated/lucky-wheel-admin/'
+      path: '/lucky-wheel-admin'
+      fullPath: '/lucky-wheel-admin/'
+      preLoaderRoute: typeof AuthenticatedLuckyWheelAdminIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/keys/': {
@@ -1447,6 +1507,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedDividendIndexRoute: typeof AuthenticatedDividendIndexRoute
   AuthenticatedKeysIndexRoute: typeof AuthenticatedKeysIndexRoute
+  AuthenticatedLuckyWheelAdminIndexRoute: typeof AuthenticatedLuckyWheelAdminIndexRoute
+  AuthenticatedLuckyWheelIndexRoute: typeof AuthenticatedLuckyWheelIndexRoute
   AuthenticatedModelStatusIndexRoute: typeof AuthenticatedModelStatusIndexRoute
   AuthenticatedModelsIndexRoute: typeof AuthenticatedModelsIndexRoute
   AuthenticatedPlaygroundIndexRoute: typeof AuthenticatedPlaygroundIndexRoute
@@ -1456,6 +1518,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedSubscriptionPlansIndexRoute: typeof AuthenticatedSubscriptionPlansIndexRoute
   AuthenticatedSubscriptionsIndexRoute: typeof AuthenticatedSubscriptionsIndexRoute
   AuthenticatedUsageLogsIndexRoute: typeof AuthenticatedUsageLogsIndexRoute
+  AuthenticatedUsageStatisticsIndexRoute: typeof AuthenticatedUsageStatisticsIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
   AuthenticatedWalletIndexRoute: typeof AuthenticatedWalletIndexRoute
   AuthenticatedWithdrawReviewIndexRoute: typeof AuthenticatedWithdrawReviewIndexRoute
@@ -1475,6 +1538,9 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedDividendIndexRoute: AuthenticatedDividendIndexRoute,
   AuthenticatedKeysIndexRoute: AuthenticatedKeysIndexRoute,
+  AuthenticatedLuckyWheelAdminIndexRoute:
+    AuthenticatedLuckyWheelAdminIndexRoute,
+  AuthenticatedLuckyWheelIndexRoute: AuthenticatedLuckyWheelIndexRoute,
   AuthenticatedModelStatusIndexRoute: AuthenticatedModelStatusIndexRoute,
   AuthenticatedModelsIndexRoute: AuthenticatedModelsIndexRoute,
   AuthenticatedPlaygroundIndexRoute: AuthenticatedPlaygroundIndexRoute,
@@ -1486,6 +1552,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedSubscriptionPlansIndexRoute,
   AuthenticatedSubscriptionsIndexRoute: AuthenticatedSubscriptionsIndexRoute,
   AuthenticatedUsageLogsIndexRoute: AuthenticatedUsageLogsIndexRoute,
+  AuthenticatedUsageStatisticsIndexRoute:
+    AuthenticatedUsageStatisticsIndexRoute,
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
   AuthenticatedWalletIndexRoute: AuthenticatedWalletIndexRoute,
   AuthenticatedWithdrawReviewIndexRoute: AuthenticatedWithdrawReviewIndexRoute,

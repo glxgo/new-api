@@ -37,6 +37,8 @@ export const subscriptionPlanSchema = z.object({
   enabled: z.boolean(),
   sort_order: z.number(),
   allow_balance_pay: z.boolean().optional().default(true),
+  lucky_card_grant_count: z.number().optional().default(0),
+  lucky_card_on_reset: z.boolean().optional().default(false),
   max_purchase_per_user: z.number(),
   total_amount: z.number(),
   upgrade_group: z.string().optional(),
@@ -90,12 +92,27 @@ export const userSubscriptionSchema = z.object({
   amount_cap_used: z.number().optional(),
   allowed_group: z.string().optional(),
   next_reset_time: z.number().optional(),
+  lucky_card_disabled: z.boolean().optional(),
 })
 
 export type UserSubscription = z.infer<typeof userSubscriptionSchema>
 
 export interface UserSubscriptionRecord {
   subscription: UserSubscription
+}
+
+export interface SubscriptionConsumptionPriority {
+  id: number
+  subscription_id: number
+  priority: number
+  revision: number
+}
+
+export interface SubscriptionConsumptionOrder {
+  group: string
+  revision: number
+  subscriptions: UserSubscription[]
+  order: SubscriptionConsumptionPriority[]
 }
 
 // ============================================================================

@@ -179,11 +179,44 @@ func SetApiRouter(router *gin.Engine) {
 			subscriptionRoute.GET("/self/instances/:id/renewal-preview", controller.GetSelfSubscriptionRenewalPreview)
 			subscriptionRoute.GET("/self/instances/:id/keys", controller.ListSelfSubscriptionTokenBindings)
 			subscriptionRoute.PUT("/self/instances/:id/keys", controller.ReplaceSelfSubscriptionTokenBindings)
+			subscriptionRoute.GET("/self/consumption-order", controller.GetSubscriptionConsumptionOrder)
+			subscriptionRoute.PUT("/self/consumption-order", controller.UpdateSubscriptionConsumptionOrder)
 			subscriptionRoute.POST("/balance/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestBalancePay)
 			subscriptionRoute.POST("/epay/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestEpay)
 			subscriptionRoute.POST("/stripe/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestStripePay)
 			subscriptionRoute.POST("/creem/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestCreemPay)
 			subscriptionRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestWaffoPancakePay)
+		}
+
+		luckyWheelRoute := apiRouter.Group("/lucky-wheel")
+		luckyWheelRoute.Use(middleware.UserAuth())
+		{
+			luckyWheelRoute.GET("/status", controller.GetLuckyWheelStatus)
+			luckyWheelRoute.GET("/rules", controller.GetLuckyWheelRules)
+			luckyWheelRoute.GET("/cards", controller.GetMyLuckyCards)
+			luckyWheelRoute.POST("/draws", middleware.CriticalRateLimit(), controller.CreateLuckyDraw)
+			luckyWheelRoute.GET("/draws", controller.GetMyLuckyDraws)
+			luckyWheelRoute.GET("/draws/:id", controller.GetLuckyDraw)
+		}
+		luckyWheelAdminRoute := apiRouter.Group("/lucky-wheel/admin")
+		luckyWheelAdminRoute.Use(middleware.AdminAuth())
+		{
+			luckyWheelAdminRoute.GET("/overview", controller.AdminLuckyOverview)
+			luckyWheelAdminRoute.GET("/cards", controller.AdminListLuckyCards)
+			luckyWheelAdminRoute.GET("/draws", controller.AdminListLuckyDraws)
+			luckyWheelAdminRoute.GET("/rule-sets", controller.AdminListLuckyRuleSets)
+		}
+		luckyWheelRootRoute := apiRouter.Group("/lucky-wheel/admin")
+		luckyWheelRootRoute.Use(middleware.RootAuth())
+		{
+			luckyWheelRootRoute.POST("/cards/compensate", controller.AdminCompensateLuckyCards)
+			luckyWheelRootRoute.POST("/pause-issuance", controller.AdminPauseLuckyIssuance)
+			luckyWheelRootRoute.POST("/resume-issuance", controller.AdminResumeLuckyIssuance)
+			luckyWheelRootRoute.POST("/pause-draw", controller.AdminPauseLuckyDraw)
+			luckyWheelRootRoute.POST("/resume-draw", controller.AdminResumeLuckyDraw)
+			luckyWheelRootRoute.POST("/source-reversals", controller.AdminReverseLuckySource)
+			luckyWheelRootRoute.POST("/rule-sets", controller.AdminCreateLuckyRuleSet)
+			luckyWheelRootRoute.POST("/rule-sets/:id/activate", controller.AdminActivateLuckyRuleSet)
 		}
 		subscriptionAdminRoute := apiRouter.Group("/subscription/admin")
 		subscriptionAdminRoute.Use(middleware.AdminAuth())
@@ -368,6 +401,9 @@ func SetApiRouter(router *gin.Engine) {
 		dashboardTrafficRoute := apiRouter.Group("/dashboard/traffic")
 		dashboardTrafficRoute.GET("", middleware.AdminAuth(), controller.GetDashboardTraffic)
 		dashboardTrafficRoute.GET("/self", middleware.UserAuth(), controller.GetDashboardTrafficSelf)
+
+		usageStatisticsRoute := apiRouter.Group("/usage-statistics")
+		usageStatisticsRoute.GET("/self", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.GetUsageStatisticsSelf)
 
 		logRoute.Use(middleware.CORS(), middleware.CriticalRateLimit())
 		{

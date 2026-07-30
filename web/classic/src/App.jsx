@@ -45,6 +45,7 @@ import ModelPage from './pages/Model';
 import ModelDeploymentPage from './pages/ModelDeployment';
 import Playground from './pages/Playground';
 import Subscription from './pages/Subscription';
+import LuckyWheel from './pages/LuckyWheel';
 import OAuth2Callback from './components/auth/OAuth2Callback';
 import PersonalSetting from './components/settings/PersonalSetting';
 import Setup from './pages/Setup';
@@ -137,6 +138,14 @@ function App() {
             <AdminRoute>
               <Channel />
             </AdminRoute>
+          }
+        />
+        <Route
+          path='/console/lucky-wheel'
+          element={
+            <PrivateRoute>
+              <LuckyWheel />
+            </PrivateRoute>
           }
         />
         <Route

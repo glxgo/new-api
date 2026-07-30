@@ -22,21 +22,17 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useState,
 } from 'react'
-import { getCookie, setCookie, removeCookie } from '@/lib/cookies'
+import { removeCookie } from '@/lib/cookies'
 
 type Theme = 'dark' | 'light' | 'system'
 type ResolvedTheme = Exclude<Theme, 'system'>
 
-const DEFAULT_THEME = 'system'
+const DEFAULT_THEME = 'light'
 const THEME_COOKIE_NAME = 'vite-ui-theme'
-const THEME_COOKIE_MAX_AGE = 60 * 60 * 24 * 365 // 1 year
-const THEMES = new Set<Theme>(['dark', 'light', 'system'])
 
 type ThemeProviderProps = {
   children: React.ReactNode
-  defaultTheme?: Theme
   storageKey?: string
 }
 
@@ -58,75 +54,40 @@ const initialState: ThemeProviderState = {
 
 const ThemeContext = createContext<ThemeProviderState>(initialState)
 
-function getSystemTheme(): ResolvedTheme {
-  if (typeof window === 'undefined') return 'light'
-  return window.matchMedia('(prefers-color-scheme: dark)').matches
-    ? 'dark'
-    : 'light'
-}
-
-function resolveTheme(theme: Theme): ResolvedTheme {
-  return theme === 'system' ? getSystemTheme() : theme
-}
-
-function getStoredTheme(storageKey: string, fallback: Theme): Theme {
-  const storedTheme = getCookie(storageKey) as Theme | undefined
-  return storedTheme && THEMES.has(storedTheme) ? storedTheme : fallback
-}
-
 export function ThemeProvider({
   children,
-  defaultTheme = DEFAULT_THEME,
   storageKey = THEME_COOKIE_NAME,
   ...props
 }: ThemeProviderProps) {
-  const [theme, _setTheme] = useState<Theme>(() =>
-    getStoredTheme(storageKey, defaultTheme)
-  )
-  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
-    resolveTheme(getStoredTheme(storageKey, defaultTheme))
-  )
-
   useEffect(() => {
     const root = window.document.documentElement
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-
-    const applyTheme = () => {
-      const nextResolvedTheme = theme === 'system' ? getSystemTheme() : theme
-      root.classList.remove('light', 'dark')
-      root.classList.add(nextResolvedTheme)
-      setResolvedTheme(nextResolvedTheme)
-    }
-
-    applyTheme()
-
-    mediaQuery.addEventListener('change', applyTheme)
-
-    return () => mediaQuery.removeEventListener('change', applyTheme)
-  }, [theme])
+    root.classList.remove('dark')
+    root.classList.add(DEFAULT_THEME)
+    removeCookie(storageKey)
+    const metaThemeColor = document.querySelector("meta[name='theme-color']")
+    if (metaThemeColor) metaThemeColor.setAttribute('content', '#fff')
+  }, [storageKey])
 
   const setTheme = useCallback(
-    (theme: Theme) => {
-      setCookie(storageKey, theme, THEME_COOKIE_MAX_AGE)
-      _setTheme(theme)
+    (_theme: Theme) => {
+      removeCookie(storageKey)
     },
     [storageKey]
   )
 
   const resetTheme = useCallback(() => {
     removeCookie(storageKey)
-    _setTheme(defaultTheme)
-  }, [defaultTheme, storageKey])
+  }, [storageKey])
 
-  const contextValue = useMemo(
+  const contextValue = useMemo<ThemeProviderState>(
     () => ({
-      defaultTheme,
-      resolvedTheme,
+      defaultTheme: DEFAULT_THEME,
+      resolvedTheme: DEFAULT_THEME as ResolvedTheme,
       resetTheme,
-      theme,
+      theme: DEFAULT_THEME as Theme,
       setTheme,
     }),
-    [defaultTheme, resolvedTheme, resetTheme, theme, setTheme]
+    [resetTheme, setTheme]
   )
 
   return (

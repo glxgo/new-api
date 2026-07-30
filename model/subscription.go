@@ -188,6 +188,10 @@ type SubscriptionPlan struct {
 	SortOrder int  `json:"sort_order" gorm:"type:int;default:0"`
 
 	AllowBalancePay *bool `json:"allow_balance_pay" gorm:"default:true"`
+	// LuckyCardGrantCount is snapshotted into a paid order. Reward-created
+	// subscriptions always disable card generation at the instance level.
+	LuckyCardGrantCount int  `json:"lucky_card_grant_count" gorm:"type:int;not null;default:0"`
+	LuckyCardOnReset    bool `json:"lucky_card_on_reset" gorm:"not null;default:false"`
 
 	StripePriceId         string `json:"stripe_price_id" gorm:"type:varchar(128);default:''"`
 	CreemProductId        string `json:"creem_product_id" gorm:"type:varchar(128);default:''"`
@@ -309,6 +313,10 @@ type SubscriptionOrder struct {
 	PlanSnapshot            string `json:"plan_snapshot" gorm:"type:text"`
 	RenewFromSubscriptionId *int   `json:"renew_from_subscription_id" gorm:"default:null;index"`
 	RenewalBindingSnapshot  string `json:"renewal_binding_snapshot" gorm:"type:text"`
+	LuckyRuleSetId          int64  `json:"lucky_rule_set_id" gorm:"index;not null;default:0"`
+	LuckyGrantEligible      bool   `json:"lucky_grant_eligible" gorm:"not null;default:false"`
+	LuckyGrantCount         int    `json:"lucky_grant_count" gorm:"not null;default:0"`
+	LuckyGrantOnReset       bool   `json:"lucky_grant_on_reset" gorm:"not null;default:false"`
 }
 
 func (o *SubscriptionOrder) Insert() error {
@@ -370,7 +378,7 @@ func NewSubscriptionOrderFromPlan(userId int, plan *SubscriptionPlan, tradeNo, p
 	if err != nil {
 		return nil, err
 	}
-	return &SubscriptionOrder{
+	order := &SubscriptionOrder{
 		UserId:          userId,
 		PlanId:          plan.Id,
 		Money:           plan.PriceAmount,
@@ -380,7 +388,15 @@ func NewSubscriptionOrderFromPlan(userId int, plan *SubscriptionPlan, tradeNo, p
 		Status:          common.TopUpStatusPending,
 		CreateTime:      common.GetTimestamp(),
 		PlanSnapshot:    snapshot,
-	}, nil
+	}
+	if campaign, rule, lookupErr := GetLuckyCampaignTx(nil, false); lookupErr == nil && !campaign.IssuancePaused {
+		order.LuckyRuleSetId = rule.Id
+		order.LuckyGrantCount = plan.LuckyCardGrantCount
+		order.LuckyGrantOnReset = plan.LuckyCardOnReset
+		order.LuckyGrantEligible = plan.PriceAmount > 0 &&
+			(order.LuckyGrantCount > 0 || order.LuckyGrantOnReset)
+	}
+	return order, nil
 }
 
 // User subscription instance
@@ -421,10 +437,14 @@ type UserSubscription struct {
 	// PaidRevenueQuota is the immutable actual paid amount snapshot in quota units.
 	// CostAccumulator stores the exact sum of sale_quota*channel_ratio_ppm and is
 	// rounded only once when the subscription ends.
-	PaidRevenueQuota int64  `json:"paid_revenue_quota" gorm:"type:bigint;not null;default:0"`
-	CostAccumulator  int64  `json:"cost_accumulator" gorm:"type:bigint;not null;default:0"`
-	DividendState    string `json:"dividend_state" gorm:"type:varchar(32);not null;default:'pending';index"`
-	DividendReadyAt  int64  `json:"dividend_ready_at" gorm:"type:bigint;not null;default:0;index"`
+	PaidRevenueQuota              int64  `json:"paid_revenue_quota" gorm:"type:bigint;not null;default:0"`
+	CostAccumulator               int64  `json:"cost_accumulator" gorm:"type:bigint;not null;default:0"`
+	DividendState                 string `json:"dividend_state" gorm:"type:varchar(32);not null;default:'pending';index"`
+	DividendReadyAt               int64  `json:"dividend_ready_at" gorm:"type:bigint;not null;default:0;index"`
+	LuckyCardDisabled             bool   `json:"lucky_card_disabled" gorm:"not null;default:false"`
+	PromotionOriginDrawId         int64  `json:"promotion_origin_draw_id" gorm:"index;not null;default:0"`
+	PromotionSourceSubscriptionId int    `json:"promotion_source_subscription_id" gorm:"index;not null;default:0"`
+	SupersededById                *int   `json:"superseded_by_id" gorm:"default:null;index"`
 
 	CreatedAt int64 `json:"created_at" gorm:"bigint"`
 	UpdatedAt int64 `json:"updated_at" gorm:"bigint"`
@@ -444,6 +464,72 @@ func (s *UserSubscription) BeforeUpdate(tx *gorm.DB) error {
 
 type SubscriptionSummary struct {
 	Subscription *UserSubscription `json:"subscription"`
+}
+
+type LuckySubscriptionProgress struct {
+	Subscribed bool  `json:"subscribed"`
+	Eligible   bool  `json:"eligible"`
+	NextCardAt int64 `json:"next_card_at"`
+}
+
+// GetLuckySubscriptionProgress returns the earliest real subscription reset
+// that can issue a lucky card. Reward-created instances stay visible as active
+// subscriptions, but LuckyCardDisabled prevents them from advertising another
+// card here.
+func GetLuckySubscriptionProgress(userId int, now int64) (LuckySubscriptionProgress, error) {
+	progress := LuckySubscriptionProgress{}
+	if userId <= 0 {
+		return progress, errors.New("invalid userId")
+	}
+	if now <= 0 {
+		now = GetDBTimestamp()
+	}
+	var subscriptions []UserSubscription
+	if err := DB.Where(
+		"user_id = ? AND status = ? AND start_time <= ? AND end_time > ?",
+		userId, "active", now, now,
+	).Order("next_reset_time asc, end_time asc, id asc").Find(&subscriptions).Error; err != nil {
+		return progress, err
+	}
+	progress.Subscribed = len(subscriptions) > 0
+	for i := range subscriptions {
+		subscription := &subscriptions[i]
+		if subscription.LuckyCardDisabled {
+			continue
+		}
+		plan, err := planForUserSubscriptionTx(DB, subscription)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			continue
+		}
+		if err != nil {
+			return progress, err
+		}
+		if !plan.LuckyCardOnReset ||
+			NormalizeResetPeriod(plan.QuotaResetPeriod) == SubscriptionResetNever {
+			continue
+		}
+		nextCardAt := subscription.NextResetTime
+		if nextCardAt <= 0 {
+			baseUnix := subscription.LastResetTime
+			if baseUnix <= 0 {
+				baseUnix = subscription.StartTime
+			}
+			nextCardAt = calcNextResetTime(
+				time.Unix(baseUnix, 0),
+				plan,
+				subscription.EndTime,
+				subscription.StartTime,
+			)
+		}
+		if nextCardAt <= 0 {
+			continue
+		}
+		progress.Eligible = true
+		if progress.NextCardAt == 0 || nextCardAt < progress.NextCardAt {
+			progress.NextCardAt = nextCardAt
+		}
+	}
+	return progress, nil
 }
 
 func calcPlanEndTime(start time.Time, plan *SubscriptionPlan) (int64, error) {
@@ -784,13 +870,14 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if quotaErr != nil {
 			return quotaErr
 		}
+		var createdSub *UserSubscription
 		if order.RenewFromSubscriptionId != nil && *order.RenewFromSubscriptionId > 0 {
-			_, renewalTokenKeys, err = createRenewalSubscriptionFromOrderTx(tx, &order, plan, int64(revenueQuota))
+			createdSub, renewalTokenKeys, err = createRenewalSubscriptionFromOrderTx(tx, &order, plan, int64(revenueQuota))
 			if err != nil {
 				return err
 			}
 		} else {
-			_, err = CreateUserSubscriptionFromPlanWithOptionsTx(
+			createdSub, err = CreateUserSubscriptionFromPlanWithOptionsTx(
 				tx,
 				order.UserId,
 				plan,
@@ -801,6 +888,9 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 			if err != nil {
 				return err
 			}
+		}
+		if _, err := GrantSubscriptionPurchaseLuckyCardsTx(tx, &order, createdSub); err != nil {
+			return err
 		}
 		if err := upsertSubscriptionTopUpTx(tx, &order); err != nil {
 			return err
@@ -1045,7 +1135,13 @@ func PurchaseSubscriptionWithBalanceRenewal(userId int, planId int, renewFromSub
 		order.ProviderPayload = fmt.Sprintf("charged_quota=%d", requiredQuota)
 		if renewFromSubscriptionId > 0 {
 			order.RenewFromSubscriptionId = &renewFromSubscriptionId
-			if _, renewalTokenKeys, err = createRenewalSubscriptionFromOrderTx(
+		}
+		if err := tx.Create(order).Error; err != nil {
+			return err
+		}
+		var createdSub *UserSubscription
+		if renewFromSubscriptionId > 0 {
+			if createdSub, renewalTokenKeys, err = createRenewalSubscriptionFromOrderTx(
 				tx,
 				order,
 				plan,
@@ -1054,7 +1150,7 @@ func PurchaseSubscriptionWithBalanceRenewal(userId int, planId int, renewFromSub
 				return err
 			}
 		} else {
-			if _, err := CreateUserSubscriptionFromPlanWithOptionsTx(
+			if createdSub, err = CreateUserSubscriptionFromPlanWithOptionsTx(
 				tx,
 				userId,
 				plan,
@@ -1065,7 +1161,7 @@ func PurchaseSubscriptionWithBalanceRenewal(userId int, planId int, renewFromSub
 				return err
 			}
 		}
-		if err := tx.Create(order).Error; err != nil {
+		if _, err := GrantSubscriptionPurchaseLuckyCardsTx(tx, order, createdSub); err != nil {
 			return err
 		}
 
@@ -1351,6 +1447,9 @@ func subscriptionCandidatesTx(tx *gorm.DB, userId int, usingGroup string, now in
 			Find(&subs).Error; err != nil {
 			return nil, err
 		}
+		if err := SortSubscriptionsByPreferenceTx(tx, userId, usingGroup, subs); err != nil {
+			return nil, err
+		}
 		return subs, nil
 	}
 
@@ -1603,8 +1702,10 @@ func maybeResetUserSubscriptionWithPlanTx(tx *gorm.DB, sub *UserSubscription, pl
 	base := time.Unix(baseUnix, 0)
 	next := calcNextResetTime(base, plan, sub.EndTime, sub.StartTime)
 	advanced := false
+	resetEpochs := make([]int64, 0, 4)
 	for next > 0 && next <= now {
 		advanced = true
+		resetEpochs = append(resetEpochs, next)
 		base = time.Unix(next, 0)
 		next = calcNextResetTime(base, plan, sub.EndTime, sub.StartTime)
 	}
@@ -1619,7 +1720,28 @@ func maybeResetUserSubscriptionWithPlanTx(tx *gorm.DB, sub *UserSubscription, pl
 	sub.AmountUsed = 0
 	sub.LastResetTime = base.Unix()
 	sub.NextResetTime = next
-	return tx.Save(sub).Error
+	if err := tx.Save(sub).Error; err != nil {
+		return err
+	}
+	if !plan.LuckyCardOnReset || sub.LuckyCardDisabled || sub.EndTime <= now {
+		return nil
+	}
+	campaign, rule, err := GetLuckyCampaignTx(tx, true)
+	if err != nil {
+		return err
+	}
+	for _, epoch := range resetEpochs {
+		if _, err := GrantLuckyCardsTx(tx, campaign, rule, LuckyCardGrant{
+			UserId: sub.UserId, PoolType: LuckyPoolSubscription,
+			SourceType: "subscription_reset", SourceRef: fmt.Sprintf("%d", sub.Id),
+			SourceSubscriptionId: sub.Id, SourceCycleKey: fmt.Sprintf("%d", epoch),
+			SourceSnapshot: sub.PlanSnapshot, SourceEffectiveEndTime: sub.EndTime,
+			ExpiresAt: sub.EndTime, GrantKeyPrefix: fmt.Sprintf("reset:%d:%d", sub.Id, epoch), Count: 1,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // PreConsumeUserSubscription pre-consumes from any active subscription total quota.

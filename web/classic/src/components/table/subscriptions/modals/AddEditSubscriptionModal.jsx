@@ -90,6 +90,8 @@ const AddEditSubscriptionModal = ({
     custom_seconds: 0,
     quota_reset_period: 'never',
     quota_reset_custom_seconds: 0,
+    lucky_card_grant_count: 0,
+    lucky_card_on_reset: false,
     enabled: true,
     sort_order: 0,
     max_purchase_per_user: 0,
@@ -114,6 +116,8 @@ const AddEditSubscriptionModal = ({
       custom_seconds: Number(p.custom_seconds || 0),
       quota_reset_period: p.quota_reset_period || 'never',
       quota_reset_custom_seconds: Number(p.quota_reset_custom_seconds || 0),
+      lucky_card_grant_count: Number(p.lucky_card_grant_count || 0),
+      lucky_card_on_reset: Boolean(p.lucky_card_on_reset),
       enabled: p.enabled !== false,
       sort_order: Number(p.sort_order || 0),
       max_purchase_per_user: Number(p.max_purchase_per_user || 0),
@@ -160,6 +164,10 @@ const AddEditSubscriptionModal = ({
             values.quota_reset_period === 'custom'
               ? Number(values.quota_reset_custom_seconds || 0)
               : 0,
+          lucky_card_grant_count: Number(values.lucky_card_grant_count || 0),
+          lucky_card_on_reset:
+            values.quota_reset_period !== 'never' &&
+            Boolean(values.lucky_card_on_reset),
           sort_order: Number(values.sort_order || 0),
           max_purchase_per_user: Number(values.max_purchase_per_user || 0),
           total_amount: displayAmountToQuota(values.total_amount),
@@ -497,6 +505,43 @@ const AddEditSubscriptionModal = ({
                           disabled
                         />
                       )}
+                    </Col>
+                  </Row>
+                </Card>
+
+                {/* 幸运卡配置 */}
+                <Card className='!rounded-2xl shadow-sm border-0 mb-4'>
+                  <div className='flex items-center mb-2'>
+                    <Avatar size='small' color='red' className='mr-2 shadow-md'>
+                      <span aria-hidden='true'>✦</span>
+                    </Avatar>
+                    <div>
+                      <Text className='text-lg font-medium'>{t('幸运卡')}</Text>
+                      <div className='text-xs text-gray-600'>
+                        {t('配置购买赠卡与周期重置赠卡')}
+                      </div>
+                    </div>
+                  </div>
+
+                  <Row gutter={12}>
+                    <Col span={12}>
+                      <Form.InputNumber
+                        field='lucky_card_grant_count'
+                        label={t('立即获得幸运卡')}
+                        suffix={t('张')}
+                        min={0}
+                        max={100}
+                        precision={0}
+                        style={{ width: '100%' }}
+                      />
+                    </Col>
+                    <Col span={12}>
+                      <Form.Switch
+                        field='lucky_card_on_reset'
+                        label={t('周期重置赠卡')}
+                        disabled={values.quota_reset_period === 'never'}
+                        extraText={t('每次额度重置时获得 1 张')}
+                      />
                     </Col>
                   </Row>
                 </Card>

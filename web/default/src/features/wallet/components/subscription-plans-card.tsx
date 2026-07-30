@@ -24,6 +24,7 @@ import {
   Pencil,
   Settings2,
   RotateCw,
+  ListOrdered,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -55,6 +56,7 @@ import {
   getSubscriptionRenewalPreview,
   updateBillingPreference,
 } from '@/features/subscriptions/api'
+import { SubscriptionConsumptionOrderDialog } from '@/features/subscriptions/components/dialogs/subscription-consumption-order-dialog'
 import { SubscriptionInstanceManagementDialog } from '@/features/subscriptions/components/dialogs/subscription-instance-management-dialog'
 import { SubscriptionInstanceRemarkDialog } from '@/features/subscriptions/components/dialogs/subscription-instance-remark-dialog'
 import { SubscriptionPurchaseDialog } from '@/features/subscriptions/components/dialogs/subscription-purchase-dialog'
@@ -132,6 +134,7 @@ export function SubscriptionPlansCard({
     useState<UserSubscription | null>(null)
   const [managementOpen, setManagementOpen] = useState(false)
   const [remarkOpen, setRemarkOpen] = useState(false)
+  const [consumptionOrderOpen, setConsumptionOrderOpen] = useState(false)
   const [descPlan, setDescPlan] = useState<PlanRecord | null>(null)
 
   const enableStripe = !!topupInfo?.enable_stripe_topup
@@ -401,6 +404,16 @@ export function SubscriptionPlansCard({
                   </SelectGroup>
                 </SelectContent>
               </Select>
+              <Button
+                variant='outline'
+                size='sm'
+                className='h-8 gap-1.5 px-2 text-xs'
+                onClick={() => setConsumptionOrderOpen(true)}
+                disabled={!hasActive}
+              >
+                <ListOrdered className='size-3.5' />
+                消耗顺序
+              </Button>
               <Button
                 variant='ghost'
                 size='icon'
@@ -718,6 +731,18 @@ export function SubscriptionPlansCard({
               const quotaLabel =
                 totalAmount > 0 ? formatQuota(totalAmount) : t('Unlimited')
               const remainingBenefits = [
+                Number(plan.lucky_card_grant_count || 0) > 0
+                  ? {
+                      label: '立即获得幸运卡',
+                      value: `${Number(plan.lucky_card_grant_count)} 张`,
+                    }
+                  : null,
+                plan.lucky_card_on_reset && plan.quota_reset_period !== 'never'
+                  ? {
+                      label: '周期幸运卡',
+                      value: '每次重置获得 1 张',
+                    }
+                  : null,
                 formatResetPeriod(plan, t) !== t('No Reset')
                   ? {
                       label: t('Quota Reset'),
@@ -992,6 +1017,11 @@ export function SubscriptionPlansCard({
         onOpenChange={setRemarkOpen}
         subscription={selectedSubscription}
         onSaved={fetchSelfSubscription}
+      />
+      <SubscriptionConsumptionOrderDialog
+        open={consumptionOrderOpen}
+        onOpenChange={setConsumptionOrderOpen}
+        subscriptions={activeSubscriptions}
       />
     </>
   )

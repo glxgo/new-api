@@ -295,6 +295,15 @@ func migrateDB() error {
 		&ConcurrencyApplication{},
 		&RechargeCredit{},
 		&UserSecurityIncident{},
+		&LuckyCampaign{},
+		&LuckyRuleSet{},
+		&LuckyCard{},
+		&LuckyDraw{},
+		&LuckyRechargeEvent{},
+		&LuckyRechargeProgress{},
+		&LuckyRewardBucket{},
+		&LuckyPausePeriod{},
+		&SubscriptionConsumptionPriority{},
 	)
 	if err != nil {
 		return err
@@ -311,7 +320,7 @@ func migrateDB() error {
 			return err
 		}
 	}
-	return nil
+	return EnsureDefaultLuckyCampaign()
 }
 
 func migrateDBFast() error {
@@ -361,6 +370,15 @@ func migrateDBFast() error {
 		{&ConcurrencyApplication{}, "ConcurrencyApplication"},
 		{&RechargeCredit{}, "RechargeCredit"},
 		{&UserSecurityIncident{}, "UserSecurityIncident"},
+		{&LuckyCampaign{}, "LuckyCampaign"},
+		{&LuckyRuleSet{}, "LuckyRuleSet"},
+		{&LuckyCard{}, "LuckyCard"},
+		{&LuckyDraw{}, "LuckyDraw"},
+		{&LuckyRechargeEvent{}, "LuckyRechargeEvent"},
+		{&LuckyRechargeProgress{}, "LuckyRechargeProgress"},
+		{&LuckyRewardBucket{}, "LuckyRewardBucket"},
+		{&LuckyPausePeriod{}, "LuckyPausePeriod"},
+		{&SubscriptionConsumptionPriority{}, "SubscriptionConsumptionPriority"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))
@@ -396,6 +414,9 @@ func migrateDBFast() error {
 		if err := DB.AutoMigrate(&SubscriptionPlan{}); err != nil {
 			return err
 		}
+	}
+	if err := EnsureDefaultLuckyCampaign(); err != nil {
+		return err
 	}
 	common.SysLog("database migrated")
 	// 存量无邀请人用户补齐：inviter_id=0 的普通用户默认邀请人/树顶管理员为超管（启动时一次性，幂等）
@@ -452,6 +473,8 @@ func ensureSubscriptionPlanTableSQLite() error {
 ` + "`enabled`" + ` numeric DEFAULT 1,
 ` + "`sort_order`" + ` integer DEFAULT 0,
 ` + "`allow_balance_pay`" + ` numeric DEFAULT 1,
+` + "`lucky_card_grant_count`" + ` integer NOT NULL DEFAULT 0,
+` + "`lucky_card_on_reset`" + ` numeric NOT NULL DEFAULT false,
 ` + "`stripe_price_id`" + ` varchar(128) DEFAULT '',
 ` + "`creem_product_id`" + ` varchar(128) DEFAULT '',
 ` + "`waffo_pancake_product_id`" + ` varchar(128) DEFAULT '',
@@ -499,6 +522,8 @@ PRIMARY KEY (` + "`id`" + `)
 		{Name: "enabled", DDL: "`enabled` numeric DEFAULT 1"},
 		{Name: "sort_order", DDL: "`sort_order` integer DEFAULT 0"},
 		{Name: "allow_balance_pay", DDL: "`allow_balance_pay` numeric DEFAULT 1"},
+		{Name: "lucky_card_grant_count", DDL: "`lucky_card_grant_count` integer NOT NULL DEFAULT 0"},
+		{Name: "lucky_card_on_reset", DDL: "`lucky_card_on_reset` numeric NOT NULL DEFAULT false"},
 		{Name: "stripe_price_id", DDL: "`stripe_price_id` varchar(128) DEFAULT ''"},
 		{Name: "creem_product_id", DDL: "`creem_product_id` varchar(128) DEFAULT ''"},
 		{Name: "waffo_pancake_product_id", DDL: "`waffo_pancake_product_id` varchar(128) DEFAULT ''"},

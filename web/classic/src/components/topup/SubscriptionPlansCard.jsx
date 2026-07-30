@@ -23,16 +23,25 @@ import {
   Button,
   Card,
   Divider,
+  Modal,
   Select,
   Skeleton,
   Space,
+  Spin,
   Tag,
   Tooltip,
   Typography,
 } from '@douyinfe/semi-ui';
 import { API, showError, showSuccess, renderQuota } from '../../helpers';
 import { getCurrencyConfig } from '../../helpers/render';
-import { RefreshCw, Sparkles } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  KeyRound,
+  ListOrdered,
+  RefreshCw,
+  Sparkles,
+} from 'lucide-react';
 import SubscriptionPurchaseModal from './modals/SubscriptionPurchaseModal';
 import {
   formatSubscriptionDuration,
@@ -89,6 +98,12 @@ const SubscriptionPlansCard = ({
   const [paying, setPaying] = useState(false);
   const [selectedEpayMethod, setSelectedEpayMethod] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [orderOpen, setOrderOpen] = useState(false);
+  const [orderGroup, setOrderGroup] = useState('default');
+  const [orderRevision, setOrderRevision] = useState(0);
+  const [orderItems, setOrderItems] = useState([]);
+  const [orderLoading, setOrderLoading] = useState(false);
+  const [orderSaving, setOrderSaving] = useState(false);
 
   const epayMethods = useMemo(() => getEpayMethods(payMethods), [payMethods]);
 
@@ -232,6 +247,101 @@ const SubscriptionPlansCard = ({
     return map;
   }, [plans]);
 
+  const subscriptionGroups = useMemo(() => {
+    const groups = new Set(['default']);
+    (activeSubscriptions || []).forEach((item) => {
+      const group = item?.subscription?.allowed_group;
+      if (group) groups.add(group);
+    });
+    return Array.from(groups);
+  }, [activeSubscriptions]);
+
+  const loadConsumptionOrder = async (group = orderGroup) => {
+    setOrderLoading(true);
+    try {
+      const res = await API.get(
+        `/api/subscription/self/consumption-order?group=${encodeURIComponent(group)}`,
+      );
+      if (!res.data?.success) {
+        showError(res.data?.message || t('读取套餐顺序失败'));
+        return;
+      }
+      const data = res.data.data || {};
+      const rank = new Map(
+        (data.order || []).map((item) => [
+          Number(item.subscription_id),
+          Number(item.priority),
+        ]),
+      );
+      const items = (data.subscriptions || [])
+        .map((subscription) => ({
+          id: Number(subscription.id),
+          title:
+            subscription.plan_title ||
+            planTitleMap.get(subscription.plan_id) ||
+            `${t('订阅实例')} #${subscription.id}`,
+          endTime: Number(subscription.end_time || 0),
+        }))
+        .sort((a, b) => {
+          const left = rank.get(a.id);
+          const right = rank.get(b.id);
+          if (left !== undefined && right === undefined) return -1;
+          if (left === undefined && right !== undefined) return 1;
+          if (left !== undefined && right !== undefined && left !== right) {
+            return left - right;
+          }
+          return a.endTime - b.endTime || a.id - b.id;
+        });
+      setOrderRevision(Number(data.revision || 0));
+      setOrderItems(items);
+    } catch (error) {
+      showError(t('读取套餐顺序失败'));
+    } finally {
+      setOrderLoading(false);
+    }
+  };
+
+  const openConsumptionOrder = () => {
+    const group = subscriptionGroups[0] || 'default';
+    setOrderGroup(group);
+    setOrderOpen(true);
+    loadConsumptionOrder(group);
+  };
+
+  const moveConsumptionItem = (index, direction) => {
+    const target = index + direction;
+    if (target < 0 || target >= orderItems.length) return;
+    setOrderItems((current) => {
+      const next = [...current];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  };
+
+  const saveConsumptionOrder = async () => {
+    setOrderSaving(true);
+    try {
+      const res = await API.put('/api/subscription/self/consumption-order', {
+        group: orderGroup,
+        revision: orderRevision,
+        subscription_ids: orderItems.map((item) => item.id),
+      });
+      if (!res.data?.success) {
+        showError(res.data?.message || t('保存失败，请刷新后重试'));
+        await loadConsumptionOrder(orderGroup);
+        return;
+      }
+      showSuccess(t('套餐消耗顺序已保存'));
+      setOrderRevision(Number(res.data.data?.revision || orderRevision + 1));
+      setOrderOpen(false);
+    } catch (error) {
+      showError(t('保存失败，请刷新后重试'));
+      await loadConsumptionOrder(orderGroup);
+    } finally {
+      setOrderSaving(false);
+    }
+  };
+
   const getPlanPurchaseCount = (planId) =>
     planPurchaseCountMap.get(planId) || 0;
 
@@ -328,6 +438,17 @@ const SubscriptionPlansCard = ({
                 )}
               </div>
               <div className='flex items-center gap-2'>
+                {hasActiveSubscription && (
+                  <Button
+                    size='small'
+                    theme='light'
+                    type='primary'
+                    icon={<ListOrdered size={13} />}
+                    onClick={openConsumptionOrder}
+                  >
+                    {t('消耗顺序')}
+                  </Button>
+                )}
                 <Select
                   value={displayBillingPreference}
                   onChange={onChangeBillingPreference}
@@ -510,11 +631,22 @@ const SubscriptionPlansCard = ({
                   formatSubscriptionResetPeriod(plan, t) === t('不重置')
                     ? null
                     : `${t('额度重置')}: ${formatSubscriptionResetPeriod(plan, t)}`;
+                const luckyCardGrantCount = Number(
+                  plan?.lucky_card_grant_count || 0,
+                );
                 const planBenefits = [
                   {
                     label: `${t('有效期')}: ${formatSubscriptionDuration(plan, t)}`,
                   },
                   resetLabel ? { label: resetLabel } : null,
+                  luckyCardGrantCount > 0
+                    ? {
+                        label: `${t('立即获得幸运卡')}: ${luckyCardGrantCount} ${t('张')}`,
+                      }
+                    : null,
+                  plan?.lucky_card_on_reset
+                    ? { label: `${t('周期重置')}: ${t('每次获得 1 张')}` }
+                    : null,
                   totalAmount > 0
                     ? {
                         label: totalLabel,
@@ -685,6 +817,91 @@ const SubscriptionPlansCard = ({
         onPayCreem={payCreem}
         onPayEpay={payEpay}
       />
+
+      <Modal
+        visible={orderOpen}
+        title={
+          <div className='flex items-center gap-2'>
+            <ListOrdered size={18} />
+            <span>{t('套餐消耗顺序')}</span>
+          </div>
+        }
+        onCancel={() => setOrderOpen(false)}
+        onOk={saveConsumptionOrder}
+        confirmLoading={orderSaving}
+        okButtonProps={{
+          disabled: orderLoading || orderItems.length === 0,
+        }}
+        okText={t('保存顺序')}
+        cancelText={t('取消')}
+        width={560}
+      >
+        <Text type='tertiary' size='small'>
+          {t(
+            '未绑定具体实例的 API Key 按此顺序消耗；已绑定实例的 Key 不受影响。',
+          )}
+        </Text>
+        <Select
+          className='mt-4 w-full'
+          value={orderGroup}
+          optionList={subscriptionGroups.map((group) => ({
+            value: group,
+            label: group === 'default' ? t('默认分组') : group,
+          }))}
+          onChange={(group) => {
+            setOrderGroup(group);
+            loadConsumptionOrder(group);
+          }}
+        />
+        <Spin spinning={orderLoading}>
+          <div className='mt-3 max-h-80 overflow-y-auto space-y-2 pr-1'>
+            {orderItems.map((item, index) => (
+              <div
+                key={item.id}
+                className='flex items-center gap-3 rounded-xl border border-gray-200 p-3'
+              >
+                <span className='grid h-7 w-7 shrink-0 place-items-center rounded-full bg-orange-50 font-mono text-xs font-semibold text-orange-600'>
+                  {index + 1}
+                </span>
+                <div className='min-w-0 flex-1'>
+                  <div className='truncate text-sm font-medium'>
+                    {item.title}
+                  </div>
+                  <div className='mt-0.5 text-xs text-gray-500'>
+                    #{item.id} · {t('到期')}{' '}
+                    {new Date(item.endTime * 1000).toLocaleDateString()}
+                  </div>
+                </div>
+                <Button
+                  theme='borderless'
+                  icon={<ArrowUp size={15} />}
+                  disabled={index === 0}
+                  onClick={() => moveConsumptionItem(index, -1)}
+                  aria-label={t('上移')}
+                />
+                <Button
+                  theme='borderless'
+                  icon={<ArrowDown size={15} />}
+                  disabled={index === orderItems.length - 1}
+                  onClick={() => moveConsumptionItem(index, 1)}
+                  aria-label={t('下移')}
+                />
+              </div>
+            ))}
+            {!orderLoading && orderItems.length === 0 && (
+              <div className='rounded-xl border border-dashed border-gray-200 py-10 text-center text-sm text-gray-400'>
+                {t('当前分组没有可用套餐')}
+              </div>
+            )}
+          </div>
+        </Spin>
+        <div className='mt-3 flex items-start gap-2 rounded-lg bg-gray-50 p-3 text-xs leading-relaxed text-gray-500'>
+          <KeyRound size={14} className='mt-0.5 shrink-0' />
+          <span>
+            {t('调整顺序不会修改 API Key 的实例绑定，也不会移动历史消费记录。')}
+          </span>
+        </div>
+      </Modal>
     </>
   );
 };
