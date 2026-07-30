@@ -260,7 +260,26 @@ func AdminLuckyOverview(c *gin.Context) {
 func AdminListLuckyCards(c *gin.Context) {
 	page, pageSize := luckyPagination(c)
 	query := model.DB.Model(&model.LuckyCard{})
-	if userId, _ := strconv.Atoi(c.Query("user_id")); userId > 0 {
+	userId, _ := strconv.Atoi(c.Query("user_id"))
+	var user gin.H
+	if userId > 0 {
+		var record model.User
+		if err := model.DB.Select("id", "username", "display_name").First(&record, userId).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				common.ApiErrorMsg(c, "用户不存在")
+			} else {
+				common.ApiError(c, err)
+			}
+			return
+		}
+		user = gin.H{"id": record.Id, "username": record.Username, "display_name": record.DisplayName}
+		now := model.GetDBTimestamp()
+		if err := model.DB.Model(&model.LuckyCard{}).
+			Where("user_id = ? AND status = ? AND expires_at <= ?", userId, model.LuckyCardAvailable, now).
+			Updates(map[string]interface{}{"status": model.LuckyCardExpired, "updated_at": now}).Error; err != nil {
+			common.ApiError(c, err)
+			return
+		}
 		query = query.Where("user_id = ?", userId)
 	}
 	if status := strings.TrimSpace(c.Query("status")); status != "" {
@@ -276,7 +295,55 @@ func AdminListLuckyCards(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, gin.H{"items": cards, "total": total, "page": page, "page_size": pageSize})
+	type statusCount struct {
+		Status string `json:"status"`
+		Count  int64  `json:"count"`
+	}
+	statusQuery := model.DB.Model(&model.LuckyCard{})
+	if userId > 0 {
+		statusQuery = statusQuery.Where("user_id = ?", userId)
+	}
+	var statusCounts []statusCount
+	if err := statusQuery.Select("status, COUNT(*) AS count").Group("status").Scan(&statusCounts).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{
+		"items": cards, "total": total, "page": page, "page_size": pageSize,
+		"status_counts": statusCounts, "user": user,
+	})
+}
+
+type luckyRevokeUserCardsRequest struct {
+	UserId int    `json:"user_id"`
+	Reason string `json:"reason"`
+}
+
+func AdminRevokeUserLuckyCards(c *gin.Context) {
+	var req luckyRevokeUserCardsRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.UserId <= 0 || strings.TrimSpace(req.Reason) == "" {
+		common.ApiErrorMsg(c, "请填写用户 ID 和操作原因")
+		return
+	}
+	var revoked int64
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		var user model.User
+		if err := tx.Select("id").First(&user, req.UserId).Error; err != nil {
+			return err
+		}
+		var err error
+		revoked, err = model.RevokeUserAvailableLuckyCardsTx(tx, req.UserId, req.Reason)
+		return err
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		common.ApiErrorMsg(c, "用户不存在")
+		return
+	}
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"revoked_cards": revoked, "preserved_draw_history": true})
 }
 
 func AdminListLuckyDraws(c *gin.Context) {

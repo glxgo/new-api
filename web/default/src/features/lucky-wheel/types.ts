@@ -46,6 +46,7 @@ export interface LuckyWheelStatus {
 
 export interface LuckyCard {
   id: number
+  user_id?: number
   rule_set_id: number
   pool_type: 'subscription' | 'recharge'
   source_type: string
@@ -54,6 +55,9 @@ export interface LuckyCard {
   status: string
   issued_at: number
   expires_at: number
+  consumed_at?: number
+  revoked_at?: number
+  revoke_reason?: string
 }
 
 export interface LuckyDraw {

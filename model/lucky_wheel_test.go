@@ -147,6 +147,48 @@ func TestLuckyThresholdProgressAndRechargeIdempotency(t *testing.T) {
 	}))
 }
 
+func TestRevokeUserAvailableLuckyCardsPreservesAuditHistory(t *testing.T) {
+	db := setupLuckyWheelTestDB(t)
+	now := common.GetTimestamp()
+	cards := []LuckyCard{
+		{UserId: 5, PoolType: LuckyPoolRecharge, SourceType: "admin_compensation", SourceRef: "user-5", GrantKey: "user-5:available", Status: LuckyCardAvailable, ExpiresAt: now + 3600},
+		{UserId: 5, PoolType: LuckyPoolRecharge, SourceType: "admin_compensation", SourceRef: "user-5", GrantKey: "user-5:consumed", Status: LuckyCardConsumed, ExpiresAt: now + 3600, ConsumedAt: now},
+		{UserId: 6, PoolType: LuckyPoolRecharge, SourceType: "admin_compensation", SourceRef: "user-6", GrantKey: "user-6:available", Status: LuckyCardAvailable, ExpiresAt: now + 3600},
+	}
+	require.NoError(t, db.Create(&cards).Error)
+	draw := LuckyDraw{
+		UserId: 5, CardId: cards[1].Id, IdempotencyKey: "user-5-draw",
+		PrizeType: LuckyPrizeGift5, Status: "awarded", AwardedAt: now,
+	}
+	require.NoError(t, db.Create(&draw).Error)
+
+	var revoked int64
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		var err error
+		revoked, err = RevokeUserAvailableLuckyCardsTx(tx, 5, "管理员手动清空")
+		return err
+	}))
+	require.EqualValues(t, 1, revoked)
+
+	var stored []LuckyCard
+	require.NoError(t, db.Order("id asc").Find(&stored).Error)
+	require.Equal(t, LuckyCardRevoked, stored[0].Status)
+	require.NotZero(t, stored[0].RevokedAt)
+	require.Equal(t, "管理员手动清空", stored[0].RevokeReason)
+	require.Equal(t, LuckyCardConsumed, stored[1].Status)
+	require.Equal(t, LuckyCardAvailable, stored[2].Status)
+
+	var drawCount int64
+	require.NoError(t, db.Model(&LuckyDraw{}).Where("card_id = ?", cards[1].Id).Count(&drawCount).Error)
+	require.EqualValues(t, 1, drawCount)
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		repeated, err := RevokeUserAvailableLuckyCardsTx(tx, 5, "重复清空")
+		require.Zero(t, repeated)
+		return err
+	}))
+}
+
 func TestUnboundSubscriptionOrderUsesSavedPriority(t *testing.T) {
 	db := setupLuckyWheelTestDB(t)
 	now := common.GetTimestamp()

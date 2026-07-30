@@ -40,6 +40,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { SectionPageLayout } from '@/components/layout'
+import { LuckyCardManager } from './admin-card-manager'
 import {
   compensateLuckyCards,
   getLuckyAdminOverview,
@@ -359,6 +360,8 @@ export function LuckyWheelAdmin() {
               </CardContent>
             </Card>
           </div>
+
+          <LuckyCardManager onChanged={() => void load()} />
 
           <Card>
             <CardHeader>

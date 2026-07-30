@@ -20,6 +20,8 @@ import * as z from 'zod'
 import type { Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useTranslation } from 'react-i18next'
+import { DEFAULT_LOGO } from '@/lib/constants'
+import { Button } from '@/components/ui/button'
 import {
   Form,
   FormControl,
@@ -51,13 +53,23 @@ import { SettingsSection } from '../components/settings-section'
 import { useSettingsForm } from '../hooks/use-settings-form'
 import { useUpdateOption } from '../hooks/use-update-option'
 
+function isValidLogoValue(value: string) {
+  if (value === '' || value === DEFAULT_LOGO) return true
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' || url.protocol === 'http:'
+  } catch {
+    return false
+  }
+}
+
 const _systemInfoSchema = z.object({
   theme: z.object({
     frontend: z.enum(['default', 'classic']),
   }),
   SystemName: z.string().min(1),
   ServerAddress: z.string().optional(),
-  Logo: z.string().url().optional().or(z.literal('')),
+  Logo: z.string().refine(isValidLogoValue).optional(),
   Footer: z.string().optional(),
   About: z.string().optional(),
   HomePageContent: z.string().optional(),
@@ -107,7 +119,9 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
       error: () => t('System name is required'),
     }),
     ServerAddress: z.string().optional(),
-    Logo: z.string().url().optional().or(z.literal('')),
+    Logo: z.string().refine(isValidLogoValue, {
+      error: () => '请输入 /logo.png 或完整的 http(s) 图片地址',
+    }),
     Footer: z.string().optional(),
     About: z.string().optional(),
     HomePageContent: z.string().optional(),
@@ -241,15 +255,29 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
                 name='Logo'
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('Logo URL')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder={t('https://example.com/logo.png')}
-                        {...field}
-                      />
-                    </FormControl>
+                    <FormLabel>网站 Logo</FormLabel>
+                    <div className='flex flex-col gap-2 sm:flex-row'>
+                      <FormControl>
+                        <Input
+                          placeholder='/logo.png'
+                          className='min-w-0 flex-1'
+                          {...field}
+                        />
+                      </FormControl>
+                      <Button
+                        type='button'
+                        variant='outline'
+                        onClick={() => field.onChange(DEFAULT_LOGO)}
+                      >
+                        使用内置 Logo
+                      </Button>
+                    </div>
                     <FormDescription>
-                      {t('URL to your logo image (optional)')}
+                      推荐使用随网站发布的内置资源
+                      <code className='bg-muted mx-1 rounded px-1 py-0.5'>
+                        /logo.png
+                      </code>
+                      ，不依赖第三方图片地址；也可以填写完整的 http(s) URL。
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

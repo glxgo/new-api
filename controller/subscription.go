@@ -178,6 +178,45 @@ type AdminUpsertSubscriptionPlanRequest struct {
 	Plan model.SubscriptionPlan `json:"plan"`
 }
 
+func subscriptionPlanUpdateMap(plan *model.SubscriptionPlan) map[string]interface{} {
+	updateMap := map[string]interface{}{
+		"title":                      plan.Title,
+		"subtitle":                   plan.Subtitle,
+		"price_amount":               plan.PriceAmount,
+		"currency":                   plan.Currency,
+		"duration_unit":              plan.DurationUnit,
+		"duration_value":             plan.DurationValue,
+		"custom_seconds":             plan.CustomSeconds,
+		"enabled":                    plan.Enabled,
+		"sort_order":                 plan.SortOrder,
+		"stripe_price_id":            plan.StripePriceId,
+		"creem_product_id":           plan.CreemProductId,
+		"waffo_pancake_product_id":   plan.WaffoPancakeProductId,
+		"max_purchase_per_user":      plan.MaxPurchasePerUser,
+		"total_amount":               plan.TotalAmount,
+		"upgrade_group":              plan.UpgradeGroup,
+		"allowed_group":              plan.AllowedGroup,
+		"recommended":                plan.Recommended,
+		"min_ratio":                  plan.MinRatio,
+		"amount_cap":                 plan.AmountCap,
+		"description":                plan.Description,
+		"quota_reset_period":         plan.QuotaResetPeriod,
+		"quota_reset_custom_seconds": plan.QuotaResetCustomSeconds,
+		"model_limit":                plan.ModelLimit,
+		"plan_version":               plan.PlanVersion,
+		"suitable_for":               plan.SuitableFor,
+		"number_pool":                plan.NumberPool,
+		"renewal_plan_id":            plan.RenewalPlanId,
+		"lucky_card_grant_count":     plan.LuckyCardGrantCount,
+		"lucky_card_on_reset":        plan.LuckyCardOnReset,
+		"updated_at":                 common.GetTimestamp(),
+	}
+	if plan.AllowBalancePay != nil {
+		updateMap["allow_balance_pay"] = *plan.AllowBalancePay
+	}
+	return updateMap
+}
+
 func AdminCreateSubscriptionPlan(c *gin.Context) {
 	if !requirePaymentCompliance(c) {
 		return
@@ -372,39 +411,7 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		// update plan (allow zero values updates with map)
-		updateMap := map[string]interface{}{
-			"title":                      req.Plan.Title,
-			"subtitle":                   req.Plan.Subtitle,
-			"price_amount":               req.Plan.PriceAmount,
-			"currency":                   req.Plan.Currency,
-			"duration_unit":              req.Plan.DurationUnit,
-			"duration_value":             req.Plan.DurationValue,
-			"custom_seconds":             req.Plan.CustomSeconds,
-			"enabled":                    req.Plan.Enabled,
-			"sort_order":                 req.Plan.SortOrder,
-			"stripe_price_id":            req.Plan.StripePriceId,
-			"creem_product_id":           req.Plan.CreemProductId,
-			"waffo_pancake_product_id":   req.Plan.WaffoPancakeProductId,
-			"max_purchase_per_user":      req.Plan.MaxPurchasePerUser,
-			"total_amount":               req.Plan.TotalAmount,
-			"upgrade_group":              req.Plan.UpgradeGroup,
-			"allowed_group":              req.Plan.AllowedGroup,
-			"recommended":                req.Plan.Recommended,
-			"min_ratio":                  req.Plan.MinRatio,
-			"amount_cap":                 req.Plan.AmountCap,
-			"description":                req.Plan.Description,
-			"quota_reset_period":         req.Plan.QuotaResetPeriod,
-			"quota_reset_custom_seconds": req.Plan.QuotaResetCustomSeconds,
-			"model_limit":                req.Plan.ModelLimit,
-			"plan_version":               req.Plan.PlanVersion,
-			"suitable_for":               req.Plan.SuitableFor,
-			"number_pool":                req.Plan.NumberPool,
-			"renewal_plan_id":            req.Plan.RenewalPlanId,
-			"updated_at":                 common.GetTimestamp(),
-		}
-		if req.Plan.AllowBalancePay != nil {
-			updateMap["allow_balance_pay"] = *req.Plan.AllowBalancePay
-		}
+		updateMap := subscriptionPlanUpdateMap(&req.Plan)
 		if err := tx.Model(&model.SubscriptionPlan{}).Where("id = ?", id).Updates(updateMap).Error; err != nil {
 			return err
 		}

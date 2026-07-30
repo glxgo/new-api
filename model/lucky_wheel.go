@@ -728,6 +728,25 @@ func ListLuckyCards(userId int, page, pageSize int) ([]LuckyCard, int64, error) 
 	return cards, total, err
 }
 
+// RevokeUserAvailableLuckyCardsTx removes a user's remaining draw entitlement
+// without deleting card or draw history. Consumed cards must stay immutable so
+// awarded rewards retain their source audit chain.
+func RevokeUserAvailableLuckyCardsTx(tx *gorm.DB, userId int, reason string) (int64, error) {
+	if tx == nil || userId <= 0 || strings.TrimSpace(reason) == "" {
+		return 0, errors.New("invalid lucky card revocation")
+	}
+	now := GetDBTimestamp()
+	result := tx.Model(&LuckyCard{}).
+		Where("user_id = ? AND status = ?", userId, LuckyCardAvailable).
+		Updates(map[string]interface{}{
+			"status":        LuckyCardRevoked,
+			"revoked_at":    now,
+			"revoke_reason": strings.TrimSpace(reason),
+			"updated_at":    now,
+		})
+	return result.RowsAffected, result.Error
+}
+
 func ListLuckyDraws(userId int, page, pageSize int) ([]LuckyDraw, int64, error) {
 	if page < 1 {
 		page = 1

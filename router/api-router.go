@@ -210,6 +210,7 @@ func SetApiRouter(router *gin.Engine) {
 		luckyWheelRootRoute.Use(middleware.RootAuth())
 		{
 			luckyWheelRootRoute.POST("/cards/compensate", controller.AdminCompensateLuckyCards)
+			luckyWheelRootRoute.POST("/cards/revoke-user", controller.AdminRevokeUserLuckyCards)
 			luckyWheelRootRoute.POST("/pause-issuance", controller.AdminPauseLuckyIssuance)
 			luckyWheelRootRoute.POST("/resume-issuance", controller.AdminResumeLuckyIssuance)
 			luckyWheelRootRoute.POST("/pause-draw", controller.AdminPauseLuckyDraw)

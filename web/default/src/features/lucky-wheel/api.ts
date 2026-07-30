@@ -121,6 +121,45 @@ export async function compensateLuckyCards(data: {
   ).data
 }
 
+export interface LuckyAdminCardsResult extends PageResult<LuckyCard> {
+  user: {
+    id: number
+    username: string
+    display_name: string
+  } | null
+  status_counts: Array<{ status: string; count: number }>
+}
+
+export async function getLuckyAdminCards(
+  userId: number,
+  page = 1,
+  pageSize = 10
+) {
+  return (
+    await api.get<ApiResponse<LuckyAdminCardsResult>>(
+      '/api/lucky-wheel/admin/cards',
+      {
+        params: { user_id: userId, page, page_size: pageSize },
+        disableDuplicate: true,
+      }
+    )
+  ).data
+}
+
+export async function revokeLuckyUserCards(data: {
+  user_id: number
+  reason: string
+}) {
+  return (
+    await api.post<
+      ApiResponse<{
+        revoked_cards: number
+        preserved_draw_history: boolean
+      }>
+    >('/api/lucky-wheel/admin/cards/revoke-user', data)
+  ).data
+}
+
 export async function reverseLuckySource(data: {
   source_type: 'wallet_topup' | 'subscription_order'
   trade_no: string
