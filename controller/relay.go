@@ -33,6 +33,8 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+const codex2APIPromptFilterBlockedMessage = "内容被标记为可能的网络安全风险（ Cyber program）。如果这似乎有误，请尝试重新措辞您的请求。注：已在发送至上游前被拦截，本次不扣除任何费用"
+
 func relayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPIError {
 	var err *types.NewAPIError
 	switch info.RelayMode {
@@ -164,7 +166,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				filterResult.ReasonCode,
 			))
 			newAPIError = types.NewError(
-				fmt.Errorf("您的请求触发了安全规则，已在发送至上游前被拦截，本次不扣除任何费用。您的账号和 API Key 仍可正常使用，请调整内容后重试"),
+				errors.New(codex2APIPromptFilterBlockedMessage),
 				types.ErrorCodePromptFilterBlocked,
 				types.ErrOptionWithStatusCode(http.StatusBadRequest),
 				types.ErrOptionWithSkipRetry(),
