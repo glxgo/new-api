@@ -54,7 +54,7 @@ export function getSystemName() {
 
 export function getLogo() {
   let logo = localStorage.getItem('logo');
-  if (!logo) return '/logo.png';
+  if (!logo) return '/logo.png?v=star-api-20260730';
   return logo;
 }
 

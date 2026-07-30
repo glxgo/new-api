@@ -120,7 +120,7 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
     }),
     ServerAddress: z.string().optional(),
     Logo: z.string().refine(isValidLogoValue, {
-      error: () => '请输入 /logo.png 或完整的 http(s) 图片地址',
+      error: () => `请输入 ${DEFAULT_LOGO} 或完整的 http(s) 图片地址`,
     }),
     Footer: z.string().optional(),
     About: z.string().optional(),
@@ -259,7 +259,7 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
                     <div className='flex flex-col gap-2 sm:flex-row'>
                       <FormControl>
                         <Input
-                          placeholder='/logo.png'
+                          placeholder={DEFAULT_LOGO}
                           className='min-w-0 flex-1'
                           {...field}
                         />
@@ -275,7 +275,7 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
                     <FormDescription>
                       推荐使用随网站发布的内置资源
                       <code className='bg-muted mx-1 rounded px-1 py-0.5'>
-                        /logo.png
+                        {DEFAULT_LOGO}
                       </code>
                       ，不依赖第三方图片地址；也可以填写完整的 http(s) URL。
                     </FormDescription>
