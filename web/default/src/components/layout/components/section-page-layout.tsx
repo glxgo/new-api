@@ -100,7 +100,7 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
       <Main className='overflow-y-auto overscroll-y-contain sm:overflow-hidden'>
         <div
           className={cn(
-            'border-border/80 shrink-0 border-b px-3 sm:px-5',
+            'border-border/80 shrink-0 border-b px-[var(--app-page-gutter)]',
             editorial
               ? 'pt-5 pb-4 sm:pt-7 sm:pb-5'
               : 'pt-4 pb-3.5 sm:pt-6 sm:pb-4'
@@ -147,8 +147,8 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
         <div
           className={
             props.fixedContent
-              ? 'min-h-0 flex-none overflow-visible px-3 pt-3 pb-3 sm:flex-1 sm:overflow-hidden sm:px-5 sm:pt-4 sm:pb-5'
-              : 'min-h-0 flex-none overflow-visible px-3 pt-3 pb-3 sm:flex-1 sm:overflow-auto sm:px-5 sm:pt-4 sm:pb-5'
+              ? 'min-h-0 flex-none overflow-visible px-[var(--app-page-gutter)] pt-3 pb-3 sm:flex-1 sm:overflow-hidden sm:pt-4 sm:pb-5'
+              : 'min-h-0 flex-none overflow-visible px-[var(--app-page-gutter)] pt-3 pb-3 sm:flex-1 sm:overflow-auto sm:pt-4 sm:pb-5'
           }
         >
           {content}
@@ -156,7 +156,7 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
 
         <div
           ref={setFooterContainer}
-          className='bg-background shrink-0 border-t px-3 py-2.5 empty:hidden sm:px-5 sm:py-3'
+          className='bg-background shrink-0 border-t px-[var(--app-page-gutter)] py-2.5 empty:hidden sm:py-3'
         />
       </Main>
     </PageFooterProvider>

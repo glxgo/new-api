@@ -138,7 +138,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
   ref
 ) {
   const { t } = useTranslation()
-  const isMobile = useMediaQuery('(max-width: 767px)')
+  const useCompactEditor = useMediaQuery('(max-width: 1279px)')
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editorOpen, setEditorOpen] = useState(false)
   const [editData, setEditData] = useState<ModelRatioData | null>(null)
@@ -329,16 +329,16 @@ const ModelRatioVisualEditorComponent = forwardRef<
         costMultiplier: editableModel.costMultiplier,
       })
       setEditorOpen(true)
-      if (isMobile) setSheetOpen(true)
+      if (useCompactEditor) setSheetOpen(true)
     },
-    [isMobile]
+    [useCompactEditor]
   )
 
   const handleAdd = useCallback(() => {
     setEditData(null)
     setEditorOpen(true)
-    if (isMobile) setSheetOpen(true)
-  }, [isMobile])
+    if (useCompactEditor) setSheetOpen(true)
+  }, [useCompactEditor])
 
   const handleGlobalFilterChange = useCallback<OnChangeFn<string>>(
     (updater) => {
@@ -736,7 +736,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
 
   return (
     <div className='flex flex-col gap-4'>
-      <div className='grid h-[clamp(720px,calc(100vh-12rem),900px)] min-h-0 gap-4 md:grid-cols-[minmax(300px,0.72fr)_minmax(520px,1.28fr)] xl:grid-cols-[minmax(320px,0.68fr)_minmax(640px,1.32fr)]'>
+      <div className='grid h-[clamp(720px,calc(100vh-12rem),900px)] min-h-0 gap-4 xl:grid-cols-[minmax(300px,0.72fr)_minmax(520px,1.28fr)] 2xl:grid-cols-[minmax(320px,0.68fr)_minmax(640px,1.32fr)]'>
         <div className='flex min-h-0 min-w-0 flex-col gap-3'>
           <DataTableToolbar
             table={table}
@@ -832,7 +832,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
           {hasRows && <DataTablePagination table={table} />}
         </div>
 
-        <div className='hidden min-h-0 min-w-0 md:block'>
+        <div className='hidden min-h-0 min-w-0 xl:block'>
           {editorOpen ? (
             <ModelPricingEditorPanel
               ref={editorPanelRef}
@@ -869,7 +869,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
         </Button>
       </DataTableBulkActions>
 
-      {isMobile && (
+      {useCompactEditor && (
         <ModelPricingSheet
           ref={editorPanelRef}
           open={sheetOpen}

@@ -318,7 +318,7 @@ export function LuckyWheel() {
             </Alert>
           )}
 
-          <div className='grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,.55fr)]'>
+          <div className='grid gap-5 @5xl/content:grid-cols-[minmax(0,1.45fr)_minmax(320px,.55fr)]'>
             <section className='relative overflow-hidden rounded-[28px] border border-[#e66d43]/25 bg-[#fff4e7] px-5 py-8 shadow-[0_24px_80px_-42px_rgba(145,55,20,.55)] sm:px-10'>
               <div className='pointer-events-none absolute inset-0 [background-image:radial-gradient(circle_at_15%_12%,rgba(230,109,67,.2),transparent_23%),radial-gradient(circle_at_86%_80%,rgba(234,157,77,.25),transparent_28%)] opacity-50' />
               <div className='relative mx-auto flex max-w-4xl flex-col items-center'>

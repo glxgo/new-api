@@ -22,6 +22,8 @@ import { useTranslation } from 'react-i18next'
 import { formatQuota } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { TitledCard } from '@/components/ui/titled-card'
+import { SpecularCard } from '@/components/reactbits/specular-card'
+import '@/components/reactbits/sub-effects.css'
 import {
   getPublicPlans,
   getSelfSubscriptionFull,
@@ -44,6 +46,7 @@ export function MySubscriptionsDetail() {
   const [allSubscriptions, setAllSubscriptions] = useState<
     UserSubscriptionRecord[]
   >([])
+  const [subscriptionReferenceTime, setSubscriptionReferenceTime] = useState(0)
 
   const fetchPlans = useCallback(async () => {
     try {
@@ -61,6 +64,7 @@ export function MySubscriptionsDetail() {
       const res = await getSelfSubscriptionFull()
       if (res.success && res.data) {
         setAllSubscriptions(res.data.all_subscriptions || [])
+        setSubscriptionReferenceTime(Date.now() / 1000)
       }
     } catch {
       // ignore
@@ -98,8 +102,7 @@ export function MySubscriptionsDetail() {
   const getRemainingDays = (sub: UserSubscriptionRecord) => {
     const endTime = sub?.subscription?.end_time || 0
     if (!endTime) return 0
-    const now = Date.now() / 1000
-    return Math.max(0, Math.ceil((endTime - now) / 86400))
+    return Math.max(0, Math.ceil((endTime - subscriptionReferenceTime) / 86400))
   }
 
   const getUsagePercent = (sub: UserSubscriptionRecord) => {
@@ -114,203 +117,220 @@ export function MySubscriptionsDetail() {
   }
 
   return (
-    <TitledCard
-      title={t('My Subscriptions')}
-      icon={<Crown className='h-4 w-4' />}
-      disableHoverEffect
-      contentClassName='p-3 sm:p-5'
-    >
-      <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3'>
-        {allSubscriptions.map((sub) => {
-          const subscription = sub.subscription
-          const totalAmount = Number(subscription?.amount_total || 0)
-          const usedAmount = Number(subscription?.amount_used || 0)
-          const remainAmount =
-            totalAmount > 0 ? Math.max(0, totalAmount - usedAmount) : 0
-          const capTotal = Number(subscription?.amount_cap || 0)
-          const capUsed = Number(subscription?.amount_cap_used || 0)
-          const capRemain = capTotal > 0 ? Math.max(0, capTotal - capUsed) : 0
-          const capPercent =
-            capTotal > 0 ? Math.round((capUsed / capTotal) * 100) : 0
-          const allowedGroup = subscription?.allowed_group || ''
-          const planTitle = planTitleMap.get(subscription?.plan_id) || ''
-          const planVersion = planVersionMap.get(subscription?.plan_id) || ''
-          const remainDays = getRemainingDays(sub)
-          const usagePercent = getUsagePercent(sub)
-          const remainPercent =
-            totalAmount > 0 ? Math.max(0, 100 - usagePercent) : 0
-          const capRemainPercent =
-            capTotal > 0 ? Math.max(0, 100 - capPercent) : 0
-          const now = Date.now() / 1000
-          const isExpired = (subscription?.end_time || 0) < now
-          const isCancelled = subscription?.status === 'cancelled'
-          const isActive = subscription?.status === 'active' && !isExpired
+    <div className='subscription-responsive-scope'>
+      <TitledCard
+        title={t('My Subscriptions')}
+        icon={<Crown className='h-4 w-4' />}
+        disableHoverEffect
+        contentClassName='p-3 sm:p-5'
+      >
+        <div className='subscription-card-grid'>
+          {allSubscriptions.map((sub) => {
+            const subscription = sub.subscription
+            const totalAmount = Number(subscription?.amount_total || 0)
+            const usedAmount = Number(subscription?.amount_used || 0)
+            const remainAmount =
+              totalAmount > 0 ? Math.max(0, totalAmount - usedAmount) : 0
+            const capTotal = Number(subscription?.amount_cap || 0)
+            const capUsed = Number(subscription?.amount_cap_used || 0)
+            const capRemain = capTotal > 0 ? Math.max(0, capTotal - capUsed) : 0
+            const capPercent =
+              capTotal > 0 ? Math.round((capUsed / capTotal) * 100) : 0
+            const allowedGroup = subscription?.allowed_group || ''
+            const planTitle =
+              subscription?.plan_title ||
+              planTitleMap.get(subscription?.plan_id) ||
+              ''
+            const planVersion =
+              subscription?.plan_version ||
+              planVersionMap.get(subscription?.plan_id) ||
+              ''
+            const remainDays = getRemainingDays(sub)
+            const usagePercent = getUsagePercent(sub)
+            const remainPercent =
+              totalAmount > 0 ? Math.max(0, 100 - usagePercent) : 0
+            const capRemainPercent =
+              capTotal > 0 ? Math.max(0, 100 - capPercent) : 0
+            const now = subscriptionReferenceTime
+            const isExpired = (subscription?.end_time || 0) < now
+            const isCancelled = subscription?.status === 'cancelled'
+            const isActive = subscription?.status === 'active' && !isExpired
 
-          const planVersionStyle =
-            planVersion && PLAN_VERSION_STYLES[planVersion]
-              ? PLAN_VERSION_STYLES[planVersion]
-              : null
+            const planVersionStyle =
+              planVersion && PLAN_VERSION_STYLES[planVersion]
+                ? PLAN_VERSION_STYLES[planVersion]
+                : null
 
-          return (
-            <div
-              key={subscription?.id}
-              className={cn(
-                'rounded-lg transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] dark:hover:shadow-[0_8px_24px_rgba(0,0,0,0.4)]',
-                planVersionStyle ? planVersionStyle.wrapper : ''
-              )}
-            >
-              <div
-                className={cn(
-                  'bg-card relative flex flex-col overflow-hidden rounded-lg transition-colors',
+            return (
+              <SpecularCard
+                key={subscription?.id}
+                specularColor={
                   planVersionStyle
-                    ? planVersionStyle.inner
-                    : 'hover:border-primary/40 border'
+                    ? `${planVersionStyle.accent}bb`
+                    : 'rgba(255,255,255,0.45)'
+                }
+                specularRadius={180}
+                specularIntensity={0.7}
+                className={cn(
+                  'rounded-xl border p-px transition-[transform,box-shadow] duration-300 hover:-translate-y-0.5',
+                  planVersionStyle
+                    ? cn(planVersionStyle.wrapper, planVersionStyle.ring)
+                    : 'border-border bg-card'
                 )}
               >
-                <div className='flex flex-col gap-2 p-3'>
-                  {/* 标题 + 剩余天数药丸 */}
-                  <div className='flex items-start justify-between gap-2'>
-                    <div className='min-w-0'>
-                      <div className='truncate text-sm font-semibold'>
-                        {planTitle ||
-                          `${t('Subscription')} #${subscription?.id}`}
+                <div
+                  className={cn(
+                    'bg-card/90 relative z-[3] flex h-full flex-col overflow-hidden rounded-xl border backdrop-blur-sm transition-colors',
+                    planVersionStyle
+                      ? planVersionStyle.inner
+                      : 'border-border hover:border-primary/40'
+                  )}
+                >
+                  <div className='flex flex-col gap-2 p-3'>
+                    {/* 标题 + 剩余天数药丸 */}
+                    <div className='flex items-start justify-between gap-2'>
+                      <div className='min-w-0'>
+                        <div className='truncate text-sm font-semibold'>
+                          {planTitle ||
+                            `${t('Subscription')} #${subscription?.id}`}
+                        </div>
+                        <div className='text-muted-foreground text-[10px]'>
+                          {t('Subscription')} #{subscription?.id}
+                        </div>
                       </div>
-                      <div className='text-muted-foreground text-[10px]'>
-                        {t('Subscription')} #{subscription?.id}
+                      {isActive ? (
+                        <span className='bg-success/10 text-success shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium'>
+                          {t('{{count}} days remaining', {
+                            count: remainDays,
+                          })}
+                        </span>
+                      ) : (
+                        <span className='bg-muted text-muted-foreground shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium'>
+                          {isCancelled ? t('Cancelled') : t('Expired')}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* 获得时间 / 到期时间 */}
+                    <div className='grid grid-cols-2 gap-2'>
+                      <div>
+                        <div className='text-muted-foreground text-[10px]'>
+                          {t('Start Time')}
+                        </div>
+                        <div className='text-xs'>
+                          {new Date(
+                            (subscription?.start_time || 0) * 1000
+                          ).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <div>
+                        <div className='text-muted-foreground text-[10px]'>
+                          {isActive
+                            ? t('Until')
+                            : isCancelled
+                              ? t('Cancelled at')
+                              : t('Expired at')}
+                        </div>
+                        <div className='text-xs'>
+                          {new Date(
+                            (subscription?.end_time || 0) * 1000
+                          ).toLocaleDateString()}
+                        </div>
                       </div>
                     </div>
-                    {isActive ? (
-                      <span className='bg-success/10 text-success shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium'>
-                        {t('{{count}} days remaining', {
-                          count: remainDays,
-                        })}
-                      </span>
-                    ) : (
-                      <span className='bg-muted text-muted-foreground shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium'>
-                        {isCancelled ? t('Cancelled') : t('Expired')}
-                      </span>
+
+                    {/* 可用端点 */}
+                    {allowedGroup && (
+                      <div className='flex items-center gap-1 text-[10px]'>
+                        <span className='text-muted-foreground'>
+                          {t('Available Endpoint')}
+                        </span>
+                        <span className='bg-muted rounded px-1.5 py-0.5 font-medium'>
+                          {allowedGroup}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* 本周/周期额度 */}
+                    {totalAmount > 0 && (
+                      <div className='space-y-1'>
+                        <div className='flex items-baseline justify-between'>
+                          <span className='text-muted-foreground text-[10px]'>
+                            {t('Period Quota')}
+                          </span>
+                          <span className='text-[10px]'>
+                            <span className='text-primary text-xs font-bold'>
+                              {formatQuota(remainAmount)}
+                            </span>
+                            <span className='text-muted-foreground'>
+                              {' '}
+                              / {formatQuota(totalAmount)}
+                            </span>
+                          </span>
+                        </div>
+                        <div className='bg-primary/10 h-2.5 w-full overflow-hidden rounded-full'>
+                          <div
+                            className={cn(
+                              'h-full rounded-full transition-all',
+                              quotaBarColor(usagePercent)
+                            )}
+                            style={{
+                              width: `${Math.min(100, remainPercent)}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 月/总额度上限 */}
+                    {capTotal > 0 && (
+                      <div className='space-y-1'>
+                        <div className='flex items-baseline justify-between'>
+                          <span className='text-muted-foreground text-[10px]'>
+                            {t('Total Cap')}
+                          </span>
+                          <span className='text-[10px]'>
+                            <span className='text-primary text-xs font-bold'>
+                              {formatQuota(capRemain)}
+                            </span>
+                            <span className='text-muted-foreground'>
+                              {' '}
+                              / {formatQuota(capTotal)}
+                            </span>
+                          </span>
+                        </div>
+                        <div className='bg-primary/10 h-2.5 w-full overflow-hidden rounded-full'>
+                          <div
+                            className={cn(
+                              'h-full rounded-full transition-all',
+                              quotaBarColor(capPercent)
+                            )}
+                            style={{
+                              width: `${Math.min(100, capRemainPercent)}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 周期 */}
+                    {isActive && (subscription?.next_reset_time ?? 0) > 0 && (
+                      <div className='text-muted-foreground text-[10px]'>
+                        {t('Next reset')}:{' '}
+                        {new Date(
+                          subscription!.next_reset_time! * 1000
+                        ).toLocaleString()}
+                      </div>
                     )}
                   </div>
 
-                  {/* 获得时间 / 到期时间 */}
-                  <div className='grid grid-cols-2 gap-2'>
-                    <div>
-                      <div className='text-muted-foreground text-[10px]'>
-                        {t('Start Time')}
-                      </div>
-                      <div className='text-xs'>
-                        {new Date(
-                          (subscription?.start_time || 0) * 1000
-                        ).toLocaleDateString()}
-                      </div>
-                    </div>
-                    <div>
-                      <div className='text-muted-foreground text-[10px]'>
-                        {isActive
-                          ? t('Until')
-                          : isCancelled
-                            ? t('Cancelled at')
-                            : t('Expired at')}
-                      </div>
-                      <div className='text-xs'>
-                        {new Date(
-                          (subscription?.end_time || 0) * 1000
-                        ).toLocaleDateString()}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 可用端点 */}
-                  {allowedGroup && (
-                    <div className='flex items-center gap-1 text-[10px]'>
-                      <span className='text-muted-foreground'>
-                        {t('Available Endpoint')}
-                      </span>
-                      <span className='bg-muted rounded px-1.5 py-0.5 font-medium'>
-                        {allowedGroup}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* 本周/周期额度 */}
-                  {totalAmount > 0 && (
-                    <div className='space-y-1'>
-                      <div className='flex items-baseline justify-between'>
-                        <span className='text-muted-foreground text-[10px]'>
-                          {t('Period Quota')}
-                        </span>
-                        <span className='text-[10px]'>
-                          <span className='text-primary text-xs font-bold'>
-                            {formatQuota(remainAmount)}
-                          </span>
-                          <span className='text-muted-foreground'>
-                            {' '}
-                            / {formatQuota(totalAmount)}
-                          </span>
-                        </span>
-                      </div>
-                      <div className='bg-primary/10 h-2.5 w-full overflow-hidden rounded-full'>
-                        <div
-                          className={cn(
-                            'h-full rounded-full transition-all',
-                            quotaBarColor(usagePercent)
-                          )}
-                          style={{
-                            width: `${Math.min(100, remainPercent)}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 月/总额度上限 */}
-                  {capTotal > 0 && (
-                    <div className='space-y-1'>
-                      <div className='flex items-baseline justify-between'>
-                        <span className='text-muted-foreground text-[10px]'>
-                          {t('Total Cap')}
-                        </span>
-                        <span className='text-[10px]'>
-                          <span className='text-primary text-xs font-bold'>
-                            {formatQuota(capRemain)}
-                          </span>
-                          <span className='text-muted-foreground'>
-                            {' '}
-                            / {formatQuota(capTotal)}
-                          </span>
-                        </span>
-                      </div>
-                      <div className='bg-primary/10 h-2.5 w-full overflow-hidden rounded-full'>
-                        <div
-                          className={cn(
-                            'h-full rounded-full transition-all',
-                            quotaBarColor(capPercent)
-                          )}
-                          style={{
-                            width: `${Math.min(100, capRemainPercent)}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 周期 */}
-                  {isActive && (subscription?.next_reset_time ?? 0) > 0 && (
-                    <div className='text-muted-foreground text-[10px]'>
-                      {t('Next reset')}:{' '}
-                      {new Date(
-                        subscription!.next_reset_time! * 1000
-                      ).toLocaleString()}
-                    </div>
-                  )}
+                  {/* 底部能量条已移除 */}
                 </div>
-
-                {/* 底部能量条已移除 */}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </TitledCard>
+              </SpecularCard>
+            )
+          })}
+        </div>
+      </TitledCard>
+    </div>
   )
 }

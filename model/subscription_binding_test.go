@@ -70,6 +70,59 @@ func TestSubscriptionOrderSnapshotDoesNotDriftAfterPlanEdit(t *testing.T) {
 	require.Equal(t, "team-a", snapshot.AllowedGroup)
 }
 
+func TestSubscriptionSummaryKeepsDisabledPlanPresentation(t *testing.T) {
+	db := setupSubscriptionBindingTestDB(t)
+	now := common.GetTimestamp()
+
+	legacyPlan := testSubscriptionPlan("legacy offline plan", "team-a")
+	legacyPlan.Enabled = false
+	legacyPlan.PlanVersion = PlanVersionAdvanced
+	require.NoError(t, db.Create(&legacyPlan).Error)
+	legacySubscription := UserSubscription{
+		UserId:      31,
+		PlanId:      legacyPlan.Id,
+		Status:      "active",
+		StartTime:   now - 60,
+		EndTime:     now + 3600,
+		AmountTotal: 1000,
+	}
+	require.NoError(t, db.Create(&legacySubscription).Error)
+
+	snapshotPlan := testSubscriptionPlan("purchased snapshot name", "team-b")
+	snapshotPlan.PlanVersion = PlanVersionPro
+	require.NoError(t, db.Create(&snapshotPlan).Error)
+	snapshot, err := BuildSubscriptionPlanSnapshot(&snapshotPlan)
+	require.NoError(t, err)
+	snapshotSubscription := UserSubscription{
+		UserId:       31,
+		PlanId:       snapshotPlan.Id,
+		PlanSnapshot: snapshot,
+		Status:       "active",
+		StartTime:    now - 60,
+		EndTime:      now + 7200,
+		AmountTotal:  2000,
+	}
+	require.NoError(t, db.Create(&snapshotSubscription).Error)
+	require.NoError(t, db.Model(&snapshotPlan).Updates(map[string]any{
+		"title":        "renamed after purchase",
+		"plan_version": PlanVersionEnterprise,
+		"enabled":      false,
+	}).Error)
+
+	summaries, err := GetAllUserSubscriptions(31)
+	require.NoError(t, err)
+	require.Len(t, summaries, 2)
+
+	byId := make(map[int]*UserSubscription, len(summaries))
+	for _, summary := range summaries {
+		byId[summary.Subscription.Id] = summary.Subscription
+	}
+	require.Equal(t, "legacy offline plan", byId[legacySubscription.Id].PlanTitle)
+	require.Equal(t, PlanVersionAdvanced, byId[legacySubscription.Id].PlanVersion)
+	require.Equal(t, "purchased snapshot name", byId[snapshotSubscription.Id].PlanTitle)
+	require.Equal(t, PlanVersionPro, byId[snapshotSubscription.Id].PlanVersion)
+}
+
 func TestTokenBindingRebindAndUnbindAreAudited(t *testing.T) {
 	db := setupSubscriptionBindingTestDB(t)
 	now := common.GetTimestamp()

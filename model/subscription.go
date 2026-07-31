@@ -408,6 +408,7 @@ type UserSubscription struct {
 	// Existing rows may be empty and continue to use the historical fallback.
 	PlanSnapshot  string `json:"-" gorm:"type:text"`
 	PlanTitle     string `json:"plan_title" gorm:"type:varchar(128);not null;default:''"`
+	PlanVersion   string `json:"plan_version" gorm:"-"`
 	Remark        string `json:"remark" gorm:"type:varchar(128);not null;default:''"`
 	RenewedFromId *int   `json:"renewed_from_id" gorm:"default:null;uniqueIndex"`
 
@@ -1297,9 +1298,57 @@ func buildSubscriptionSummaries(subs []UserSubscription) []SubscriptionSummary {
 	if len(subs) == 0 {
 		return []SubscriptionSummary{}
 	}
+
+	// The public plan endpoint intentionally hides disabled plans, but an
+	// existing subscription must keep its purchased name and visual tier.
+	// Prefer the immutable purchase snapshot, then fall back to the live plan
+	// row (including disabled rows) for legacy subscriptions without a
+	// snapshot/title.
+	missingPlanIds := make(map[int]struct{})
+	for index := range subs {
+		sub := &subs[index]
+		if snapshot, err := ParseSubscriptionPlanSnapshot(sub.PlanSnapshot); err == nil {
+			if strings.TrimSpace(sub.PlanTitle) == "" {
+				sub.PlanTitle = strings.TrimSpace(snapshot.Title)
+			}
+			sub.PlanVersion = NormalizePlanVersion(snapshot.PlanVersion)
+		}
+		if strings.TrimSpace(sub.PlanTitle) == "" || sub.PlanVersion == "" {
+			missingPlanIds[sub.PlanId] = struct{}{}
+		}
+	}
+
+	planPresentation := make(map[int]SubscriptionPlan, len(missingPlanIds))
+	if len(missingPlanIds) > 0 {
+		planIds := make([]int, 0, len(missingPlanIds))
+		for planId := range missingPlanIds {
+			if planId > 0 {
+				planIds = append(planIds, planId)
+			}
+		}
+		if len(planIds) > 0 {
+			var plans []SubscriptionPlan
+			if err := DB.Select("id", "title", "plan_version").
+				Where("id IN ?", planIds).
+				Find(&plans).Error; err == nil {
+				for _, plan := range plans {
+					planPresentation[plan.Id] = plan
+				}
+			}
+		}
+	}
+
 	result := make([]SubscriptionSummary, 0, len(subs))
 	for _, sub := range subs {
 		subCopy := sub
+		if plan, ok := planPresentation[subCopy.PlanId]; ok {
+			if strings.TrimSpace(subCopy.PlanTitle) == "" {
+				subCopy.PlanTitle = strings.TrimSpace(plan.Title)
+			}
+			if subCopy.PlanVersion == "" {
+				subCopy.PlanVersion = NormalizePlanVersion(plan.PlanVersion)
+			}
+		}
 		result = append(result, SubscriptionSummary{
 			Subscription: &subCopy,
 		})

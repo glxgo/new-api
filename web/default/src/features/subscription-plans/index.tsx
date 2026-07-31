@@ -48,7 +48,7 @@ export function SubscriptionPlans() {
         {t('Subscription Plans')}
       </SectionPageLayout.Title>
       <SectionPageLayout.Content>
-        <div className='flex flex-col gap-4 sm:gap-5'>
+        <div className='subscription-responsive-scope flex flex-col gap-4 sm:gap-5'>
           {intro && (
             <div className='from-primary/5 to-card rounded-xl border bg-gradient-to-br p-4 sm:p-5'>
               <Markdown>{intro}</Markdown>

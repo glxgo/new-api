@@ -274,7 +274,7 @@ export function Wallet(props: WalletProps) {
         </SectionPageLayout.Actions>
         <SectionPageLayout.Content>
           <div className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-5'>
-            <div className='grid items-stretch gap-4 xl:grid-cols-[minmax(18rem,0.72fr)_minmax(0,1.28fr)]'>
+            <div className='grid items-stretch gap-4 @5xl/content:grid-cols-[minmax(18rem,0.72fr)_minmax(0,1.28fr)]'>
               <WalletStatsCard
                 user={user}
                 loading={userLoading}

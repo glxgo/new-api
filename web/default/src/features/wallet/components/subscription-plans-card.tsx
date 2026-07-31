@@ -49,6 +49,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { GooeyButton } from '@/components/reactbits/gooey-button'
+import { SpecularCard } from '@/components/reactbits/specular-card'
+import '@/components/reactbits/sub-effects.css'
 import { dotColorMap, textColorMap } from '@/components/status-badge'
 import {
   getPublicPlans,
@@ -277,19 +280,21 @@ export function SubscriptionPlansCard({
 
   if (loading) {
     return (
-      <Card data-card-hover='false' className='gap-0 overflow-hidden py-0'>
-        <CardHeader className='border-b p-3 !pb-3 sm:p-5 sm:!pb-5'>
-          <Skeleton className='h-6 w-32' />
-        </CardHeader>
-        <CardContent className='space-y-4 p-3 sm:p-5'>
-          <Skeleton className='h-20 w-full' />
-          <div className='grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3'>
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className='h-48 w-full' />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      <div className='subscription-responsive-scope'>
+        <Card data-card-hover='false' className='gap-0 overflow-hidden py-0'>
+          <CardHeader className='border-b p-3 !pb-3 sm:p-5 sm:!pb-5'>
+            <Skeleton className='h-6 w-32' />
+          </CardHeader>
+          <CardContent className='space-y-4 p-3 sm:p-5'>
+            <Skeleton className='h-20 w-full' />
+            <div className='subscription-card-grid'>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className='h-48 w-full' />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     )
   }
 
@@ -299,640 +304,660 @@ export function SubscriptionPlansCard({
 
   return (
     <>
-      <TitledCard
-        title={t('Subscription Plans')}
-        description={t('Subscribe to a plan for model access')}
-        icon={<Crown className='h-4 w-4' />}
-        disableHoverEffect
-        contentClassName='space-y-4 sm:space-y-5'
-      >
-        {/* My subscriptions & billing preference */}
-        <div className='rounded-xl border p-3 sm:p-4'>
-          <div className='flex flex-wrap items-center justify-between gap-2.5 sm:gap-3'>
-            <div className='flex min-w-0 flex-wrap items-center gap-2'>
-              <span className='text-sm font-medium'>
-                {t('My Subscriptions')}
-              </span>
-              <span className='flex items-center gap-1.5 text-xs font-medium'>
-                <span
-                  className={cn(
-                    'size-1.5 shrink-0 rounded-full',
-                    hasActive ? dotColorMap.success : dotColorMap.neutral
-                  )}
-                  aria-hidden='true'
-                />
-                {hasActive ? (
-                  <span className={cn(textColorMap.success)}>
-                    {activeSubscriptions.length} {t('active')}
-                  </span>
-                ) : (
-                  <span className='text-muted-foreground'>
-                    {t('No Active')}
-                  </span>
-                )}
-                {allSubscriptions.length > activeSubscriptions.length && (
-                  <>
-                    <span className='text-muted-foreground/30'>·</span>
-                    <span className='text-muted-foreground'>
-                      {allSubscriptions.length - activeSubscriptions.length}{' '}
-                      {t('expired')}
+      <div className='subscription-responsive-scope'>
+        <TitledCard
+          title={t('Subscription Plans')}
+          description={t('Subscribe to a plan for model access')}
+          icon={<Crown className='h-4 w-4' />}
+          disableHoverEffect
+          contentClassName='space-y-4 sm:space-y-5'
+        >
+          {/* My subscriptions & billing preference */}
+          <div className='rounded-xl border p-3 sm:p-4'>
+            <div className='flex flex-wrap items-center justify-between gap-2.5 sm:gap-3'>
+              <div className='flex min-w-0 flex-wrap items-center gap-2'>
+                <span className='text-sm font-medium'>
+                  {t('My Subscriptions')}
+                </span>
+                <span className='flex items-center gap-1.5 text-xs font-medium'>
+                  <span
+                    className={cn(
+                      'size-1.5 shrink-0 rounded-full',
+                      hasActive ? dotColorMap.success : dotColorMap.neutral
+                    )}
+                    aria-hidden='true'
+                  />
+                  {hasActive ? (
+                    <span className={cn(textColorMap.success)}>
+                      {activeSubscriptions.length} {t('active')}
                     </span>
-                  </>
-                )}
-              </span>
-            </div>
-            <div className='flex w-full items-center gap-2 sm:w-auto'>
-              <Select
-                items={[
-                  {
-                    value: 'subscription_first',
-                    label: (
-                      <>
+                  ) : (
+                    <span className='text-muted-foreground'>
+                      {t('No Active')}
+                    </span>
+                  )}
+                  {allSubscriptions.length > activeSubscriptions.length && (
+                    <>
+                      <span className='text-muted-foreground/30'>·</span>
+                      <span className='text-muted-foreground'>
+                        {allSubscriptions.length - activeSubscriptions.length}{' '}
+                        {t('expired')}
+                      </span>
+                    </>
+                  )}
+                </span>
+              </div>
+              <div className='flex w-full items-center gap-2 sm:w-auto'>
+                <Select
+                  items={[
+                    {
+                      value: 'subscription_first',
+                      label: (
+                        <>
+                          {getBillingPreferenceLabel('subscription_first', t)}
+                          {disablePref ? ` (${t('No Active')})` : ''}
+                        </>
+                      ),
+                    },
+                    {
+                      value: 'wallet_first',
+                      label: getBillingPreferenceLabel('wallet_first', t),
+                    },
+                    {
+                      value: 'subscription_only',
+                      label: (
+                        <>
+                          {getBillingPreferenceLabel('subscription_only', t)}
+                          {disablePref ? ` (${t('No Active')})` : ''}
+                        </>
+                      ),
+                    },
+                    {
+                      value: 'wallet_only',
+                      label: getBillingPreferenceLabel('wallet_only', t),
+                    },
+                  ]}
+                  value={displayPref}
+                  onValueChange={(v) => v !== null && handlePreferenceChange(v)}
+                >
+                  <SelectTrigger className='h-8 flex-1 text-xs sm:w-[140px] sm:flex-none'>
+                    <SelectValue>
+                      {getBillingPreferenceLabel(displayPref, t)}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false}>
+                    <SelectGroup>
+                      <SelectItem
+                        value='subscription_first'
+                        disabled={disablePref}
+                      >
                         {getBillingPreferenceLabel('subscription_first', t)}
                         {disablePref ? ` (${t('No Active')})` : ''}
-                      </>
-                    ),
-                  },
-                  {
-                    value: 'wallet_first',
-                    label: getBillingPreferenceLabel('wallet_first', t),
-                  },
-                  {
-                    value: 'subscription_only',
-                    label: (
-                      <>
+                      </SelectItem>
+                      <SelectItem value='wallet_first'>
+                        {getBillingPreferenceLabel('wallet_first', t)}
+                      </SelectItem>
+                      <SelectItem
+                        value='subscription_only'
+                        disabled={disablePref}
+                      >
                         {getBillingPreferenceLabel('subscription_only', t)}
                         {disablePref ? ` (${t('No Active')})` : ''}
-                      </>
-                    ),
-                  },
-                  {
-                    value: 'wallet_only',
-                    label: getBillingPreferenceLabel('wallet_only', t),
-                  },
-                ]}
-                value={displayPref}
-                onValueChange={(v) => v !== null && handlePreferenceChange(v)}
-              >
-                <SelectTrigger className='h-8 flex-1 text-xs sm:w-[140px] sm:flex-none'>
-                  <SelectValue>
-                    {getBillingPreferenceLabel(displayPref, t)}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent alignItemWithTrigger={false}>
-                  <SelectGroup>
-                    <SelectItem
-                      value='subscription_first'
-                      disabled={disablePref}
-                    >
-                      {getBillingPreferenceLabel('subscription_first', t)}
-                      {disablePref ? ` (${t('No Active')})` : ''}
-                    </SelectItem>
-                    <SelectItem value='wallet_first'>
-                      {getBillingPreferenceLabel('wallet_first', t)}
-                    </SelectItem>
-                    <SelectItem
-                      value='subscription_only'
-                      disabled={disablePref}
-                    >
-                      {getBillingPreferenceLabel('subscription_only', t)}
-                      {disablePref ? ` (${t('No Active')})` : ''}
-                    </SelectItem>
-                    <SelectItem value='wallet_only'>
-                      {getBillingPreferenceLabel('wallet_only', t)}
-                    </SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <Button
-                variant='outline'
-                size='sm'
-                className='h-8 gap-1.5 px-2 text-xs'
-                onClick={() => setConsumptionOrderOpen(true)}
-                disabled={!hasActive}
-              >
-                <ListOrdered className='size-3.5' />
-                消耗顺序
-              </Button>
-              <Button
-                variant='ghost'
-                size='icon'
-                className='h-8 w-8'
-                onClick={handleRefresh}
-                disabled={refreshing}
-              >
-                <RefreshCw
-                  className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`}
-                />
-              </Button>
+                      </SelectItem>
+                      <SelectItem value='wallet_only'>
+                        {getBillingPreferenceLabel('wallet_only', t)}
+                      </SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  className='h-8 gap-1.5 px-2 text-xs'
+                  onClick={() => setConsumptionOrderOpen(true)}
+                  disabled={!hasActive}
+                >
+                  <ListOrdered className='size-3.5' />
+                  消耗顺序
+                </Button>
+                <Button
+                  variant='ghost'
+                  size='icon'
+                  className='h-8 w-8'
+                  onClick={handleRefresh}
+                  disabled={refreshing}
+                >
+                  <RefreshCw
+                    className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`}
+                  />
+                </Button>
+              </div>
             </div>
+
+            {disablePref && isSubPref && (
+              <p className='text-muted-foreground mt-2 text-xs'>
+                {t(
+                  'Preference saved as {{pref}}, but no active subscription. Wallet will be used automatically.',
+                  {
+                    pref:
+                      billingPreference === 'subscription_only'
+                        ? t('Subscription Only')
+                        : t('Subscription First'),
+                  }
+                )}
+              </p>
+            )}
+
+            {hasAny && (
+              <>
+                <Separator className='my-3' />
+                <div className='subscription-card-grid'>
+                  {allSubscriptions.map((sub) => {
+                    const subscription = sub.subscription
+                    const totalAmount = Number(subscription?.amount_total || 0)
+                    const usedAmount = Number(subscription?.amount_used || 0)
+                    const remainAmount =
+                      totalAmount > 0
+                        ? Math.max(0, totalAmount - usedAmount)
+                        : 0
+                    const capTotal = Number(subscription?.amount_cap || 0)
+                    const capUsed = Number(subscription?.amount_cap_used || 0)
+                    const capRemain =
+                      capTotal > 0 ? Math.max(0, capTotal - capUsed) : 0
+                    const capPercent =
+                      capTotal > 0 ? Math.round((capUsed / capTotal) * 100) : 0
+                    const allowedGroup = subscription?.allowed_group || ''
+                    const planTitle =
+                      subscription?.plan_title ||
+                      planTitleMap.get(subscription?.plan_id) ||
+                      ''
+                    const remainDays = getRemainingDays(sub)
+                    const usagePercent = getUsagePercent(sub)
+                    const remainPercent =
+                      totalAmount > 0 ? Math.max(0, 100 - usagePercent) : 0
+                    const capRemainPercent =
+                      capTotal > 0 ? Math.max(0, 100 - capPercent) : 0
+                    const quotaBarColor = (pct: number) =>
+                      pct >= 90
+                        ? 'bg-destructive'
+                        : pct >= 70
+                          ? 'bg-warning'
+                          : 'bg-success'
+                    const now = subscriptionReferenceTime
+                    const isExpired = (subscription?.end_time || 0) < now
+                    const isUpcoming = (subscription?.start_time || 0) > now
+                    const isCancelled = subscription?.status === 'cancelled'
+                    const isActive =
+                      subscription?.status === 'active' &&
+                      !isExpired &&
+                      !isUpcoming
+
+                    return (
+                      <div
+                        key={subscription?.id}
+                        className='bg-card hover:border-primary/40 relative flex flex-col overflow-hidden rounded-lg border transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] dark:hover:shadow-[0_8px_24px_rgba(0,0,0,0.4)]'
+                      >
+                        <div className='flex flex-col gap-2 p-3'>
+                          {/* 标题 + 剩余天数药丸 */}
+                          <div className='flex items-start justify-between gap-2'>
+                            <div className='min-w-0'>
+                              <div className='truncate text-sm font-semibold'>
+                                {planTitle ||
+                                  `${t('Subscription')} #${subscription?.id}`}
+                              </div>
+                              <div className='text-muted-foreground text-[10px]'>
+                                {t('Subscription')} #{subscription?.id}
+                              </div>
+                            </div>
+                            {isActive ? (
+                              <span className='bg-success/10 text-success shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium'>
+                                {t('{{count}} days remaining', {
+                                  count: remainDays,
+                                })}
+                              </span>
+                            ) : (
+                              <span className='bg-muted text-muted-foreground shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium'>
+                                {isCancelled
+                                  ? t('Cancelled')
+                                  : isUpcoming
+                                    ? t('Upcoming')
+                                    : t('Expired')}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* 获得时间 / 到期时间 */}
+                          <div className='grid grid-cols-2 gap-2'>
+                            <div>
+                              <div className='text-muted-foreground text-[10px]'>
+                                {t('Start Time')}
+                              </div>
+                              <div className='text-xs'>
+                                {new Date(
+                                  (subscription?.start_time || 0) * 1000
+                                ).toLocaleDateString()}
+                              </div>
+                            </div>
+                            <div>
+                              <div className='text-muted-foreground text-[10px]'>
+                                {isActive
+                                  ? t('Until')
+                                  : isCancelled
+                                    ? t('Cancelled at')
+                                    : t('Expired at')}
+                              </div>
+                              <div className='text-xs'>
+                                {new Date(
+                                  (subscription?.end_time || 0) * 1000
+                                ).toLocaleDateString()}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 可用端点 */}
+                          {allowedGroup && (
+                            <div className='flex items-center gap-1 text-[10px]'>
+                              <span className='text-muted-foreground'>
+                                {t('Available Endpoint')}
+                              </span>
+                              <span className='bg-muted rounded px-1.5 py-0.5 font-medium'>
+                                {allowedGroup}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* 本周/周期额度 */}
+                          {totalAmount > 0 && (
+                            <div className='space-y-1'>
+                              <div className='flex items-baseline justify-between'>
+                                <span className='text-muted-foreground text-[10px]'>
+                                  {t('Period Quota')}
+                                </span>
+                                <span className='text-[10px]'>
+                                  <span className='text-primary text-xs font-bold'>
+                                    {formatQuota(remainAmount)}
+                                  </span>
+                                  <span className='text-muted-foreground'>
+                                    {' '}
+                                    / {formatQuota(totalAmount)}
+                                  </span>
+                                </span>
+                              </div>
+                              <div className='bg-primary/10 h-2.5 w-full overflow-hidden rounded-full'>
+                                <div
+                                  className={cn(
+                                    'h-full rounded-full transition-all',
+                                    quotaBarColor(usagePercent)
+                                  )}
+                                  style={{
+                                    width: `${Math.min(100, remainPercent)}%`,
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 月/总额度上限 */}
+                          {capTotal > 0 && (
+                            <div className='space-y-1'>
+                              <div className='flex items-baseline justify-between'>
+                                <span className='text-muted-foreground text-[10px]'>
+                                  {t('Total Cap')}
+                                </span>
+                                <span className='text-[10px]'>
+                                  <span className='text-primary text-xs font-bold'>
+                                    {formatQuota(capRemain)}
+                                  </span>
+                                  <span className='text-muted-foreground'>
+                                    {' '}
+                                    / {formatQuota(capTotal)}
+                                  </span>
+                                </span>
+                              </div>
+                              <div className='bg-primary/10 h-2.5 w-full overflow-hidden rounded-full'>
+                                <div
+                                  className={cn(
+                                    'h-full rounded-full transition-all',
+                                    quotaBarColor(capPercent)
+                                  )}
+                                  style={{
+                                    width: `${Math.min(100, capRemainPercent)}%`,
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 周期 */}
+                          {isActive &&
+                            (subscription?.next_reset_time ?? 0) > 0 && (
+                              <div className='text-muted-foreground text-[10px]'>
+                                {t('Next reset')}:{' '}
+                                {new Date(
+                                  subscription!.next_reset_time! * 1000
+                                ).toLocaleString()}
+                              </div>
+                            )}
+
+                          {subscription?.remark && (
+                            <div className='bg-muted/60 rounded-md px-2 py-1.5 text-[11px]'>
+                              <span className='text-muted-foreground'>
+                                {t('Remark')}：
+                              </span>
+                              {subscription.remark}
+                            </div>
+                          )}
+
+                          <div className='grid grid-cols-3 gap-1.5 pt-1'>
+                            <Button
+                              type='button'
+                              variant='outline'
+                              size='sm'
+                              className='h-7 px-2 text-[11px]'
+                              disabled={!isActive}
+                              onClick={() => {
+                                setSelectedSubscription(subscription)
+                                setManagementOpen(true)
+                              }}
+                            >
+                              <Settings2 className='mr-1 h-3 w-3' />
+                              {t('Manage')}
+                            </Button>
+                            <Button
+                              type='button'
+                              variant='outline'
+                              size='sm'
+                              className='h-7 px-2 text-[11px]'
+                              onClick={() => {
+                                setSelectedSubscription(subscription)
+                                setRemarkOpen(true)
+                              }}
+                            >
+                              <Pencil className='mr-1 h-3 w-3' />
+                              {t('Remark')}
+                            </Button>
+                            <Button
+                              type='button'
+                              size='sm'
+                              className='h-7 px-2 text-[11px]'
+                              disabled={
+                                isCancelled || renewingId === subscription.id
+                              }
+                              onClick={() => handleRenew(subscription)}
+                            >
+                              <RotateCw
+                                className={cn(
+                                  'mr-1 h-3 w-3',
+                                  renewingId === subscription.id &&
+                                    'animate-spin'
+                                )}
+                              />
+                              {t('Renew')}
+                            </Button>
+                          </div>
+                        </div>
+
+                        {/* 底部能量条已移除 */}
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+
+            {!hasAny && (
+              <p className='text-muted-foreground mt-2 text-xs'>
+                {t('Subscribe to a plan for model access')}
+              </p>
+            )}
           </div>
 
-          {disablePref && isSubPref && (
-            <p className='text-muted-foreground mt-2 text-xs'>
-              {t(
-                'Preference saved as {{pref}}, but no active subscription. Wallet will be used automatically.',
-                {
-                  pref:
-                    billingPreference === 'subscription_only'
-                      ? t('Subscription Only')
-                      : t('Subscription First'),
-                }
-              )}
-            </p>
-          )}
+          {/* Available plans grid */}
+          {plans.length > 0 ? (
+            <div className='subscription-card-grid'>
+              {plans.map((p, index) => {
+                const plan = p?.plan
+                if (!plan) return null
+                const totalAmount = Number(plan.total_amount || 0)
+                const price = Number(plan.price_amount || 0).toFixed(2)
+                const isPopular =
+                  Boolean(plan.recommended) || (index === 0 && plans.length > 1)
+                const limit = Number(plan.max_purchase_per_user || 0)
+                const count = planPurchaseCountMap.get(plan.id) || 0
+                const reached = limit > 0 && count >= limit
 
-          {hasAny && (
-            <>
-              <Separator className='my-3' />
-              <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3'>
-                {allSubscriptions.map((sub) => {
-                  const subscription = sub.subscription
-                  const totalAmount = Number(subscription?.amount_total || 0)
-                  const usedAmount = Number(subscription?.amount_used || 0)
-                  const remainAmount =
-                    totalAmount > 0 ? Math.max(0, totalAmount - usedAmount) : 0
-                  const capTotal = Number(subscription?.amount_cap || 0)
-                  const capUsed = Number(subscription?.amount_cap_used || 0)
-                  const capRemain =
-                    capTotal > 0 ? Math.max(0, capTotal - capUsed) : 0
-                  const capPercent =
-                    capTotal > 0 ? Math.round((capUsed / capTotal) * 100) : 0
-                  const allowedGroup = subscription?.allowed_group || ''
-                  const planTitle =
-                    subscription?.plan_title ||
-                    planTitleMap.get(subscription?.plan_id) ||
-                    ''
-                  const remainDays = getRemainingDays(sub)
-                  const usagePercent = getUsagePercent(sub)
-                  const remainPercent =
-                    totalAmount > 0 ? Math.max(0, 100 - usagePercent) : 0
-                  const capRemainPercent =
-                    capTotal > 0 ? Math.max(0, 100 - capPercent) : 0
-                  const quotaBarColor = (pct: number) =>
-                    pct >= 90
-                      ? 'bg-destructive'
-                      : pct >= 70
-                        ? 'bg-warning'
-                        : 'bg-success'
-                  const now = subscriptionReferenceTime
-                  const isExpired = (subscription?.end_time || 0) < now
-                  const isUpcoming = (subscription?.start_time || 0) > now
-                  const isCancelled = subscription?.status === 'cancelled'
-                  const isActive =
-                    subscription?.status === 'active' &&
-                    !isExpired &&
-                    !isUpcoming
+                // 限额标签按重置周期动态: daily→日限额/weekly→周限额/monthly→月限额
+                const limitLabel =
+                  plan.quota_reset_period === 'daily'
+                    ? t('Daily Limit')
+                    : plan.quota_reset_period === 'weekly'
+                      ? t('Weekly Limit')
+                      : plan.quota_reset_period === 'monthly'
+                        ? t('Monthly Limit')
+                        : t('Total Quota')
+                // 三要素（时长/额度）抽到价格区突出展示，对照商务样图「价格/周期/额度」前置
+                const validityLabel = formatDuration(plan, t)
+                const quotaLabel =
+                  totalAmount > 0 ? formatQuota(totalAmount) : t('Unlimited')
+                const remainingBenefits = [
+                  Number(plan.lucky_card_grant_count || 0) > 0
+                    ? {
+                        label: '立即获得幸运卡',
+                        value: `${Number(plan.lucky_card_grant_count)} 张`,
+                      }
+                    : null,
+                  plan.lucky_card_on_reset &&
+                  plan.quota_reset_period !== 'never'
+                    ? {
+                        label: '周期幸运卡',
+                        value: '每次重置获得 1 张',
+                      }
+                    : null,
+                  formatResetPeriod(plan, t) !== t('No Reset')
+                    ? {
+                        label: t('Quota Reset'),
+                        value: formatResetPeriod(plan, t),
+                      }
+                    : null,
+                  plan.number_pool
+                    ? { label: t('Number Pool'), value: plan.number_pool }
+                    : null,
+                  plan.model_limit
+                    ? { label: t('Model Limit'), value: plan.model_limit }
+                    : null,
+                  plan.plan_version
+                    ? {
+                        label: t('Plan Version'),
+                        value: t(versionLabelOf(plan.plan_version)),
+                      }
+                    : null,
+                  plan.min_ratio
+                    ? { label: t('Min Ratio'), value: `×${plan.min_ratio}` }
+                    : null,
+                  plan.allowed_group
+                    ? { label: t('Allowed Group'), value: plan.allowed_group }
+                    : null,
+                  limit > 0
+                    ? { label: t('Purchase Limit'), value: String(limit) }
+                    : null,
+                  plan.upgrade_group
+                    ? { label: t('Upgrade Group'), value: plan.upgrade_group }
+                    : null,
+                ].filter(Boolean) as { label: string; value: string }[]
 
-                  return (
-                    <div
-                      key={subscription?.id}
-                      className='bg-card hover:border-primary/40 relative flex flex-col overflow-hidden rounded-lg border transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] dark:hover:shadow-[0_8px_24px_rgba(0,0,0,0.4)]'
-                    >
-                      <div className='flex flex-col gap-2 p-3'>
-                        {/* 标题 + 剩余天数药丸 */}
-                        <div className='flex items-start justify-between gap-2'>
-                          <div className='min-w-0'>
-                            <div className='truncate text-sm font-semibold'>
-                              {planTitle ||
-                                `${t('Subscription')} #${subscription?.id}`}
-                            </div>
-                            <div className='text-muted-foreground text-[10px]'>
-                              {t('Subscription')} #{subscription?.id}
-                            </div>
-                          </div>
-                          {isActive ? (
-                            <span className='bg-success/10 text-success shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium'>
-                              {t('{{count}} days remaining', {
-                                count: remainDays,
-                              })}
-                            </span>
-                          ) : (
-                            <span className='bg-muted text-muted-foreground shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium'>
-                              {isCancelled
-                                ? t('Cancelled')
-                                : isUpcoming
-                                  ? t('Upcoming')
-                                  : t('Expired')}
-                            </span>
-                          )}
-                        </div>
+                const planVersionStyle =
+                  plan.plan_version && PLAN_VERSION_STYLES[plan.plan_version]
+                    ? PLAN_VERSION_STYLES[plan.plan_version]
+                    : null
+                const wrapperClass = planVersionStyle
+                  ? planVersionStyle.wrapper
+                  : isPopular
+                    ? 'border border-primary/40 bg-card'
+                    : 'border border-border bg-card'
+                const innerClass = planVersionStyle
+                  ? cn(
+                      planVersionStyle.inner,
+                      planVersionStyle.ring,
+                      'border bg-card/85 backdrop-blur-sm'
+                    )
+                  : isPopular
+                    ? 'border-0 bg-transparent ring-1 ring-primary/25'
+                    : 'border-0 bg-transparent hover:border-primary/40'
+                const specularColor = planVersionStyle
+                  ? `${planVersionStyle.accent}cc`
+                  : 'rgba(255,255,255,0.5)'
 
-                        {/* 获得时间 / 到期时间 */}
-                        <div className='grid grid-cols-2 gap-2'>
-                          <div>
-                            <div className='text-muted-foreground text-[10px]'>
-                              {t('Start Time')}
-                            </div>
-                            <div className='text-xs'>
-                              {new Date(
-                                (subscription?.start_time || 0) * 1000
-                              ).toLocaleDateString()}
-                            </div>
-                          </div>
-                          <div>
-                            <div className='text-muted-foreground text-[10px]'>
-                              {isActive
-                                ? t('Until')
-                                : isCancelled
-                                  ? t('Cancelled at')
-                                  : t('Expired at')}
-                            </div>
-                            <div className='text-xs'>
-                              {new Date(
-                                (subscription?.end_time || 0) * 1000
-                              ).toLocaleDateString()}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* 可用端点 */}
-                        {allowedGroup && (
-                          <div className='flex items-center gap-1 text-[10px]'>
-                            <span className='text-muted-foreground'>
-                              {t('Available Endpoint')}
-                            </span>
-                            <span className='bg-muted rounded px-1.5 py-0.5 font-medium'>
-                              {allowedGroup}
-                            </span>
-                          </div>
-                        )}
-
-                        {/* 本周/周期额度 */}
-                        {totalAmount > 0 && (
-                          <div className='space-y-1'>
-                            <div className='flex items-baseline justify-between'>
-                              <span className='text-muted-foreground text-[10px]'>
-                                {t('Period Quota')}
-                              </span>
-                              <span className='text-[10px]'>
-                                <span className='text-primary text-xs font-bold'>
-                                  {formatQuota(remainAmount)}
-                                </span>
-                                <span className='text-muted-foreground'>
-                                  {' '}
-                                  / {formatQuota(totalAmount)}
-                                </span>
-                              </span>
-                            </div>
-                            <div className='bg-primary/10 h-2.5 w-full overflow-hidden rounded-full'>
-                              <div
-                                className={cn(
-                                  'h-full rounded-full transition-all',
-                                  quotaBarColor(usagePercent)
-                                )}
-                                style={{
-                                  width: `${Math.min(100, remainPercent)}%`,
-                                }}
-                              />
-                            </div>
-                          </div>
-                        )}
-
-                        {/* 月/总额度上限 */}
-                        {capTotal > 0 && (
-                          <div className='space-y-1'>
-                            <div className='flex items-baseline justify-between'>
-                              <span className='text-muted-foreground text-[10px]'>
-                                {t('Total Cap')}
-                              </span>
-                              <span className='text-[10px]'>
-                                <span className='text-primary text-xs font-bold'>
-                                  {formatQuota(capRemain)}
-                                </span>
-                                <span className='text-muted-foreground'>
-                                  {' '}
-                                  / {formatQuota(capTotal)}
-                                </span>
-                              </span>
-                            </div>
-                            <div className='bg-primary/10 h-2.5 w-full overflow-hidden rounded-full'>
-                              <div
-                                className={cn(
-                                  'h-full rounded-full transition-all',
-                                  quotaBarColor(capPercent)
-                                )}
-                                style={{
-                                  width: `${Math.min(100, capRemainPercent)}%`,
-                                }}
-                              />
-                            </div>
-                          </div>
-                        )}
-
-                        {/* 周期 */}
-                        {isActive &&
-                          (subscription?.next_reset_time ?? 0) > 0 && (
-                            <div className='text-muted-foreground text-[10px]'>
-                              {t('Next reset')}:{' '}
-                              {new Date(
-                                subscription!.next_reset_time! * 1000
-                              ).toLocaleString()}
-                            </div>
-                          )}
-
-                        {subscription?.remark && (
-                          <div className='bg-muted/60 rounded-md px-2 py-1.5 text-[11px]'>
-                            <span className='text-muted-foreground'>
-                              {t('Remark')}：
-                            </span>
-                            {subscription.remark}
-                          </div>
-                        )}
-
-                        <div className='grid grid-cols-3 gap-1.5 pt-1'>
-                          <Button
-                            type='button'
-                            variant='outline'
-                            size='sm'
-                            className='h-7 px-2 text-[11px]'
-                            disabled={!isActive}
-                            onClick={() => {
-                              setSelectedSubscription(subscription)
-                              setManagementOpen(true)
-                            }}
-                          >
-                            <Settings2 className='mr-1 h-3 w-3' />
-                            {t('Manage')}
-                          </Button>
-                          <Button
-                            type='button'
-                            variant='outline'
-                            size='sm'
-                            className='h-7 px-2 text-[11px]'
-                            onClick={() => {
-                              setSelectedSubscription(subscription)
-                              setRemarkOpen(true)
-                            }}
-                          >
-                            <Pencil className='mr-1 h-3 w-3' />
-                            {t('Remark')}
-                          </Button>
-                          <Button
-                            type='button'
-                            size='sm'
-                            className='h-7 px-2 text-[11px]'
-                            disabled={
-                              isCancelled || renewingId === subscription.id
-                            }
-                            onClick={() => handleRenew(subscription)}
-                          >
-                            <RotateCw
-                              className={cn(
-                                'mr-1 h-3 w-3',
-                                renewingId === subscription.id && 'animate-spin'
-                              )}
-                            />
-                            {t('Renew')}
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* 底部能量条已移除 */}
-                    </div>
-                  )
-                })}
-              </div>
-            </>
-          )}
-
-          {!hasAny && (
-            <p className='text-muted-foreground mt-2 text-xs'>
-              {t('Subscribe to a plan for model access')}
-            </p>
-          )}
-        </div>
-
-        {/* Available plans grid */}
-        {plans.length > 0 ? (
-          <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:gap-4'>
-            {plans.map((p, index) => {
-              const plan = p?.plan
-              if (!plan) return null
-              const totalAmount = Number(plan.total_amount || 0)
-              const price = Number(plan.price_amount || 0).toFixed(2)
-              const isPopular =
-                Boolean(plan.recommended) || (index === 0 && plans.length > 1)
-              const limit = Number(plan.max_purchase_per_user || 0)
-              const count = planPurchaseCountMap.get(plan.id) || 0
-              const reached = limit > 0 && count >= limit
-
-              // 限额标签按重置周期动态: daily→日限额/weekly→周限额/monthly→月限额
-              const limitLabel =
-                plan.quota_reset_period === 'daily'
-                  ? t('Daily Limit')
-                  : plan.quota_reset_period === 'weekly'
-                    ? t('Weekly Limit')
-                    : plan.quota_reset_period === 'monthly'
-                      ? t('Monthly Limit')
-                      : t('Total Quota')
-              // 三要素（时长/额度）抽到价格区突出展示，对照商务样图「价格/周期/额度」前置
-              const validityLabel = formatDuration(plan, t)
-              const quotaLabel =
-                totalAmount > 0 ? formatQuota(totalAmount) : t('Unlimited')
-              const remainingBenefits = [
-                Number(plan.lucky_card_grant_count || 0) > 0
-                  ? {
-                      label: '立即获得幸运卡',
-                      value: `${Number(plan.lucky_card_grant_count)} 张`,
-                    }
-                  : null,
-                plan.lucky_card_on_reset && plan.quota_reset_period !== 'never'
-                  ? {
-                      label: '周期幸运卡',
-                      value: '每次重置获得 1 张',
-                    }
-                  : null,
-                formatResetPeriod(plan, t) !== t('No Reset')
-                  ? {
-                      label: t('Quota Reset'),
-                      value: formatResetPeriod(plan, t),
-                    }
-                  : null,
-                plan.number_pool
-                  ? { label: t('Number Pool'), value: plan.number_pool }
-                  : null,
-                plan.model_limit
-                  ? { label: t('Model Limit'), value: plan.model_limit }
-                  : null,
-                plan.plan_version
-                  ? {
-                      label: t('Plan Version'),
-                      value: t(versionLabelOf(plan.plan_version)),
-                    }
-                  : null,
-                plan.min_ratio
-                  ? { label: t('Min Ratio'), value: `×${plan.min_ratio}` }
-                  : null,
-                plan.allowed_group
-                  ? { label: t('Allowed Group'), value: plan.allowed_group }
-                  : null,
-                limit > 0
-                  ? { label: t('Purchase Limit'), value: String(limit) }
-                  : null,
-                plan.upgrade_group
-                  ? { label: t('Upgrade Group'), value: plan.upgrade_group }
-                  : null,
-              ].filter(Boolean) as { label: string; value: string }[]
-
-              const planVersionStyle =
-                plan.plan_version && PLAN_VERSION_STYLES[plan.plan_version]
-                  ? PLAN_VERSION_STYLES[plan.plan_version]
-                  : null
-
-              return (
-                <div
-                  key={plan.id}
-                  className={cn(
-                    'rounded-xl transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] dark:hover:shadow-[0_8px_24px_rgba(0,0,0,0.4)]',
-                    planVersionStyle ? planVersionStyle.wrapper : ''
-                  )}
-                >
-                  <Card
-                    data-card-hover='false'
+                return (
+                  <SpecularCard
+                    key={plan.id}
+                    specularColor={specularColor}
+                    specularRadius={220}
+                    specularIntensity={0.85}
                     className={cn(
-                      'relative h-full overflow-hidden transition-colors',
-                      planVersionStyle
-                        ? planVersionStyle.inner
-                        : isPopular
-                          ? 'border-primary ring-primary/25 ring-1'
-                          : 'hover:border-primary/40'
+                      'rounded-2xl border p-px transition-[transform,box-shadow] duration-300 hover:-translate-y-1',
+                      wrapperClass
                     )}
                   >
-                    <CardContent className='flex h-full flex-col p-5 sm:p-6'>
-                      {planVersionStyle && (
-                        <span
-                          className={cn(
-                            'absolute top-3 right-3 z-10 rounded-full px-2.5 py-0.5 text-[11px] font-semibold shadow-sm',
-                            planVersionStyle.badge
-                          )}
-                        >
-                          {t(versionLabelOf(plan.plan_version))}
-                        </span>
+                    <Card
+                      data-card-hover='false'
+                      className={cn(
+                        'relative h-full overflow-hidden rounded-2xl transition-colors duration-300',
+                        innerClass
                       )}
-                      <div className='mb-3 text-center'>
-                        <h4 className='truncate text-base font-semibold'>
-                          {plan.title || t('Subscription Plans')}
-                        </h4>
-                        {plan.suitable_for && (
-                          <p className='text-muted-foreground mt-1 text-xs'>
-                            <span className='text-foreground/70'>
-                              {t('Suitable for')}{' '}
+                    >
+                      <CardContent className='subscription-plan-card-content relative z-[3] flex h-full flex-col'>
+                        {planVersionStyle && (
+                          <span className='absolute top-3 right-3 z-[4] inline-block'>
+                            <span className={planVersionStyle.badge}>
+                              {t(versionLabelOf(plan.plan_version))}
                             </span>
-                            {plan.suitable_for}
-                          </p>
+                          </span>
                         )}
-                        {plan.subtitle && (
-                          <p className='text-muted-foreground mt-1 line-clamp-2 text-xs'>
-                            {plan.subtitle}
-                          </p>
-                        )}
-                      </div>
-
-                      {/* 价格 + 周期合体（对照样图：¥X/年） */}
-                      <div className='text-center'>
-                        <span className='text-foreground text-3xl font-bold tabular-nums'>
-                          ${price}
-                        </span>
-                        <span className='text-muted-foreground text-sm'>
-                          {' '}
-                          / {validityLabel}
-                        </span>
-                      </div>
-
-                      {/* 额度：周期额度 + 总额度 同行展示 */}
-                      <div className='mt-1 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-sm'>
-                        <span className='text-foreground font-semibold tabular-nums'>
-                          {quotaLabel}
-                        </span>
-                        <span className='text-muted-foreground text-xs'>
-                          {limitLabel}
-                        </span>
-                        {plan.amount_cap ? (
-                          <>
-                            <span className='text-muted-foreground/40'>·</span>
-                            <span className='text-foreground font-semibold tabular-nums'>
-                              {formatQuota(Number(plan.amount_cap))}
-                            </span>
-                            <span className='text-muted-foreground text-xs'>
-                              {t('Total Cap')}
-                            </span>
-                          </>
-                        ) : null}
-                      </div>
-
-                      {/* CTA 蓝色实心，放在权益列表上方（对照样图） */}
-                      <div className='mt-4 mb-4'>
-                        {reached ? (
-                          <Tooltip>
-                            <TooltipTrigger render={<div />}>
-                              <Button
-                                variant='outline'
-                                className='w-full'
-                                disabled
-                              >
-                                {t('Limit Reached')}
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {t('Purchase limit reached')} ({count}/{limit})
-                            </TooltipContent>
-                          </Tooltip>
-                        ) : (
-                          <Button
-                            variant='gradient'
-                            className='w-full'
-                            onClick={() => {
-                              if (
-                                plan.description &&
-                                !localStorage.getItem(
-                                  `sub-desc-hide-${plan.id}`
-                                )
-                              ) {
-                                setDescPlan(p)
-                              } else {
-                                setRenewalPreview(null)
-                                setSelectedPlan(p)
-                                setPurchaseOpen(true)
-                              }
-                            }}
-                          >
-                            {t('Subscribe Now')}
-                          </Button>
-                        )}
-                      </div>
-
-                      {/* 权益列表：次要信息，下半部分，细线分隔 */}
-                      <div className='flex-1 border-t pt-4'>
-                        <div className='space-y-2'>
-                          {remainingBenefits.map((b) => (
-                            <div
-                              key={b.label}
-                              className='flex items-start gap-2 text-xs'
-                            >
-                              <Check className='text-foreground mt-0.5 h-3.5 w-3.5 shrink-0' />
-                              <span className='text-muted-foreground'>
-                                {b.label}:
+                        <div className='mb-3 text-center'>
+                          <h4 className='truncate text-base font-semibold'>
+                            {plan.title || t('Subscription Plans')}
+                          </h4>
+                          {plan.suitable_for && (
+                            <p className='text-muted-foreground mt-1 text-xs'>
+                              <span className='text-foreground/70'>
+                                {t('Suitable for')}{' '}
                               </span>
-                              <span className='text-foreground font-medium'>
-                                {b.value}
-                              </span>
-                            </div>
-                          ))}
+                              {plan.suitable_for}
+                            </p>
+                          )}
+                          {plan.subtitle && (
+                            <p className='text-muted-foreground mt-1 line-clamp-2 text-xs'>
+                              {plan.subtitle}
+                            </p>
+                          )}
                         </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              )
-            })}
-          </div>
-        ) : (
-          <p className='text-muted-foreground py-4 text-center text-sm'>
-            {t('No plans available')}
-          </p>
-        )}
-      </TitledCard>
+
+                        {/* 价格 + 周期合体（对照样图：¥X/年） */}
+                        <div className='text-center'>
+                          <span className='text-foreground text-3xl font-bold tabular-nums'>
+                            ${price}
+                          </span>
+                          <span className='text-muted-foreground text-sm'>
+                            {' '}
+                            / {validityLabel}
+                          </span>
+                        </div>
+
+                        {/* 额度：周期额度 + 总额度 同行展示 */}
+                        <div className='mt-1 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-sm'>
+                          <span className='text-foreground font-semibold tabular-nums'>
+                            {quotaLabel}
+                          </span>
+                          <span className='text-muted-foreground text-xs'>
+                            {limitLabel}
+                          </span>
+                          {plan.amount_cap ? (
+                            <>
+                              <span className='text-muted-foreground/40'>
+                                ·
+                              </span>
+                              <span className='text-foreground font-semibold tabular-nums'>
+                                {formatQuota(Number(plan.amount_cap))}
+                              </span>
+                              <span className='text-muted-foreground text-xs'>
+                                {t('Total Cap')}
+                              </span>
+                            </>
+                          ) : null}
+                        </div>
+
+                        {/* CTA 蓝色实心，放在权益列表上方（对照样图） */}
+                        <div className='mt-4 mb-4'>
+                          {reached ? (
+                            <Tooltip>
+                              <TooltipTrigger render={<div />}>
+                                <Button
+                                  variant='outline'
+                                  className='w-full'
+                                  disabled
+                                >
+                                  {t('Limit Reached')}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {t('Purchase limit reached')} ({count}/{limit})
+                              </TooltipContent>
+                            </Tooltip>
+                          ) : (
+                            <GooeyButton
+                              className='h-9 w-full rounded-lg bg-black text-sm font-semibold text-white shadow-[0_6px_18px_-6px_rgba(0,0,0,0.6)] transition-colors hover:bg-neutral-900 dark:bg-white dark:text-black dark:hover:bg-neutral-200'
+                              onClick={() => {
+                                if (
+                                  plan.description &&
+                                  !localStorage.getItem(
+                                    `sub-desc-hide-${plan.id}`
+                                  )
+                                ) {
+                                  setDescPlan(p)
+                                } else {
+                                  setRenewalPreview(null)
+                                  setSelectedPlan(p)
+                                  setPurchaseOpen(true)
+                                }
+                              }}
+                            >
+                              {t('Subscribe Now')}
+                            </GooeyButton>
+                          )}
+                        </div>
+
+                        {/* 权益列表：次要信息，下半部分，细线分隔 */}
+                        <div className='flex-1 border-t pt-4'>
+                          <div className='space-y-2'>
+                            {remainingBenefits.map((b) => (
+                              <div
+                                key={b.label}
+                                className='flex items-start gap-2 text-xs'
+                              >
+                                <Check className='text-foreground mt-0.5 h-3.5 w-3.5 shrink-0' />
+                                <span className='text-muted-foreground'>
+                                  {b.label}:
+                                </span>
+                                <span className='text-foreground font-medium'>
+                                  {b.value}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </SpecularCard>
+                )
+              })}
+            </div>
+          ) : (
+            <p className='text-muted-foreground py-4 text-center text-sm'>
+              {t('No plans available')}
+            </p>
+          )}
+        </TitledCard>
+      </div>
 
       {/* 套餐介绍弹窗: 有 description 时点击订阅先弹, "已阅读"继续/"永不展示"localStorage 记住 */}
       {descPlan && (

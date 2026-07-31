@@ -418,7 +418,7 @@ export function UsageStatistics() {
             </div>
           )}
 
-          <div className='grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6'>
+          <div className='grid gap-3 @3xl/content:grid-cols-2 @5xl/content:grid-cols-3 @7xl/content:grid-cols-6'>
             {cards.map((card) => (
               <MetricShell key={card.key}>
                 <StatCard
@@ -437,7 +437,7 @@ export function UsageStatistics() {
             ))}
           </div>
 
-          <div className='mt-3 grid gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(22rem,0.85fr)]'>
+          <div className='mt-3 grid gap-3 @5xl/content:grid-cols-[minmax(0,1.35fr)_minmax(22rem,0.85fr)]'>
             <ModelsPanel data={data} loading={query.isPending} />
             <SubscriptionsPanel data={data} loading={query.isPending} />
           </div>
