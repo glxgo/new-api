@@ -1157,6 +1157,29 @@ func ManageUser(c *gin.Context) {
 			"message": "",
 		})
 		return
+	case "enable_security_whitelist", "disable_security_whitelist":
+		if myRole != common.RoleRootUser {
+			common.ApiErrorMsg(c, "仅超级管理员可以管理安全邮件白名单")
+			return
+		}
+		enabled := req.Action == "enable_security_whitelist"
+		if err := model.SetUserSecurityWhitelist(user.Id, enabled); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		recordManageAuditFor(c, user.Id, "user.security_whitelist", map[string]interface{}{
+			"username": user.Username,
+			"id":       user.Id,
+			"enabled":  enabled,
+		})
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "",
+			"data": gin.H{
+				"security_whitelisted": enabled,
+			},
+		})
+		return
 	case "add_quota":
 		switch req.Mode {
 		case "add":

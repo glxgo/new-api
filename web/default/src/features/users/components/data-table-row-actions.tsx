@@ -29,6 +29,7 @@ import {
   Handshake,
   KeyRound,
   ShieldAlert,
+  ShieldCheck,
   Link2,
   CreditCard,
   RotateCcw,
@@ -71,6 +72,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const [bindingDialogOpen, setBindingDialogOpen] = useState(false)
   const [subscriptionsDialogOpen, setSubscriptionsDialogOpen] = useState(false)
   const [resetSecurityOpen, setResetSecurityOpen] = useState(false)
+  const [securityWhitelistOpen, setSecurityWhitelistOpen] = useState(false)
 
   const handleEdit = () => {
     setCurrentRow(user)
@@ -258,6 +260,20 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
             </DropdownMenuItem>
           )}
 
+          <DropdownMenuItem
+            onSelect={(event) => {
+              event.preventDefault()
+              setSecurityWhitelistOpen(true)
+            }}
+          >
+            {user.security_whitelisted
+              ? t('Remove from Security Email Whitelist')
+              : t('Add to Security Email Whitelist')}
+            <DropdownMenuShortcut>
+              <ShieldCheck size={16} />
+            </DropdownMenuShortcut>
+          </DropdownMenuItem>
+
           <DropdownMenuSeparator />
 
           <DropdownMenuItem
@@ -331,6 +347,38 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         handleConfirm={async () => {
           await handleManage('reset_security')
           setResetSecurityOpen(false)
+        }}
+      />
+
+      <ConfirmDialog
+        open={securityWhitelistOpen}
+        onOpenChange={setSecurityWhitelistOpen}
+        title={
+          user.security_whitelisted
+            ? t('Remove Security Email Whitelist')
+            : t('Add Security Email Whitelist')
+        }
+        desc={
+          user.security_whitelisted
+            ? t(
+                '{{username}} will receive security interception emails again, limited to one every 6 hours.',
+                { username: user.username }
+              )
+            : t(
+                '{{username}} will remain auditable, but will not receive security interception emails.',
+                { username: user.username }
+              )
+        }
+        confirmText={
+          user.security_whitelisted ? t('Remove Whitelist') : t('Add Whitelist')
+        }
+        handleConfirm={async () => {
+          await handleManage(
+            user.security_whitelisted
+              ? 'disable_security_whitelist'
+              : 'enable_security_whitelist'
+          )
+          setSecurityWhitelistOpen(false)
         }}
       />
 

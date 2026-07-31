@@ -141,6 +141,15 @@ export const useUsersData = () => {
           if (action === 'delete') {
             return { ...u, DeletedAt: new Date() };
           }
+          if (
+            action === 'enable_security_whitelist' ||
+            action === 'disable_security_whitelist'
+          ) {
+            return {
+              ...u,
+              security_whitelisted: action === 'enable_security_whitelist',
+            };
+          }
           return { ...u, status: user.status, role: user.role };
         }
         return u;

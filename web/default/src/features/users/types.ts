@@ -69,6 +69,7 @@ export const userSchema = z.object({
   security_strike_count: z.number().default(0),
   security_suspended_until: z.number().default(0),
   security_permanent_ban: z.boolean().default(false),
+  security_whitelisted: z.boolean().default(false),
 })
 export type User = z.infer<typeof userSchema>
 
@@ -133,6 +134,8 @@ export type ManageUserAction =
   | 'disable'
   | 'delete'
   | 'reset_security'
+  | 'enable_security_whitelist'
+  | 'disable_security_whitelist'
   | 'add_quota'
 
 export type QuotaAdjustMode = 'add' | 'subtract' | 'override'
