@@ -20,6 +20,8 @@ const (
 	UserSecurityActionIntercepted      = "intercepted"
 
 	UserSecurityErrorCodeContentPolicyBlocked = "content_policy_blocked"
+
+	cyberPolicyInterceptionNotificationCooldown = 6 * time.Hour
 )
 
 type UserSecurityIncident struct {
@@ -168,7 +170,10 @@ func RecordCyberPolicyInterception(userId int, tokenId int, requestId string, mo
 
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var user User
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").Select("id").Where("id = ?", userId).First(&user).Error; err != nil {
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").
+			Select("id", "security_whitelisted").
+			Where("id = ?", userId).
+			First(&user).Error; err != nil {
 			return err
 		}
 
@@ -186,7 +191,7 @@ func RecordCyberPolicyInterception(userId int, tokenId int, requestId string, mo
 				userId,
 				UserSecurityRuleCyberPolicy,
 				UserSecurityActionIntercepted,
-				now-int64((24*time.Hour).Seconds()),
+				now-int64(cyberPolicyInterceptionNotificationCooldown.Seconds()),
 			).
 			Count(&recentNotifications).Error; err != nil {
 			return err
@@ -207,7 +212,7 @@ func RecordCyberPolicyInterception(userId int, tokenId int, requestId string, mo
 			return err
 		}
 		result.Recorded = true
-		result.ShouldNotify = recentNotifications == 0
+		result.ShouldNotify = !user.SecurityWhitelisted && recentNotifications == 0
 		return nil
 	})
 	if err != nil {

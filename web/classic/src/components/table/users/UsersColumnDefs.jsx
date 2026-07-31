@@ -216,6 +216,7 @@ const renderOperations = (
     showResetPasskeyModal,
     showResetTwoFAModal,
     showUserSubscriptionsModal,
+    manageUser,
     t,
   },
 ) => {
@@ -228,6 +229,20 @@ const renderOperations = (
       node: 'item',
       name: t('订阅管理'),
       onClick: () => showUserSubscriptionsModal(record),
+    },
+    {
+      node: 'item',
+      name: record.security_whitelisted
+        ? t('移出安全邮件白名单')
+        : t('加入安全邮件白名单'),
+      onClick: () =>
+        manageUser(
+          record.id,
+          record.security_whitelisted
+            ? 'disable_security_whitelist'
+            : 'enable_security_whitelist',
+          record,
+        ),
     },
     {
       node: 'divider',
@@ -316,6 +331,7 @@ export const getUsersColumns = ({
   showResetPasskeyModal,
   showResetTwoFAModal,
   showUserSubscriptionsModal,
+  manageUser,
 }) => {
   return [
     {
@@ -383,6 +399,7 @@ export const getUsersColumns = ({
           showResetPasskeyModal,
           showResetTwoFAModal,
           showUserSubscriptionsModal,
+          manageUser,
           t,
         }),
     },

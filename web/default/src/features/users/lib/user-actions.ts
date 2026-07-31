@@ -31,6 +31,8 @@ const ACTION_MESSAGES: Record<ManageUserAction, string> = {
   remove_agent: 'Agent role removed successfully',
   delete: 'User deleted successfully',
   reset_security: 'Security restriction cleared successfully',
+  enable_security_whitelist: 'Security email whitelist enabled successfully',
+  disable_security_whitelist: 'Security email whitelist disabled successfully',
   add_quota: 'Quota adjusted successfully',
 }
 

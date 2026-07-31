@@ -173,7 +173,7 @@ func TestCyberPolicyInterceptionTakesPriorityWithoutPunishment(t *testing.T) {
 	require.True(t, second.Recorded)
 	require.False(t, second.ShouldNotify)
 
-	afterCooldown, err := RecordCyberPolicyInterception(user.Id, 6, "intercept-3", "gpt", "cyber_policy", now+60+int64((24*time.Hour).Seconds())+1)
+	afterCooldown, err := RecordCyberPolicyInterception(user.Id, 6, "intercept-3", "gpt", "cyber_policy", now+60+int64((6*time.Hour).Seconds())+1)
 	require.NoError(t, err)
 	require.True(t, afterCooldown.Recorded)
 	require.True(t, afterCooldown.ShouldNotify)
@@ -198,6 +198,42 @@ func TestCyberPolicyInterceptionTakesPriorityWithoutPunishment(t *testing.T) {
 		require.Zero(t, incident.StrikeNumber)
 		require.Zero(t, incident.SuspendedUntil)
 	}
+}
+
+func TestCyberPolicyInterceptionWhitelistKeepsAuditButSuppressesEmail(t *testing.T) {
+	setCyberPolicyModesForTest(t, true, false)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&User{}, &UserSecurityIncident{}))
+	oldDB := DB
+	DB = db
+	t.Cleanup(func() { DB = oldDB })
+
+	user := User{
+		Username:            "security-email-whitelist",
+		Password:            "hashed-password",
+		AffCode:             "sec7",
+		SecurityWhitelisted: true,
+	}
+	require.NoError(t, db.Create(&user).Error)
+
+	result, err := RecordCyberPolicyInterception(
+		user.Id,
+		7,
+		"whitelisted-interception",
+		"gpt",
+		"cyber_policy",
+		1_700_000_000,
+	)
+	require.NoError(t, err)
+	require.True(t, result.Recorded)
+	require.False(t, result.ShouldNotify)
+
+	var incident UserSecurityIncident
+	require.NoError(t, db.Where("request_id = ?", "whitelisted-interception").First(&incident).Error)
+	require.Equal(t, user.Id, incident.UserId)
+	require.Equal(t, UserSecurityActionIntercepted, incident.Action)
+	require.False(t, incident.Counted)
 }
 
 func TestSetUserSecurityWhitelistClearsRestriction(t *testing.T) {
