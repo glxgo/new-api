@@ -248,12 +248,14 @@ function ApiKeysMobileList({
 
 function ApiKeysDesktopSkeleton() {
   return (
-    <div className='grid items-start gap-5 md:grid-cols-[14rem_minmax(0,1fr)] xl:grid-cols-[14rem_minmax(0,1fr)_17rem]'>
-      <Skeleton className='h-72 rounded-xl' />
-      <Skeleton className='h-96 rounded-xl' />
-      <div className='grid gap-3 md:col-start-2 md:grid-cols-2 xl:col-start-3 xl:row-start-1 xl:grid-cols-1'>
-        <Skeleton className='h-48 rounded-xl' />
-        <Skeleton className='h-40 rounded-xl' />
+    <div className='@container/api-key-workspace'>
+      <div className='grid items-start gap-4 @2xl/api-key-workspace:grid-cols-[12rem_minmax(0,1fr)] @3xl/api-key-workspace:grid-cols-[12rem_minmax(18rem,1fr)_15rem]'>
+        <Skeleton className='h-72 rounded-xl' />
+        <Skeleton className='h-96 rounded-xl' />
+        <div className='grid gap-3 @2xl/api-key-workspace:col-start-2 @2xl/api-key-workspace:grid-cols-2 @3xl/api-key-workspace:col-start-3 @3xl/api-key-workspace:row-start-1 @3xl/api-key-workspace:grid-cols-1'>
+          <Skeleton className='h-48 rounded-xl' />
+          <Skeleton className='h-40 rounded-xl' />
+        </div>
       </div>
     </div>
   )
@@ -340,260 +342,264 @@ function ApiKeysDesktopWorkspace({
   }
 
   return (
-    <div className='grid items-start gap-5 md:grid-cols-[14rem_minmax(0,1fr)] xl:grid-cols-[14rem_minmax(0,1fr)_17rem]'>
-      <div className='self-start'>
-        <div className='border-border/70 bg-background relative z-10 ml-4 flex w-28 items-center gap-2 rounded-t-xl border border-b-0 px-3 py-2'>
-          <KeyRound className='size-3.5' />
-          <span className='text-xs font-semibold'>{t('API Keys')}</span>
-          <span className='text-muted-foreground text-[10px] tabular-nums'>
-            {rows.length}
-          </span>
+    <div className='@container/api-key-workspace'>
+      <div className='grid items-start gap-4 @2xl/api-key-workspace:grid-cols-[12rem_minmax(0,1fr)] @3xl/api-key-workspace:grid-cols-[12rem_minmax(18rem,1fr)_15rem]'>
+        <div className='self-start'>
+          <div className='border-border/70 bg-background relative z-10 ml-4 flex w-28 items-center gap-2 rounded-t-xl border border-b-0 px-3 py-2'>
+            <KeyRound className='size-3.5' />
+            <span className='text-xs font-semibold'>{t('API Keys')}</span>
+            <span className='text-muted-foreground text-[10px] tabular-nums'>
+              {rows.length}
+            </span>
+          </div>
+          <aside className='border-border/70 bg-background/80 -mt-px flex h-[26rem] flex-col overflow-hidden rounded-xl border shadow-xs'>
+            <div className='border-border/60 flex items-center justify-between border-b px-3.5 py-2.5'>
+              <div>
+                <p className='text-xs font-semibold'>{t('API Keys')}</p>
+                <p className='text-muted-foreground text-[10px] tabular-nums'>
+                  {rows.length} {t('Total')}
+                </p>
+              </div>
+              <Checkbox
+                checked={table.getIsAllPageRowsSelected()}
+                indeterminate={table.getIsSomePageRowsSelected()}
+                onCheckedChange={(value) =>
+                  table.toggleAllPageRowsSelected(!!value)
+                }
+                aria-label={t('Select all')}
+              />
+            </div>
+
+            <div className='min-h-0 flex-1 space-y-1 overflow-y-auto p-2'>
+              {rows.map((row) => {
+                const rowApiKey = row.original
+                const rowStatus = API_KEY_STATUSES[rowApiKey.status]
+                const selected = rowApiKey.id === apiKey.id
+
+                return (
+                  <div
+                    key={row.id}
+                    className={cn(
+                      'group flex items-center gap-2 rounded-lg px-2 py-0.5 transition-colors',
+                      selected
+                        ? 'border-border/60 bg-muted border'
+                        : 'hover:bg-muted/60 border border-transparent',
+                      isDisabledApiKeyRow(rowApiKey) && 'opacity-60'
+                    )}
+                  >
+                    <button
+                      type='button'
+                      onClick={() => setSelectedKeyId(rowApiKey.id)}
+                      className='focus-visible:ring-ring flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-2 text-left focus-visible:ring-2 focus-visible:outline-none'
+                    >
+                      <span
+                        className={cn(
+                          'size-1.5 shrink-0 rounded-full border',
+                          rowApiKey.status === API_KEY_STATUS.ENABLED
+                            ? 'border-foreground bg-foreground'
+                            : 'border-muted-foreground/60 bg-transparent'
+                        )}
+                      />
+                      <span className='truncate text-sm font-medium'>
+                        {rowApiKey.name}
+                      </span>
+                    </button>
+                    <Checkbox
+                      checked={row.getIsSelected()}
+                      onCheckedChange={(value) => row.toggleSelected(!!value)}
+                      aria-label={t('Select row')}
+                      onClick={(event) => event.stopPropagation()}
+                      className='opacity-45 transition-opacity group-hover:opacity-100'
+                    />
+                    <span className='sr-only'>
+                      {rowStatus ? t(rowStatus.label) : ''}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className='border-border/60 border-t p-2.5'>
+              <Button
+                type='button'
+                variant='outline'
+                size='sm'
+                className='w-full justify-start border-dashed'
+                onClick={() => setOpen('create')}
+              >
+                <Plus className='size-3.5' />
+                {t('Create API Key')}
+              </Button>
+            </div>
+          </aside>
         </div>
-        <aside className='border-border/70 bg-background/80 -mt-px flex h-[26rem] flex-col overflow-hidden rounded-xl border shadow-xs'>
-          <div className='border-border/60 flex items-center justify-between border-b px-3.5 py-2.5'>
+
+        <section className='border-border/70 bg-background/80 self-start rounded-xl border p-5 shadow-sm'>
+          <div className='flex flex-wrap items-start justify-between gap-4'>
+            <div className='min-w-0'>
+              <div className='flex flex-wrap items-center gap-2.5'>
+                <h3 className='truncate text-xl font-semibold tracking-tight'>
+                  {apiKey.name}
+                </h3>
+                {statusConfig && (
+                  <StatusBadge
+                    label={t(statusConfig.label)}
+                    variant={statusConfig.variant}
+                    copyable={false}
+                  />
+                )}
+              </div>
+              <div className='mt-2 flex flex-wrap items-center gap-2'>
+                <span className='font-mono text-xs tabular-nums'>
+                  #{apiKey.id}
+                </span>
+              </div>
+            </div>
+            <span className='border-border/70 bg-muted/25 flex size-8 items-center justify-center rounded-full border'>
+              <KeyRound className='size-3.5' />
+            </span>
+          </div>
+
+          <div className='border-border/70 bg-muted/15 mt-5 space-y-3 rounded-xl border p-4'>
+            <div className='grid gap-3 text-xs 2xl:grid-cols-2'>
+              <div className='grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3'>
+                <span className='text-muted-foreground'>{t('Group')}</span>
+                <ApiKeyGroupCell apiKey={apiKey} />
+              </div>
+              {apiKey.subscription_mode === 'instance' &&
+                apiKey.subscription_id > 0 && (
+                  <div className='grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 2xl:justify-self-end'>
+                    <span className='text-muted-foreground'>
+                      {t('Subscription instance')}
+                    </span>
+                    <ApiKeySubscriptionCombobox apiKey={apiKey} />
+                  </div>
+                )}
+            </div>
+            <div className='grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 text-xs'>
+              <span className='text-muted-foreground'>{t('API Key')}</span>
+              <ApiKeyCell apiKey={apiKey} />
+            </div>
+            <div className='grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 text-xs'>
+              <span className='text-muted-foreground'>API Base URL</span>
+              <div className='flex min-w-0 items-center gap-2'>
+                <code className='min-w-0 flex-1 truncate font-mono text-xs'>
+                  {apiEndpoint}
+                </code>
+                <Button
+                  type='button'
+                  variant='ghost'
+                  size='icon-sm'
+                  onClick={copyEndpoint}
+                  aria-label={t('Copy')}
+                >
+                  <Link2 className='size-3.5' />
+                </Button>
+              </div>
+            </div>
+            <div className='grid grid-cols-2 gap-3 border-t border-dashed pt-3'>
+              <div>
+                <p className='text-muted-foreground mb-2 text-[10px]'>
+                  {t('Models')}
+                </p>
+                <ModelLimitsCell apiKey={apiKey} />
+              </div>
+              <div>
+                <p className='text-muted-foreground mb-2 text-[10px]'>
+                  {t('IP Restriction')}
+                </p>
+                <IpRestrictionsCell apiKey={apiKey} />
+              </div>
+            </div>
+          </div>
+
+          <div className='mt-5 flex flex-wrap items-end justify-between gap-3'>
             <div>
-              <p className='text-xs font-semibold'>{t('API Keys')}</p>
-              <p className='text-muted-foreground text-[10px] tabular-nums'>
-                {rows.length} {t('Total')}
+              <div className='flex items-baseline gap-2'>
+                <p className='font-mono text-2xl font-semibold tracking-tight tabular-nums'>
+                  {formatQuota(apiKey.used_quota)}
+                </p>
+                <span className='text-muted-foreground text-xs'>
+                  {t('Used')}
+                </span>
+              </div>
+              <p className='text-muted-foreground mt-1 text-[10px] tabular-nums'>
+                {t('Total')} {formatQuota(totalQuota)}
               </p>
             </div>
-            <Checkbox
-              checked={table.getIsAllPageRowsSelected()}
-              indeterminate={table.getIsSomePageRowsSelected()}
-              onCheckedChange={(value) =>
-                table.toggleAllPageRowsSelected(!!value)
-              }
-              aria-label={t('Select all')}
-            />
+            <div className='text-right'>
+              <p className='text-muted-foreground text-[10px]'>
+                {t('Remaining')}
+              </p>
+              <p className='mt-1 font-mono text-xs font-semibold tabular-nums'>
+                {apiKey.unlimited_quota
+                  ? t('Unlimited')
+                  : formatQuota(apiKey.remain_quota)}
+              </p>
+            </div>
           </div>
 
-          <div className='min-h-0 flex-1 space-y-1 overflow-y-auto p-2'>
-            {rows.map((row) => {
-              const rowApiKey = row.original
-              const rowStatus = API_KEY_STATUSES[rowApiKey.status]
-              const selected = rowApiKey.id === apiKey.id
-
-              return (
-                <div
-                  key={row.id}
-                  className={cn(
-                    'group flex items-center gap-2 rounded-lg px-2 py-0.5 transition-colors',
-                    selected
-                      ? 'border-border/60 bg-muted border'
-                      : 'hover:bg-muted/60 border border-transparent',
-                    isDisabledApiKeyRow(rowApiKey) && 'opacity-60'
-                  )}
-                >
-                  <button
-                    type='button'
-                    onClick={() => setSelectedKeyId(rowApiKey.id)}
-                    className='focus-visible:ring-ring flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-2 text-left focus-visible:ring-2 focus-visible:outline-none'
-                  >
-                    <span
-                      className={cn(
-                        'size-1.5 shrink-0 rounded-full border',
-                        rowApiKey.status === API_KEY_STATUS.ENABLED
-                          ? 'border-foreground bg-foreground'
-                          : 'border-muted-foreground/60 bg-transparent'
-                      )}
-                    />
-                    <span className='truncate text-sm font-medium'>
-                      {rowApiKey.name}
-                    </span>
-                  </button>
-                  <Checkbox
-                    checked={row.getIsSelected()}
-                    onCheckedChange={(value) => row.toggleSelected(!!value)}
-                    aria-label={t('Select row')}
-                    onClick={(event) => event.stopPropagation()}
-                    className='opacity-45 transition-opacity group-hover:opacity-100'
-                  />
-                  <span className='sr-only'>
-                    {rowStatus ? t(rowStatus.label) : ''}
-                  </span>
-                </div>
-              )
-            })}
+          <div className='border-border/60 text-muted-foreground mt-4 flex flex-wrap gap-x-5 gap-y-2 border-y border-dashed py-3 text-[10px]'>
+            <span>
+              {t('Last Used')}{' '}
+              <b className='text-foreground font-mono'>{lastUsed}</b>
+            </span>
+            <span>
+              {t('Created')}{' '}
+              <b className='text-foreground font-mono'>
+                {formatTimestampToDate(apiKey.created_time)}
+              </b>
+            </span>
+            <span>
+              {t('Expires')}{' '}
+              <b className='text-foreground font-mono'>{expires}</b>
+            </span>
           </div>
 
-          <div className='border-border/60 border-t p-2.5'>
+          <div className='mt-4 flex flex-wrap items-center gap-2'>
             <Button
               type='button'
               variant='outline'
               size='sm'
-              className='w-full justify-start border-dashed'
-              onClick={() => setOpen('create')}
+              className='rounded-full px-4'
+              onClick={openCcSwitch}
             >
-              <Plus className='size-3.5' />
-              {t('Create API Key')}
+              <ArrowRightLeft className='size-3.5' />
+              {t('One-click import to CC Switch')}
+            </Button>
+            <Button
+              type='button'
+              variant='outline'
+              size='sm'
+              className='rounded-full px-4'
+              onClick={() => openDialog('update')}
+            >
+              <Edit3 className='size-3.5' />
+              {t('Edit')}
+            </Button>
+            <DataTableRowActions
+              row={selectedRow}
+              display='compact'
+              showMenu={false}
+            />
+            <Button
+              type='button'
+              variant='outline'
+              size='sm'
+              className='text-destructive hover:text-destructive rounded-full px-4'
+              onClick={() => openDialog('delete')}
+            >
+              <Trash2 className='size-3.5' />
+              {t('Delete')}
             </Button>
           </div>
+        </section>
+
+        <aside className='grid gap-3 @2xl/api-key-workspace:col-start-2 @2xl/api-key-workspace:grid-cols-2 @3xl/api-key-workspace:col-start-3 @3xl/api-key-workspace:row-start-1 @3xl/api-key-workspace:grid-cols-1'>
+          <ConcurrencyCard profile={profile} loading={profileLoading} compact />
+          <RpmCard profile={profile} loading={profileLoading} />
         </aside>
       </div>
-
-      <section className='border-border/70 bg-background/80 self-start rounded-xl border p-5 shadow-sm'>
-        <div className='flex flex-wrap items-start justify-between gap-4'>
-          <div className='min-w-0'>
-            <div className='flex flex-wrap items-center gap-2.5'>
-              <h3 className='truncate text-xl font-semibold tracking-tight'>
-                {apiKey.name}
-              </h3>
-              {statusConfig && (
-                <StatusBadge
-                  label={t(statusConfig.label)}
-                  variant={statusConfig.variant}
-                  copyable={false}
-                />
-              )}
-            </div>
-            <div className='mt-2 flex flex-wrap items-center gap-2'>
-              <span className='font-mono text-xs tabular-nums'>
-                #{apiKey.id}
-              </span>
-            </div>
-          </div>
-          <span className='border-border/70 bg-muted/25 flex size-8 items-center justify-center rounded-full border'>
-            <KeyRound className='size-3.5' />
-          </span>
-        </div>
-
-        <div className='border-border/70 bg-muted/15 mt-5 space-y-3 rounded-xl border p-4'>
-          <div className='grid gap-3 text-xs 2xl:grid-cols-2'>
-            <div className='grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3'>
-              <span className='text-muted-foreground'>{t('Group')}</span>
-              <ApiKeyGroupCell apiKey={apiKey} />
-            </div>
-            {apiKey.subscription_mode === 'instance' &&
-              apiKey.subscription_id > 0 && (
-                <div className='grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 2xl:justify-self-end'>
-                  <span className='text-muted-foreground'>
-                    {t('Subscription instance')}
-                  </span>
-                  <ApiKeySubscriptionCombobox apiKey={apiKey} />
-                </div>
-              )}
-          </div>
-          <div className='grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 text-xs'>
-            <span className='text-muted-foreground'>{t('API Key')}</span>
-            <ApiKeyCell apiKey={apiKey} />
-          </div>
-          <div className='grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 text-xs'>
-            <span className='text-muted-foreground'>API Base URL</span>
-            <div className='flex min-w-0 items-center gap-2'>
-              <code className='min-w-0 flex-1 truncate font-mono text-xs'>
-                {apiEndpoint}
-              </code>
-              <Button
-                type='button'
-                variant='ghost'
-                size='icon-sm'
-                onClick={copyEndpoint}
-                aria-label={t('Copy')}
-              >
-                <Link2 className='size-3.5' />
-              </Button>
-            </div>
-          </div>
-          <div className='grid grid-cols-2 gap-3 border-t border-dashed pt-3'>
-            <div>
-              <p className='text-muted-foreground mb-2 text-[10px]'>
-                {t('Models')}
-              </p>
-              <ModelLimitsCell apiKey={apiKey} />
-            </div>
-            <div>
-              <p className='text-muted-foreground mb-2 text-[10px]'>
-                {t('IP Restriction')}
-              </p>
-              <IpRestrictionsCell apiKey={apiKey} />
-            </div>
-          </div>
-        </div>
-
-        <div className='mt-5 flex flex-wrap items-end justify-between gap-3'>
-          <div>
-            <div className='flex items-baseline gap-2'>
-              <p className='font-mono text-2xl font-semibold tracking-tight tabular-nums'>
-                {formatQuota(apiKey.used_quota)}
-              </p>
-              <span className='text-muted-foreground text-xs'>{t('Used')}</span>
-            </div>
-            <p className='text-muted-foreground mt-1 text-[10px] tabular-nums'>
-              {t('Total')} {formatQuota(totalQuota)}
-            </p>
-          </div>
-          <div className='text-right'>
-            <p className='text-muted-foreground text-[10px]'>
-              {t('Remaining')}
-            </p>
-            <p className='mt-1 font-mono text-xs font-semibold tabular-nums'>
-              {apiKey.unlimited_quota
-                ? t('Unlimited')
-                : formatQuota(apiKey.remain_quota)}
-            </p>
-          </div>
-        </div>
-
-        <div className='border-border/60 text-muted-foreground mt-4 flex flex-wrap gap-x-5 gap-y-2 border-y border-dashed py-3 text-[10px]'>
-          <span>
-            {t('Last Used')}{' '}
-            <b className='text-foreground font-mono'>{lastUsed}</b>
-          </span>
-          <span>
-            {t('Created')}{' '}
-            <b className='text-foreground font-mono'>
-              {formatTimestampToDate(apiKey.created_time)}
-            </b>
-          </span>
-          <span>
-            {t('Expires')}{' '}
-            <b className='text-foreground font-mono'>{expires}</b>
-          </span>
-        </div>
-
-        <div className='mt-4 flex flex-wrap items-center gap-2'>
-          <Button
-            type='button'
-            variant='outline'
-            size='sm'
-            className='rounded-full px-4'
-            onClick={openCcSwitch}
-          >
-            <ArrowRightLeft className='size-3.5' />
-            {t('One-click import to CC Switch')}
-          </Button>
-          <Button
-            type='button'
-            variant='outline'
-            size='sm'
-            className='rounded-full px-4'
-            onClick={() => openDialog('update')}
-          >
-            <Edit3 className='size-3.5' />
-            {t('Edit')}
-          </Button>
-          <DataTableRowActions
-            row={selectedRow}
-            display='compact'
-            showMenu={false}
-          />
-          <Button
-            type='button'
-            variant='outline'
-            size='sm'
-            className='text-destructive hover:text-destructive rounded-full px-4'
-            onClick={() => openDialog('delete')}
-          >
-            <Trash2 className='size-3.5' />
-            {t('Delete')}
-          </Button>
-        </div>
-      </section>
-
-      <aside className='grid gap-3 md:col-start-2 md:grid-cols-2 xl:col-start-3 xl:row-start-1 xl:grid-cols-1'>
-        <ConcurrencyCard profile={profile} loading={profileLoading} compact />
-        <RpmCard profile={profile} loading={profileLoading} />
-      </aside>
     </div>
   )
 }

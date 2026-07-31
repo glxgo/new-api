@@ -80,6 +80,7 @@ export const userSubscriptionSchema = z.object({
   user_id: z.number(),
   plan_id: z.number(),
   plan_title: z.string().optional(),
+  plan_version: z.enum(['starter', 'advanced', 'pro', 'enterprise']).optional(),
   remark: z.string().optional(),
   renewed_from_id: z.number().nullable().optional(),
   status: z.string(),

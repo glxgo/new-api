@@ -53,7 +53,7 @@ export function TopNav({ className, links, ...props }: TopNavProps) {
   return (
     <>
       {/* 移动端下拉菜单 */}
-      <div className='lg:hidden'>
+      <div className='@7xl/app-header:hidden'>
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger
             render={<Button size='icon' variant='outline' className='size-7' />}
@@ -95,7 +95,7 @@ export function TopNav({ className, links, ...props }: TopNavProps) {
       {/* 桌面端水平导航 */}
       <nav
         className={cn(
-          'hidden items-center space-x-4 lg:flex lg:space-x-4 xl:space-x-6',
+          'hidden items-center space-x-4 @7xl/app-header:flex @7xl/app-header:space-x-6',
           className
         )}
         {...props}

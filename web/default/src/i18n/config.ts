@@ -64,7 +64,9 @@ export const i18nReady = i18n
   .use(lazyTranslationsBackend)
   .use(initReactI18next)
   .init({
-    fallbackLng: 'en',
+    // Keep an explicit user selection, but do not let the browser/OS locale
+    // silently turn a first visit into English. New users default to Chinese.
+    fallbackLng: 'zh',
     supportedLngs: ['en', 'zh', 'fr', 'ru', 'ja', 'vi'],
     load: 'languageOnly', // Convert zh-CN -> zh
     nsSeparator: false, // Allow literal colons in keys (e.g., URLs, labels)
@@ -73,7 +75,8 @@ export const i18nReady = i18n
       escapeValue: false, // not needed for react as it escapes by default
     },
     detection: {
-      order: ['localStorage', 'navigator'],
+      order: ['localStorage'],
+      lookupLocalStorage: 'i18nextLng',
       caches: ['localStorage'],
     },
   })

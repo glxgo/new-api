@@ -1,0 +1,274 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+
+/* The subscription page responds to its actual content width after the
+ * sidebar, rather than to the outer screen width. This keeps the same card
+ * proportions on laptops, desktop monitors, and ultrawide displays. */
+.subscription-responsive-scope {
+  container-name: subscription-layout;
+  container-type: inline-size;
+  width: 100%;
+  max-width: 90rem;
+  margin-inline: auto;
+}
+
+.subscription-card-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(0.75rem, 1.1cqi, 1rem);
+}
+
+@container subscription-layout (min-width: 38rem) {
+  .subscription-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container subscription-layout (min-width: 54rem) {
+  .subscription-card-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container subscription-layout (min-width: 66rem) {
+  .subscription-card-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.subscription-plan-card-content {
+  padding: clamp(1rem, 1.55cqi, 1.5rem);
+}
+
+.gb-button {
+  --gb-color-1: #34d399;
+  --gb-color-2: #38bdf8;
+  --gb-color-3: #fbbf24;
+  --gb-color-4: #ffffff;
+  position: relative;
+  isolation: isolate;
+}
+
+[data-spec-card] {
+  --spec-x: 50%;
+  --spec-y: 50%;
+}
+
+[data-spec-card]::before,
+[data-spec-card]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.45s ease;
+}
+
+[data-spec-card]::before {
+  background: radial-gradient(
+    circle var(--spec-radius, 180px) at var(--spec-x) var(--spec-y),
+    var(--spec-color, rgba(255, 255, 255, 0.55)),
+    transparent 70%
+  );
+  mix-blend-mode: soft-light;
+}
+
+[data-spec-card]::after {
+  background: radial-gradient(
+    circle calc(var(--spec-radius, 180px) * 0.45) at var(--spec-x) var(--spec-y),
+    color-mix(
+      in srgb,
+      var(--spec-color, rgba(255, 255, 255, 0.55)) 80%,
+      transparent
+    ),
+    transparent 80%
+  );
+  mix-blend-mode: overlay;
+}
+
+[data-spec-card][data-spec-active='true']::before,
+[data-spec-card][data-spec-active='true']::after {
+  opacity: var(--spec-intensity, 0.9);
+}
+
+.gb-button .gb-svg {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.gb-button .gb-fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  overflow: visible;
+}
+
+.gb-button .gb-content {
+  position: relative;
+}
+
+.gb-particle,
+.gb-point {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 100%;
+  opacity: 0;
+  transform-origin: center;
+}
+
+.gb-particle {
+  --time: 850ms;
+  position: absolute;
+  top: calc(50% - 7px);
+  left: calc(50% - 7px);
+  animation: gb-particle var(--time) ease 1 -350ms;
+}
+
+.gb-point {
+  background: var(--color);
+  opacity: 1;
+  animation: gb-point var(--time) ease 1 -350ms;
+}
+
+@keyframes gb-particle {
+  0% {
+    transform: rotate(0deg)
+      translate(calc(var(--start-x)), calc(var(--start-y)));
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45);
+  }
+  70% {
+    transform: rotate(calc(var(--rotate) * 0.5))
+      translate(calc(var(--end-x) * 1.2), calc(var(--end-y) * 1.2));
+    opacity: 1;
+    animation-timing-function: ease;
+  }
+  85% {
+    transform: rotate(calc(var(--rotate) * 0.66))
+      translate(calc(var(--end-x)), calc(var(--end-y)));
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(calc(var(--rotate) * 1.2))
+      translate(calc(var(--end-x) * 0.5), calc(var(--end-y) * 0.5));
+    opacity: 1;
+  }
+}
+
+@keyframes gb-point {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+    animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45);
+  }
+  25% {
+    transform: scale(calc(var(--scale) * 0.25));
+  }
+  38% {
+    opacity: 1;
+  }
+  65% {
+    transform: scale(var(--scale));
+    opacity: 1;
+    animation-timing-function: ease;
+  }
+  85% {
+    transform: scale(var(--scale));
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0);
+    opacity: 0;
+  }
+}
+
+.metal-badge {
+  --badge-glow: #e5e7eb;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.65rem;
+  border: 1.5px solid var(--badge-glow);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background) 78%, transparent);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  isolation: isolate;
+  backdrop-filter: blur(8px);
+}
+
+.metal-badge--starter {
+  color: #047857;
+  --badge-glow: #10b981;
+}
+
+.metal-badge--advanced {
+  color: #0369a1;
+  --badge-glow: #0ea5e9;
+}
+
+.metal-badge--pro {
+  color: #92400e;
+  --badge-glow: #f59e0b;
+}
+
+.metal-badge--enterprise {
+  color: #1e293b;
+  --badge-glow: #334155;
+}
+
+.dark .metal-badge--starter {
+  color: #6ee7b7;
+}
+
+.dark .metal-badge--advanced {
+  color: #7dd3fc;
+}
+
+.dark .metal-badge--pro {
+  color: #fde68a;
+}
+
+.dark .metal-badge--enterprise {
+  color: #93c5fd;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-spec-card]::before,
+  [data-spec-card]::after,
+  .gb-particle,
+  .gb-point {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  [data-spec-card] {
+    transform: none !important;
+  }
+}

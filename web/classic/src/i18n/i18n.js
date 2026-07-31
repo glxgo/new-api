@@ -46,6 +46,12 @@ i18n
       vi: viTranslation,
     },
     fallbackLng: 'zh-CN',
+    detection: {
+      // 新用户统一默认简体中文；已经主动选择语言的用户继续沿用本地设置。
+      order: ['localStorage'],
+      lookupLocalStorage: 'i18nextLng',
+      caches: ['localStorage'],
+    },
     nsSeparator: false,
     interpolation: {
       escapeValue: false,

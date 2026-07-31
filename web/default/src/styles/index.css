@@ -179,6 +179,14 @@ For commercial licensing, please contact support@quantumnous.com
   max-width: 1536px;
 }
 
+/* One fluid gutter for every authenticated page. Components still reflow at
+ * their own content breakpoints; only the surrounding rhythm scales with the
+ * available desktop width, avoiding oversized gaps on small laptops and
+ * excessive empty edges on wide monitors. */
+[data-authenticated-shell] {
+  --app-page-gutter: clamp(0.75rem, 1.3vw, 1.5rem);
+}
+
 @utility no-scrollbar {
   /* Hide scrollbar for Chrome, Safari and Opera */
   &::-webkit-scrollbar {

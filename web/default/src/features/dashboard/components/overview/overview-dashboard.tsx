@@ -612,11 +612,11 @@ export function OverviewDashboard() {
   return (
     <div className='flex flex-col gap-4'>
       {setupGuideExpanded ? (
-        <CardStaggerContainer className='grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]'>
+        <CardStaggerContainer className='grid items-stretch gap-4 @5xl/content:grid-cols-[minmax(0,1fr)_22rem]'>
           <CardStaggerItem className='bg-card h-full overflow-hidden rounded-2xl border shadow-xs'>
             <div className='relative h-full overflow-hidden p-4 sm:p-5'>
               <SetupGuideBackdrop />
-              <div className='relative grid gap-5 lg:grid-cols-[minmax(0,1fr)_21rem]'>
+              <div className='relative grid gap-5 @4xl/content:grid-cols-[minmax(0,1fr)_21rem]'>
                 <div className='flex min-w-0 flex-col gap-5'>
                   <div className='flex flex-wrap items-start justify-between gap-3'>
                     <div className='flex max-w-2xl flex-col gap-1'>
@@ -749,7 +749,7 @@ export function OverviewDashboard() {
             'grid grid-cols-1 gap-4',
             showLeftContentPanels &&
               showUptimePanel &&
-              'xl:grid-cols-[minmax(0,1fr)_22rem]'
+              '@5xl/content:grid-cols-[minmax(0,1fr)_22rem]'
           )}
         >
           {showLeftContentPanels && (
@@ -757,7 +757,7 @@ export function OverviewDashboard() {
               className={cn(
                 'grid min-w-0 grid-cols-1 gap-4',
                 (showApiInfoPanel || showAnnouncementsPanel || showFAQPanel) &&
-                  'lg:grid-cols-2'
+                  '@3xl/content:grid-cols-2'
               )}
             >
               {isAdmin && (

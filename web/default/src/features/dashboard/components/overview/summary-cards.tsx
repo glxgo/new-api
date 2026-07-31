@@ -258,7 +258,7 @@ export function SummaryCards() {
 
   return (
     <div className='bg-card overflow-hidden rounded-xl border'>
-      <div className='grid xl:grid-cols-[minmax(0,1fr)_19rem]'>
+      <div className='grid @5xl/content:grid-cols-[minmax(0,1fr)_19rem]'>
         <div className='flex flex-col gap-3 p-4 sm:p-5'>
           <div className='flex flex-wrap items-start justify-between gap-3'>
             <div className='flex flex-col gap-1'>
@@ -270,7 +270,7 @@ export function SummaryCards() {
               </p>
             </div>
           </div>
-          <StaggerContainer className='grid gap-3 md:grid-cols-4'>
+          <StaggerContainer className='grid gap-3 sm:grid-cols-2 @4xl/content:grid-cols-4'>
             {items.map((it) => (
               <StaggerItem
                 key={it.key}
@@ -291,7 +291,7 @@ export function SummaryCards() {
           </StaggerContainer>
         </div>
 
-        <div className='bg-secondary/55 flex flex-col justify-between gap-4 border-t p-4 sm:p-5 xl:border-t-0 xl:border-l'>
+        <div className='bg-secondary/55 flex flex-col justify-between gap-4 border-t p-4 sm:p-5 @5xl/content:border-t-0 @5xl/content:border-l'>
           <div className='flex flex-col gap-3'>
             <div className='flex items-center justify-between'>
               <span className='text-muted-foreground text-xs font-medium'>
