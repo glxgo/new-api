@@ -287,6 +287,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			break
 		}
 
+		service.CaptureResponsesInputIDDiagnostic(c, request, newAPIError)
 		willRetry := shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry())
 		selectedChannelError := *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan())
 		processChannelError(c, selectedChannelError, newAPIError, !willRetry)
@@ -528,6 +529,9 @@ func isClientRequestCanceled(c *gin.Context) bool {
 
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError, recordUserError bool) {
 	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.Error())))
+	if diagnostic := service.FormatResponsesInputIDDiagnostic(c); diagnostic != "" {
+		logger.LogError(c, fmt.Sprintf("responses input id diagnostic (channel #%d): %s", channelError.ChannelId, diagnostic))
+	}
 	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况
 	// do not use context to get channel info, there may be inconsistent channel info when processing asynchronously
 	if service.ShouldDisableChannel(err) && channelError.AutoBan {
@@ -571,6 +575,7 @@ func recordChannelErrorLog(c *gin.Context, channelError types.ChannelError, err 
 		}
 		service.AppendChannelAffinityAdminInfo(c, adminInfo)
 		service.AppendChannelRetryAttemptsAdminInfo(c, adminInfo)
+		service.AppendResponsesInputIDDiagnosticAdminInfo(c, adminInfo)
 		other["admin_info"] = adminInfo
 		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
 		if startTime.IsZero() {

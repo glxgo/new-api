@@ -18,7 +18,7 @@ func RecordChannelRetryAttempt(c *gin.Context, channel types.ChannelError, err *
 	}
 	attempts, _ := c.Get(ginKeyChannelRetryAttempts)
 	retryAttempts, _ := attempts.([]map[string]interface{})
-	retryAttempts = append(retryAttempts, map[string]interface{}{
+	attempt := map[string]interface{}{
 		"attempt":      len(retryAttempts) + 1,
 		"channel_id":   channel.ChannelId,
 		"channel_name": channel.ChannelName,
@@ -27,7 +27,11 @@ func RecordChannelRetryAttempt(c *gin.Context, channel types.ChannelError, err *
 		"error_type":   err.GetErrorType(),
 		"error_code":   err.GetErrorCode(),
 		"error":        common.LocalLogPreview(err.MaskSensitiveErrorWithStatusCode()),
-	})
+	}
+	if diagnostic, ok := GetResponsesInputIDDiagnostic(c); ok {
+		attempt["responses_input_id_diagnostic"] = diagnostic
+	}
+	retryAttempts = append(retryAttempts, attempt)
 	c.Set(ginKeyChannelRetryAttempts, retryAttempts)
 }
 
