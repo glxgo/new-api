@@ -202,6 +202,7 @@ export interface SubscriptionPayResponse {
 
 export interface CreateUserSubscriptionRequest {
   plan_id: number
+  start_time?: number
 }
 
 // ============================================================================

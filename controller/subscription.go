@@ -453,8 +453,9 @@ func AdminUpdateSubscriptionPlanStatus(c *gin.Context) {
 }
 
 type AdminBindSubscriptionRequest struct {
-	UserId int `json:"user_id"`
-	PlanId int `json:"plan_id"`
+	UserId    int   `json:"user_id"`
+	PlanId    int   `json:"plan_id"`
+	StartTime int64 `json:"start_time"`
 }
 
 func AdminBindSubscription(c *gin.Context) {
@@ -463,11 +464,11 @@ func AdminBindSubscription(c *gin.Context) {
 	}
 
 	var req AdminBindSubscriptionRequest
-	if err := c.ShouldBindJSON(&req); err != nil || req.UserId <= 0 || req.PlanId <= 0 {
+	if err := c.ShouldBindJSON(&req); err != nil || req.UserId <= 0 || req.PlanId <= 0 || req.StartTime < 0 {
 		common.ApiErrorMsg(c, "参数错误")
 		return
 	}
-	msg, err := model.AdminBindSubscription(req.UserId, req.PlanId, "")
+	msg, err := model.AdminBindSubscriptionAt(req.UserId, req.PlanId, req.StartTime, "")
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -496,7 +497,8 @@ func AdminListUserSubscriptions(c *gin.Context) {
 }
 
 type AdminCreateUserSubscriptionRequest struct {
-	PlanId int `json:"plan_id"`
+	PlanId    int   `json:"plan_id"`
+	StartTime int64 `json:"start_time"`
 }
 
 // AdminCreateUserSubscription creates a new user subscription from a plan (no payment).
@@ -511,11 +513,11 @@ func AdminCreateUserSubscription(c *gin.Context) {
 		return
 	}
 	var req AdminCreateUserSubscriptionRequest
-	if err := c.ShouldBindJSON(&req); err != nil || req.PlanId <= 0 {
+	if err := c.ShouldBindJSON(&req); err != nil || req.PlanId <= 0 || req.StartTime < 0 {
 		common.ApiErrorMsg(c, "参数错误")
 		return
 	}
-	msg, err := model.AdminBindSubscription(userId, req.PlanId, "")
+	msg, err := model.AdminBindSubscriptionAt(userId, req.PlanId, req.StartTime, "")
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -525,6 +527,24 @@ func AdminCreateUserSubscription(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, nil)
+}
+
+// AdminRenewUserSubscription creates a linked successor without charging the user.
+func AdminRenewUserSubscription(c *gin.Context) {
+	if !requirePaymentCompliance(c) {
+		return
+	}
+	subId, _ := strconv.Atoi(c.Param("id"))
+	if subId <= 0 {
+		common.ApiErrorMsg(c, "无效的订阅ID")
+		return
+	}
+	preview, err := model.AdminRenewUserSubscription(subId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, preview)
 }
 
 // AdminInvalidateUserSubscription cancels a user subscription immediately.

@@ -763,7 +763,8 @@ func CreateUserSubscriptionFromPlanWithOptionsTx(tx *gorm.DB, userId int, plan *
 	}
 	upgradeGroup := strings.TrimSpace(plan.UpgradeGroup)
 	prevGroup := ""
-	if upgradeGroup != "" && strings.TrimSpace(plan.AllowedGroup) == "" {
+	activateUpgradeNow := nowUnix <= GetDBTimestamp()
+	if upgradeGroup != "" && strings.TrimSpace(plan.AllowedGroup) == "" && activateUpgradeNow {
 		currentGroup, err := getUserGroupByIdTx(tx, userId)
 		if err != nil {
 			return nil, err
@@ -819,6 +820,63 @@ func CreateUserSubscriptionFromPlanWithOptionsTx(tx *gorm.DB, userId int, plan *
 	return sub, nil
 }
 
+// ActivateDueSubscriptionGroups applies legacy user-group upgrades only after
+// a scheduled subscription reaches its start time. AllowedGroup subscriptions
+// need no activation because their authorization queries already check time.
+func ActivateDueSubscriptionGroups(limit int) (int, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	now := GetDBTimestamp()
+	var subscriptions []UserSubscription
+	if err := DB.Where(
+		"status = ? AND start_time <= ? AND end_time > ? AND upgrade_group <> '' AND prev_user_group = ''",
+		"active",
+		now,
+		now,
+	).Order("start_time asc, id asc").Limit(limit).Find(&subscriptions).Error; err != nil {
+		return 0, err
+	}
+	activated := 0
+	for _, candidate := range subscriptions {
+		cacheGroup := ""
+		err := DB.Transaction(func(tx *gorm.DB) error {
+			var subscription UserSubscription
+			if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", candidate.Id).First(&subscription).Error; err != nil {
+				return err
+			}
+			if subscription.Status != "active" || subscription.StartTime > now || subscription.EndTime <= now ||
+				strings.TrimSpace(subscription.UpgradeGroup) == "" || strings.TrimSpace(subscription.PrevUserGroup) != "" {
+				return nil
+			}
+			currentGroup, err := getUserGroupByIdTx(tx, subscription.UserId)
+			if err != nil {
+				return err
+			}
+			upgradeGroup := strings.TrimSpace(subscription.UpgradeGroup)
+			if currentGroup != upgradeGroup {
+				if err := tx.Model(&User{}).Where("id = ?", subscription.UserId).Update("group", upgradeGroup).Error; err != nil {
+					return err
+				}
+				cacheGroup = upgradeGroup
+			}
+			if err := tx.Model(&UserSubscription{}).Where("id = ?", subscription.Id).
+				Update("prev_user_group", currentGroup).Error; err != nil {
+				return err
+			}
+			activated++
+			return nil
+		})
+		if err != nil {
+			return activated, err
+		}
+		if cacheGroup != "" {
+			_ = UpdateUserGroupCache(candidate.UserId, cacheGroup)
+		}
+	}
+	return activated, nil
+}
+
 // Complete a subscription order (idempotent). Creates a UserSubscription snapshot from the plan.
 // expectedPaymentProvider guards against cross-gateway callback attacks (empty skips the check).
 // actualPaymentMethod updates the order's PaymentMethod to reflect the real payment type used (empty skips update).
@@ -866,7 +924,6 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if !plan.Enabled {
 			// still allow completion for already purchased orders
 		}
-		upgradeGroup = strings.TrimSpace(plan.UpgradeGroup)
 		revenueQuota, quotaErr := calcSubscriptionBalanceQuota(order.Money)
 		if quotaErr != nil {
 			return quotaErr
@@ -889,6 +946,9 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 			if err != nil {
 				return err
 			}
+		}
+		if createdSub.StartTime <= GetDBTimestamp() {
+			upgradeGroup = strings.TrimSpace(plan.UpgradeGroup)
 		}
 		if _, err := GrantSubscriptionPurchaseLuckyCardsTx(tx, &order, createdSub); err != nil {
 			return err
@@ -1010,21 +1070,37 @@ func ExpireSubscriptionOrder(tradeNo string, expectedPaymentProvider string) err
 
 // Admin bind (no payment). Creates a UserSubscription from a plan.
 func AdminBindSubscription(userId int, planId int, sourceNote string) (string, error) {
+	return AdminBindSubscriptionAt(userId, planId, 0, sourceNote)
+}
+
+// AdminBindSubscriptionAt creates a subscription at the administrator-selected
+// start time. A zero startTime keeps the historical "start now" behaviour.
+func AdminBindSubscriptionAt(userId int, planId int, startTime int64, sourceNote string) (string, error) {
 	if userId <= 0 || planId <= 0 {
 		return "", errors.New("invalid userId or planId")
+	}
+	if startTime < 0 {
+		return "", errors.New("startTime must not be negative")
 	}
 	plan, err := GetSubscriptionPlanById(planId)
 	if err != nil {
 		return "", err
 	}
+	var created *UserSubscription
 	err = DB.Transaction(func(tx *gorm.DB) error {
-		_, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, "admin")
+		created, err = CreateUserSubscriptionFromPlanWithOptionsTx(
+			tx,
+			userId,
+			plan,
+			"admin",
+			CreateUserSubscriptionOptions{StartTime: startTime},
+		)
 		return err
 	})
 	if err != nil {
 		return "", err
 	}
-	if strings.TrimSpace(plan.UpgradeGroup) != "" {
+	if strings.TrimSpace(plan.UpgradeGroup) != "" && created != nil && created.StartTime <= GetDBTimestamp() {
 		_ = UpdateUserGroupCache(userId, plan.UpgradeGroup)
 		return fmt.Sprintf("用户分组将升级到 %s", plan.UpgradeGroup), nil
 	}
@@ -1169,7 +1245,9 @@ func PurchaseSubscriptionWithBalanceRenewal(userId int, planId int, renewFromSub
 		logPlanTitle = plan.Title
 		logMoney = plan.PriceAmount
 		chargedQuota = requiredQuota
-		upgradeGroup = strings.TrimSpace(plan.UpgradeGroup)
+		if createdSub.StartTime <= GetDBTimestamp() {
+			upgradeGroup = strings.TrimSpace(plan.UpgradeGroup)
+		}
 		return nil
 	})
 	if err != nil {
