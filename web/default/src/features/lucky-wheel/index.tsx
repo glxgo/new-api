@@ -319,17 +319,17 @@ export function LuckyWheel() {
           )}
 
           <div className='grid gap-5 @5xl/content:grid-cols-[minmax(0,1.45fr)_minmax(320px,.55fr)]'>
-            <section className='relative overflow-hidden rounded-[28px] border border-[#e66d43]/25 bg-[#fff4e7] px-5 py-8 shadow-[0_24px_80px_-42px_rgba(145,55,20,.55)] sm:px-10'>
+            <section className='relative overflow-hidden rounded-[28px] border border-[#e66d43]/25 bg-[#fff4e7] px-5 py-8 shadow-[0_24px_80px_-42px_rgba(145,55,20,.55)] sm:px-10 dark:border-[#f08a61]/30 dark:bg-[#1d120e] dark:shadow-[0_24px_80px_-42px_rgba(0,0,0,.9)]'>
               <div className='pointer-events-none absolute inset-0 [background-image:radial-gradient(circle_at_15%_12%,rgba(230,109,67,.2),transparent_23%),radial-gradient(circle_at_86%_80%,rgba(234,157,77,.25),transparent_28%)] opacity-50' />
               <div className='relative mx-auto flex max-w-4xl flex-col items-center'>
-                <Badge className='mb-3 border-[#e66d43]/30 bg-white/75 text-[#9b3b20]'>
+                <Badge className='mb-3 border-[#e66d43]/30 bg-white/75 text-[#9b3b20] dark:border-[#f08a61]/40 dark:bg-[#4a261a]/80 dark:text-[#ffd8c7]'>
                   <Sparkles className='mr-1 size-3.5' />
                   每张幸运卡可抽一次
                 </Badge>
-                <h2 className='font-serif text-3xl font-semibold tracking-tight text-[#512719] sm:text-4xl'>
+                <h2 className='font-serif text-3xl font-semibold tracking-tight text-[#512719] sm:text-4xl dark:text-[#fff1e8]'>
                   转动好运，赢取专属权益
                 </h2>
-                <p className='mt-2 text-center text-sm text-[#8b513c]'>
+                <p className='mt-2 text-center text-sm text-[#8b513c] dark:text-[#ddb09e]'>
                   结果由服务端安全随机产生，转盘动画只负责揭晓惊喜
                 </p>
 
@@ -408,7 +408,7 @@ export function LuckyWheel() {
                     }
                     disabled={availableCards.length === 0 || drawing}
                   >
-                    <SelectTrigger className='h-11 flex-1 bg-white/85'>
+                    <SelectTrigger className='h-11 flex-1 bg-white/85 dark:border-[#8a4a35]/60 dark:bg-[#2a1812] dark:text-[#fff4ed]'>
                       <SelectValue placeholder='选择一张幸运卡' />
                     </SelectTrigger>
                     <SelectContent>
@@ -438,16 +438,16 @@ export function LuckyWheel() {
                   <div
                     role='status'
                     aria-live='polite'
-                    className='mt-4 flex w-full max-w-lg items-center gap-3 rounded-xl border border-[#df744d]/30 bg-white/85 px-4 py-3 text-left shadow-sm'
+                    className='mt-4 flex w-full max-w-lg items-center gap-3 rounded-xl border border-[#df744d]/30 bg-white/85 px-4 py-3 text-left shadow-sm dark:border-[#f08a61]/35 dark:bg-[#2a1812]'
                   >
-                    <div className='grid size-10 shrink-0 place-items-center rounded-full bg-[#fff0df] text-[#cb4f2a]'>
+                    <div className='grid size-10 shrink-0 place-items-center rounded-full bg-[#fff0df] text-[#cb4f2a] dark:bg-[#5a2b1d] dark:text-[#ffb08f]'>
                       <Gift className='size-5' />
                     </div>
                     <div className='min-w-0 flex-1'>
-                      <p className='text-sm font-semibold text-[#6f2b18]'>
+                      <p className='text-sm font-semibold text-[#6f2b18] dark:text-[#ffe2d4]'>
                         恭喜获得 {prizeResultText(result)}
                       </p>
-                      <p className='text-muted-foreground mt-0.5 text-xs'>
+                      <p className='text-muted-foreground mt-0.5 text-xs dark:text-[#cba99c]'>
                         奖励已到账，下一张幸运卡已自动就位
                       </p>
                     </div>
@@ -455,7 +455,7 @@ export function LuckyWheel() {
                 )}
                 <button
                   type='button'
-                  className='mt-4 inline-flex items-center gap-1 text-sm text-[#8b513c] underline-offset-4 hover:underline'
+                  className='mt-4 inline-flex items-center gap-1 text-sm text-[#8b513c] underline-offset-4 hover:underline dark:text-[#f0b39c]'
                   aria-expanded={rulesOpen}
                   aria-controls='lucky-wheel-rules'
                   onClick={() => setRulesOpen((open) => !open)}
@@ -474,16 +474,16 @@ export function LuckyWheel() {
                   <section
                     id='lucky-wheel-rules'
                     aria-labelledby='lucky-wheel-rules-title'
-                    className='mt-4 w-full max-w-2xl rounded-2xl border border-[#df744d]/25 bg-white/90 p-4 text-left shadow-sm sm:p-5'
+                    className='mt-4 w-full max-w-2xl rounded-2xl border border-[#df744d]/25 bg-white/90 p-4 text-left shadow-sm sm:p-5 dark:border-[#f08a61]/35 dark:bg-[#271711] dark:shadow-[0_18px_45px_-28px_rgba(0,0,0,.95)]'
                   >
                     <div className='mb-4'>
                       <h3
                         id='lucky-wheel-rules-title'
-                        className='font-serif text-xl font-semibold text-[#6f2b18]'
+                        className='font-serif text-xl font-semibold text-[#6f2b18] dark:text-[#ffd9c8]'
                       >
                         活动规则与奖池概率
                       </h3>
-                      <p className='text-muted-foreground mt-1 text-sm'>
+                      <p className='text-muted-foreground mt-1 text-sm dark:text-[#d6b4a6]'>
                         当前所选幸运卡使用对应来源的独立奖池，概率不会在前端重新计算。
                       </p>
                     </div>
@@ -491,39 +491,41 @@ export function LuckyWheel() {
                       {visiblePool.map((prize) => (
                         <div
                           key={prize.code}
-                          className='flex items-center justify-between rounded-lg border px-3 py-2.5'
+                          className='flex items-center justify-between rounded-lg border px-3 py-2.5 text-[#512719] dark:border-[#f08a61]/25 dark:bg-[#3a2118]/70 dark:text-[#fff4ed]'
                         >
                           <span className='text-sm'>
                             {wheelLabelByCode.get(prize.code) ||
                               PRIZE_NAMES[prize.code] ||
                               prize.code}
                           </span>
-                          <span className='font-mono text-sm'>
+                          <span className='font-mono text-sm text-[#9b3b20] dark:text-[#ffb898]'>
                             {formatPrizeProbability(prize.weight)}%
                           </span>
                         </div>
                       ))}
                     </div>
-                    <div className='bg-muted/40 text-muted-foreground mt-4 space-y-3 rounded-xl p-4 text-sm leading-relaxed'>
+                    <div className='bg-muted/40 text-muted-foreground mt-4 space-y-3 rounded-xl p-4 text-sm leading-relaxed dark:bg-black/25 dark:text-[#dec0b4]'>
                       <p>
-                        <strong className='text-foreground'>
+                        <strong className='text-foreground dark:text-[#fff4ed]'>
                           套餐来源卡：
                         </strong>
                         奖励会跟随来源套餐的限定分组与剩余有效期；套餐额度奖为一次性额度，不继承周期重置。
                       </p>
                       <p>
-                        <strong className='text-foreground'>
+                        <strong className='text-foreground dark:text-[#fff4ed]'>
                           充值来源卡：
                         </strong>
                         套餐额度奖在显示面额上额外增加 $60，有效期固定 30
                         天；不会抽中套餐双倍卡或全额重置卡。
                       </p>
                       <p>
-                        <strong className='text-foreground'>钱包赠金：</strong>
+                        <strong className='text-foreground dark:text-[#fff4ed]'>
+                          钱包赠金：
+                        </strong>
                         永久有效，可用于 API 消费，但不能用于购买订阅套餐。
                       </p>
                     </div>
-                    <div className='text-muted-foreground mt-4 flex items-center gap-2 text-xs'>
+                    <div className='text-muted-foreground mt-4 flex items-center gap-2 text-xs dark:text-[#cba99c]'>
                       <CalendarClock className='size-4' />
                       活动长期有效，直至平台主动暂停；暂停抽奖期间卡片有效期会冻结。
                     </div>

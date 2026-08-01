@@ -8,6 +8,14 @@ License, or (at your option) any later version.
 */
 import type { LogOtherData } from '../types'
 
+export function getThroughputColor(
+  tokensPerSecond: number
+): 'success' | 'warning' | 'danger' {
+  if (tokensPerSecond >= 30) return 'success'
+  if (tokensPerSecond >= 15) return 'warning'
+  return 'danger'
+}
+
 export function resolveFirstTokenMs(
   other: LogOtherData | null | undefined
 ): number | null {

@@ -18,7 +18,24 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { resolveFirstTokenMs } from './timing.ts'
+import { getThroughputColor, resolveFirstTokenMs } from './timing.ts'
+
+describe('getThroughputColor', () => {
+  test('uses red below 15 tokens per second', () => {
+    assert.equal(getThroughputColor(0), 'danger')
+    assert.equal(getThroughputColor(14.99), 'danger')
+  })
+
+  test('uses yellow from 15 up to 30 tokens per second', () => {
+    assert.equal(getThroughputColor(15), 'warning')
+    assert.equal(getThroughputColor(29.99), 'warning')
+  })
+
+  test('uses green from 30 tokens per second', () => {
+    assert.equal(getThroughputColor(30), 'success')
+    assert.equal(getThroughputColor(100), 'success')
+  })
+})
 
 describe('resolveFirstTokenMs', () => {
   test('prefers the upstream-to-server timing for new logs', () => {
