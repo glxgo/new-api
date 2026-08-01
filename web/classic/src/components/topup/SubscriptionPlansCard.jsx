@@ -688,7 +688,7 @@ const SubscriptionPlansCard = ({
                           <Text
                             type='tertiary'
                             size='small'
-                            ellipsis={{ rows: 1, showTooltip: true }}
+                            ellipsis={{ rows: 3, showTooltip: true }}
                             style={{ display: 'block' }}
                           >
                             {plan.subtitle}

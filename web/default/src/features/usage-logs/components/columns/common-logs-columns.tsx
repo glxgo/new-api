@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useState } from 'react'
 import { type ColumnDef } from '@tanstack/react-table'
-import { Sparkles, KeyRound, Zap } from 'lucide-react'
+import { CircleAlert, Sparkles, KeyRound, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
@@ -37,12 +37,12 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
-import { LOG_TYPE_ALL_VALUE, LOG_TYPE_ENUM } from '../../constants'
+import { LOG_TYPE_ALL_VALUE } from '../../constants'
 import type { UsageLog } from '../../data/schema'
 import {
   formatModelName,
   getFirstResponseTimeColor,
-  getThroughputColor,
+  getResponseTimeColor,
   getTieredBillingSummary,
   hasAnyCacheTokens,
   parseLogOther,
@@ -176,28 +176,6 @@ function FastBadge({ serviceTier }: { serviceTier?: string | null }) {
 function getFirstTokenSeconds(log: UsageLog): number | null {
   const firstTokenMs = resolveFirstTokenMs(parseLogOther(log.other))
   return firstTokenMs != null ? firstTokenMs / 1000 : null
-}
-
-function getGenerationSeconds(log: UsageLog): number | null {
-  if (log.use_time <= 0) return null
-  if (!log.is_stream) return log.use_time
-
-  const requestFirstTokenMs = parseLogOther(log.other)?.frt
-  if (
-    requestFirstTokenMs == null ||
-    !Number.isFinite(requestFirstTokenMs) ||
-    requestFirstTokenMs <= 0
-  ) {
-    return null
-  }
-  return Math.max(0, log.use_time - requestFirstTokenMs / 1000)
-}
-
-function getOutputSpeed(log: UsageLog): number | null {
-  const generationSeconds = getGenerationSeconds(log)
-  if (generationSeconds == null || generationSeconds <= 0) return null
-  if (log.completion_tokens <= 0) return null
-  return log.completion_tokens / generationSeconds
 }
 
 function buildDetailSegments(
@@ -738,107 +716,74 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
       size: 108,
     },
     {
-      id: 'output_speed',
-      header: t('Output Speed'),
-      accessorFn: getOutputSpeed,
+      accessorKey: 'use_time',
+      header: t('Timing'),
       cell: ({ row }) => {
         const log = row.original
         if (!isTimingLogType(log.type)) return null
 
-        const outputSpeed = getOutputSpeed(log)
+        const useTime = row.getValue('use_time') as number
         const other = parseLogOther(log.other)
-        const streamStatus = other?.stream_status
-        const showStream = log.is_stream
-        const streamSuccessful = showStream
-          ? streamStatus?.status
-            ? streamStatus.status === 'ok'
-            : log.type !== LOG_TYPE_ENUM.ERROR
-          : false
-        const throughputVariant =
-          outputSpeed != null ? getThroughputColor(outputSpeed) : null
+        const tokensPerSecond =
+          useTime > 0 && log.completion_tokens > 0
+            ? log.completion_tokens / useTime
+            : null
+        const timeVariant = getResponseTimeColor(useTime, log.completion_tokens)
 
         return (
-          <div className='flex flex-col items-center gap-0.5'>
-            {outputSpeed == null ? (
-              <span className='text-muted-foreground text-xs'>N/A</span>
-            ) : (
+          <div className='flex flex-col gap-1'>
+            <div className='flex items-center gap-1.5'>
               <StatusBadge
-                label={`${outputSpeed.toFixed(outputSpeed >= 10 ? 0 : 1)} t/s`}
-                variant={throughputVariant as StatusBadgeProps['variant']}
+                label={formatUseTime(useTime)}
+                variant={timeVariant as StatusBadgeProps['variant']}
                 size='sm'
-                showDot={false}
                 copyable={false}
-                className={cn(
-                  'rounded-md font-mono',
-                  timingBgMap[throughputVariant ?? 'neutral']
-                )}
+                className={cn('rounded-md font-mono', timingBgMap[timeVariant])}
               />
-            )}
-            {showStream && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <span>
-                        <StatusBadge
-                          label={t(
-                            streamSuccessful ? 'StreamSuccess' : 'StreamFailed'
-                          )}
-                          variant={streamSuccessful ? 'success' : 'danger'}
-                          size='sm'
-                          copyable={false}
-                          className={cn(
-                            'h-3.5 rounded-full px-0.5 text-[9px]',
-                            timingBgMap[streamSuccessful ? 'success' : 'danger']
-                          )}
-                        />
-                      </span>
-                    }
-                  />
-                  {!streamSuccessful && streamStatus && (
-                    <TooltipContent>
-                      <div className='space-y-0.5 text-xs'>
-                        <p>{streamStatus.end_reason || 'unknown'}</p>
-                        {(streamStatus.error_count ?? 0) > 0 && (
+            </div>
+            <div className='flex items-center gap-1 [font-family:var(--font-body)] !text-xs leading-none'>
+              <span className='text-muted-foreground/60 [font-family:var(--font-body)] !text-xs leading-none'>
+                {log.is_stream ? t('Stream') : t('Non-stream')}
+                {tokensPerSecond != null && (
+                  <>
+                    {' · '}
+                    <span className='tabular-nums'>
+                      {Math.round(tokensPerSecond)}
+                    </span>
+                    {' t/s'}
+                  </>
+                )}
+              </span>
+              {log.is_stream &&
+                other?.stream_status &&
+                other.stream_status.status !== 'ok' && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={<CircleAlert className='size-3 text-red-500' />}
+                      />
+                      <TooltipContent>
+                        <div className='space-y-0.5 text-xs'>
                           <p>
-                            {t('Soft Errors')}: {streamStatus.error_count}
+                            {t('Stream Status')}: {t('Error')}
                           </p>
-                        )}
-                      </div>
-                    </TooltipContent>
-                  )}
-                </Tooltip>
-              </TooltipProvider>
-            )}
+                          <p>{other.stream_status.end_reason || 'unknown'}</p>
+                          {(other.stream_status.error_count ?? 0) > 0 && (
+                            <p>
+                              {t('Soft Errors')}:{' '}
+                              {other.stream_status.error_count}
+                            </p>
+                          )}
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+            </div>
           </div>
         )
       },
-      size: 104,
-    },
-    {
-      id: 'total_time',
-      header: t('Total Time'),
-      cell: ({ row }) => {
-        const log = row.original
-        if (!isTimingLogType(log.type)) return null
-
-        const totalSeconds = log.use_time
-        if (totalSeconds == null) {
-          return <span className='text-muted-foreground text-xs'>N/A</span>
-        }
-
-        return (
-          <StatusBadge
-            label={formatUseTime(totalSeconds)}
-            variant='success'
-            size='sm'
-            showDot={false}
-            copyable={false}
-            className={cn('rounded-md font-mono', timingBgMap.success)}
-          />
-        )
-      },
-      size: 110,
+      size: 150,
     },
 
     {

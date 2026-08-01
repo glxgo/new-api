@@ -25,8 +25,10 @@ import {
 } from '@/features/pricing/lib/billing-expr'
 import type { UsageLog } from '../data/schema'
 import type { LogOtherData } from '../types'
+import { getThroughputColor } from './timing'
 
 export { normalizeTierLabel }
+export { getThroughputColor } from './timing'
 
 const PARAM_OVERRIDE_ACTION_MAP: Record<string, string> = {
   set: 'Set',
@@ -124,17 +126,6 @@ export function getFirstResponseTimeColor(
 ): 'success' | 'warning' | 'danger' {
   if (seconds < 5) return 'success'
   if (seconds < 10) return 'warning'
-  return 'danger'
-}
-
-/**
- * Get throughput color based on generated tokens per second
- */
-export function getThroughputColor(
-  tokensPerSecond: number
-): 'success' | 'warning' | 'danger' {
-  if (tokensPerSecond >= 30) return 'success'
-  if (tokensPerSecond >= 15) return 'warning'
   return 'danger'
 }
 
