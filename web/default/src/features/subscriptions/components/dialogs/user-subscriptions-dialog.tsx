@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Plus } from 'lucide-react'
+import { CalendarClock, Plus, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { formatQuota } from '@/lib/format'
@@ -39,6 +39,7 @@ import {
 } from '@/components/ui/sheet'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { StaticDataTable } from '@/components/data-table'
+import { DateTimePicker } from '@/components/datetime-picker'
 import {
   sideDrawerContentClassName,
   sideDrawerFormClassName,
@@ -50,6 +51,7 @@ import {
   getAdminPlans,
   getUserSubscriptions,
   createUserSubscription,
+  renewUserSubscription,
   invalidateUserSubscription,
   deleteUserSubscription,
 } from '../../api'
@@ -69,8 +71,18 @@ function SubscriptionStatusBadge(props: {
 }) {
   // eslint-disable-next-line react-hooks/purity
   const now = Date.now() / 1000
+  const isScheduled =
+    props.sub.status === 'active' && (props.sub.start_time || 0) > now
   const isExpired = (props.sub.end_time || 0) > 0 && props.sub.end_time < now
   const isActive = props.sub.status === 'active' && !isExpired
+  if (isScheduled)
+    return (
+      <StatusBadge
+        label={props.t('Scheduled')}
+        variant='warning'
+        copyable={false}
+      />
+    )
   if (isActive)
     return (
       <StatusBadge
@@ -101,13 +113,25 @@ export function UserSubscriptionsDialog(props: Props) {
   const userId = props.user?.id
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [actionSubmitting, setActionSubmitting] = useState(false)
   const [plans, setPlans] = useState<PlanRecord[]>([])
   const [subs, setSubs] = useState<UserSubscriptionRecord[]>([])
   const [selectedPlanId, setSelectedPlanId] = useState<string>('')
+  const [startTime, setStartTime] = useState<Date | undefined>()
   const [confirmAction, setConfirmAction] = useState<{
-    type: 'invalidate' | 'delete'
+    type: 'renew' | 'invalidate' | 'delete'
     subId: number
   } | null>(null)
+
+  const renewedSourceIds = useMemo(
+    () =>
+      new Set(
+        subs
+          .map((record) => record.subscription.renewed_from_id)
+          .filter((id): id is number => typeof id === 'number' && id > 0)
+      ),
+    [subs]
+  )
 
   const planTitleMap = useMemo(() => {
     const map = new Map<number, string>()
@@ -140,6 +164,7 @@ export function UserSubscriptionsDialog(props: Props) {
       void Promise.resolve().then(() => {
         if (!active) return
         setSelectedPlanId('')
+        setStartTime(undefined)
         void loadData()
       })
     }
@@ -157,10 +182,14 @@ export function UserSubscriptionsDialog(props: Props) {
     try {
       const res = await createUserSubscription(userId, {
         plan_id: Number(selectedPlanId),
+        start_time: startTime
+          ? Math.floor(startTime.getTime() / 1000)
+          : undefined,
       })
       if (res.success) {
         toast.success(res.data?.message || t('Added successfully'))
         setSelectedPlanId('')
+        setStartTime(undefined)
         await loadData()
         props.onSuccess?.()
       }
@@ -173,8 +202,16 @@ export function UserSubscriptionsDialog(props: Props) {
 
   const handleConfirmAction = async () => {
     if (!confirmAction) return
+    setActionSubmitting(true)
     try {
-      if (confirmAction.type === 'invalidate') {
+      if (confirmAction.type === 'renew') {
+        const res = await renewUserSubscription(confirmAction.subId)
+        if (res.success) {
+          toast.success(t('Renewal created successfully'))
+          await loadData()
+          props.onSuccess?.()
+        }
+      } else if (confirmAction.type === 'invalidate') {
         const res = await invalidateUserSubscription(confirmAction.subId)
         if (res.success) {
           toast.success(res.data?.message || t('Has been invalidated'))
@@ -192,6 +229,7 @@ export function UserSubscriptionsDialog(props: Props) {
     } catch {
       toast.error(t('Operation failed'))
     } finally {
+      setActionSubmitting(false)
       setConfirmAction(null)
     }
   }
@@ -208,43 +246,66 @@ export function UserSubscriptionsDialog(props: Props) {
           </SheetHeader>
 
           <div className={sideDrawerFormClassName()}>
-            <div className='flex gap-2'>
-              <Select
-                items={[
-                  ...plans.map((p) => ({
-                    value: String(p.plan.id),
-                    label: (
-                      <>
-                        {p.plan.title}($
-                        {Number(p.plan.price_amount || 0).toFixed(2)})
-                      </>
-                    ),
-                  })),
-                ]}
-                value={selectedPlanId}
-                onValueChange={(v) => v !== null && setSelectedPlanId(v)}
-              >
-                <SelectTrigger className='flex-1'>
-                  <SelectValue placeholder={t('Select subscription plan')} />
-                </SelectTrigger>
-                <SelectContent alignItemWithTrigger={false}>
-                  <SelectGroup>
-                    {plans.map((p) => (
-                      <SelectItem key={p.plan.id} value={String(p.plan.id)}>
-                        {p.plan.title} ($
-                        {Number(p.plan.price_amount || 0).toFixed(2)})
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <Button
-                onClick={handleCreate}
-                disabled={creating || !selectedPlanId}
-              >
-                <Plus className='mr-1 h-4 w-4' />
-                {t('Add subscription')}
-              </Button>
+            <div className='border-border/70 bg-muted/25 space-y-3 rounded-xl border p-3'>
+              <div className='flex items-start gap-2'>
+                <div className='bg-background border-border flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border'>
+                  <CalendarClock className='text-muted-foreground h-4 w-4' />
+                </div>
+                <div>
+                  <div className='text-sm font-medium'>
+                    {t('Add subscription')}
+                  </div>
+                  <p className='text-muted-foreground text-xs'>
+                    {t(
+                      'Leave the start time empty to activate immediately. A future subscription is not usable before that time.'
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className='grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(15rem,1fr)_auto]'>
+                <Select
+                  items={[
+                    ...plans.map((p) => ({
+                      value: String(p.plan.id),
+                      label: (
+                        <>
+                          {p.plan.title}($
+                          {Number(p.plan.price_amount || 0).toFixed(2)})
+                        </>
+                      ),
+                    })),
+                  ]}
+                  value={selectedPlanId}
+                  onValueChange={(v) => v !== null && setSelectedPlanId(v)}
+                >
+                  <SelectTrigger className='w-full'>
+                    <SelectValue placeholder={t('Select subscription plan')} />
+                  </SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false}>
+                    <SelectGroup>
+                      {plans.map((p) => (
+                        <SelectItem key={p.plan.id} value={String(p.plan.id)}>
+                          {p.plan.title} ($
+                          {Number(p.plan.price_amount || 0).toFixed(2)})
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <DateTimePicker
+                  value={startTime}
+                  onChange={setStartTime}
+                  placeholder={t('Start immediately')}
+                  className='min-w-0'
+                />
+                <Button
+                  onClick={handleCreate}
+                  disabled={creating || !selectedPlanId}
+                >
+                  <Plus className='mr-1 h-4 w-4' />
+                  {t('Add')}
+                </Button>
+              </div>
             </div>
 
             <StaticDataTable
@@ -269,7 +330,9 @@ export function UserSubscriptionsDialog(props: Props) {
                     return (
                       <div>
                         <div className='font-medium'>
-                          {planTitleMap.get(sub.plan_id) || `#${sub.plan_id}`}
+                          {sub.plan_title ||
+                            planTitleMap.get(sub.plan_id) ||
+                            `#${sub.plan_id}`}
                         </div>
                         <div className='text-muted-foreground text-sm'>
                           {t('Source')}: {sub.source || '-'}
@@ -364,9 +427,24 @@ export function UserSubscriptionsDialog(props: Props) {
                     const isExpired =
                       (sub.end_time || 0) > 0 && sub.end_time < now
                     const isActive = sub.status === 'active' && !isExpired
+                    const hasSuccessor = renewedSourceIds.has(sub.id)
 
                     return (
-                      <div className='flex justify-end gap-1'>
+                      <div className='flex flex-wrap justify-end gap-1'>
+                        <Button
+                          size='sm'
+                          variant='outline'
+                          disabled={hasSuccessor}
+                          onClick={() =>
+                            setConfirmAction({
+                              type: 'renew',
+                              subId: sub.id,
+                            })
+                          }
+                        >
+                          <RefreshCw className='mr-1 h-3.5 w-3.5' />
+                          {t('Renew')}
+                        </Button>
                         <Button
                           size='sm'
                           variant='outline'
@@ -407,21 +485,28 @@ export function UserSubscriptionsDialog(props: Props) {
           open
           onOpenChange={(v) => !v && setConfirmAction(null)}
           title={
-            confirmAction.type === 'invalidate'
-              ? t('Confirm invalidate')
-              : t('Confirm delete')
+            confirmAction.type === 'renew'
+              ? t('Confirm Subscription Renewal')
+              : confirmAction.type === 'invalidate'
+                ? t('Confirm invalidate')
+                : t('Confirm delete')
           }
           desc={
-            confirmAction.type === 'invalidate'
+            confirmAction.type === 'renew'
               ? t(
-                  'After invalidating, this subscription will be immediately deactivated. Every API Key currently bound to it is affected: its next request will follow that Key’s configured continuation policy, or fail if no continuation is allowed. Historical records and scheduled renewal relations remain visible. Continue?'
+                  'The administrator will create a linked successor without charging the user. It starts when the current subscription ends, or immediately if already expired, and bound API Keys will follow the existing renewal policy. Continue?'
                 )
-              : t(
-                  'Deleting permanently removes this instance. The system will block deletion when API Key bindings, billing records, audit history, or renewal relations exist; use Invalidate instead in that case. Continue?'
-                )
+              : confirmAction.type === 'invalidate'
+                ? t(
+                    'After invalidating, this subscription will be immediately deactivated. Every API Key currently bound to it is affected: its next request will follow that Key’s configured continuation policy, or fail if no continuation is allowed. Historical records and scheduled renewal relations remain visible. Continue?'
+                  )
+                : t(
+                    'Deleting permanently removes this instance. The system will block deletion when API Key bindings, billing records, audit history, or renewal relations exist; use Invalidate instead in that case. Continue?'
+                  )
           }
           handleConfirm={handleConfirmAction}
           destructive={confirmAction.type === 'delete'}
+          isLoading={actionSubmitting}
         />
       )}
     </>

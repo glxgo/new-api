@@ -51,8 +51,23 @@ func runSubscriptionQuotaResetOnce() {
 	defer subscriptionResetRunning.Store(false)
 
 	ctx := context.Background()
+	totalActivated := 0
 	totalReset := 0
 	totalExpired := 0
+	for {
+		n, err := model.ActivateDueSubscriptionGroups(subscriptionResetBatchSize)
+		if err != nil {
+			logger.LogWarn(ctx, fmt.Sprintf("scheduled subscription activation task failed: %v", err))
+			return
+		}
+		if n == 0 {
+			break
+		}
+		totalActivated += n
+		if n < subscriptionResetBatchSize {
+			break
+		}
+	}
 	// Advance reset epochs before expiring subscriptions so a maintenance gap
 	// cannot silently discard a reset that occurred while the source was valid.
 	for {
@@ -100,7 +115,7 @@ func runSubscriptionQuotaResetOnce() {
 			subscriptionCleanupLast.Store(time.Now().Unix())
 		}
 	}
-	if common.DebugEnabled && (totalReset > 0 || totalExpired > 0) {
-		logger.LogDebug(ctx, "subscription maintenance: reset_count=%d, expired_count=%d", totalReset, totalExpired)
+	if common.DebugEnabled && (totalActivated > 0 || totalReset > 0 || totalExpired > 0) {
+		logger.LogDebug(ctx, "subscription maintenance: activated_count=%d, reset_count=%d, expired_count=%d", totalActivated, totalReset, totalExpired)
 	}
 }

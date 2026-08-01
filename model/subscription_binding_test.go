@@ -123,6 +123,53 @@ func TestSubscriptionSummaryKeepsDisabledPlanPresentation(t *testing.T) {
 	require.Equal(t, PlanVersionPro, byId[snapshotSubscription.Id].PlanVersion)
 }
 
+func TestAdminBindSubscriptionUsesRequestedStartTime(t *testing.T) {
+	db := setupSubscriptionBindingTestDB(t)
+	plan := testSubscriptionPlan("scheduled admin plan", "team-a")
+	require.NoError(t, db.Create(&plan).Error)
+	InvalidateSubscriptionPlanCache(plan.Id)
+	t.Cleanup(func() { InvalidateSubscriptionPlanCache(plan.Id) })
+
+	start := time.Date(2026, time.August, 8, 14, 30, 0, 0, time.Local).Unix()
+	_, err := AdminBindSubscriptionAt(77, plan.Id, start, "")
+	require.NoError(t, err)
+
+	var subscription UserSubscription
+	require.NoError(t, db.Where("user_id = ?", 77).First(&subscription).Error)
+	require.Equal(t, start, subscription.StartTime)
+	require.Equal(t, time.Unix(start, 0).AddDate(0, 1, 0).Unix(), subscription.EndTime)
+	require.Equal(t, "admin", subscription.Source)
+}
+
+func TestScheduledAdminSubscriptionDefersLegacyGroupUpgrade(t *testing.T) {
+	db := setupSubscriptionBindingTestDB(t)
+	user := User{Username: "scheduled-upgrade-user", Group: "default"}
+	require.NoError(t, db.Create(&user).Error)
+	plan := testSubscriptionPlan("scheduled legacy upgrade", "")
+	plan.UpgradeGroup = "vip"
+	require.NoError(t, db.Create(&plan).Error)
+	InvalidateSubscriptionPlanCache(plan.Id)
+	t.Cleanup(func() { InvalidateSubscriptionPlanCache(plan.Id) })
+
+	start := common.GetTimestamp() + 3600
+	_, err := AdminBindSubscriptionAt(user.Id, plan.Id, start, "")
+	require.NoError(t, err)
+	require.NoError(t, db.First(&user, user.Id).Error)
+	require.Equal(t, "default", user.Group)
+
+	require.NoError(t, db.Model(&UserSubscription{}).Where("user_id = ?", user.Id).
+		Update("start_time", common.GetTimestamp()-1).Error)
+	activated, err := ActivateDueSubscriptionGroups(10)
+	require.NoError(t, err)
+	require.Equal(t, 1, activated)
+	require.NoError(t, db.First(&user, user.Id).Error)
+	require.Equal(t, "vip", user.Group)
+
+	var subscription UserSubscription
+	require.NoError(t, db.Where("user_id = ?", user.Id).First(&subscription).Error)
+	require.Equal(t, "default", subscription.PrevUserGroup)
+}
+
 func TestTokenBindingRebindAndUnbindAreAudited(t *testing.T) {
 	db := setupSubscriptionBindingTestDB(t)
 	now := common.GetTimestamp()
@@ -350,6 +397,59 @@ func TestRenewalCreatesLinearSuccessorAndSchedulesAtomicGroupSwitch(t *testing.T
 		_, _, createErr := createRenewalSubscriptionFromOrderTx(tx, secondOrder, &plan, 200)
 		return createErr
 	})
+	require.ErrorIs(t, err, ErrSubscriptionRenewalAlreadyExists)
+}
+
+func TestAdminRenewalCreatesLinkedSuccessorWithoutChargingUser(t *testing.T) {
+	db := setupSubscriptionBindingTestDB(t)
+	now := common.GetTimestamp()
+	plan := testSubscriptionPlan("admin renewal terms", "team-b")
+	require.NoError(t, db.Create(&plan).Error)
+	InvalidateSubscriptionPlanCache(plan.Id)
+	t.Cleanup(func() { InvalidateSubscriptionPlanCache(plan.Id) })
+	source := UserSubscription{
+		UserId:       28,
+		PlanId:       plan.Id,
+		Remark:       "managed project",
+		Status:       "active",
+		StartTime:    now - 3600,
+		EndTime:      now + 1800,
+		AmountTotal:  1000,
+		AllowedGroup: "team-a",
+	}
+	require.NoError(t, db.Create(&source).Error)
+	token := Token{
+		UserId:                   source.UserId,
+		Name:                     "admin-renew-key",
+		Key:                      "admin-renew-key-secret",
+		Group:                    "team-a",
+		Status:                   common.TokenStatusEnabled,
+		SubscriptionMode:         TokenSubscriptionModeInstance,
+		SubscriptionId:           source.Id,
+		SubscriptionAllowRenewal: true,
+	}
+	require.NoError(t, db.Create(&token).Error)
+
+	preview, err := AdminRenewUserSubscription(source.Id)
+	require.NoError(t, err)
+	require.Equal(t, source.EndTime, preview.StartTime)
+	require.Equal(t, plan.Id, preview.Plan.Id)
+	require.Len(t, preview.BindingChanges, 1)
+
+	var successor UserSubscription
+	require.NoError(t, db.Where("renewed_from_id = ?", source.Id).First(&successor).Error)
+	require.Equal(t, "admin_renewal", successor.Source)
+	require.Equal(t, int64(0), successor.PaidRevenueQuota)
+	require.Equal(t, "managed project（续费）", successor.Remark)
+	require.Equal(t, source.EndTime, successor.StartTime)
+
+	require.NoError(t, db.First(&token, token.Id).Error)
+	require.Equal(t, source.Id, token.SubscriptionId)
+	require.Equal(t, successor.Id, token.PlannedSubscriptionId)
+	require.Equal(t, "team-b", token.PlannedSubscriptionGroup)
+	require.Equal(t, successor.StartTime, token.PlannedSubscriptionEffective)
+
+	_, err = AdminRenewUserSubscription(source.Id)
 	require.ErrorIs(t, err, ErrSubscriptionRenewalAlreadyExists)
 }
 

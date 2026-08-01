@@ -35,23 +35,30 @@ type SubscriptionRenewalPreview struct {
 	EndTime          int64                         `json:"end_time"`
 }
 
-func ResolveSubscriptionRenewalPlan(userId, fromSubscriptionId int) (*UserSubscription, *SubscriptionPlan, bool, error) {
+func resolveSubscriptionRenewalPlanTx(tx *gorm.DB, userId, fromSubscriptionId int, lock bool) (*UserSubscription, *SubscriptionPlan, bool, error) {
 	if userId <= 0 || fromSubscriptionId <= 0 {
 		return nil, nil, false, ErrSubscriptionRenewalNotAvailable
 	}
+	if tx == nil {
+		tx = DB
+	}
 	var source UserSubscription
-	if err := DB.Where("id = ? AND user_id = ?", fromSubscriptionId, userId).First(&source).Error; err != nil {
+	query := tx
+	if lock {
+		query = query.Set("gorm:query_option", "FOR UPDATE")
+	}
+	if err := query.Where("id = ? AND user_id = ?", fromSubscriptionId, userId).First(&source).Error; err != nil {
 		return nil, nil, false, err
 	}
 	var successorCount int64
-	if err := DB.Model(&UserSubscription{}).Where("renewed_from_id = ?", source.Id).Count(&successorCount).Error; err != nil {
+	if err := tx.Model(&UserSubscription{}).Where("renewed_from_id = ?", source.Id).Count(&successorCount).Error; err != nil {
 		return nil, nil, false, err
 	}
 	if successorCount > 0 {
 		return nil, nil, false, ErrSubscriptionRenewalAlreadyExists
 	}
 	var pendingCount int64
-	if err := DB.Model(&SubscriptionOrder{}).
+	if err := tx.Model(&SubscriptionOrder{}).
 		Where("renew_from_subscription_id = ? AND status = ?", source.Id, common.TopUpStatusPending).
 		Count(&pendingCount).Error; err != nil {
 		return nil, nil, false, err
@@ -60,7 +67,7 @@ func ResolveSubscriptionRenewalPlan(userId, fromSubscriptionId int) (*UserSubscr
 		return nil, nil, false, ErrSubscriptionRenewalOrderPending
 	}
 
-	plan, err := GetSubscriptionPlanById(source.PlanId)
+	plan, err := getSubscriptionPlanByIdTx(tx, source.PlanId)
 	if err != nil {
 		return nil, nil, false, err
 	}
@@ -69,7 +76,7 @@ func ResolveSubscriptionRenewalPlan(userId, fromSubscriptionId int) (*UserSubscr
 		if plan.RenewalPlanId == nil || *plan.RenewalPlanId <= 0 {
 			return nil, nil, false, ErrSubscriptionRenewalNotAvailable
 		}
-		plan, err = GetSubscriptionPlanById(*plan.RenewalPlanId)
+		plan, err = getSubscriptionPlanByIdTx(tx, *plan.RenewalPlanId)
 		if err != nil {
 			return nil, nil, false, err
 		}
@@ -79,6 +86,10 @@ func ResolveSubscriptionRenewalPlan(userId, fromSubscriptionId int) (*UserSubscr
 		isReplacement = true
 	}
 	return &source, plan, isReplacement, nil
+}
+
+func ResolveSubscriptionRenewalPlan(userId, fromSubscriptionId int) (*UserSubscription, *SubscriptionPlan, bool, error) {
+	return resolveSubscriptionRenewalPlanTx(DB, userId, fromSubscriptionId, false)
 }
 
 func renewalTargetGroup(tokenGroup string, plan *SubscriptionPlan) string {
@@ -144,6 +155,78 @@ func GetSubscriptionRenewalPreview(userId, fromSubscriptionId int) (*Subscriptio
 		StartTime:        start,
 		EndTime:          end,
 	}, nil
+}
+
+// AdminRenewUserSubscription creates a no-payment successor using the same
+// linear renewal and API Key transition semantics as a user-paid renewal.
+func AdminRenewUserSubscription(fromSubscriptionId int) (*SubscriptionRenewalPreview, error) {
+	if fromSubscriptionId <= 0 {
+		return nil, ErrSubscriptionRenewalNotAvailable
+	}
+	var result *SubscriptionRenewalPreview
+	var tokenKeys []string
+	var upgradeUserId int
+	var upgradeGroup string
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var owner UserSubscription
+		if err := tx.Select("id", "user_id").Where("id = ?", fromSubscriptionId).First(&owner).Error; err != nil {
+			return err
+		}
+		source, plan, replacement, err := resolveSubscriptionRenewalPlanTx(tx, owner.UserId, fromSubscriptionId, true)
+		if err != nil {
+			return err
+		}
+		now := GetDBTimestamp()
+		start, end, err := renewalStartAndEnd(source, plan, now)
+		if err != nil {
+			return err
+		}
+		successor, err := CreateUserSubscriptionFromPlanWithOptionsTx(
+			tx,
+			source.UserId,
+			plan,
+			"admin_renewal",
+			CreateUserSubscriptionOptions{
+				StartTime:         start,
+				RenewedFromId:     &source.Id,
+				Remark:            renewalRemark(source.Remark),
+				SkipPurchaseLimit: true,
+			},
+		)
+		if err != nil {
+			return err
+		}
+		changes, changedTokenKeys, err := scheduleRenewalBindingsTx(tx, source, successor, plan, now)
+		if err != nil {
+			return err
+		}
+		tokenKeys = changedTokenKeys
+		if successor.StartTime <= now && strings.TrimSpace(plan.UpgradeGroup) != "" {
+			upgradeUserId = source.UserId
+			upgradeGroup = strings.TrimSpace(plan.UpgradeGroup)
+		}
+		result = &SubscriptionRenewalPreview{
+			FromSubscription: source,
+			Plan:             plan,
+			IsReplacement:    replacement,
+			BindingChanges:   changes,
+			StartTime:        start,
+			EndTime:          end,
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if common.RedisEnabled {
+		for _, tokenKey := range tokenKeys {
+			_ = cacheDeleteToken(tokenKey)
+		}
+	}
+	if upgradeUserId > 0 && upgradeGroup != "" {
+		_ = UpdateUserGroupCache(upgradeUserId, upgradeGroup)
+	}
+	return result, nil
 }
 
 func ConfigureSubscriptionOrderRenewal(order *SubscriptionOrder, userId, fromSubscriptionId int) error {

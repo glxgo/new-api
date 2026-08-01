@@ -120,6 +120,15 @@ export async function createUserSubscription(
   return res.data
 }
 
+export async function renewUserSubscription(
+  subId: number
+): Promise<ApiResponse<SubscriptionRenewalPreview>> {
+  const res = await api.post(
+    `/api/subscription/admin/user_subscriptions/${subId}/renew`
+  )
+  return res.data
+}
+
 export async function invalidateUserSubscription(
   subId: number
 ): Promise<ApiResponse<{ message?: string }>> {
