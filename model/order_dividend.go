@@ -9,14 +9,55 @@ import (
 	"gorm.io/gorm"
 )
 
+type dividendRatePolicy struct {
+	direct        float64
+	agentDirect   float64
+	indirect      float64
+	root          float64
+	adminDirect   float64
+	adminIndirect float64
+	maxAdmin      float64
+}
+
+func orderDividendRatePolicy() dividendRatePolicy {
+	return dividendRatePolicy{
+		direct:        common.OrderAffiliateDirectRate,
+		agentDirect:   common.AgentOrderAffiliateDirectRate,
+		indirect:      common.OrderAffiliateIndirectRate,
+		root:          common.OrderRootDividendRate,
+		adminDirect:   common.OrderAffiliateAdminDirectRate,
+		adminIndirect: common.OrderAffiliateAdminIndirectRate,
+		maxAdmin:      common.MaxOrderDividendRate(),
+	}
+}
+
+func walletProfitDividendRatePolicy() dividendRatePolicy {
+	return dividendRatePolicy{
+		direct:        common.AffiliateDirectRate,
+		agentDirect:   common.AgentAffiliateDirectRate,
+		indirect:      common.AffiliateIndirectRate,
+		root:          common.RootDividendRate,
+		adminDirect:   common.AffiliateAdminDirectRate,
+		adminIndirect: common.AffiliateAdminIndirectRate,
+		maxAdmin:      common.MaxDividendRate(),
+	}
+}
+
+func (p dividendRatePolicy) directRateForRole(role int) float64 {
+	if role == common.RoleAgentUser {
+		return p.agentDirect
+	}
+	return p.direct
+}
+
 // settleOrderDividendTx writes order/subscription dividend records and recipient
 // balances in the caller's transaction. This keeps the audit rows and money
 // movement atomic: a crash can no longer leave "recorded but not credited".
-func settleOrderDividendTx(tx *gorm.DB, buyer *User, orderQuota int64, sourceRef string) ([]int, error) {
+func settleOrderDividendTx(tx *gorm.DB, buyer *User, dividendBase int64, sourceRef string, rates dividendRatePolicy) ([]int, error) {
 	if tx == nil {
 		return nil, errors.New("dividend transaction is nil")
 	}
-	if buyer == nil || buyer.Id <= 0 || orderQuota <= 0 || buyer.Role >= common.RoleRootUser {
+	if buyer == nil || buyer.Id <= 0 || dividendBase <= 0 || buyer.Role >= common.RoleRootUser {
 		return nil, nil
 	}
 	if sourceRef != "" {
@@ -52,12 +93,12 @@ func settleOrderDividendTx(tx *gorm.DB, buyer *User, orderQuota int64, sourceRef
 		root = &rootUser
 	}
 
-	dIndirect := decimal.NewFromFloat(common.OrderAffiliateIndirectRate)
-	dRoot := decimal.NewFromFloat(common.OrderRootDividendRate)
-	dMaxDiv := decimal.NewFromFloat(common.MaxOrderDividendRate())
-	dAdminDirect := decimal.NewFromFloat(common.OrderAffiliateAdminDirectRate)
-	dAdminIndirect := decimal.NewFromFloat(common.OrderAffiliateAdminIndirectRate)
-	dBase := decimal.NewFromInt(orderQuota)
+	dIndirect := decimal.NewFromFloat(rates.indirect)
+	dRoot := decimal.NewFromFloat(rates.root)
+	dMaxDiv := decimal.NewFromFloat(rates.maxAdmin)
+	dAdminDirect := decimal.NewFromFloat(rates.adminDirect)
+	dAdminIndirect := decimal.NewFromFloat(rates.adminIndirect)
+	dBase := decimal.NewFromInt(dividendBase)
 
 	accumGift := map[int]int{}
 	accumDividend := map[int]int{}
@@ -67,14 +108,14 @@ func settleOrderDividendTx(tx *gorm.DB, buyer *User, orderQuota int64, sourceRef
 
 	// 直接上级(普通用户才发返利)
 	if inv := getUser(inviterId); inv != nil && inv.Role < common.RoleAdminUser {
-		dDirect := decimal.NewFromFloat(common.OrderAffiliateDirectRateForRole(inv.Role))
+		dDirect := decimal.NewFromFloat(rates.directRateForRole(inv.Role))
 		if amt := int(dBase.Mul(dDirect).Round(0).IntPart()); amt > 0 {
 			if common.AffiliateRewardIsWithdrawable(inv.Role) {
 				accumDividend[inv.Id] += amt
 			} else {
 				accumGift[inv.Id] += amt
 			}
-			records = append(records, &DividendRecord{BatchId: batchId, UserId: inv.Id, SourceUserId: buyerUserId, Type: DividendTypeDirect, GrossProfit: int(orderQuota), Amount: amt, SourceRef: sourceRef, CreatedAt: now})
+			records = append(records, &DividendRecord{BatchId: batchId, UserId: inv.Id, SourceUserId: buyerUserId, Type: DividendTypeDirect, GrossProfit: int(dividendBase), Amount: amt, SourceRef: sourceRef, CreatedAt: now})
 		}
 	}
 	// 间接上级(普通用户)
@@ -85,10 +126,10 @@ func settleOrderDividendTx(tx *gorm.DB, buyer *User, orderQuota int64, sourceRef
 			} else {
 				accumGift[inv2.Id] += amt
 			}
-			records = append(records, &DividendRecord{BatchId: batchId, UserId: inv2.Id, SourceUserId: buyerUserId, Type: DividendTypeIndirect, GrossProfit: int(orderQuota), Amount: amt, SourceRef: sourceRef, CreatedAt: now})
+			records = append(records, &DividendRecord{BatchId: batchId, UserId: inv2.Id, SourceUserId: buyerUserId, Type: DividendTypeIndirect, GrossProfit: int(dividendBase), Amount: amt, SourceRef: sourceRef, CreatedAt: now})
 		}
 	}
-	// 管理员分红(树顶管理员, 按层级距离选比例, 上限 MaxOrderDividendRate)
+	// 管理员分红(树顶管理员, 按层级距离选比例, 上限由当前分润策略决定)
 	if admin := getUser(affAdminId); admin != nil && admin.Role >= common.RoleAdminUser {
 		var rate decimal.Decimal
 		if inviterId == admin.Id {
@@ -102,15 +143,15 @@ func settleOrderDividendTx(tx *gorm.DB, buyer *User, orderQuota int64, sourceRef
 		if rate.GreaterThan(decimal.Zero) {
 			if amt := int(dBase.Mul(rate).Round(0).IntPart()); amt > 0 {
 				accumDividend[admin.Id] += amt
-				records = append(records, &DividendRecord{BatchId: batchId, UserId: admin.Id, SourceUserId: buyerUserId, Type: DividendTypeAdmin, GrossProfit: int(orderQuota), Amount: amt, SourceRef: sourceRef, CreatedAt: now})
+				records = append(records, &DividendRecord{BatchId: batchId, UserId: admin.Id, SourceUserId: buyerUserId, Type: DividendTypeAdmin, GrossProfit: int(dividendBase), Amount: amt, SourceRef: sourceRef, CreatedAt: now})
 			}
 		}
 	}
-	// 超管分红(所有订单金额 × OrderRootDividendRate)
+	// 超管分红(分润基数 × 当前策略的超管比例)
 	if root != nil {
 		if amt := int(dBase.Mul(dRoot).Round(0).IntPart()); amt > 0 {
 			accumDividend[root.Id] += amt
-			records = append(records, &DividendRecord{BatchId: batchId, UserId: root.Id, SourceUserId: buyerUserId, Type: DividendTypeRoot, GrossProfit: int(orderQuota), Amount: amt, SourceRef: sourceRef, CreatedAt: now})
+			records = append(records, &DividendRecord{BatchId: batchId, UserId: root.Id, SourceUserId: buyerUserId, Type: DividendTypeRoot, GrossProfit: int(dividendBase), Amount: amt, SourceRef: sourceRef, CreatedAt: now})
 		}
 	}
 
@@ -175,7 +216,7 @@ func SettleOrderDividend(buyerUserId int, orderQuota int64, sourceRef string) {
 			return err
 		}
 		var err error
-		giftRecipients, err = settleOrderDividendTx(tx, &buyer, orderQuota, sourceRef)
+		giftRecipients, err = settleOrderDividendTx(tx, &buyer, orderQuota, sourceRef, orderDividendRatePolicy())
 		return err
 	})
 	if err != nil {
@@ -256,7 +297,7 @@ func SettleSubscriptionEndDividend(buyerUserId, subId int) {
 			return err
 		}
 		var err error
-		giftRecipients, err = settleOrderDividendTx(tx, &buyer, profit, sourceRef)
+		giftRecipients, err = settleOrderDividendTx(tx, &buyer, profit, sourceRef, walletProfitDividendRatePolicy())
 		if err != nil {
 			return err
 		}

@@ -35,6 +35,30 @@ func setupSubscriptionChannelCostTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func useWalletDividendTestRates(t *testing.T) {
+	t.Helper()
+	oldDirect := common.AffiliateDirectRate
+	oldIndirect := common.AffiliateIndirectRate
+	oldAgentDirect := common.AgentAffiliateDirectRate
+	oldRoot := common.RootDividendRate
+	oldAdminDirect := common.AffiliateAdminDirectRate
+	oldAdminIndirect := common.AffiliateAdminIndirectRate
+	common.AffiliateDirectRate = 0.10
+	common.AffiliateIndirectRate = 0.05
+	common.AgentAffiliateDirectRate = 0.20
+	common.RootDividendRate = 0.15
+	common.AffiliateAdminDirectRate = 0.40
+	common.AffiliateAdminIndirectRate = 0.22
+	t.Cleanup(func() {
+		common.AffiliateDirectRate = oldDirect
+		common.AffiliateIndirectRate = oldIndirect
+		common.AgentAffiliateDirectRate = oldAgentDirect
+		common.RootDividendRate = oldRoot
+		common.AffiliateAdminDirectRate = oldAdminDirect
+		common.AffiliateAdminIndirectRate = oldAdminIndirect
+	})
+}
+
 func TestFinalizeSubscriptionPreConsumeUsesOldToNewCostDelta(t *testing.T) {
 	db := setupSubscriptionChannelCostTestDB(t)
 	sub := UserSubscription{
@@ -249,6 +273,7 @@ func TestSubscriptionDividendWaitsForProvisionalCost(t *testing.T) {
 
 func TestSubscriptionDividendCreditsAndRecordsExactlyOnce(t *testing.T) {
 	db := setupSubscriptionChannelCostTestDB(t)
+	useWalletDividendTestRates(t)
 	root := User{
 		Username: "subscription-root",
 		Role:     common.RoleRootUser,
@@ -293,9 +318,118 @@ func TestSubscriptionDividendCreditsAndRecordsExactlyOnce(t *testing.T) {
 	require.NoError(t, db.First(&gotInviter, inviter.Id).Error)
 	require.NoError(t, db.First(&gotRoot, root.Id).Error)
 	expectedProfit := int64(800)
-	require.Equal(t, int(expectedProfit*5/100), gotInviter.GiftQuota)
-	require.Equal(t, int(expectedProfit*5/100), gotRoot.DividendBalance)
+	require.Equal(t, int(expectedProfit*10/100), gotInviter.GiftQuota)
+	require.Equal(t, int(expectedProfit*15/100), gotRoot.DividendBalance)
 	require.Equal(t, gotRoot.DividendBalance, gotRoot.DividendTotal)
+}
+
+func TestSubscriptionDividendUsesWalletReferralAndAdminIndirectRates(t *testing.T) {
+	db := setupSubscriptionChannelCostTestDB(t)
+	useWalletDividendTestRates(t)
+
+	root := User{Username: "wallet-rate-root", Role: common.RoleRootUser, AffCode: "wrr01"}
+	admin := User{Username: "wallet-rate-admin", Role: common.RoleAdminUser, AffCode: "wra01"}
+	indirect := User{Username: "wallet-rate-indirect", Role: common.RoleCommonUser, AffCode: "wri01"}
+	require.NoError(t, db.Create(&root).Error)
+	require.NoError(t, db.Create(&admin).Error)
+	require.NoError(t, db.Create(&indirect).Error)
+	direct := User{
+		Username:  "wallet-rate-direct",
+		Role:      common.RoleCommonUser,
+		AffCode:   "wrd01",
+		InviterId: indirect.Id,
+	}
+	require.NoError(t, db.Create(&direct).Error)
+	buyer := User{
+		Username:   "wallet-rate-buyer",
+		Role:       common.RoleCommonUser,
+		AffCode:    "wrb01",
+		InviterId:  direct.Id,
+		AffAdminId: admin.Id,
+	}
+	require.NoError(t, db.Create(&buyer).Error)
+	sub := UserSubscription{
+		UserId:           buyer.Id,
+		Status:           "expired",
+		EndTime:          common.GetTimestamp() - 3600,
+		PaidRevenueQuota: 1000,
+		CostAccumulator:  200 * ChannelCostRatioScale,
+		DividendState:    SubscriptionDividendPending,
+	}
+	require.NoError(t, db.Create(&sub).Error)
+
+	SettleSubscriptionEndDividend(buyer.Id, sub.Id)
+
+	var gotDirect, gotIndirect, gotAdmin, gotRoot User
+	require.NoError(t, db.First(&gotDirect, direct.Id).Error)
+	require.NoError(t, db.First(&gotIndirect, indirect.Id).Error)
+	require.NoError(t, db.First(&gotAdmin, admin.Id).Error)
+	require.NoError(t, db.First(&gotRoot, root.Id).Error)
+	require.Equal(t, 80, gotDirect.GiftQuota)
+	require.Equal(t, 40, gotIndirect.GiftQuota)
+	require.Equal(t, 176, gotAdmin.DividendBalance)
+	require.Equal(t, 120, gotRoot.DividendBalance)
+
+	var records []DividendRecord
+	require.NoError(t, db.Where("source_ref = ?", fmt.Sprintf("sub-end-%d", sub.Id)).Find(&records).Error)
+	require.Len(t, records, 4)
+}
+
+func TestSubscriptionDividendUsesWalletAgentAndAdminDirectRates(t *testing.T) {
+	db := setupSubscriptionChannelCostTestDB(t)
+	useWalletDividendTestRates(t)
+
+	root := User{Username: "wallet-special-root", Role: common.RoleRootUser, AffCode: "wsr01"}
+	admin := User{Username: "wallet-special-admin", Role: common.RoleAdminUser, AffCode: "wsa01"}
+	agent := User{Username: "wallet-special-agent", Role: common.RoleAgentUser, AffCode: "wsg01"}
+	require.NoError(t, db.Create(&root).Error)
+	require.NoError(t, db.Create(&admin).Error)
+	require.NoError(t, db.Create(&agent).Error)
+
+	agentBuyer := User{
+		Username:   "wallet-agent-buyer",
+		Role:       common.RoleCommonUser,
+		AffCode:    "wab01",
+		InviterId:  agent.Id,
+		AffAdminId: admin.Id,
+	}
+	require.NoError(t, db.Create(&agentBuyer).Error)
+	agentSub := UserSubscription{
+		UserId:           agentBuyer.Id,
+		Status:           "expired",
+		EndTime:          common.GetTimestamp() - 3600,
+		PaidRevenueQuota: 1000,
+		DividendState:    SubscriptionDividendPending,
+	}
+	require.NoError(t, db.Create(&agentSub).Error)
+	SettleSubscriptionEndDividend(agentBuyer.Id, agentSub.Id)
+
+	adminBuyer := User{
+		Username:   "wallet-admin-buyer",
+		Role:       common.RoleCommonUser,
+		AffCode:    "wdb01",
+		InviterId:  admin.Id,
+		AffAdminId: admin.Id,
+	}
+	require.NoError(t, db.Create(&adminBuyer).Error)
+	adminSub := UserSubscription{
+		UserId:           adminBuyer.Id,
+		Status:           "expired",
+		EndTime:          common.GetTimestamp() - 3600,
+		PaidRevenueQuota: 1000,
+		DividendState:    SubscriptionDividendPending,
+	}
+	require.NoError(t, db.Create(&adminSub).Error)
+	SettleSubscriptionEndDividend(adminBuyer.Id, adminSub.Id)
+
+	var gotAgent, gotAdmin, gotRoot User
+	require.NoError(t, db.First(&gotAgent, agent.Id).Error)
+	require.NoError(t, db.First(&gotAdmin, admin.Id).Error)
+	require.NoError(t, db.First(&gotRoot, root.Id).Error)
+	require.Equal(t, 200, gotAgent.DividendBalance)
+	require.Zero(t, gotAgent.GiftQuota)
+	require.Equal(t, 620, gotAdmin.DividendBalance)
+	require.Equal(t, 300, gotRoot.DividendBalance)
 }
 
 func TestChannelCostNumeratorRejectsOverflow(t *testing.T) {
