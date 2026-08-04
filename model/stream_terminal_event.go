@@ -38,6 +38,19 @@ type StreamTerminalEvent struct {
 	UpstreamErrorMessage     string `json:"upstream_error_message" gorm:"type:text"`
 	IncompleteReason         string `json:"incomplete_reason" gorm:"size:128;index"`
 	UpstreamRequestBodyBytes int64  `json:"upstream_request_body_bytes" gorm:"bigint;default:0"`
+	UpstreamHost             string `json:"upstream_host" gorm:"size:255"`
+	UpstreamProtocol         string `json:"upstream_protocol" gorm:"size:16"`
+	UpstreamProxyUsed        bool   `json:"upstream_proxy_used" gorm:"default:false"`
+	UpstreamResponseHeaderMs int64  `json:"upstream_response_header_ms" gorm:"bigint;default:0"`
+	UpstreamFirstEventMs     int64  `json:"upstream_first_event_ms" gorm:"bigint;default:0"`
+	UpstreamConnReused       bool   `json:"upstream_conn_reused" gorm:"default:false"`
+	UpstreamConnWasIdle      bool   `json:"upstream_conn_was_idle" gorm:"default:false"`
+	UpstreamConnIdleMs       int64  `json:"upstream_conn_idle_ms" gorm:"bigint;default:0"`
+	UpstreamConnFp           string `json:"upstream_conn_fp" gorm:"size:16"`
+	EstimatedPromptTokens    int    `json:"estimated_prompt_tokens" gorm:"default:0"`
+	UpstreamLastEventType    string `json:"upstream_last_event_type" gorm:"size:64"`
+	UpstreamLastSequence     int    `json:"upstream_last_sequence" gorm:"default:0"`
+	UpstreamEventBytes       int64  `json:"upstream_event_bytes" gorm:"bigint;default:0"`
 	HttpStatus               int    `json:"http_status" gorm:"default:0"`
 	IntendedStatus           int    `json:"intended_status" gorm:"default:0"`
 	ResponseBytes            int64  `json:"response_bytes" gorm:"bigint;default:0"`

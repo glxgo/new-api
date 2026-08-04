@@ -61,7 +61,8 @@ func TestOaiResponsesStreamHandler_CompletedEventMarksNormalEnd(t *testing.T) {
 
 func TestOaiResponsesStreamHandler_PrematureEOFIsIncomplete(t *testing.T) {
 	c, info, resp, _ := newResponsesStreamTest(t,
-		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n")
+		"data: {\"type\":\"response.created\",\"sequence_number\":1,\"response\":{\"id\":\"resp_partial_1\"}}\n\n"+
+			"data: {\"type\":\"response.output_text.delta\",\"sequence_number\":2,\"delta\":\"partial\"}\n\n")
 
 	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
 
@@ -71,6 +72,10 @@ func TestOaiResponsesStreamHandler_PrematureEOFIsIncomplete(t *testing.T) {
 	require.Equal(t, http.StatusBadGateway, apiErr.StatusCode)
 	require.NotNil(t, info.StreamStatus)
 	require.Equal(t, relaycommon.StreamEndReasonEOF, info.StreamStatus.EndReason)
+	require.Equal(t, "response.output_text.delta", info.UpstreamLastEventType)
+	require.Equal(t, 2, info.UpstreamLastSequence)
+	require.Greater(t, info.UpstreamEventBytes, int64(0))
+	require.Equal(t, "resp_partial_1", info.StreamStatus.UpstreamTerminalSnapshot().ResponseID)
 }
 
 func TestOaiResponsesStreamHandler_ResponseFailedPreservesUpstreamCause(t *testing.T) {

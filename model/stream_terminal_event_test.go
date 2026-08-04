@@ -30,6 +30,14 @@ func TestRecordStreamTerminalEventIsIdempotent(t *testing.T) {
 		UpstreamTerminalEvent: "response.failed",
 		UpstreamResponseId:    "resp_failed_1",
 		UpstreamErrorCode:     "server_error",
+		UpstreamHost:          "api.example.com",
+		UpstreamProtocol:      "HTTP/2.0",
+		UpstreamConnReused:    true,
+		UpstreamConnFp:        "0123456789ab",
+		EstimatedPromptTokens: 12345,
+		UpstreamLastEventType: "response.output_text.delta",
+		UpstreamLastSequence:  42,
+		UpstreamEventBytes:    8192,
 	}
 	if err = RecordStreamTerminalEvent(first); err != nil {
 		t.Fatalf("record first event: %v", err)
@@ -64,5 +72,15 @@ func TestRecordStreamTerminalEventIsIdempotent(t *testing.T) {
 		got.UpstreamResponseId != first.UpstreamResponseId ||
 		got.UpstreamErrorCode != first.UpstreamErrorCode {
 		t.Fatalf("upstream terminal fields not persisted: %#v", got)
+	}
+	if got.UpstreamHost != first.UpstreamHost ||
+		got.UpstreamProtocol != first.UpstreamProtocol ||
+		got.UpstreamConnReused != first.UpstreamConnReused ||
+		got.UpstreamConnFp != first.UpstreamConnFp ||
+		got.EstimatedPromptTokens != first.EstimatedPromptTokens ||
+		got.UpstreamLastEventType != first.UpstreamLastEventType ||
+		got.UpstreamLastSequence != first.UpstreamLastSequence ||
+		got.UpstreamEventBytes != first.UpstreamEventBytes {
+		t.Fatalf("transport diagnostics not persisted: %#v", got)
 	}
 }

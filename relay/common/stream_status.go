@@ -58,6 +58,15 @@ func (s *StreamStatus) SetUpstreamTerminal(terminal UpstreamTerminal) {
 	s.mu.Unlock()
 }
 
+func (s *StreamStatus) SetUpstreamResponseID(responseID string) {
+	if s == nil || responseID == "" {
+		return
+	}
+	s.mu.Lock()
+	s.upstreamTerminal.ResponseID = responseID
+	s.mu.Unlock()
+}
+
 func (s *StreamStatus) UpstreamTerminalSnapshot() UpstreamTerminal {
 	if s == nil {
 		return UpstreamTerminal{}

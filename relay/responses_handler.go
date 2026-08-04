@@ -109,7 +109,7 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 			info.UpstreamRequestBodySize = size
 			requestBody = body
 		} else {
-			requestBody = common.ReaderOnly(storage)
+			requestBody = responsesPassThroughBody(info, storage)
 		}
 	} else {
 		convertedRequest, err := adaptor.ConvertOpenAIResponsesRequest(c, info, *request)
@@ -212,4 +212,11 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		service.PostTextConsumeQuota(c, info, usageDto, nil)
 	}
 	return nil
+}
+
+func responsesPassThroughBody(info *relaycommon.RelayInfo, storage common.BodyStorage) io.Reader {
+	if info != nil && storage != nil {
+		info.UpstreamRequestBodySize = storage.Size()
+	}
+	return common.ReaderOnly(storage)
 }
