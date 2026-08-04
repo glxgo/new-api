@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { useAuthStore, type AuthUser } from '@/stores/auth-store'
 import { getSelf } from '@/lib/api'
 import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
@@ -61,10 +62,12 @@ import type {
 
 interface WalletProps {
   initialShowHistory?: boolean
+  initialShowRecharge?: boolean
 }
 
 export function Wallet(props: WalletProps) {
   const { t } = useTranslation()
+  const setAuthUser = useAuthStore((state) => state.auth.setUser)
   const [user, setUser] = useState<UserWalletData | null>(null)
   const [userLoading, setUserLoading] = useState(true)
   const [topupAmount, setTopupAmount] = useState(0)
@@ -121,6 +124,7 @@ export function Wallet(props: WalletProps) {
       const response = await getSelf()
       if (response.success && response.data) {
         setUser(response.data as UserWalletData)
+        setAuthUser(response.data as AuthUser)
       }
     } catch (error) {
       // eslint-disable-next-line no-console
@@ -128,18 +132,23 @@ export function Wallet(props: WalletProps) {
     } finally {
       setUserLoading(false)
     }
-  }, [])
+  }, [setAuthUser])
 
   useEffect(() => {
     fetchUser()
   }, [fetchUser])
 
   useEffect(() => {
-    if (props.initialShowHistory) {
-      setBillingDialogOpen(true)
+    if (props.initialShowHistory || props.initialShowRecharge) {
+      if (props.initialShowHistory) {
+        setBillingDialogOpen(true)
+      }
+      if (props.initialShowRecharge) {
+        setRechargeOpen(true)
+      }
       window.history.replaceState({}, '', window.location.pathname)
     }
-  }, [props.initialShowHistory])
+  }, [props.initialShowHistory, props.initialShowRecharge])
 
   // Initialize topup amount when topup info is loaded
   useEffect(() => {

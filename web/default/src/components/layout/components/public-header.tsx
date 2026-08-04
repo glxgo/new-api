@@ -34,6 +34,7 @@ import { ThemeSwitch } from '@/components/theme-switch'
 import { defaultTopNavLinks } from '../config/top-nav.config'
 import type { TopNavLink } from '../types'
 import { HeaderLogo } from './header-logo'
+import { WalletPreview } from './wallet-preview'
 
 const AUTH_PROMPT_SECONDS = 5
 
@@ -274,6 +275,8 @@ export function PublicHeader(props: PublicHeaderProps) {
                   loading={notifications.loading}
                 />
               )}
+
+              {isAuthenticated && <WalletPreview />}
 
               {showAuthButtons && (
                 <>

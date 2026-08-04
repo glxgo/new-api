@@ -195,6 +195,8 @@ const EditChannelModal = (props) => {
     pass_through_body_enabled: false,
     system_prompt: '',
     system_prompt_override: false,
+    http_protocol: 'auto',
+    http2_connection_shards: 1,
     settings: '',
     // 仅 Vertex: 密钥格式（存入 settings.vertex_key_type）
     vertex_key_type: 'json',
@@ -516,6 +518,9 @@ const EditChannelModal = (props) => {
     proxy: '',
     pass_through_body_enabled: false,
     system_prompt: '',
+    system_prompt_override: false,
+    http_protocol: 'auto',
+    http2_connection_shards: 1,
   });
   const showApiConfigCard = true; // 控制是否显示 API 配置卡片
   const getInitValues = () => ({ ...originInputs });
@@ -537,6 +542,22 @@ const EditChannelModal = (props) => {
     const newSettings = { ...channelSettings, [key]: value };
     const settingsJson = JSON.stringify(newSettings);
     handleInputChange('setting', settingsJson);
+  };
+
+  const handleHttpTransportChange = (key, value) => {
+    const nextSettings = { ...channelSettings, [key]: value };
+    if (key === 'http_protocol' && value === 'http1') {
+      nextSettings.http2_connection_shards = 1;
+    }
+    setChannelSettings(nextSettings);
+    setInputs((prev) => ({ ...prev, ...nextSettings }));
+    if (formApiRef.current) {
+      formApiRef.current.setValue(key, value);
+      if (key === 'http_protocol' && value === 'http1') {
+        formApiRef.current.setValue('http2_connection_shards', 1);
+      }
+    }
+    handleInputChange('setting', JSON.stringify(nextSettings));
   };
 
   const handleChannelOtherSettingsChange = (key, value) => {
@@ -869,6 +890,13 @@ const EditChannelModal = (props) => {
           data.system_prompt = parsedSettings.system_prompt || '';
           data.system_prompt_override =
             parsedSettings.system_prompt_override || false;
+          data.http_protocol =
+            parsedSettings.http_protocol === 'http1' ? 'http1' : 'auto';
+          data.http2_connection_shards = Number.isInteger(
+            parsedSettings.http2_connection_shards,
+          )
+            ? Math.max(0, Math.min(8, parsedSettings.http2_connection_shards))
+            : 1;
         } catch (error) {
           console.error('解析渠道设置失败:', error);
           data.force_format = false;
@@ -877,6 +905,8 @@ const EditChannelModal = (props) => {
           data.pass_through_body_enabled = false;
           data.system_prompt = '';
           data.system_prompt_override = false;
+          data.http_protocol = 'auto';
+          data.http2_connection_shards = 1;
         }
       } else {
         data.force_format = false;
@@ -885,6 +915,8 @@ const EditChannelModal = (props) => {
         data.pass_through_body_enabled = false;
         data.system_prompt = '';
         data.system_prompt_override = false;
+        data.http_protocol = 'auto';
+        data.http2_connection_shards = 1;
       }
 
       if (data.settings) {
@@ -998,6 +1030,8 @@ const EditChannelModal = (props) => {
         pass_through_body_enabled: data.pass_through_body_enabled,
         system_prompt: data.system_prompt,
         system_prompt_override: data.system_prompt_override || false,
+        http_protocol: data.http_protocol || 'auto',
+        http2_connection_shards: data.http2_connection_shards || 1,
       });
       initialModelsRef.current = (data.models || [])
         .map((model) => (model || '').trim())
@@ -1382,6 +1416,8 @@ const EditChannelModal = (props) => {
       pass_through_body_enabled: false,
       system_prompt: '',
       system_prompt_override: false,
+      http_protocol: 'auto',
+      http2_connection_shards: 1,
     });
     // 重置密钥模式状态
     setKeyMode('append');
@@ -1776,6 +1812,8 @@ const EditChannelModal = (props) => {
       pass_through_body_enabled: localInputs.pass_through_body_enabled || false,
       system_prompt: localInputs.system_prompt || '',
       system_prompt_override: localInputs.system_prompt_override || false,
+      http_protocol: localInputs.http_protocol || 'auto',
+      http2_connection_shards: localInputs.http2_connection_shards || 1,
     };
     localInputs.setting = JSON.stringify(channelExtraSettings);
 
@@ -1857,6 +1895,8 @@ const EditChannelModal = (props) => {
     delete localInputs.pass_through_body_enabled;
     delete localInputs.system_prompt;
     delete localInputs.system_prompt_override;
+    delete localInputs.http_protocol;
+    delete localInputs.http2_connection_shards;
     delete localInputs.is_enterprise_account;
     // 顶层的 vertex_key_type 不应发送给后端
     delete localInputs.vertex_key_type;
@@ -2563,6 +2603,31 @@ const EditChannelModal = (props) => {
 
                   <Form.Switch field='thinking_to_content' label={t('思考内容转换')} checkedText={t('开')} uncheckedText={t('关')} onChange={(value) => handleChannelSettingsChange('thinking_to_content', value)} extraText={t('将 reasoning_content 转换为 <think> 标签拼接到内容中')} />
                   <Form.Switch field='pass_through_body_enabled' label={t('透传请求体')} checkedText={t('开')} uncheckedText={t('关')} onChange={(value) => handleChannelSettingsChange('pass_through_body_enabled', value)} extraText={t('启用请求体透传功能')} />
+
+                  <Form.Select
+                    field='http_protocol'
+                    label={t('HTTP 协议')}
+                    optionList={[
+                      { label: t('自动协商 / HTTP2'), value: 'auto' },
+                      { label: 'HTTP/1.1', value: 'http1' },
+                    ]}
+                    value={inputs.http_protocol || 'auto'}
+                    onChange={(value) => handleHttpTransportChange('http_protocol', value)}
+                    extraText={t('按渠道控制上游协议；HTTP/1.1 可用于不兼容 HTTP/2 的上游')}
+                  />
+
+                  <Form.Select
+                    field='http2_connection_shards'
+                    label={t('HTTP/2 连接分片')}
+                    optionList={[1, 2, 3, 4, 5, 6, 7, 8].map((value) => ({
+                      label: `${value} ${t('组')}`,
+                      value,
+                    }))}
+                    value={inputs.http2_connection_shards || 1}
+                    disabled={inputs.http_protocol === 'http1'}
+                    onChange={(value) => handleHttpTransportChange('http2_connection_shards', Number(value))}
+                    extraText={t('为 HTTP/2 建立多组独立连接，降低单连接队头阻塞；HTTP/1.1 固定为 1')}
+                  />
 
                   <Form.Input field='proxy' label={t('代理地址')} placeholder={t('例如: socks5://user:pass@host:port')} onChange={(value) => handleChannelSettingsChange('proxy', value)} showClear extraText={t('用于配置网络代理，支持 socks5 协议')} />
 

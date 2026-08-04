@@ -28,13 +28,15 @@ import (
 
 type TaskAdaptor struct {
 	taskcommon.BaseBilling
-	ChannelType int
-	apiKey      string
-	baseURL     string
+	ChannelType    int
+	channelSetting dto.ChannelSettings
+	apiKey         string
+	baseURL        string
 }
 
 func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 	a.ChannelType = info.ChannelType
+	a.channelSetting = info.ChannelSetting
 	a.baseURL = info.ChannelBaseUrl
 	a.apiKey = info.ApiKey
 }
@@ -201,7 +203,11 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("x-goog-api-key", key)
 
-	client, err := service.GetHttpClientWithProxy(proxy)
+	settings := a.channelSetting
+	if settings.Proxy == "" {
+		settings.Proxy = proxy
+	}
+	client, err := service.GetHttpClientWithProxySettings(settings.Proxy, settings)
 	if err != nil {
 		return nil, fmt.Errorf("new proxy http client failed: %w", err)
 	}

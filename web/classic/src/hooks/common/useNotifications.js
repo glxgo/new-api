@@ -17,11 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 export const useNotifications = (statusState) => {
   const [noticeVisible, setNoticeVisible] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const previousUnreadCountRef = useRef(0);
 
   const announcements = statusState?.status?.announcements || [];
 
@@ -60,6 +61,16 @@ export const useNotifications = (statusState) => {
   useEffect(() => {
     setUnreadCount(calculateUnreadCount());
   }, [announcements]);
+
+  // Automatically surface newly published system announcements on entry.
+  // The previous count lets a freshly published item open the modal again
+  // after the user has already closed an older announcement.
+  useEffect(() => {
+    if (unreadCount > 0 && previousUnreadCountRef.current === 0) {
+      setNoticeVisible(true);
+    }
+    previousUnreadCountRef.current = unreadCount;
+  }, [unreadCount]);
 
   // Actions
   const handleNoticeOpen = () => {

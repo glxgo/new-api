@@ -53,6 +53,7 @@ func updateVideoTaskAll(ctx context.Context, platform constant.TaskPlatform, cha
 		ChannelBaseUrl: cacheGetChannel.GetBaseURL(),
 	}
 	info.ApiKey = cacheGetChannel.Key
+	info.ChannelMeta.ChannelSetting = cacheGetChannel.GetSetting()
 	adaptor.Init(info)
 	for _, taskId := range taskIds {
 		if err := updateVideoSingleTask(ctx, adaptor, cacheGetChannel, taskId, taskM); err != nil {

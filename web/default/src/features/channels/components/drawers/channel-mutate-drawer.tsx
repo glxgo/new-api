@@ -217,6 +217,8 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     values.thinking_to_content ||
     values.pass_through_body_enabled ||
     values.system_prompt_override ||
+    values.http_protocol === 'http1' ||
+    (values.http2_connection_shards ?? 1) > 1 ||
     values.claude_beta_query ||
     values.upstream_model_update_check_enabled ||
     values.upstream_model_update_auto_sync_enabled ||
@@ -3274,6 +3276,88 @@ export function ChannelMutateDrawer({
                               </FormControl>
                             </FormItem>
                           )}
+                        />
+
+                        <FormField
+                          control={form.control}
+                          name='http_protocol'
+                          render={({ field }) => (
+                            <FormItem className='flex items-center justify-between px-4 py-3'>
+                              <div className='space-y-0.5'>
+                                <FormLabel>HTTP 协议</FormLabel>
+                                <FormDescription>
+                                  自动协商 HTTP/2；需要兼容旧上游时可强制
+                                  HTTP/1.1
+                                </FormDescription>
+                              </div>
+                              <Select
+                                value={field.value || 'auto'}
+                                onValueChange={(value) => {
+                                  field.onChange(value)
+                                  if (value === 'http1') {
+                                    form.setValue('http2_connection_shards', 1)
+                                  }
+                                }}
+                              >
+                                <FormControl>
+                                  <SelectTrigger className='w-32'>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value='auto'>
+                                    自动 / HTTP2
+                                  </SelectItem>
+                                  <SelectItem value='http1'>
+                                    HTTP/1.1
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={form.control}
+                          name='http2_connection_shards'
+                          render={({ field }) => {
+                            const protocol = form.watch('http_protocol')
+                            return (
+                              <FormItem className='flex items-center justify-between px-4 py-3'>
+                                <div className='space-y-0.5'>
+                                  <FormLabel>HTTP/2 连接分片</FormLabel>
+                                  <FormDescription>
+                                    每个上游最多建立 8
+                                    组独立连接，缓解单连接队头阻塞；HTTP/1.1
+                                    固定为 1
+                                  </FormDescription>
+                                </div>
+                                <Select
+                                  value={String(field.value ?? 1)}
+                                  onValueChange={(value) =>
+                                    field.onChange(Number(value))
+                                  }
+                                  disabled={protocol === 'http1'}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger className='w-32'>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {[1, 2, 3, 4, 5, 6, 7, 8].map((shard) => (
+                                      <SelectItem
+                                        key={shard}
+                                        value={String(shard)}
+                                      >
+                                        {shard} 组
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </FormItem>
+                            )
+                          }}
                         />
                       </div>
 

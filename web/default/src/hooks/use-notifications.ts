@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNotificationStore } from '@/stores/notification-store'
 import { getNotice } from '@/lib/api'
@@ -117,6 +117,35 @@ export function useNotifications() {
       total: noticeUnread + announcementsUnread,
     }
   }, [noticeContent, lastReadNotice, announcements, isAnnouncementRead])
+
+  // Open the announcement timeline once when a new announcement is first
+  // discovered. Read state is persisted by notification-store, so returning
+  // to the site later does not repeatedly interrupt the user.
+  const autoOpenedAnnouncements = useRef(false)
+  useEffect(() => {
+    if (
+      autoOpenedAnnouncements.current ||
+      statusLoading ||
+      announcements.length === 0 ||
+      unreadCounts.announcements === 0
+    ) {
+      return
+    }
+
+    autoOpenedAnnouncements.current = true
+    markAnnouncementsRead(
+      announcements.map((item: Record<string, unknown>) =>
+        getAnnouncementKey(item)
+      )
+    )
+    setActiveTab('announcements')
+    setPopoverOpen(true)
+  }, [
+    announcements,
+    markAnnouncementsRead,
+    statusLoading,
+    unreadCounts.announcements,
+  ])
 
   const markAnnouncementsAsRead = () => {
     if (announcements.length > 0) {

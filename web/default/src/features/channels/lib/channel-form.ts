@@ -185,6 +185,8 @@ export const channelFormSchema = z
     pass_through_body_enabled: z.boolean().optional(),
     system_prompt: z.string().optional(),
     system_prompt_override: z.boolean().optional(),
+    http_protocol: z.enum(['auto', 'http1']).optional(),
+    http2_connection_shards: z.number().int().min(0).max(8).optional(),
     // Type-specific settings (stored in settings JSON)
     is_enterprise_account: z.boolean().optional(), // OpenRouter specific
     vertex_key_type: z.enum(['json', 'api_key']).optional(), // Vertex AI specific
@@ -313,6 +315,8 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   pass_through_body_enabled: false,
   system_prompt: '',
   system_prompt_override: false,
+  http_protocol: 'auto',
+  http2_connection_shards: 1,
   // Type-specific settings
   is_enterprise_account: false,
   vertex_key_type: 'json',
@@ -342,13 +346,25 @@ export function transformChannelToFormDefaults(
   channel: Channel
 ): ChannelFormValues {
   // Parse channel extra settings from setting field
-  let extraSettings = {
+  let extraSettings: Pick<
+    ChannelFormValues,
+    | 'force_format'
+    | 'thinking_to_content'
+    | 'proxy'
+    | 'pass_through_body_enabled'
+    | 'system_prompt'
+    | 'system_prompt_override'
+    | 'http_protocol'
+    | 'http2_connection_shards'
+  > = {
     force_format: false,
     thinking_to_content: false,
     proxy: '',
     pass_through_body_enabled: false,
     system_prompt: '',
     system_prompt_override: false,
+    http_protocol: 'auto',
+    http2_connection_shards: 1,
   }
 
   if (channel.setting) {
@@ -361,6 +377,12 @@ export function transformChannelToFormDefaults(
         pass_through_body_enabled: parsed.pass_through_body_enabled || false,
         system_prompt: parsed.system_prompt || '',
         system_prompt_override: parsed.system_prompt_override || false,
+        http_protocol: parsed.http_protocol === 'http1' ? 'http1' : 'auto',
+        http2_connection_shards:
+          typeof parsed.http2_connection_shards === 'number' &&
+          Number.isInteger(parsed.http2_connection_shards)
+            ? Math.max(0, Math.min(8, parsed.http2_connection_shards))
+            : 1,
       }
     } catch (error) {
       // eslint-disable-next-line no-console
@@ -476,6 +498,8 @@ function buildSettingJSON(formData: ChannelFormValues): string {
     pass_through_body_enabled: formData.pass_through_body_enabled || false,
     system_prompt: formData.system_prompt || '',
     system_prompt_override: formData.system_prompt_override || false,
+    http_protocol: formData.http_protocol || 'auto',
+    http2_connection_shards: formData.http2_connection_shards || 1,
   }
   return JSON.stringify(settingObj)
 }

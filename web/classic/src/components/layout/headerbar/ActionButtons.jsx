@@ -23,6 +23,7 @@ import NotificationButton from './NotificationButton';
 import ThemeToggle from './ThemeToggle';
 import LanguageSelector from './LanguageSelector';
 import UserArea from './UserArea';
+import WalletPreview from './WalletPreview';
 
 const ActionButtons = ({
   isNewYear,
@@ -43,6 +44,13 @@ const ActionButtons = ({
   return (
     <div className='flex items-center gap-2 md:gap-3'>
       <NewYearButton isNewYear={isNewYear} />
+
+      <WalletPreview
+        userState={userState}
+        isMobile={isMobile}
+        navigate={navigate}
+        t={t}
+      />
 
       <NotificationButton
         unreadCount={unreadCount}

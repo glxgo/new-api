@@ -29,24 +29,90 @@ var DefaultSSRFProtection = &SSRFProtection{
 	AllowedPorts:     []int{},
 }
 
+// NewSSRFProtectionFromFetchSetting builds the runtime policy used by protected
+// fetch clients. Keeping parsing here prevents request code from silently
+// treating malformed administrator settings as an unrestricted policy.
+func NewSSRFProtectionFromFetchSetting(allowPrivateIp, domainFilterMode, ipFilterMode bool, domainList, ipList, allowedPorts []string, applyIPFilterForDomain bool) (*SSRFProtection, error) {
+	allowedPortInts, err := parsePortRanges(allowedPorts)
+	if err != nil {
+		return nil, fmt.Errorf("invalid port configuration: %w", err)
+	}
+	return &SSRFProtection{
+		AllowPrivateIp:         allowPrivateIp,
+		DomainFilterMode:       domainFilterMode,
+		DomainList:             append([]string(nil), domainList...),
+		IpFilterMode:           ipFilterMode,
+		IpList:                 append([]string(nil), ipList...),
+		AllowedPorts:           allowedPortInts,
+		ApplyIPFilterForDomain: applyIPFilterForDomain,
+	}, nil
+}
+
+func (p *SSRFProtection) ipAccessError(host string, ip net.IP) error {
+	if ip == nil {
+		return fmt.Errorf("resolved IP is empty for %s", host)
+	}
+	if isPrivateIP(ip) && !p.AllowPrivateIp {
+		return fmt.Errorf("private IP address not allowed: %s resolves to %s", host, ip.String())
+	}
+	if p.IpFilterMode {
+		return fmt.Errorf("ip not in whitelist: %s resolves to %s", host, ip.String())
+	}
+	return fmt.Errorf("ip in blacklist: %s resolves to %s", host, ip.String())
+}
+
+// ValidateNetworkTarget checks the host/port before a dial. It intentionally
+// performs no DNS resolution; the protected dialer validates every resolved IP
+// immediately before connecting to close DNS rebinding gaps.
+func (p *SSRFProtection) ValidateNetworkTarget(host string, port int) error {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return fmt.Errorf("host is empty")
+	}
+	if port < 1 || port > 65535 || !p.isAllowedPort(port) {
+		return fmt.Errorf("port %d is not allowed", port)
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if !p.IsIPAccessAllowed(ip) {
+			return p.ipAccessError(host, ip)
+		}
+		return nil
+	}
+	if !p.isDomainAllowed(strings.TrimSuffix(strings.ToLower(host), ".")) {
+		if p.DomainFilterMode {
+			return fmt.Errorf("domain not in whitelist: %s", host)
+		}
+		return fmt.Errorf("domain in blacklist: %s", host)
+	}
+	return nil
+}
+
+// ValidateResolvedIP applies the IP policy to a DNS answer for host.
+func (p *SSRFProtection) ValidateResolvedIP(host string, ip net.IP) error {
+	if ip == nil || !p.IsIPAccessAllowed(ip) {
+		return p.ipAccessError(host, ip)
+	}
+	return nil
+}
+
 // privateIPv4Nets IPv4 私有/保留/特殊用途网段
 // 参考 IANA IPv4 Special-Purpose Address Registry
 // https://www.iana.org/assignments/iana-ipv4-special-registry/
 var privateIPv4Nets = []net.IPNet{
-	{IP: net.IPv4(0, 0, 0, 0), Mask: net.CIDRMask(8, 32)},       // 0.0.0.0/8 ("This network" / 未指定)
-	{IP: net.IPv4(10, 0, 0, 0), Mask: net.CIDRMask(8, 32)},      // 10.0.0.0/8 (私有)
-	{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)},   // 100.64.0.0/10 (运营商级 NAT / CGNAT)
-	{IP: net.IPv4(127, 0, 0, 0), Mask: net.CIDRMask(8, 32)},     // 127.0.0.0/8 (回环)
-	{IP: net.IPv4(169, 254, 0, 0), Mask: net.CIDRMask(16, 32)},  // 169.254.0.0/16 (链路本地)
-	{IP: net.IPv4(172, 16, 0, 0), Mask: net.CIDRMask(12, 32)},   // 172.16.0.0/12 (私有)
-	{IP: net.IPv4(192, 0, 0, 0), Mask: net.CIDRMask(24, 32)},    // 192.0.0.0/24 (IETF 协议分配)
-	{IP: net.IPv4(192, 0, 2, 0), Mask: net.CIDRMask(24, 32)},    // 192.0.2.0/24 (TEST-NET-1)
-	{IP: net.IPv4(192, 168, 0, 0), Mask: net.CIDRMask(16, 32)},  // 192.168.0.0/16 (私有)
-	{IP: net.IPv4(198, 18, 0, 0), Mask: net.CIDRMask(15, 32)},   // 198.18.0.0/15 (基准测试)
-	{IP: net.IPv4(198, 51, 100, 0), Mask: net.CIDRMask(24, 32)}, // 198.51.100.0/24 (TEST-NET-2)
-	{IP: net.IPv4(203, 0, 113, 0), Mask: net.CIDRMask(24, 32)},  // 203.0.113.0/24 (TEST-NET-3)
-	{IP: net.IPv4(224, 0, 0, 0), Mask: net.CIDRMask(4, 32)},     // 224.0.0.0/4 (组播)
-	{IP: net.IPv4(240, 0, 0, 0), Mask: net.CIDRMask(4, 32)},     // 240.0.0.0/4 (保留)
+	{IP: net.IPv4(0, 0, 0, 0), Mask: net.CIDRMask(8, 32)},          // 0.0.0.0/8 ("This network" / 未指定)
+	{IP: net.IPv4(10, 0, 0, 0), Mask: net.CIDRMask(8, 32)},         // 10.0.0.0/8 (私有)
+	{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)},      // 100.64.0.0/10 (运营商级 NAT / CGNAT)
+	{IP: net.IPv4(127, 0, 0, 0), Mask: net.CIDRMask(8, 32)},        // 127.0.0.0/8 (回环)
+	{IP: net.IPv4(169, 254, 0, 0), Mask: net.CIDRMask(16, 32)},     // 169.254.0.0/16 (链路本地)
+	{IP: net.IPv4(172, 16, 0, 0), Mask: net.CIDRMask(12, 32)},      // 172.16.0.0/12 (私有)
+	{IP: net.IPv4(192, 0, 0, 0), Mask: net.CIDRMask(24, 32)},       // 192.0.0.0/24 (IETF 协议分配)
+	{IP: net.IPv4(192, 0, 2, 0), Mask: net.CIDRMask(24, 32)},       // 192.0.2.0/24 (TEST-NET-1)
+	{IP: net.IPv4(192, 168, 0, 0), Mask: net.CIDRMask(16, 32)},     // 192.168.0.0/16 (私有)
+	{IP: net.IPv4(198, 18, 0, 0), Mask: net.CIDRMask(15, 32)},      // 198.18.0.0/15 (基准测试)
+	{IP: net.IPv4(198, 51, 100, 0), Mask: net.CIDRMask(24, 32)},    // 198.51.100.0/24 (TEST-NET-2)
+	{IP: net.IPv4(203, 0, 113, 0), Mask: net.CIDRMask(24, 32)},     // 203.0.113.0/24 (TEST-NET-3)
+	{IP: net.IPv4(224, 0, 0, 0), Mask: net.CIDRMask(4, 32)},        // 224.0.0.0/4 (组播)
+	{IP: net.IPv4(240, 0, 0, 0), Mask: net.CIDRMask(4, 32)},        // 240.0.0.0/4 (保留)
 	{IP: net.IPv4(255, 255, 255, 255), Mask: net.CIDRMask(32, 32)}, // 255.255.255.255/32 (受限广播)
 }
 

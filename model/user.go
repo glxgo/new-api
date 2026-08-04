@@ -431,8 +431,8 @@ func HardDeleteUserById(id int) error {
 	if id == 0 {
 		return errors.New("id 为空！")
 	}
-	err := DB.Unscoped().Delete(&User{}, "id = ?", id).Error
-	return err
+	user := User{Id: id}
+	return user.HardDelete()
 }
 
 func inviteUser(inviterId int) (err error) {
@@ -752,8 +752,46 @@ func (user *User) HardDelete() error {
 	if user.Id == 0 {
 		return errors.New("id 为空！")
 	}
-	err := DB.Unscoped().Delete(user).Error
-	return err
+	var tokens []Token
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		// Read token keys before deleting rows so Redis entries can be removed
+		// after the transaction commits. Never put raw keys in logs.
+		if common.RedisEnabled {
+			if err := tx.Unscoped().Select("id", commonKeyCol).Where("user_id = ?", user.Id).Find(&tokens).Error; err != nil {
+				return err
+			}
+		}
+		for _, authenticationData := range []any{
+			&TwoFABackupCode{},
+			&TwoFA{},
+			&PasskeyCredential{},
+			&Token{},
+		} {
+			if err := tx.Unscoped().Where("user_id = ?", user.Id).Delete(authenticationData).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Unscoped().Where("user_id = ?", user.Id).Delete(&UserOAuthBinding{}).Error; err != nil {
+			return err
+		}
+		return tx.Unscoped().Delete(user).Error
+	})
+	if err != nil {
+		return err
+	}
+	if common.RedisEnabled {
+		for _, token := range tokens {
+			if token.Key != "" {
+				if err := cacheDeleteToken(token.Key); err != nil {
+					common.SysError(fmt.Sprintf("failed to invalidate token cache after hard deleting user %d: %v", user.Id, err))
+				}
+			}
+		}
+	}
+	if err := invalidateUserCache(user.Id); err != nil {
+		common.SysError(fmt.Sprintf("failed to invalidate user cache after hard deleting user %d: %v", user.Id, err))
+	}
+	return nil
 }
 
 // ValidateAndFill check password & user status

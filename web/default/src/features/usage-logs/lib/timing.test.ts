@@ -21,18 +21,18 @@ import { describe, test } from 'node:test'
 import { getThroughputColor, resolveFirstTokenMs } from './timing.ts'
 
 describe('getThroughputColor', () => {
-  test('uses red below 15 tokens per second', () => {
+  test('uses red below 10 tokens per second', () => {
     assert.equal(getThroughputColor(0), 'danger')
-    assert.equal(getThroughputColor(14.99), 'danger')
+    assert.equal(getThroughputColor(9.99), 'danger')
   })
 
-  test('uses yellow from 15 up to 30 tokens per second', () => {
-    assert.equal(getThroughputColor(15), 'warning')
-    assert.equal(getThroughputColor(29.99), 'warning')
+  test('uses yellow from 10 up to 20 tokens per second', () => {
+    assert.equal(getThroughputColor(10), 'warning')
+    assert.equal(getThroughputColor(19.99), 'warning')
   })
 
-  test('uses green from 30 tokens per second', () => {
-    assert.equal(getThroughputColor(30), 'success')
+  test('uses green from 20 tokens per second', () => {
+    assert.equal(getThroughputColor(20), 'success')
     assert.equal(getThroughputColor(100), 'success')
   })
 })

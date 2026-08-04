@@ -67,8 +67,8 @@ func VideoProxy(c *gin.Context) {
 	}
 
 	var videoURL string
-	proxy := channel.GetSetting().Proxy
-	client, err := service.GetHttpClientWithProxy(proxy)
+	settings := channel.GetSetting()
+	client, err := service.GetHttpClientWithProxySettings(settings.Proxy, settings)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to create proxy client for task %s: %s", taskID, err.Error()))
 		videoProxyError(c, http.StatusInternalServerError, "server_error", "Failed to create proxy client")
@@ -134,6 +134,9 @@ func VideoProxy(c *gin.Context) {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Video URL blocked for task %s: %v", taskID, err))
 		videoProxyError(c, http.StatusForbidden, "server_error", fmt.Sprintf("request blocked: %v", err))
 		return
+	}
+	if settings.Proxy == "" {
+		client = service.GetSSRFProtectedHTTPClient()
 	}
 
 	req.URL, err = url.Parse(videoURL)

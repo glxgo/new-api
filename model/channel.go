@@ -964,6 +964,9 @@ func (channel *Channel) ValidateSettings() error {
 			return err
 		}
 	}
+	if err := channelParams.ValidateHTTPTransport(); err != nil {
+		return err
+	}
 	return nil
 }
 
