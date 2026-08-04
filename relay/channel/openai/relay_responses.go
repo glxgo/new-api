@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -93,6 +94,14 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			sr.Error(err)
 			return
 		}
+		info.UpstreamEventBytes += int64(len(data))
+		info.UpstreamLastEventType = streamResponse.Type
+		if streamResponse.SequenceNumber != nil {
+			info.UpstreamLastSequence = *streamResponse.SequenceNumber
+		}
+		if streamResponse.Response != nil && info.StreamStatus != nil {
+			info.StreamStatus.SetUpstreamResponseID(streamResponse.Response.ID)
+		}
 		if streamResponse.Type == "response.failed" || streamResponse.Type == "response.error" {
 			recordResponsesUpstreamTerminal(info, resp.StatusCode, streamResponse)
 			streamErr = responsesTerminalError(streamResponse, types.ErrorCodeUpstreamResponseFailed)
@@ -169,6 +178,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			streamSummary = info.StreamStatus.Summary()
 		}
 		streamErr := fmt.Errorf("responses stream ended before response.completed: %s", streamSummary)
+		logResponsesEOFTransportTrace(c, info)
 		service.PreventChannelAffinityRecord(c)
 		service.ClearCurrentChannelAffinityCache(c)
 
@@ -204,6 +214,44 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 
 	return usage, nil
+}
+
+func logResponsesEOFTransportTrace(c *gin.Context, info *relaycommon.RelayInfo) {
+	if info == nil {
+		return
+	}
+	trace := relaycommon.UpstreamTransportSnapshot{}
+	if info.UpstreamTransportTrace != nil {
+		trace = info.UpstreamTransportTrace.Snapshot()
+	}
+	firstEventMs := int64(0)
+	if !info.UpstreamStartTime.IsZero() && !info.FirstResponseTime.IsZero() && !info.FirstResponseTime.Before(info.UpstreamStartTime) {
+		firstEventMs = info.FirstResponseTime.Sub(info.UpstreamStartTime).Milliseconds()
+	}
+	durationMs := int64(0)
+	if !info.UpstreamStartTime.IsZero() {
+		durationMs = time.Since(info.UpstreamStartTime).Milliseconds()
+	}
+	logger.LogInfo(c, fmt.Sprintf(
+		"responses EOF transport trace: channel=%d protocol=%s proxy=%t header_ms=%d first_event_ms=%d duration_ms=%d conn_reused=%t conn_was_idle=%t conn_idle_ms=%d conn_fp=%s request_body_bytes=%d estimated_prompt_tokens=%d received_events=%d upstream_event_bytes=%d response_bytes=%d last_event=%s last_sequence=%d",
+		info.ChannelId,
+		trace.Protocol,
+		info.UpstreamProxyUsed,
+		trace.ResponseHeaderLatency.Milliseconds(),
+		firstEventMs,
+		durationMs,
+		trace.ConnectionReused,
+		trace.ConnectionWasIdle,
+		trace.ConnectionIdleTime.Milliseconds(),
+		trace.ConnectionFingerprint,
+		info.UpstreamRequestBodySize,
+		info.GetEstimatePromptTokens(),
+		info.ReceivedResponseCount,
+		info.UpstreamEventBytes,
+		c.Writer.Size(),
+		info.UpstreamLastEventType,
+		info.UpstreamLastSequence,
+	))
 }
 
 func cyberPolicyInterceptionStreamData(c *gin.Context, streamResponse dto.ResponsesStreamResponse) (string, error) {

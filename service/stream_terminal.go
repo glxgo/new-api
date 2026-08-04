@@ -156,6 +156,14 @@ func buildResponsesStreamTerminalEvent(c *gin.Context, info *relaycommon.RelayIn
 		affinityRuleName = affinity.RuleName
 		affinityKeyFp = affinity.KeyFingerprint
 	}
+	transportTrace := relaycommon.UpstreamTransportSnapshot{}
+	if info.UpstreamTransportTrace != nil {
+		transportTrace = info.UpstreamTransportTrace.Snapshot()
+	}
+	upstreamFirstEventMs := int64(0)
+	if !info.UpstreamStartTime.IsZero() && !info.FirstResponseTime.IsZero() && !info.FirstResponseTime.Before(info.UpstreamStartTime) {
+		upstreamFirstEventMs = info.FirstResponseTime.Sub(info.UpstreamStartTime).Milliseconds()
+	}
 	event := &model.StreamTerminalEvent{
 		RequestId:                requestID,
 		IngressRequestId:         normalizeIngressRequestID(c.Request.Header.Get(ingressRequestIDHeader)),
@@ -184,6 +192,19 @@ func buildResponsesStreamTerminalEvent(c *gin.Context, info *relaycommon.RelayIn
 		UpstreamErrorMessage:     truncateRunes(common.MaskSensitiveInfo(upstreamTerminal.ErrorMessage), 512),
 		IncompleteReason:         truncateRunes(upstreamTerminal.IncompleteReason, 128),
 		UpstreamRequestBodyBytes: info.UpstreamRequestBodySize,
+		UpstreamHost:             truncateRunes(info.UpstreamHost, 255),
+		UpstreamProtocol:         truncateRunes(transportTrace.Protocol, 16),
+		UpstreamProxyUsed:        info.UpstreamProxyUsed,
+		UpstreamResponseHeaderMs: transportTrace.ResponseHeaderLatency.Milliseconds(),
+		UpstreamFirstEventMs:     upstreamFirstEventMs,
+		UpstreamConnReused:       transportTrace.ConnectionReused,
+		UpstreamConnWasIdle:      transportTrace.ConnectionWasIdle,
+		UpstreamConnIdleMs:       transportTrace.ConnectionIdleTime.Milliseconds(),
+		UpstreamConnFp:           transportTrace.ConnectionFingerprint,
+		EstimatedPromptTokens:    info.GetEstimatePromptTokens(),
+		UpstreamLastEventType:    truncateRunes(info.UpstreamLastEventType, 64),
+		UpstreamLastSequence:     info.UpstreamLastSequence,
+		UpstreamEventBytes:       info.UpstreamEventBytes,
 		HttpStatus:               actualStatus,
 		IntendedStatus:           intendedStatus,
 		ResponseBytes:            responseBytes,

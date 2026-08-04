@@ -85,10 +85,22 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeChannelModelMappedError, types.ErrOptionWithSkipRetry())
 		}
+		jsonData, normalization, err := relaycommon.NormalizeResponsesInputItemIDs(jsonData)
+		if err != nil {
+			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+		}
+		relaycommon.RecordResponsesInputItemIDNormalization(c, normalization)
+		if normalization.Count() > 0 {
+			logger.LogInfo(c, fmt.Sprintf(
+				"normalized Responses input item IDs: reasoning=%d, message=%d",
+				normalization.Reasoning,
+				normalization.Message,
+			))
+		}
 		if billingErr := service.PreparePriorityBillingForOutbound(info, jsonData); billingErr != nil {
 			return billingErr
 		}
-		if modelMapped {
+		if modelMapped || normalization.Count() > 0 {
 			body, size, closer, bodyErr := relaycommon.NewOutboundJSONBody(jsonData)
 			if bodyErr != nil {
 				return types.NewError(bodyErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
@@ -97,7 +109,7 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 			info.UpstreamRequestBodySize = size
 			requestBody = body
 		} else {
-			requestBody = common.ReaderOnly(storage)
+			requestBody = responsesPassThroughBody(info, storage)
 		}
 	} else {
 		convertedRequest, err := adaptor.ConvertOpenAIResponsesRequest(c, info, *request)
@@ -122,6 +134,18 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 			if err != nil {
 				return newAPIErrorFromParamOverride(err)
 			}
+		}
+		jsonData, normalization, err := relaycommon.NormalizeResponsesInputItemIDs(jsonData)
+		if err != nil {
+			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+		}
+		relaycommon.RecordResponsesInputItemIDNormalization(c, normalization)
+		if normalization.Count() > 0 {
+			logger.LogInfo(c, fmt.Sprintf(
+				"normalized Responses input item IDs: reasoning=%d, message=%d",
+				normalization.Reasoning,
+				normalization.Message,
+			))
 		}
 		if billingErr := service.PreparePriorityBillingForOutbound(info, jsonData); billingErr != nil {
 			return billingErr
@@ -188,4 +212,11 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		service.PostTextConsumeQuota(c, info, usageDto, nil)
 	}
 	return nil
+}
+
+func responsesPassThroughBody(info *relaycommon.RelayInfo, storage common.BodyStorage) io.Reader {
+	if info != nil && storage != nil {
+		info.UpstreamRequestBodySize = storage.Size()
+	}
+	return common.ReaderOnly(storage)
 }

@@ -576,6 +576,7 @@ func recordChannelErrorLog(c *gin.Context, channelError types.ChannelError, err 
 		service.AppendChannelAffinityAdminInfo(c, adminInfo)
 		service.AppendChannelRetryAttemptsAdminInfo(c, adminInfo)
 		service.AppendResponsesInputIDDiagnosticAdminInfo(c, adminInfo)
+		relaycommon.AppendResponsesInputItemIDNormalizationAdminInfo(c, adminInfo)
 		other["admin_info"] = adminInfo
 		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
 		if startTime.IsZero() {

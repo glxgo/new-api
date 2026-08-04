@@ -109,7 +109,9 @@ type RelayInfo struct {
 	// UpstreamStartTime 是发给上游请求(client.Do)的时刻，用于纯上游延迟/首字统计。
 	// 为零(如本地鉴权失败未到上游)时回退到 StartTime。
 	UpstreamStartTime time.Time
-	isFirstResponse   bool
+	// UpstreamTransportTrace records sanitized per-attempt transport metadata.
+	UpstreamTransportTrace *UpstreamTransportTrace
+	isFirstResponse        bool
 	//SendLastReasoningResponse bool
 	IsStream               bool
 	IsGeminiBatchEmbedding bool
@@ -135,6 +137,9 @@ type RelayInfo struct {
 	RelayFormat            types.RelayFormat
 	SendResponseCount      int
 	ReceivedResponseCount  int
+	UpstreamEventBytes     int64
+	UpstreamLastEventType  string
+	UpstreamLastSequence   int
 	FinalPreConsumedQuota  int // 最终预消耗的配额
 	// ForcePreConsume 为 true 时禁用 BillingSession 的信任额度旁路，
 	// 强制预扣全额。用于异步任务（视频/音乐生成等），因为请求返回后任务仍在运行，
@@ -174,6 +179,8 @@ type RelayInfo struct {
 	// http.Request.ContentLength manually (net/http only auto-detects it for
 	// *bytes.Reader/Buffer/strings.Reader). 0 means "let net/http decide".
 	UpstreamRequestBodySize int64
+	UpstreamHost            string
+	UpstreamProxyUsed       bool
 
 	PriceData types.PriceData
 

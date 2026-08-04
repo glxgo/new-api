@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -39,18 +40,30 @@ func TestBuildResponsesStreamTerminalEventCompleted(t *testing.T) {
 	_, _ = c.Writer.WriteString("data: response.completed\n\n")
 	status := relaycommon.NewStreamStatus()
 	status.SetEndReason(relaycommon.StreamEndReasonDone, nil)
+	upstreamStarted := started.Add(250 * time.Millisecond)
+	transportTrace := relaycommon.NewUpstreamTransportTrace(upstreamStarted)
+	transportTrace.RecordResponse(&http.Response{Proto: "HTTP/2.0"}, upstreamStarted.Add(350*time.Millisecond))
 	info := &relaycommon.RelayInfo{
-		RequestId:             "req-completed",
-		UserId:                264,
-		TokenId:               9,
-		UsingGroup:            "default",
-		OriginModelName:       "gpt-5.6-sol",
-		IsStream:              true,
-		StreamStatus:          status,
-		BillingSource:         BillingSourceWallet,
-		ChannelMeta:           &relaycommon.ChannelMeta{ChannelId: 31},
-		FinalPreConsumedQuota: 123,
+		RequestId:              "req-completed",
+		UserId:                 264,
+		TokenId:                9,
+		UsingGroup:             "default",
+		OriginModelName:        "gpt-5.6-sol",
+		IsStream:               true,
+		StreamStatus:           status,
+		BillingSource:          BillingSourceWallet,
+		ChannelMeta:            &relaycommon.ChannelMeta{ChannelId: 31},
+		FinalPreConsumedQuota:  123,
+		UpstreamStartTime:      upstreamStarted,
+		FirstResponseTime:      upstreamStarted.Add(900 * time.Millisecond),
+		UpstreamTransportTrace: transportTrace,
+		UpstreamHost:           "api.example.com",
+		UpstreamProxyUsed:      true,
+		UpstreamLastEventType:  "response.completed",
+		UpstreamLastSequence:   42,
+		UpstreamEventBytes:     8192,
 	}
+	info.SetEstimatePromptTokens(12345)
 
 	event := buildResponsesStreamTerminalEvent(c, info, nil, started.Add(3*time.Second))
 	if event == nil {
@@ -67,6 +80,15 @@ func TestBuildResponsesStreamTerminalEventCompleted(t *testing.T) {
 	}
 	if event.IngressRequestId != "edge-abc_123" || event.AffinityRuleName != "codex cli trace" || event.AffinityKeyFp != "89abcdef" {
 		t.Fatalf("unexpected correlation diagnostics: %#v", event)
+	}
+	if event.UpstreamProtocol != "HTTP/2.0" || event.UpstreamResponseHeaderMs != 350 || event.UpstreamFirstEventMs != 900 {
+		t.Fatalf("unexpected upstream timing diagnostics: %#v", event)
+	}
+	if event.UpstreamHost != "api.example.com" || !event.UpstreamProxyUsed || event.EstimatedPromptTokens != 12345 {
+		t.Fatalf("unexpected upstream request diagnostics: %#v", event)
+	}
+	if event.UpstreamLastEventType != "response.completed" || event.UpstreamLastSequence != 42 || event.UpstreamEventBytes != 8192 {
+		t.Fatalf("unexpected upstream event diagnostics: %#v", event)
 	}
 }
 

@@ -511,7 +511,12 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	}
 
 	info.UpstreamStartTime = time.Now()
+	info.UpstreamHost = req.URL.Host
+	info.UpstreamProxyUsed = info.ChannelSetting.Proxy != ""
+	info.UpstreamTransportTrace = common.NewUpstreamTransportTrace(info.UpstreamStartTime)
+	req = info.UpstreamTransportTrace.Attach(req)
 	resp, err := client.Do(req)
+	info.UpstreamTransportTrace.RecordResponse(resp, time.Now())
 	if err != nil {
 		logger.LogError(c, "do request failed: "+err.Error())
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
