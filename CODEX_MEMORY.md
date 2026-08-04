@@ -16,6 +16,14 @@
 
 ## Current handoff
 
+### 2026-08-05 — Multi-ingress billing and virtual-membership planning completed
+
+- Planning only: `docs/product/multi-ingress-and-virtual-membership-prd.md` defines the user/admin product rules, and `docs/architecture/multi-ingress-and-virtual-membership-technical-plan.md` maps them to the current routing, billing, subscription, payment, API Key, frontend and release boundaries. No feature code, database, Nginx, DNS, payment, push or deployment change was made.
+- The plan keeps `ServerAddress` as the canonical site/OAuth address, models API entrances separately, identifies them only at a trusted reverse-proxy boundary, applies a fixed-point entrance multiplier after current billing, and preserves undiscounted sale plus cost snapshots so a user discount cannot incorrectly reduce upstream cost.
+- Virtual membership is planned as a separate entitlement source rather than extra fields on `UserSubscription`: immutable plan/variant snapshots, 1/2/3/4 automatic-formation variants, one global weekly reset epoch, optional per-instance five-hour windows, and request-id-idempotent atomic pre-consume/settle/refund across both active limits.
+- Canonical glossary entries were added to `CONTEXT.md`. Product decisions still requiring owner confirmation are explicit API Key binding, one shared model quota pool, first-use five-hour windows, no five-hour reset during global weekly reset, initial exclusion from referral/dividend settlement, and a discount-only entrance multiplier range.
+- The primary worktree remains heavily dirty with unrelated concurrent changes, including the prior local wallet/announcement scope. Future implementation should use an isolated worktree from an explicitly confirmed commit and merge approved pending UI work separately.
+
 ### 2026-08-04 — Wallet preview and automatic announcement popup implemented locally
 
 - Default frontend `AppHeader` no longer renders the global search box, and the authenticated `PublicHeader` also exposes the same compact wallet preview. It renders configured-currency balance, a wallet link, and a `充值` link that navigates to `/wallet?show_recharge=true`; the wallet route opens the existing `RechargeDialog` and removes the one-shot query from the address bar.
@@ -1127,3 +1135,10 @@
 - 定向回归通过：common、dto、middleware、model 测试（含 Cookie OriginGuard、zstd、HTTP 配置校验），默认前端 `tsc -b`，default/classic Rsbuild 构建，`git diff --check`，以及本地完整 `go build ./...`。完整 service 测试仍被既有 `service/cost_test.go` 引用已删除的 `CalcModelCostQuota` 阻塞；没有因此修改该无关测试。
 - 本轮只完成源码、测试和本地构建，未推送、未生成生产镜像、未修改 DNS/Nginx/容器/数据库/渠道配置，生产运行状态不变。上线前需先设置并核对 Secure Cookie 环境变量，再做候选端口蓝绿验证和自然排空。
 - 收尾审查又覆盖了 Gemini 模型探测、视频代理、Vertex 服务账号以及全部视频/音乐任务轮询适配器；这些路径现在会把渠道 `ChannelSetting` 传入 HTTP 客户端，避免异步轮询漏用 HTTP/1.1、HTTP/2 分片或协议策略。补齐后定向任务测试和 `go build ./...` 仍通过。
+
+### 2026-08-05 — 当前工作树全部改动合并并已发布
+
+- 本地全部已修改/未提交内容（含其他窗口的前端、钱包、订阅/分红、Responses 诊断和本轮安全/渠道 HTTP 改动）已形成提交 `85abacc71`，随后与远程 `origin/main` 合并为 `6ffd598be`；两处日志聚合冲突已保留双方字段。`6ffd598be` 已推送到 `glxgo/new-api` `main`。
+- Default/Classic 前端构建、Linux/amd64 交叉编译和安全/Responses/渠道定向测试通过。全仓 Go 测试仍保留既有基线失败：缺失 `CalcModelCostQuota`、Claude/OpenAI 图片旧断言和模型列表测试隔离问题；没有为了发布改写这些无关基线。
+- 已在生产以 `new-api:20260805a` 完成 3010 绿实例→自然排空→3000 归一的两阶段蓝绿发布。最终生产仅监听 3000，Nginx 三入口均指向 3000，容器 healthy、0 重启；旧 `new-api:20260804a` 保留回滚。最终二进制 SHA-256 为 `257536a2a4cae129c0bc5aeb75ef44b156ba0850539b212b6ff98c55ca73249f`。
+- 发布备份位于 `/opt/newapi/backups/release-20260805a-20260804T165609Z`，含 MySQL 一致性转储和前后配置/哈希清单。生产自然流量验收有 127 条成功 Responses、1 条客户端取消、无 panic/fatal；3010 最后一条长流自然完成后才移除候选。Secure Cookie 环境变量仍未开启，代码保持可选启用。
