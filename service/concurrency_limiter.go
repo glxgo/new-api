@@ -14,18 +14,69 @@ import (
 )
 
 const (
-	concurrencySlotTTL               = 30 * time.Minute
-	concurrencySlotHeartbeatInterval = 5 * time.Minute
+	concurrencySlotTTL                = 30 * time.Minute
+	concurrencySlotHeartbeatInterval  = 5 * time.Minute
+	concurrencyOwnerTTL               = 90 * time.Second
+	concurrencyOwnerHeartbeatInterval = 30 * time.Second
 )
 
 var concurrencySequence atomic.Uint64
+var concurrencyOwnerID = fmt.Sprintf("%d-%d", time.Now().UnixNano(), os.Getpid())
+var concurrencyOwnerHeartbeatOnce sync.Once
+
+const concurrencyOwnerKeyPrefix = "concurrency:owner:"
+
+func concurrencyOwnerKey() string {
+	return concurrencyOwnerKeyPrefix + concurrencyOwnerID
+}
+
+func touchConcurrencyOwner() {
+	if !common.RedisEnabled || common.RDB == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_ = common.RDB.Set(ctx, concurrencyOwnerKey(), "1", concurrencyOwnerTTL).Err()
+}
+
+func startConcurrencyOwnerHeartbeat() {
+	concurrencyOwnerHeartbeatOnce.Do(func() {
+		touchConcurrencyOwner()
+		go func() {
+			ticker := time.NewTicker(concurrencyOwnerHeartbeatInterval)
+			defer ticker.Stop()
+			for range ticker.C {
+				touchConcurrencyOwner()
+			}
+		}()
+	})
+}
 
 var acquireConcurrencyScript = `
 local key = KEYS[1]
 local max_concurrency = tonumber(ARGV[1])
 local ttl_seconds = tonumber(ARGV[2])
 local request_id = ARGV[3]
+local owner_key = ARGV[4]
+local owner_ttl_seconds = tonumber(ARGV[5])
 local now = tonumber(redis.call('TIME')[1])
+redis.call('SET', owner_key, '1', 'EX', owner_ttl_seconds)
+local members = redis.call('ZRANGE', key, 0, -1, 'WITHSCORES')
+for i = 1, #members, 2 do
+  local member = members[i]
+  local score = tonumber(members[i + 1])
+  if score <= now - ttl_seconds then
+    redis.call('ZREM', key, member)
+  else
+    local separator = string.find(member, '|', 1, true)
+    if separator then
+      local owner_id = string.sub(member, 1, separator - 1)
+      if redis.call('EXISTS', 'concurrency:owner:' .. owner_id) == 0 then
+        redis.call('ZREM', key, member)
+      end
+    end
+  end
+end
 redis.call('ZREMRANGEBYSCORE', key, '-inf', now - ttl_seconds)
 if redis.call('ZSCORE', key, request_id) then
   redis.call('ZADD', key, now, request_id)
@@ -45,13 +96,39 @@ var renewConcurrencyScript = `
 local key = KEYS[1]
 local ttl_seconds = tonumber(ARGV[1])
 local request_id = ARGV[2]
+local owner_key = ARGV[3]
+local owner_ttl_seconds = tonumber(ARGV[4])
 if not redis.call('ZSCORE', key, request_id) then
   return 0
 end
 local now = tonumber(redis.call('TIME')[1])
+redis.call('SET', owner_key, '1', 'EX', owner_ttl_seconds)
 redis.call('ZADD', key, now, request_id)
 redis.call('EXPIRE', key, ttl_seconds)
 return 1
+`
+
+var cleanupConcurrencyScript = `
+local key = KEYS[1]
+local ttl_seconds = tonumber(ARGV[1])
+local now = tonumber(redis.call('TIME')[1])
+local members = redis.call('ZRANGE', key, 0, -1, 'WITHSCORES')
+for i = 1, #members, 2 do
+  local member = members[i]
+  local score = tonumber(members[i + 1])
+  if score <= now - ttl_seconds then
+    redis.call('ZREM', key, member)
+  else
+    local separator = string.find(member, '|', 1, true)
+    if separator then
+      local owner_id = string.sub(member, 1, separator - 1)
+      if redis.call('EXISTS', 'concurrency:owner:' .. owner_id) == 0 then
+        redis.call('ZREM', key, member)
+      end
+    end
+  end
+end
+return redis.call('ZCARD', key)
 `
 
 type localConcurrencyBucket struct {
@@ -68,6 +145,7 @@ var localConcurrency = struct {
 type ConcurrencyLease struct {
 	key               string
 	requestId         string
+	ownerKey          string
 	redis             bool
 	ttl               time.Duration
 	heartbeatInterval time.Duration
@@ -82,10 +160,11 @@ func concurrencyTTLSeconds(ttl time.Duration) int {
 	return int((ttl + time.Second - 1) / time.Second)
 }
 
-func newConcurrencyLease(key, requestId string, redis bool, ttl, heartbeatInterval time.Duration) *ConcurrencyLease {
+func newConcurrencyLease(key, requestId, ownerKey string, redis bool, ttl, heartbeatInterval time.Duration) *ConcurrencyLease {
 	lease := &ConcurrencyLease{
 		key:               key,
 		requestId:         requestId,
+		ownerKey:          ownerKey,
 		redis:             redis,
 		ttl:               ttl,
 		heartbeatInterval: heartbeatInterval,
@@ -127,7 +206,8 @@ func (lease *ConcurrencyLease) renew() (bool, error) {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		result, err := common.RDB.Eval(ctx, renewConcurrencyScript, []string{lease.key},
-			concurrencyTTLSeconds(lease.ttl), lease.requestId).Int()
+			concurrencyTTLSeconds(lease.ttl), lease.requestId, lease.ownerKey,
+			concurrencyTTLSeconds(concurrencyOwnerTTL)).Int()
 		cancel()
 		if err != nil {
 			return false, err
@@ -180,7 +260,7 @@ func (lease *ConcurrencyLease) Release() {
 }
 
 func nextConcurrencyRequestId() string {
-	return fmt.Sprintf("%d-%d-%d", time.Now().UnixNano(), os.Getpid(), concurrencySequence.Add(1))
+	return fmt.Sprintf("%s|%d-%d", concurrencyOwnerID, time.Now().UnixNano(), concurrencySequence.Add(1))
 }
 
 func acquireConcurrencySlot(key string, limit int) (*ConcurrencyLease, bool) {
@@ -208,12 +288,15 @@ func acquireConcurrencySlotWithTimingAndCount(key string, limit int, ttl, heartb
 	}
 	requestId := nextConcurrencyRequestId()
 	if common.RedisEnabled && common.RDB != nil {
+		startConcurrencyOwnerHeartbeat()
+		ownerKey := concurrencyOwnerKey()
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		result, err := common.RDB.Eval(ctx, acquireConcurrencyScript, []string{key}, limit, concurrencyTTLSeconds(ttl), requestId).Int64Slice()
+		result, err := common.RDB.Eval(ctx, acquireConcurrencyScript, []string{key}, limit,
+			concurrencyTTLSeconds(ttl), requestId, ownerKey, concurrencyTTLSeconds(concurrencyOwnerTTL)).Int64Slice()
 		cancel()
 		if err == nil && len(result) == 2 {
 			if result[0] == 1 {
-				return newConcurrencyLease(key, requestId, true, ttl, heartbeatInterval), true, int(result[1])
+				return newConcurrencyLease(key, requestId, ownerKey, true, ttl, heartbeatInterval), true, int(result[1])
 			}
 			return nil, false, int(result[1])
 		}
@@ -242,7 +325,7 @@ func acquireLocalConcurrencySlot(key string, limit int, requestId string, ttl, h
 		return nil, false, len(bucket.members)
 	}
 	bucket.members[requestId] = now
-	return newConcurrencyLease(key, requestId, false, ttl, heartbeatInterval), true, len(bucket.members)
+	return newConcurrencyLease(key, requestId, "", false, ttl, heartbeatInterval), true, len(bucket.members)
 }
 
 func AcquireUserConcurrency(userId, limit int) (*ConcurrencyLease, bool) {
@@ -273,14 +356,11 @@ func AcquireChannelConcurrencyWithCount(channelId, limit int) (*ConcurrencyLease
 func getConcurrencyCount(key string) int {
 	if common.RedisEnabled && common.RDB != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		now := time.Now().Unix()
-		pipe := common.RDB.TxPipeline()
-		pipe.ZRemRangeByScore(ctx, key, "-inf", strconv.FormatInt(now-int64(concurrencySlotTTL.Seconds()), 10))
-		countCmd := pipe.ZCard(ctx, key)
-		_, err := pipe.Exec(ctx)
+		count, err := common.RDB.Eval(ctx, cleanupConcurrencyScript, []string{key},
+			concurrencyTTLSeconds(concurrencySlotTTL)).Int()
 		cancel()
 		if err == nil {
-			return int(countCmd.Val())
+			return count
 		}
 	}
 	return getLocalConcurrencyCount(key, time.Now())

@@ -113,3 +113,24 @@ func TestRedisConcurrencyHeartbeatKeepsLeaseAliveAndDoesNotResurrectRelease(t *t
 	require.EqualValues(t, 0, client.ZCard(context.Background(), key).Val(),
 		"a stopped heartbeat must not recreate a released lease")
 }
+
+func TestRedisConcurrencyCountCleansMembersFromDeadOwners(t *testing.T) {
+	client, key := setupRedisConcurrencyIntegrationTest(t)
+
+	deadOwner := fmt.Sprintf("dead-owner-%d", time.Now().UnixNano())
+	deadMember := deadOwner + "|request-1"
+	ctx := context.Background()
+	require.NoError(t, client.ZAdd(ctx, key, &redis.Z{Score: float64(time.Now().Unix()), Member: deadMember}).Err())
+	require.Equal(t, 0, getConcurrencyCount(key), "a lease from a process without a heartbeat must not count")
+
+	liveOwner := fmt.Sprintf("live-owner-%d", time.Now().UnixNano())
+	liveMember := liveOwner + "|request-1"
+	liveOwnerKey := concurrencyOwnerKeyPrefix + liveOwner
+	require.NoError(t, client.Set(ctx, liveOwnerKey, "1", concurrencyOwnerTTL).Err())
+	t.Cleanup(func() { _ = client.Del(ctx, liveOwnerKey).Err() })
+	require.NoError(t, client.ZAdd(ctx, key, &redis.Z{Score: float64(time.Now().Unix()), Member: liveMember}).Err())
+	require.Equal(t, 1, getConcurrencyCount(key), "a lease from a live process must remain counted")
+
+	require.NoError(t, client.Del(ctx, liveOwnerKey).Err())
+	require.Equal(t, 0, getConcurrencyCount(key), "the lease must disappear after its owner heartbeat is gone")
+}

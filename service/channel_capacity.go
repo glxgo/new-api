@@ -51,7 +51,6 @@ func GetChannelCapacitySnapshots(channelIds []int) map[int]ChannelCapacitySnapsh
 	if common.RedisEnabled && common.RDB != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), channelCapacitySnapshotTimeout)
 		pipe := common.RDB.TxPipeline()
-		now := time.Now()
 		type countCommands struct {
 			concurrency *redis.IntCmd
 			rpm         *redis.IntCmd
@@ -60,8 +59,9 @@ func GetChannelCapacitySnapshots(channelIds []int) map[int]ChannelCapacitySnapsh
 		for _, channelId := range uniqueIds {
 			concurrencyKey := "concurrency:channel:" + strconv.Itoa(channelId)
 			rpmKey := channelRPMKey(channelId)
-			pipe.ZRemRangeByScore(ctx, concurrencyKey, "-inf", strconv.FormatInt(now.Unix()-int64(concurrencySlotTTL.Seconds()), 10))
+			pipe.Eval(ctx, cleanupConcurrencyScript, []string{concurrencyKey}, concurrencyTTLSeconds(concurrencySlotTTL))
 			concurrencyCount := pipe.ZCard(ctx, concurrencyKey)
+			now := time.Now()
 			pipe.ZRemRangeByScore(ctx, rpmKey, "-inf", strconv.FormatInt(now.UnixMilli()-channelRPMWindow.Milliseconds(), 10))
 			rpmCount := pipe.ZCard(ctx, rpmKey)
 			commands[channelId] = countCommands{concurrency: concurrencyCount, rpm: rpmCount}
