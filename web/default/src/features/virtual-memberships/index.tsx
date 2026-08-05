@@ -38,8 +38,9 @@ const emptyPlan: Partial<VirtualMembershipPlan> = {
 export function VirtualMemberships() {
   const [plans, setPlans] = useState<VirtualMembershipPlan[]>([])
   const [setting, setSetting] = useState({ announcement: '', enabled: true })
-  const [editing, setEditing] =
-    useState<Partial<VirtualMembershipPlan>>(emptyPlan)
+  const [editing, setEditing] = useState<Partial<VirtualMembershipPlan>>({
+    ...emptyPlan,
+  })
   const [loading, setLoading] = useState(true)
 
   const load = async () => {
@@ -55,7 +56,9 @@ export function VirtualMemberships() {
       setLoading(false)
     }
   }
+  // The loader hydrates server state on mount; its state updates are intentional.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load()
   }, [])
 
@@ -202,7 +205,6 @@ export function VirtualMemberships() {
                   ['three_group_price', '3 人团价格'],
                   ['four_group_price', '4 人团价格'],
                   ['weekly_quota', '周额度'],
-                  ['five_hour_quota', '5 小时额度'],
                   ['duration_days', '有效天数'],
                 ].map(([field, label]) => (
                   <label key={field} className='text-xs'>
@@ -246,6 +248,30 @@ export function VirtualMemberships() {
                 />
                 开启 5 小时限额
               </label>
+              {editing.five_hour_enabled && (
+                <label className='block text-xs'>
+                  <span className='text-muted-foreground mb-1 block'>
+                    5 小时额度
+                  </span>
+                  <Input
+                    type='number'
+                    min={0}
+                    value={editing.five_hour_quota ?? 0}
+                    onChange={(event) =>
+                      updateField(
+                        'five_hour_quota',
+                        event.target.value === ''
+                          ? 0
+                          : Number(event.target.value)
+                      )
+                    }
+                    placeholder='开启后必须填写，例如 100000'
+                  />
+                  <span className='text-muted-foreground mt-1 block'>
+                    开启后按 2/3/4 人档位自动均分；保存时必须大于 0。
+                  </span>
+                </label>
+              )}
               <label className='block text-sm'>
                 <input
                   className='mr-2'
@@ -262,7 +288,10 @@ export function VirtualMemberships() {
                   <Save className='size-4' />
                   保存方案
                 </Button>
-                <Button variant='outline' onClick={() => setEditing(emptyPlan)}>
+                <Button
+                  variant='outline'
+                  onClick={() => setEditing({ ...emptyPlan })}
+                >
                   清空
                 </Button>
               </div>

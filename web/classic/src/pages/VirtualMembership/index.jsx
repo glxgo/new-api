@@ -1,7 +1,34 @@
+/*
+Copyright (C) 2025 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+
 import React, { useEffect, useState } from 'react';
-import { Banner, Button, Card, Progress, Tag } from '@douyinfe/semi-ui';
-import { API } from '../../helpers';
-import { showError } from '../../helpers';
+import {
+  Banner,
+  Button,
+  Card,
+  Modal,
+  Progress,
+  Radio,
+  RadioGroup,
+  Tag,
+} from '@douyinfe/semi-ui';
+import { API, showError, showSuccess } from '../../helpers';
 
 const VirtualMembership = () => {
   const [page, setPage] = useState({
@@ -13,7 +40,9 @@ const VirtualMembership = () => {
   });
   const [loading, setLoading] = useState(true);
   const [selectedGroup, setSelectedGroup] = useState({});
-  const [selectedEpayMethod, setSelectedEpayMethod] = useState('');
+  const [purchase, setPurchase] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState('balance');
+  const [paying, setPaying] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -22,7 +51,6 @@ const VirtualMembership = () => {
       if (res.data?.success) {
         const nextPage = res.data.data || page;
         setPage(nextPage);
-        setSelectedEpayMethod(nextPage.epay_methods?.[0]?.type || '');
       }
     } catch (error) {
       showError(error);
@@ -35,48 +63,45 @@ const VirtualMembership = () => {
     load();
   }, []);
 
-  const purchase = async (plan, groupSize) => {
-    if (
-      !window.confirm(
-        `确认购买 ${plan.title}（${groupSize === 1 ? '单独购买' : `${groupSize} 人团`}）？`,
-      )
-    )
-      return;
-    try {
-      const res = await API.post('/api/virtual-membership/balance/pay', {
-        plan_id: plan.id,
-        group_size: groupSize,
-      });
-      if (res.data?.success) {
-        await load();
-      }
-    } catch (error) {
-      showError(error);
-    }
+  const openPurchase = (plan, groupSize) => {
+    setPurchase({ plan, groupSize });
+    setPaymentMethod(
+      page.epay_methods?.[0]?.type
+        ? `epay:${page.epay_methods[0].type}`
+        : 'balance',
+    );
   };
 
-  const purchaseWithEpay = async (plan, groupSize) => {
-    if (!selectedEpayMethod) {
-      showError(new Error('暂无可用的支付宝支付方式'));
-      return;
-    }
-    if (
-      !window.confirm(
-        `确认购买 ${plan.title}（${groupSize === 1 ? '单独购买' : `${groupSize} 人团`}）并使用支付宝支付？`,
-      )
-    )
-      return;
+  const confirmPurchase = async () => {
+    if (!purchase) return;
+    setPaying(true);
     try {
+      if (paymentMethod === 'balance') {
+        const res = await API.post('/api/virtual-membership/balance/pay', {
+          plan_id: purchase.plan.id,
+          group_size: purchase.groupSize,
+        });
+        if (res.data?.success) {
+          showSuccess('虚拟会员已开通');
+          setPurchase(null);
+          await load();
+        }
+        return;
+      }
+      const selectedEpayMethod = paymentMethod.replace(/^epay:/, '');
       const res = await API.post('/api/virtual-membership/epay/pay', {
-        plan_id: plan.id,
-        group_size: groupSize,
+        plan_id: purchase.plan.id,
+        group_size: purchase.groupSize,
         payment_method: selectedEpayMethod,
       });
       if (res.data?.message === 'success' && res.data?.url) {
         const form = document.createElement('form');
         form.action = res.data.url;
         form.method = 'POST';
-        form.target = '_blank';
+        const isSafari =
+          typeof navigator !== 'undefined' &&
+          /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+        if (!isSafari) form.target = '_blank';
         Object.entries(res.data.data || {}).forEach(([key, value]) => {
           const input = document.createElement('input');
           input.type = 'hidden';
@@ -87,11 +112,15 @@ const VirtualMembership = () => {
         document.body.appendChild(form);
         form.submit();
         form.remove();
+        showSuccess('支付页面已打开');
+        setPurchase(null);
       } else {
         showError(new Error(res.data?.message || '支付请求失败'));
       }
     } catch (error) {
       showError(error);
+    } finally {
+      setPaying(false);
     }
   };
 
@@ -114,32 +143,80 @@ const VirtualMembership = () => {
             购买对应额度，不提供真实 GPT 会员账号。
           </p>
         </div>
-        {page.announcement && (
+        {page.announcement?.trim() && (
           <Banner
             type='info'
-            description={page.announcement}
+            description={
+              <div style={{ whiteSpace: 'pre-wrap' }}>{page.announcement}</div>
+            }
             closeIcon={null}
           />
         )}
-        {page.epay_enabled && page.epay_methods?.length > 0 && (
-          <div className='flex flex-wrap items-center gap-3 rounded border border-green-200 bg-green-50 p-3'>
-            <span className='text-sm font-medium'>支付宝支付方式</span>
-            <select
-              value={selectedEpayMethod}
-              onChange={(event) => setSelectedEpayMethod(event.target.value)}
-              className='rounded border bg-white px-3 py-2 text-sm'
-            >
-              {page.epay_methods.map((method) => (
-                <option key={method.type} value={method.type}>
-                  {method.name || method.type}
-                </option>
-              ))}
-            </select>
-            <span className='text-xs text-gray-500'>
-              复用订阅套餐的 Epay 配置
-            </span>
-          </div>
-        )}
+        <Modal
+          title='立即购买'
+          visible={!!purchase}
+          onCancel={() => setPurchase(null)}
+          onOk={confirmPurchase}
+          okText='确认支付'
+          cancelText='取消'
+          confirmLoading={paying}
+          maskClosable={false}
+          width={460}
+        >
+          {purchase &&
+            (() => {
+              const { plan, groupSize } = purchase;
+              const variant =
+                plan.variants?.find((item) => item.group_size === groupSize) ||
+                plan.variants?.[0];
+              return (
+                <div className='space-y-4'>
+                  <div className='rounded border bg-gray-50 p-3'>
+                    <div className='flex justify-between'>
+                      <span>方案</span>
+                      <strong>{plan.title}</strong>
+                    </div>
+                    <div className='mt-2 flex justify-between'>
+                      <span>购买档位</span>
+                      <strong>{variant?.label}</strong>
+                    </div>
+                    <div className='mt-2 flex justify-between'>
+                      <span>应付金额</span>
+                      <strong className='text-green-600'>
+                        ¥{Number(variant?.price_amount || 0).toFixed(2)}
+                      </strong>
+                    </div>
+                    <div className='mt-2 flex justify-between'>
+                      <span>获得周额度</span>
+                      <strong>{variant?.weekly_quota || 0}</strong>
+                    </div>
+                    {plan.five_hour_enabled && (
+                      <div className='mt-2 flex justify-between'>
+                        <span>获得 5 小时额度</span>
+                        <strong>{variant?.five_hour_quota || 0}</strong>
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <div className='mb-2 text-sm font-medium'>付款方式</div>
+                    <RadioGroup
+                      type='button'
+                      value={paymentMethod}
+                      onChange={(event) => setPaymentMethod(event.target.value)}
+                      style={{ width: '100%' }}
+                    >
+                      <Radio value='balance'>钱包余额</Radio>
+                      {page.epay_methods?.map((method) => (
+                        <Radio key={method.type} value={`epay:${method.type}`}>
+                          {method.name || method.type}
+                        </Radio>
+                      ))}
+                    </RadioGroup>
+                  </div>
+                </div>
+              );
+            })()}
+        </Modal>
         {page.memberships?.length > 0 && (
           <div>
             <h2 className='mb-3 text-lg font-semibold'>我的虚拟会员</h2>
@@ -187,7 +264,7 @@ const VirtualMembership = () => {
           ) : (
             <div className='grid gap-4 lg:grid-cols-3'>
               {page.plans.map((plan) => {
-                const { groupSize, variant } = variantFor(plan);
+                const { groupSize } = variantFor(plan);
                 return (
                   <Card
                     key={plan.id}
@@ -199,31 +276,28 @@ const VirtualMembership = () => {
                     <p className='mb-4 text-sm text-gray-500'>
                       {plan.subtitle || `有效期 ${plan.duration_days} 天`}
                     </p>
-                    <div className='grid grid-cols-2 gap-2 text-sm'>
-                      <div className='rounded bg-green-50 p-3'>
-                        <span className='text-gray-500'>周额度</span>
-                        <strong className='mt-1 block'>
-                          {variant?.weekly_quota || 0}
-                        </strong>
+                    {plan.description && (
+                      <div
+                        className='mb-4 text-sm text-gray-500'
+                        style={{ whiteSpace: 'pre-wrap' }}
+                      >
+                        {plan.description}
                       </div>
-                      <div className='rounded bg-blue-50 p-3'>
-                        <span className='text-gray-500'>5 小时额度</span>
-                        <strong className='mt-1 block'>
-                          {plan.five_hour_enabled
-                            ? variant?.five_hour_quota || 0
-                            : '关闭'}
-                        </strong>
+                    )}
+                    <div className='overflow-hidden rounded border text-sm'>
+                      <div className='grid grid-cols-2 gap-2 border-b bg-gray-50 px-3 py-2 font-medium text-gray-500'>
+                        <span>购买档位 / 价格</span>
+                        <span className='text-right'>周额度</span>
                       </div>
-                    </div>
-                    <div className='mt-4 grid grid-cols-2 gap-2'>
                       {(plan.variants || []).map((item) => (
-                        <Button
+                        <button
                           key={item.group_size}
-                          type={
+                          type='button'
+                          className={`grid w-full grid-cols-2 gap-2 border-b px-3 py-3 text-left last:border-b-0 ${
                             groupSize === item.group_size
-                              ? 'primary'
-                              : 'tertiary'
-                          }
+                              ? 'bg-green-50'
+                              : 'hover:bg-gray-50'
+                          }`}
                           onClick={() =>
                             setSelectedGroup({
                               ...selectedGroup,
@@ -231,29 +305,33 @@ const VirtualMembership = () => {
                             })
                           }
                         >
-                          {item.label} ¥
-                          {Number(item.price_amount || 0).toFixed(2)}
-                        </Button>
+                          <span>
+                            <span className='block font-medium'>
+                              {item.label}
+                            </span>
+                            <span className='mt-1 block font-semibold text-green-600'>
+                              ¥{Number(item.price_amount || 0).toFixed(2)}
+                            </span>
+                          </span>
+                          <span className='text-right font-semibold'>
+                            {item.weekly_quota || 0}
+                            {plan.five_hour_enabled && (
+                              <span className='mt-1 block text-xs font-normal text-gray-500'>
+                                5h {item.five_hour_quota || 0}
+                              </span>
+                            )}
+                          </span>
+                        </button>
                       ))}
                     </div>
-                    <div className='mt-4 grid gap-2 sm:grid-cols-2'>
-                      <Button
-                        theme='outline'
-                        type='primary'
-                        onClick={() => purchase(plan, groupSize)}
-                      >
-                        钱包余额购买
-                      </Button>
-                      {page.epay_enabled && page.epay_methods?.length > 0 && (
-                        <Button
-                          theme='solid'
-                          type='primary'
-                          onClick={() => purchaseWithEpay(plan, groupSize)}
-                        >
-                          支付宝支付
-                        </Button>
-                      )}
-                    </div>
+                    <Button
+                      theme='solid'
+                      type='primary'
+                      className='mt-4 w-full'
+                      onClick={() => openPurchase(plan, groupSize)}
+                    >
+                      立即购买
+                    </Button>
                   </Card>
                 );
               })}

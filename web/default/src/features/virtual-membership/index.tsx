@@ -1,11 +1,20 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Gift, Gauge, Users, Zap } from 'lucide-react'
+import { Gift, Gauge, Loader2, Users, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Markdown } from '@/components/ui/markdown'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Dialog } from '@/components/dialog'
 import { SectionPageLayout } from '@/components/layout'
 import {
   getVirtualMembershipPage,
@@ -88,21 +97,170 @@ function MembershipCard({ membership }: { membership: UserVirtualMembership }) {
   )
 }
 
+type PaymentSelection = { type: 'balance' } | { type: 'epay'; method: string }
+
+function VirtualMembershipPurchaseDialog({
+  open,
+  onOpenChange,
+  plan,
+  groupSize,
+  epayMethods,
+  onConfirm,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  plan: VirtualMembershipPlan | null
+  groupSize: number
+  epayMethods: { type: string; name?: string }[]
+  onConfirm: (payment: PaymentSelection) => Promise<boolean>
+}) {
+  const [payment, setPayment] = useState<PaymentSelection>({ type: 'balance' })
+  const [submitting, setSubmitting] = useState(false)
+
+  if (!plan) return null
+
+  const variant =
+    plan.variants.find((item) => item.group_size === groupSize) ??
+    plan.variants[0]
+  const groupLabel =
+    variant?.label ?? (groupSize === 1 ? '单独购买' : `${groupSize} 人团`)
+  const paymentLabel =
+    payment.type === 'balance'
+      ? '钱包余额'
+      : epayMethods.find((item) => item.type === payment.method)?.name ||
+        payment.method
+
+  const confirm = async () => {
+    setSubmitting(true)
+    try {
+      if (await onConfirm(payment)) onOpenChange(false)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title='立即购买'
+      description='请选择付款方式，确认后将进入对应的支付流程。'
+      contentClassName='max-sm:w-[calc(100vw-1.5rem)] sm:max-w-md'
+      bodyClassName='space-y-4'
+    >
+      <div className='bg-muted/40 space-y-2 rounded-xl border p-4'>
+        <div className='flex items-center justify-between gap-3'>
+          <span className='text-muted-foreground text-sm'>方案</span>
+          <span className='font-medium'>{plan.title}</span>
+        </div>
+        <div className='flex items-center justify-between gap-3'>
+          <span className='text-muted-foreground text-sm'>购买档位</span>
+          <span className='font-medium'>{groupLabel}</span>
+        </div>
+        <div className='flex items-center justify-between gap-3'>
+          <span className='text-muted-foreground text-sm'>应付金额</span>
+          <span className='text-primary text-xl font-bold'>
+            ¥{(variant?.price_amount ?? 0).toFixed(2)}
+          </span>
+        </div>
+        <div className='flex items-center justify-between gap-3'>
+          <span className='text-muted-foreground text-sm'>获得周额度</span>
+          <span className='font-medium'>
+            {quotaLabel(variant?.weekly_quota ?? 0)}
+          </span>
+        </div>
+        {plan.five_hour_enabled && (
+          <div className='flex items-center justify-between gap-3'>
+            <span className='text-muted-foreground text-sm'>
+              获得 5 小时额度
+            </span>
+            <span className='font-medium'>
+              {quotaLabel(variant?.five_hour_quota ?? 0)}
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div className='space-y-2'>
+        <p className='text-sm font-medium'>付款方式</p>
+        <div className='grid gap-2'>
+          <Button
+            type='button'
+            variant={payment.type === 'balance' ? 'default' : 'outline'}
+            className='justify-start'
+            onClick={() => setPayment({ type: 'balance' })}
+          >
+            钱包余额
+          </Button>
+          {epayMethods.length > 0 && (
+            <div className='grid grid-cols-[minmax(0,1fr)_auto] gap-2'>
+              <Select
+                items={epayMethods.map((method) => ({
+                  value: method.type,
+                  label: method.name || method.type,
+                }))}
+                value={payment.type === 'epay' ? payment.method : ''}
+                onValueChange={(value) =>
+                  value && setPayment({ type: 'epay', method: value })
+                }
+              >
+                <SelectTrigger
+                  className={cn(
+                    'w-full',
+                    payment.type === 'epay' &&
+                      'border-primary bg-primary/5 text-primary'
+                  )}
+                  onClick={() => {
+                    if (payment.type !== 'epay') {
+                      setPayment({ type: 'epay', method: epayMethods[0].type })
+                    }
+                  }}
+                >
+                  <SelectValue>{paymentLabel}</SelectValue>
+                </SelectTrigger>
+                <SelectContent alignItemWithTrigger={false}>
+                  <SelectGroup>
+                    {epayMethods.map((method) => (
+                      <SelectItem key={method.type} value={method.type}>
+                        {method.name || method.type}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <Button
+                type='button'
+                variant={payment.type === 'epay' ? 'default' : 'outline'}
+                onClick={() =>
+                  setPayment({ type: 'epay', method: epayMethods[0].type })
+                }
+              >
+                选择
+              </Button>
+            </div>
+          )}
+        </div>
+        <p className='text-muted-foreground text-xs'>
+          当前选择：{paymentLabel}
+        </p>
+      </div>
+
+      <Button className='w-full' onClick={confirm} disabled={submitting}>
+        {submitting && <Loader2 className='animate-spin' />}
+        确认支付
+      </Button>
+    </Dialog>
+  )
+}
+
 function PlanCard({
   plan,
   onPurchase,
-  onEpay,
-  epayEnabled,
 }: {
   plan: VirtualMembershipPlan
   onPurchase: (plan: VirtualMembershipPlan, groupSize: number) => void
-  onEpay: (plan: VirtualMembershipPlan, groupSize: number) => void
-  epayEnabled: boolean
 }) {
   const [selectedGroup, setSelectedGroup] = useState(1)
-  const variant =
-    plan.variants.find((item) => item.group_size === selectedGroup) ??
-    plan.variants[0]
   return (
     <div className='from-card to-muted/30 relative overflow-hidden rounded-2xl border bg-gradient-to-br p-5 shadow-sm'>
       {plan.recommended && (
@@ -121,69 +279,63 @@ function PlanCard({
           </p>
         </div>
       </div>
-      {plan.description && (
-        <p className='text-muted-foreground mt-4 text-sm'>{plan.description}</p>
+      {plan.description?.trim() && (
+        <Markdown className='text-muted-foreground mt-4 text-sm'>
+          {plan.description}
+        </Markdown>
       )}
-      <div className='mt-5 grid grid-cols-2 gap-3'>
-        <div className='rounded-xl bg-emerald-500/5 p-3'>
-          <p className='text-muted-foreground text-xs'>周额度</p>
-          <p className='mt-1 text-lg font-semibold'>
-            {quotaLabel(variant?.weekly_quota ?? 0)}
-          </p>
+      <div className='bg-background/60 mt-5 overflow-hidden rounded-2xl border'>
+        <div className='text-muted-foreground bg-muted/30 grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b px-4 py-3 text-xs font-medium'>
+          <span>购买档位 / 价格</span>
+          <span>周额度</span>
         </div>
-        <div className='rounded-xl bg-blue-500/5 p-3'>
-          <p className='text-muted-foreground text-xs'>5 小时额度</p>
-          <p className='mt-1 text-lg font-semibold'>
-            {plan.five_hour_enabled
-              ? quotaLabel(variant?.five_hour_quota ?? 0)
-              : '未开启'}
-          </p>
-        </div>
-      </div>
-      <div className='mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4'>
         {plan.variants.map((item) => (
           <button
             key={item.group_size}
             type='button'
             onClick={() => setSelectedGroup(item.group_size)}
             className={cn(
-              'rounded-xl border px-2 py-2 text-left transition',
+              'grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b px-4 py-3 text-left transition last:border-b-0',
               selectedGroup === item.group_size
-                ? 'border-emerald-500 bg-emerald-500/10'
-                : 'hover:bg-muted'
+                ? 'bg-emerald-500/10'
+                : 'hover:bg-muted/70'
             )}
           >
-            <span className='block text-xs font-medium'>{item.label}</span>
-            <span className='mt-1 block text-sm font-semibold'>
-              ¥{item.price_amount.toFixed(2)}
+            <span>
+              <span className='block text-sm font-medium'>{item.label}</span>
+              <span className='text-primary mt-1 block text-base font-semibold'>
+                ¥{item.price_amount.toFixed(2)}
+              </span>
+            </span>
+            <span className='text-right'>
+              <span className='block text-base font-semibold'>
+                {quotaLabel(item.weekly_quota)}
+              </span>
+              {plan.five_hour_enabled && (
+                <span className='text-muted-foreground mt-1 block text-[11px]'>
+                  5h {quotaLabel(item.five_hour_quota)}
+                </span>
+              )}
             </span>
           </button>
         ))}
       </div>
-      <div className='mt-5 grid gap-2 sm:grid-cols-2'>
-        <Button
-          variant='outline'
-          className='rounded-xl'
-          onClick={() => onPurchase(plan, selectedGroup)}
-        >
-          钱包余额购买
-        </Button>
-        {epayEnabled && (
-          <Button
-            className='rounded-xl bg-emerald-600 hover:bg-emerald-700'
-            onClick={() => onEpay(plan, selectedGroup)}
-          >
-            <Zap className='size-4' /> 支付宝支付
-          </Button>
-        )}
-      </div>
+      <Button
+        className='mt-5 w-full rounded-xl bg-emerald-600 hover:bg-emerald-700'
+        onClick={() => onPurchase(plan, selectedGroup)}
+      >
+        <Zap className='size-4' /> 立即购买
+      </Button>
     </div>
   )
 }
 
 export function VirtualMembership() {
   const [refresh, setRefresh] = useState(0)
-  const [selectedEpayMethod, setSelectedEpayMethod] = useState('')
+  const [purchasePlan, setPurchasePlan] =
+    useState<VirtualMembershipPlan | null>(null)
+  const [purchaseGroupSize, setPurchaseGroupSize] = useState(1)
+  const [purchaseOpen, setPurchaseOpen] = useState(false)
   const { data, isLoading } = useQuery({
     queryKey: ['virtual-membership-page', refresh],
     queryFn: getVirtualMembershipPage,
@@ -194,72 +346,60 @@ export function VirtualMembership() {
     [page?.memberships]
   )
 
-  useEffect(() => {
-    const method = page?.epay_methods?.[0]?.type || ''
-    setSelectedEpayMethod((current) => current || method)
-  }, [page?.epay_methods])
-
-  const handlePurchase = async (
-    plan: VirtualMembershipPlan,
-    groupSize: number
-  ) => {
-    if (
-      !window.confirm(
-        `确认购买 ${plan.title}（${groupSize === 1 ? '单独购买' : `${groupSize} 人团`}）？将从钱包余额扣款。`
-      )
-    )
-      return
-    try {
-      const result = await purchaseVirtualMembership({
-        plan_id: plan.id,
-        group_size: groupSize,
-      })
-      if (result.success) {
-        toast.success('虚拟会员已开通')
-        setRefresh((value) => value + 1)
-      }
-    } catch {
-      // Global API interceptor already shows the server error.
-    }
+  const openPurchase = (plan: VirtualMembershipPlan, groupSize: number) => {
+    setPurchasePlan(plan)
+    setPurchaseGroupSize(groupSize)
+    setPurchaseOpen(true)
   }
 
-  const handleEpay = async (plan: VirtualMembershipPlan, groupSize: number) => {
-    if (!selectedEpayMethod) {
-      toast.error('暂无可用的支付宝支付方式')
-      return
-    }
-    if (
-      !window.confirm(
-        `确认购买 ${plan.title}（${groupSize === 1 ? '单独购买' : `${groupSize} 人团`}）并使用支付宝支付？`
-      )
-    )
-      return
+  const handlePurchase = async (payment: PaymentSelection) => {
+    if (!purchasePlan) return false
     try {
-      const result = await payVirtualMembershipEpay({
-        plan_id: plan.id,
-        group_size: groupSize,
-        payment_method: selectedEpayMethod,
-      })
-      if (result.message === 'success' && result.url) {
-        const form = document.createElement('form')
-        form.action = result.url
-        form.method = 'POST'
-        form.target = '_blank'
-        Object.entries(result.data || {}).forEach(([key, value]) => {
-          const input = document.createElement('input')
-          input.type = 'hidden'
-          input.name = key
-          input.value = String(value)
-          form.appendChild(input)
+      if (payment.type === 'balance') {
+        const result = await purchaseVirtualMembership({
+          plan_id: purchasePlan.id,
+          group_size: purchaseGroupSize,
         })
-        document.body.appendChild(form)
-        form.submit()
-        form.remove()
-      } else {
+        if (result.success) {
+          toast.success('虚拟会员已开通')
+          setRefresh((value) => value + 1)
+          return true
+        }
         toast.error(result.message || '支付请求失败')
+        return false
       }
+
+      const result = await payVirtualMembershipEpay({
+        plan_id: purchasePlan.id,
+        group_size: purchaseGroupSize,
+        payment_method: payment.method,
+      })
+      if (result.message !== 'success' || !result.url) {
+        toast.error(result.message || '支付请求失败')
+        return false
+      }
+      const form = document.createElement('form')
+      form.action = result.url
+      form.method = 'POST'
+      const isSafari =
+        typeof navigator !== 'undefined' &&
+        /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
+      if (!isSafari) form.target = '_blank'
+      Object.entries(result.data || {}).forEach(([key, value]) => {
+        const input = document.createElement('input')
+        input.type = 'hidden'
+        input.name = key
+        input.value = String(value)
+        form.appendChild(input)
+      })
+      document.body.appendChild(form)
+      form.submit()
+      form.remove()
+      toast.success('支付页面已打开')
+      return true
     } catch {
       toast.error('支付请求失败')
+      return false
     }
   }
 
@@ -268,28 +408,9 @@ export function VirtualMembership() {
       <SectionPageLayout.Title>虚拟会员</SectionPageLayout.Title>
       <SectionPageLayout.Content>
         <div className='space-y-5'>
-          {page?.announcement && (
-            <div className='to-card rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 p-5'>
+          {page?.announcement?.trim() && (
+            <div className='bg-card rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 p-5'>
               <Markdown>{page.announcement}</Markdown>
-            </div>
-          )}
-          {page?.epay_enabled && (page.epay_methods?.length ?? 0) > 0 && (
-            <div className='flex flex-wrap items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4'>
-              <span className='text-sm font-medium'>支付宝支付方式</span>
-              <select
-                value={selectedEpayMethod}
-                onChange={(event) => setSelectedEpayMethod(event.target.value)}
-                className='bg-background rounded-lg border px-3 py-2 text-sm'
-              >
-                {page.epay_methods?.map((method) => (
-                  <option key={method.type} value={method.type}>
-                    {method.name || method.type}
-                  </option>
-                ))}
-              </select>
-              <span className='text-muted-foreground text-xs'>
-                复用订阅套餐的 Epay 配置
-              </span>
             </div>
           )}
           <div className='grid gap-3 sm:grid-cols-3'>
@@ -337,9 +458,7 @@ export function VirtualMembership() {
                   <PlanCard
                     key={plan.id}
                     plan={plan}
-                    onPurchase={handlePurchase}
-                    onEpay={handleEpay}
-                    epayEnabled={!!page?.epay_enabled}
+                    onPurchase={openPurchase}
                   />
                 ))}
               </div>
@@ -347,6 +466,14 @@ export function VirtualMembership() {
           </div>
         </div>
       </SectionPageLayout.Content>
+      <VirtualMembershipPurchaseDialog
+        open={purchaseOpen}
+        onOpenChange={setPurchaseOpen}
+        plan={purchasePlan}
+        groupSize={purchaseGroupSize}
+        epayMethods={page?.epay_methods ?? []}
+        onConfirm={handlePurchase}
+      />
     </SectionPageLayout>
   )
 }
