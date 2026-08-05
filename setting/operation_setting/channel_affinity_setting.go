@@ -91,10 +91,12 @@ var channelAffinitySetting = ChannelAffinitySetting{
 			ValueRegex:            "",
 			TTLSeconds:            0,
 			ParamOverrideTemplate: buildPassHeaderTemplate(codexCliPassThroughHeaders),
-			// Responses encrypted history is bound to the upstream credential
-			// that created it. Once a conversation key is present, do not
-			// fail over to another provider credential on the same request.
-			SkipRetryOnFailure: true,
+			// Keep the affinity key for normal requests, but do not disable all
+			// retries: transient transport failures and unavailable providers
+			// still need the existing fallback policy. Deterministic encrypted
+			// Responses validation errors are blocked centrally by
+			// IsNonRetryableResponsesEncryptedContentError.
+			SkipRetryOnFailure: false,
 			IncludeUsingGroup:  true,
 			IncludeRuleName:    true,
 			UserAgentInclude:   nil,

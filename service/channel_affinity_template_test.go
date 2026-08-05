@@ -371,7 +371,7 @@ func TestDefaultChannelAffinityRulesUseConversationKeysOnly(t *testing.T) {
 
 	foundPromptCacheKey := false
 	for _, rule := range setting.Rules {
-		require.True(t, rule.SkipRetryOnFailure)
+		require.False(t, rule.SkipRetryOnFailure)
 		for _, source := range rule.KeySources {
 			require.Equal(t, "gjson", source.Type)
 			require.Equal(t, "prompt_cache_key", source.Path)
