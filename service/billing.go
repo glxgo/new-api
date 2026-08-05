@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	BillingSourceWallet       = "wallet"
-	BillingSourceSubscription = "subscription"
+	BillingSourceWallet            = "wallet"
+	BillingSourceSubscription      = "subscription"
+	BillingSourceVirtualMembership = "virtual_membership"
 )
 
 // PreConsumeBilling 根据用户计费偏好创建 BillingSession 并执行预扣费。

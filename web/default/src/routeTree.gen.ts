@@ -40,6 +40,8 @@ import { Route as AuthenticatedSystemSettingsRouteRouteImport } from './routes/_
 import { Route as PricingModelIdIndexRouteImport } from './routes/pricing/$modelId/index'
 import { Route as AuthenticatedWithdrawReviewIndexRouteImport } from './routes/_authenticated/withdraw-review/index'
 import { Route as AuthenticatedWalletIndexRouteImport } from './routes/_authenticated/wallet/index'
+import { Route as AuthenticatedVirtualMembershipsIndexRouteImport } from './routes/_authenticated/virtual-memberships/index'
+import { Route as AuthenticatedVirtualMembershipIndexRouteImport } from './routes/_authenticated/virtual-membership/index'
 import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
 import { Route as AuthenticatedUsageStatisticsIndexRouteImport } from './routes/_authenticated/usage-statistics/index'
 import { Route as AuthenticatedUsageLogsIndexRouteImport } from './routes/_authenticated/usage-logs/index'
@@ -58,6 +60,7 @@ import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authentica
 import { Route as AuthenticatedDividendIndexRouteImport } from './routes/_authenticated/dividend/index'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
 import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authenticated/channels/index'
+import { Route as AuthenticatedApiIngressIndexRouteImport } from './routes/_authenticated/api-ingress/index'
 import { Route as AuthenticatedAffiliateIndexRouteImport } from './routes/_authenticated/affiliate/index'
 import { Route as AuthenticatedUsageLogsSectionRouteImport } from './routes/_authenticated/usage-logs/$section'
 import { Route as AuthenticatedModelsSectionRouteImport } from './routes/_authenticated/models/$section'
@@ -236,6 +239,18 @@ const AuthenticatedWalletIndexRoute =
     path: '/wallet/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedVirtualMembershipsIndexRoute =
+  AuthenticatedVirtualMembershipsIndexRouteImport.update({
+    id: '/virtual-memberships/',
+    path: '/virtual-memberships/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedVirtualMembershipIndexRoute =
+  AuthenticatedVirtualMembershipIndexRouteImport.update({
+    id: '/virtual-membership/',
+    path: '/virtual-membership/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedUsersIndexRoute = AuthenticatedUsersIndexRouteImport.update({
   id: '/users/',
   path: '/users/',
@@ -340,6 +355,12 @@ const AuthenticatedChannelsIndexRoute =
   AuthenticatedChannelsIndexRouteImport.update({
     id: '/channels/',
     path: '/channels/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedApiIngressIndexRoute =
+  AuthenticatedApiIngressIndexRouteImport.update({
+    id: '/api-ingress/',
+    path: '/api-ingress/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedAffiliateIndexRoute =
@@ -501,6 +522,7 @@ export interface FileRoutesByFullPath {
   '/models/$section': typeof AuthenticatedModelsSectionRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/affiliate/': typeof AuthenticatedAffiliateIndexRoute
+  '/api-ingress/': typeof AuthenticatedApiIngressIndexRoute
   '/channels/': typeof AuthenticatedChannelsIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/dividend/': typeof AuthenticatedDividendIndexRoute
@@ -519,6 +541,8 @@ export interface FileRoutesByFullPath {
   '/usage-logs/': typeof AuthenticatedUsageLogsIndexRoute
   '/usage-statistics/': typeof AuthenticatedUsageStatisticsIndexRoute
   '/users/': typeof AuthenticatedUsersIndexRoute
+  '/virtual-membership/': typeof AuthenticatedVirtualMembershipIndexRoute
+  '/virtual-memberships/': typeof AuthenticatedVirtualMembershipsIndexRoute
   '/wallet/': typeof AuthenticatedWalletIndexRoute
   '/withdraw-review/': typeof AuthenticatedWithdrawReviewIndexRoute
   '/pricing/$modelId/': typeof PricingModelIdIndexRoute
@@ -570,6 +594,7 @@ export interface FileRoutesByTo {
   '/models/$section': typeof AuthenticatedModelsSectionRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/affiliate': typeof AuthenticatedAffiliateIndexRoute
+  '/api-ingress': typeof AuthenticatedApiIngressIndexRoute
   '/channels': typeof AuthenticatedChannelsIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/dividend': typeof AuthenticatedDividendIndexRoute
@@ -588,6 +613,8 @@ export interface FileRoutesByTo {
   '/usage-logs': typeof AuthenticatedUsageLogsIndexRoute
   '/usage-statistics': typeof AuthenticatedUsageStatisticsIndexRoute
   '/users': typeof AuthenticatedUsersIndexRoute
+  '/virtual-membership': typeof AuthenticatedVirtualMembershipIndexRoute
+  '/virtual-memberships': typeof AuthenticatedVirtualMembershipsIndexRoute
   '/wallet': typeof AuthenticatedWalletIndexRoute
   '/withdraw-review': typeof AuthenticatedWithdrawReviewIndexRoute
   '/pricing/$modelId': typeof PricingModelIdIndexRoute
@@ -643,6 +670,7 @@ export interface FileRoutesById {
   '/_authenticated/models/$section': typeof AuthenticatedModelsSectionRoute
   '/_authenticated/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/_authenticated/affiliate/': typeof AuthenticatedAffiliateIndexRoute
+  '/_authenticated/api-ingress/': typeof AuthenticatedApiIngressIndexRoute
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/dividend/': typeof AuthenticatedDividendIndexRoute
@@ -661,6 +689,8 @@ export interface FileRoutesById {
   '/_authenticated/usage-logs/': typeof AuthenticatedUsageLogsIndexRoute
   '/_authenticated/usage-statistics/': typeof AuthenticatedUsageStatisticsIndexRoute
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
+  '/_authenticated/virtual-membership/': typeof AuthenticatedVirtualMembershipIndexRoute
+  '/_authenticated/virtual-memberships/': typeof AuthenticatedVirtualMembershipsIndexRoute
   '/_authenticated/wallet/': typeof AuthenticatedWalletIndexRoute
   '/_authenticated/withdraw-review/': typeof AuthenticatedWithdrawReviewIndexRoute
   '/pricing/$modelId/': typeof PricingModelIdIndexRoute
@@ -715,6 +745,7 @@ export interface FileRouteTypes {
     | '/models/$section'
     | '/usage-logs/$section'
     | '/affiliate/'
+    | '/api-ingress/'
     | '/channels/'
     | '/dashboard/'
     | '/dividend/'
@@ -733,6 +764,8 @@ export interface FileRouteTypes {
     | '/usage-logs/'
     | '/usage-statistics/'
     | '/users/'
+    | '/virtual-membership/'
+    | '/virtual-memberships/'
     | '/wallet/'
     | '/withdraw-review/'
     | '/pricing/$modelId/'
@@ -784,6 +817,7 @@ export interface FileRouteTypes {
     | '/models/$section'
     | '/usage-logs/$section'
     | '/affiliate'
+    | '/api-ingress'
     | '/channels'
     | '/dashboard'
     | '/dividend'
@@ -802,6 +836,8 @@ export interface FileRouteTypes {
     | '/usage-logs'
     | '/usage-statistics'
     | '/users'
+    | '/virtual-membership'
+    | '/virtual-memberships'
     | '/wallet'
     | '/withdraw-review'
     | '/pricing/$modelId'
@@ -856,6 +892,7 @@ export interface FileRouteTypes {
     | '/_authenticated/models/$section'
     | '/_authenticated/usage-logs/$section'
     | '/_authenticated/affiliate/'
+    | '/_authenticated/api-ingress/'
     | '/_authenticated/channels/'
     | '/_authenticated/dashboard/'
     | '/_authenticated/dividend/'
@@ -874,6 +911,8 @@ export interface FileRouteTypes {
     | '/_authenticated/usage-logs/'
     | '/_authenticated/usage-statistics/'
     | '/_authenticated/users/'
+    | '/_authenticated/virtual-membership/'
+    | '/_authenticated/virtual-memberships/'
     | '/_authenticated/wallet/'
     | '/_authenticated/withdraw-review/'
     | '/pricing/$modelId/'
@@ -1135,6 +1174,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWalletIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/virtual-memberships/': {
+      id: '/_authenticated/virtual-memberships/'
+      path: '/virtual-memberships'
+      fullPath: '/virtual-memberships/'
+      preLoaderRoute: typeof AuthenticatedVirtualMembershipsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/virtual-membership/': {
+      id: '/_authenticated/virtual-membership/'
+      path: '/virtual-membership'
+      fullPath: '/virtual-membership/'
+      preLoaderRoute: typeof AuthenticatedVirtualMembershipIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/users/': {
       id: '/_authenticated/users/'
       path: '/users'
@@ -1259,6 +1312,13 @@ declare module '@tanstack/react-router' {
       path: '/channels'
       fullPath: '/channels/'
       preLoaderRoute: typeof AuthenticatedChannelsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/api-ingress/': {
+      id: '/_authenticated/api-ingress/'
+      path: '/api-ingress'
+      fullPath: '/api-ingress/'
+      preLoaderRoute: typeof AuthenticatedApiIngressIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/affiliate/': {
@@ -1503,6 +1563,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedModelsSectionRoute: typeof AuthenticatedModelsSectionRoute
   AuthenticatedUsageLogsSectionRoute: typeof AuthenticatedUsageLogsSectionRoute
   AuthenticatedAffiliateIndexRoute: typeof AuthenticatedAffiliateIndexRoute
+  AuthenticatedApiIngressIndexRoute: typeof AuthenticatedApiIngressIndexRoute
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedDividendIndexRoute: typeof AuthenticatedDividendIndexRoute
@@ -1520,6 +1581,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedUsageLogsIndexRoute: typeof AuthenticatedUsageLogsIndexRoute
   AuthenticatedUsageStatisticsIndexRoute: typeof AuthenticatedUsageStatisticsIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
+  AuthenticatedVirtualMembershipIndexRoute: typeof AuthenticatedVirtualMembershipIndexRoute
+  AuthenticatedVirtualMembershipsIndexRoute: typeof AuthenticatedVirtualMembershipsIndexRoute
   AuthenticatedWalletIndexRoute: typeof AuthenticatedWalletIndexRoute
   AuthenticatedWithdrawReviewIndexRoute: typeof AuthenticatedWithdrawReviewIndexRoute
 }
@@ -1534,6 +1597,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedModelsSectionRoute: AuthenticatedModelsSectionRoute,
   AuthenticatedUsageLogsSectionRoute: AuthenticatedUsageLogsSectionRoute,
   AuthenticatedAffiliateIndexRoute: AuthenticatedAffiliateIndexRoute,
+  AuthenticatedApiIngressIndexRoute: AuthenticatedApiIngressIndexRoute,
   AuthenticatedChannelsIndexRoute: AuthenticatedChannelsIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedDividendIndexRoute: AuthenticatedDividendIndexRoute,
@@ -1555,6 +1619,10 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedUsageStatisticsIndexRoute:
     AuthenticatedUsageStatisticsIndexRoute,
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
+  AuthenticatedVirtualMembershipIndexRoute:
+    AuthenticatedVirtualMembershipIndexRoute,
+  AuthenticatedVirtualMembershipsIndexRoute:
+    AuthenticatedVirtualMembershipsIndexRoute,
   AuthenticatedWalletIndexRoute: AuthenticatedWalletIndexRoute,
   AuthenticatedWithdrawReviewIndexRoute: AuthenticatedWithdrawReviewIndexRoute,
 }

@@ -30,6 +30,7 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/privacy-policy", controller.GetPrivacyPolicy)
 		apiRouter.GET("/about", controller.GetAbout)
 		apiRouter.GET("/tutorial", controller.GetTutorial)
+		apiRouter.GET("/ingress/ping", middleware.APIIngressResolver(), controller.APIIngressPing)
 		//apiRouter.GET("/midjourney", controller.GetMidjourney)
 		apiRouter.GET("/home_page_content", controller.GetHomePageContent)
 		apiRouter.GET("/pricing", middleware.HeaderNavModuleAuth("pricing"), controller.GetPricing)
@@ -188,6 +189,41 @@ func SetApiRouter(router *gin.Engine) {
 			subscriptionRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestWaffoPancakePay)
 		}
 
+		virtualMembershipRoute := apiRouter.Group("/virtual-membership")
+		virtualMembershipRoute.Use(middleware.UserAuth())
+		{
+			virtualMembershipRoute.GET("/page", controller.GetVirtualMembershipPage)
+			virtualMembershipRoute.POST("/balance/pay", middleware.CriticalRateLimit(), controller.PurchaseVirtualMembership)
+			virtualMembershipRoute.POST("/epay/pay", middleware.CriticalRateLimit(), controller.VirtualMembershipRequestEpay)
+			virtualMembershipRoute.GET("/:id/keys", controller.ListVirtualMembershipTokens)
+			virtualMembershipRoute.PUT("/:id/keys", controller.ReplaceVirtualMembershipTokens)
+		}
+		virtualMembershipAdminRoute := apiRouter.Group("/virtual-membership/admin")
+		virtualMembershipAdminRoute.Use(middleware.AdminAuth())
+		{
+			virtualMembershipAdminRoute.GET("/plans", controller.AdminListVirtualMembershipPlans)
+			virtualMembershipAdminRoute.POST("/plans", controller.AdminSaveVirtualMembershipPlan)
+			virtualMembershipAdminRoute.PUT("/plans/:id", controller.AdminSaveVirtualMembershipPlan)
+			virtualMembershipAdminRoute.GET("/setting", controller.AdminGetVirtualMembershipSetting)
+			virtualMembershipAdminRoute.PUT("/setting", controller.AdminSaveVirtualMembershipSetting)
+			virtualMembershipAdminRoute.POST("/reset", controller.AdminResetVirtualMemberships)
+			virtualMembershipAdminRoute.GET("/orders", controller.AdminListVirtualMembershipOrders)
+		}
+
+		ingressRoute := apiRouter.Group("/ingress")
+		ingressRoute.Use(middleware.UserAuth())
+		{
+			ingressRoute.GET("/profiles", controller.GetAPIIngressProfiles)
+		}
+		ingressAdminRoute := apiRouter.Group("/ingress/admin")
+		ingressAdminRoute.Use(middleware.AdminAuth())
+		{
+			ingressAdminRoute.GET("/profiles", controller.AdminListAPIIngressProfiles)
+			ingressAdminRoute.POST("/profiles", controller.AdminCreateAPIIngressProfile)
+			ingressAdminRoute.PUT("/profiles/:id", controller.AdminUpdateAPIIngressProfile)
+			ingressAdminRoute.DELETE("/profiles/:id", controller.AdminDeleteAPIIngressProfile)
+		}
+
 		luckyWheelRoute := apiRouter.Group("/lucky-wheel")
 		luckyWheelRoute.Use(middleware.UserAuth())
 		{
@@ -242,6 +278,10 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/subscription/epay/notify", controller.SubscriptionEpayNotify)
 		apiRouter.GET("/subscription/epay/return", controller.SubscriptionEpayReturn)
 		apiRouter.POST("/subscription/epay/return", anonymousRequestBodyLimit, controller.SubscriptionEpayReturn)
+		apiRouter.POST("/virtual-membership/epay/notify", anonymousRequestBodyLimit, controller.VirtualMembershipEpayNotify)
+		apiRouter.GET("/virtual-membership/epay/notify", controller.VirtualMembershipEpayNotify)
+		apiRouter.GET("/virtual-membership/epay/return", controller.VirtualMembershipEpayReturn)
+		apiRouter.POST("/virtual-membership/epay/return", anonymousRequestBodyLimit, controller.VirtualMembershipEpayReturn)
 		optionRoute := apiRouter.Group("/option")
 		optionRoute.Use(middleware.RootAuth())
 		{

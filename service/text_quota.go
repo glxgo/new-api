@@ -309,7 +309,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 
 	// 平台成本(2026-06-22 重构): 从售价反推 = (售价 / GroupRatio) × GroupCostRatio,
 	// 与售价同源(含 cache/image/audio/tool 附加费口径), 不再读 ModelCost。见 service/cost.go。
-	summary.Cost = CalcCostFromChannelRatio(summary.Quota, relayInfo.ChannelCostRatioPPM)
+	summary.Cost = CalcCostFromChannelRatio(relayInfo.RestoreIngressMultiplier(summary.Quota), relayInfo.ChannelCostRatioPPM)
 
 	return summary
 }
@@ -363,7 +363,8 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		tieredBillingApplied,
 		tieredResult,
 	)
-	summary.Cost = CalcCostFromChannelRatio(summary.Quota, relayInfo.ChannelCostRatioPPM)
+	summary.Quota = relayInfo.ApplyIngressMultiplier(summary.Quota)
+	summary.Cost = CalcCostFromChannelRatio(relayInfo.RestoreIngressMultiplier(summary.Quota), relayInfo.ChannelCostRatioPPM)
 
 	if summary.WebSearchCallCount > 0 {
 		extraContent = append(extraContent, fmt.Sprintf("Web Search 调用 %d 次，调用花费 %s", summary.WebSearchCallCount, decimal.NewFromFloat(summary.WebSearchPrice).Mul(decimal.NewFromInt(int64(summary.WebSearchCallCount))).Div(decimal.NewFromInt(1000)).Mul(decimal.NewFromFloat(summary.GroupRatio)).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).String()))

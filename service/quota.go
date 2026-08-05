@@ -137,6 +137,7 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	}
 
 	quota := calculateAudioQuota(quotaInfo)
+	quota = relayInfo.ApplyIngressMultiplier(quota)
 
 	if userQuota < quota {
 		return fmt.Errorf(i18n.T(ctx, i18n.MsgQuotaUserNotEnough, map[string]any{"Have": logger.FormatQuota(userQuota), "Need": logger.FormatQuota(quota)}))
@@ -203,6 +204,7 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	if tieredOk {
 		quota = tieredQuota
 	}
+	quota = relayInfo.ApplyIngressMultiplier(quota)
 
 	totalTokens := usage.TotalTokens
 	var logContent string
@@ -239,7 +241,7 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	if tieredResult != nil {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
-	costQuota := CalcCostFromChannelRatio(quota, relayInfo.ChannelCostRatioPPM)
+	costQuota := CalcCostFromChannelRatio(relayInfo.RestoreIngressMultiplier(quota), relayInfo.ChannelCostRatioPPM)
 	affAdminIdSnap, inviterIdSnap, inviter2IdSnap := GetAffiliateSnapshot(relayInfo.UserId)
 	// 双池记账(阶段2b): 按实际扣减拆分填, 无 BillingSession 时回退全本金。
 	paidGift, paidPrincipal := paidSplitForLog(relayInfo, quota)
@@ -349,6 +351,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	if tieredOk {
 		quota = tieredQuota
 	}
+	quota = relayInfo.ApplyIngressMultiplier(quota)
 
 	totalTokens := usage.TotalTokens
 	var logContent string
@@ -385,7 +388,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	if tieredResult != nil {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
-	costQuota := CalcCostFromChannelRatio(quota, relayInfo.ChannelCostRatioPPM)
+	costQuota := CalcCostFromChannelRatio(relayInfo.RestoreIngressMultiplier(quota), relayInfo.ChannelCostRatioPPM)
 	affAdminIdSnap, inviterIdSnap, inviter2IdSnap := GetAffiliateSnapshot(relayInfo.UserId)
 	// 双池记账(阶段2b): 按实际扣减拆分填, 无 BillingSession 时回退全本金。
 	paidGift, paidPrincipal := paidSplitForLog(relayInfo, quota)
@@ -459,6 +462,14 @@ func PostConsumeQuota(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQu
 			}
 			relayInfo.SubscriptionPostDelta += delta
 		}
+	} else if relayInfo != nil && relayInfo.BillingSource == BillingSourceVirtualMembership {
+		if relayInfo.RequestId == "" {
+			return errors.New("虚拟会员请求 ID 缺失")
+		}
+		if err := model.PostConsumeVirtualMembershipDelta(relayInfo.RequestId, int64(quota)); err != nil {
+			return err
+		}
+		relayInfo.VirtualMembershipPostDelta += int64(quota)
 	} else {
 		// Wallet (双池, 阶段2b): 旧路径无 BillingSession, 拿不到预扣拆分记录,
 		// 扣减时直接走 DecreaseUserQuotaDual(优先赠金不足本金); 退还时按当前余额 SplitPayment 容错退。

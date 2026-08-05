@@ -53,6 +53,8 @@ func ThemeAwarePath(suffix string) string {
 		return strings.Replace(suffix, "/console/log", "/usage-logs", 1)
 	case strings.HasPrefix(suffix, "/console/personal"):
 		return strings.Replace(suffix, "/console/personal", "/profile", 1)
+	case strings.HasPrefix(suffix, "/console/virtual-membership"):
+		return strings.Replace(suffix, "/console/virtual-membership", "/virtual-membership", 1)
 	}
 	return suffix
 }

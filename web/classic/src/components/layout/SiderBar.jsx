@@ -39,6 +39,7 @@ const routerMap = {
   lucky: '/console/lucky-wheel',
   user: '/console/user',
   subscription: '/console/subscription',
+  virtualMembership: '/console/virtual-membership',
   log: '/console/log',
   midjourney: '/console/midjourney',
   setting: '/console/setting',
@@ -134,6 +135,11 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: '幸运大转盘',
         itemKey: 'lucky',
         to: '/lucky-wheel',
+      },
+      {
+        text: '虚拟会员',
+        itemKey: 'virtual_membership',
+        to: '/virtual-membership',
       },
       {
         text: t('个人设置'),

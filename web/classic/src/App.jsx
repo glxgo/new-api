@@ -48,6 +48,7 @@ import Subscription from './pages/Subscription';
 import LuckyWheel from './pages/LuckyWheel';
 import OAuth2Callback from './components/auth/OAuth2Callback';
 import PersonalSetting from './components/settings/PersonalSetting';
+import VirtualMembership from './pages/VirtualMembership';
 import Setup from './pages/Setup';
 import SetupCheck from './components/layout/SetupCheck';
 
@@ -130,6 +131,14 @@ function App() {
             <AdminRoute>
               <Subscription />
             </AdminRoute>
+          }
+        />
+        <Route
+          path='/console/virtual-membership'
+          element={
+            <PrivateRoute>
+              <VirtualMembership />
+            </PrivateRoute>
           }
         />
         <Route

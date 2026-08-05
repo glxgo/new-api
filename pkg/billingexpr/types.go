@@ -49,6 +49,7 @@ type BillingSnapshot struct {
 	EstimatedTier             string  `json:"estimated_tier"`
 	QuotaPerUnit              float64 `json:"quota_per_unit"`
 	ExprVersion               int     `json:"expr_version"`
+	IngressMultiplierPPM      int64   `json:"ingress_multiplier_ppm"`
 }
 
 // TieredResult holds everything needed after running tiered settlement.

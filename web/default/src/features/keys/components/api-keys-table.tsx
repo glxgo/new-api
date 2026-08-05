@@ -24,6 +24,7 @@ import {
   ArrowRightLeft,
   Database,
   Edit3,
+  Gauge,
   KeyRound,
   Link2,
   Plus,
@@ -54,6 +55,10 @@ import {
   useDataTable,
 } from '@/components/data-table'
 import { StatusBadge } from '@/components/status-badge'
+import {
+  getAPIIngressProfiles,
+  type APIIngressProfile,
+} from '@/features/api-ingress/api'
 import { useChatPresets } from '@/features/chat/hooks/use-chat-presets'
 import { getUserProfile } from '@/features/profile/api'
 import {
@@ -97,6 +102,112 @@ function resolvePublicApiEndpoint(serverAddress?: string | null) {
   return resolveTutorialApiBaseUrl(
     serverAddress,
     typeof window === 'undefined' ? null : window.location.origin
+  )
+}
+
+function ApiIngressPreview({ fallbackEndpoint }: { fallbackEndpoint: string }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['api-ingress-profiles'],
+    queryFn: getAPIIngressProfiles,
+  })
+  const [latencies, setLatencies] = useState<
+    Record<string, number | 'testing' | 'error'>
+  >({})
+  const profiles = data?.data ?? []
+  const endpointFor = (profile: APIIngressProfile) =>
+    `${(profile.public_base_url || fallbackEndpoint).replace(/\/+$/, '')}/v1`
+
+  const copy = async (value: string) => {
+    if (await copyToClipboard(value)) toast.success('已复制')
+  }
+  const test = async (profile: APIIngressProfile) => {
+    const base = (profile.public_base_url || fallbackEndpoint).replace(
+      /\/+$/,
+      ''
+    )
+    setLatencies((current) => ({ ...current, [profile.code]: 'testing' }))
+    const started = performance.now()
+    try {
+      const response = await fetch(`${base}/api/ingress/ping`, {
+        credentials: 'include',
+        headers: { 'X-New-API-Ingress': profile.code },
+      })
+      if (!response.ok) throw new Error('ping failed')
+      setLatencies((current) => ({
+        ...current,
+        [profile.code]: Math.round(performance.now() - started),
+      }))
+    } catch {
+      setLatencies((current) => ({ ...current, [profile.code]: 'error' }))
+    }
+  }
+
+  if (isLoading)
+    return (
+      <div className='bg-muted/20 mt-3 rounded-xl border p-4 text-xs'>
+        正在加载 API 入口…
+      </div>
+    )
+  if (!profiles.length) return null
+  return (
+    <div className='mt-3 space-y-2'>
+      <div className='text-muted-foreground flex items-center gap-2 text-[10px] font-medium tracking-wider uppercase'>
+        <Gauge className='size-3.5' />
+        API 请求入口
+      </div>
+      <div className='grid gap-2 sm:grid-cols-2'>
+        {profiles.map((profile) => {
+          const latency = latencies[profile.code]
+          return (
+            <div
+              key={profile.code}
+              className='border-border/70 bg-card rounded-xl border p-3'
+            >
+              <div className='flex items-center justify-between gap-2'>
+                <span className='text-xs font-semibold'>
+                  {profile.display_name}
+                </span>
+                <span className='rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600'>
+                  ×{profile.multiplier.toFixed(3)}
+                </span>
+              </div>
+              <code className='text-muted-foreground mt-2 block truncate font-mono text-[10px]'>
+                {endpointFor(profile)}
+              </code>
+              <div className='mt-2 flex items-center justify-between gap-2'>
+                <span className='text-muted-foreground text-[10px]'>
+                  {profile.network_mode === 'line'
+                    ? '线路机 → 落地机'
+                    : '用户直连落地机'}
+                </span>
+                <div className='flex gap-1'>
+                  <button
+                    type='button'
+                    className='text-muted-foreground hover:text-foreground text-[10px]'
+                    onClick={() => copy(endpointFor(profile))}
+                  >
+                    复制
+                  </button>
+                  <button
+                    type='button'
+                    className='text-[10px] text-emerald-600'
+                    onClick={() => test(profile)}
+                  >
+                    {latency === 'testing'
+                      ? '测速中…'
+                      : latency === 'error'
+                        ? '重试'
+                        : typeof latency === 'number'
+                          ? `${latency} ms`
+                          : '测速'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 
@@ -336,11 +447,6 @@ function ApiKeysDesktopWorkspace({
     setOpen('cc-switch')
   }
 
-  const copyEndpoint = async () => {
-    const copied = await copyToClipboard(apiEndpoint)
-    if (copied) toast.success(t('Copied'))
-  }
-
   return (
     <div className='@container/api-key-workspace'>
       <div className='grid items-start gap-4 @2xl/api-key-workspace:grid-cols-[12rem_minmax(0,1fr)] @3xl/api-key-workspace:grid-cols-[12rem_minmax(18rem,1fr)_15rem]'>
@@ -475,28 +581,20 @@ function ApiKeysDesktopWorkspace({
                     <ApiKeySubscriptionCombobox apiKey={apiKey} />
                   </div>
                 )}
+              {apiKey.virtual_membership_id > 0 && (
+                <div className='grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 2xl:justify-self-end'>
+                  <span className='text-muted-foreground'>虚拟会员</span>
+                  <span className='text-emerald-600'>
+                    额度实例 #{apiKey.virtual_membership_id}
+                  </span>
+                </div>
+              )}
             </div>
             <div className='grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 text-xs'>
               <span className='text-muted-foreground'>{t('API Key')}</span>
               <ApiKeyCell apiKey={apiKey} />
             </div>
-            <div className='grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 text-xs'>
-              <span className='text-muted-foreground'>API Base URL</span>
-              <div className='flex min-w-0 items-center gap-2'>
-                <code className='min-w-0 flex-1 truncate font-mono text-xs'>
-                  {apiEndpoint}
-                </code>
-                <Button
-                  type='button'
-                  variant='ghost'
-                  size='icon-sm'
-                  onClick={copyEndpoint}
-                  aria-label={t('Copy')}
-                >
-                  <Link2 className='size-3.5' />
-                </Button>
-              </div>
-            </div>
+            <ApiIngressPreview fallbackEndpoint={apiEndpoint} />
             <div className='grid grid-cols-2 gap-3 border-t border-dashed pt-3'>
               <div>
                 <p className='text-muted-foreground mb-2 text-[10px]'>

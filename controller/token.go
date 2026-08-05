@@ -43,8 +43,9 @@ func decodeTokenMutation(c *gin.Context, token *model.Token) (bool, error) {
 	if err := common.Unmarshal(body, &fields); err != nil {
 		return false, err
 	}
-	_, bindingProvided := fields["subscription_mode"]
-	return bindingProvided, nil
+	_, subscriptionBindingProvided := fields["subscription_mode"]
+	_, virtualMembershipProvided := fields["virtual_membership_id"]
+	return subscriptionBindingProvided || virtualMembershipProvided, nil
 }
 
 func tokenBindingInput(token *model.Token) model.TokenSubscriptionBindingInput {
@@ -243,6 +244,16 @@ func AddToken(c *gin.Context) {
 	if !bindingProvided {
 		bindingInput.Mode = model.TokenSubscriptionModeAuto
 	}
+	if token.VirtualMembershipId > 0 {
+		if bindingInput.Mode != model.TokenSubscriptionModeAuto || token.SubscriptionId > 0 {
+			common.ApiErrorMsg(c, "虚拟会员不能与订阅实例同时绑定")
+			return
+		}
+		if err := model.ValidateVirtualMembershipForToken(c.GetInt("id"), strings.TrimSpace(token.Group), token.VirtualMembershipId, true); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
 	if err := model.ValidateTokenSubscriptionBindingInput(
 		c.GetInt("id"),
 		strings.TrimSpace(token.Group),
@@ -273,6 +284,7 @@ func AddToken(c *gin.Context) {
 		CrossGroupRetry:    token.CrossGroupRetry,
 	}
 	model.ApplyTokenSubscriptionBindingInput(&cleanToken, bindingInput)
+	cleanToken.VirtualMembershipId = token.VirtualMembershipId
 	err = cleanToken.Insert()
 	if err != nil {
 		common.ApiError(c, err)
@@ -360,6 +372,16 @@ func UpdateToken(c *gin.Context) {
 				common.ApiError(c, err)
 				return
 			}
+			if token.VirtualMembershipId > 0 {
+				if bindingInput.Mode != model.TokenSubscriptionModeAuto || token.SubscriptionId > 0 {
+					common.ApiErrorMsg(c, "虚拟会员不能与订阅实例同时绑定")
+					return
+				}
+				if err := model.ValidateVirtualMembershipForToken(userId, strings.TrimSpace(token.Group), token.VirtualMembershipId, true); err != nil {
+					common.ApiError(c, err)
+					return
+				}
+			}
 		} else if model.NormalizeTokenSubscriptionMode(cleanToken.SubscriptionMode) == model.TokenSubscriptionModeInstance &&
 			cleanToken.SubscriptionId > 0 {
 			if _, err := model.ValidateSubscriptionForToken(
@@ -382,6 +404,9 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.AllowIps = token.AllowIps
 		cleanToken.Group = strings.TrimSpace(token.Group)
 		cleanToken.CrossGroupRetry = token.CrossGroupRetry
+		if bindingProvided {
+			cleanToken.VirtualMembershipId = token.VirtualMembershipId
+		}
 	}
 	if statusOnly == "" && bindingProvided {
 		updated, bindingErr := model.UpdateTokenWithSubscriptionBinding(

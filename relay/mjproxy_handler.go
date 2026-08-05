@@ -201,6 +201,7 @@ func RelaySwapFace(c *gin.Context, info *relaycommon.RelayInfo) *dto.MidjourneyR
 			Description: err.Error(),
 		}
 	}
+	priceData.Quota = info.ApplyIngressMultiplier(priceData.Quota)
 
 	userQuota, err := model.GetUserQuota(info.UserId, false)
 	if err != nil {
@@ -238,7 +239,7 @@ func RelaySwapFace(c *gin.Context, info *relaycommon.RelayInfo) *dto.MidjourneyR
 				ModelName:           modelName,
 				TokenName:           tokenName,
 				Quota:               priceData.Quota,
-				Cost:                service.CalcCostFromChannelRatio(priceData.Quota, info.ChannelCostRatioPPM),
+				Cost:                service.CalcCostFromChannelRatio(info.RestoreIngressMultiplier(priceData.Quota), info.ChannelCostRatioPPM),
 				Content:             logContent,
 				TokenId:             info.TokenId,
 				Group:               info.UsingGroup,
@@ -513,6 +514,7 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 			Description: err.Error(),
 		}
 	}
+	priceData.Quota = relayInfo.ApplyIngressMultiplier(priceData.Quota)
 
 	userQuota, err := model.GetUserQuota(relayInfo.UserId, false)
 	if err != nil {
@@ -549,7 +551,7 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 				ModelName:           modelName,
 				TokenName:           tokenName,
 				Quota:               priceData.Quota,
-				Cost:                service.CalcCostFromChannelRatio(priceData.Quota, relayInfo.ChannelCostRatioPPM),
+				Cost:                service.CalcCostFromChannelRatio(relayInfo.RestoreIngressMultiplier(priceData.Quota), relayInfo.ChannelCostRatioPPM),
 				Content:             logContent,
 				TokenId:             relayInfo.TokenId,
 				Group:               relayInfo.UsingGroup,

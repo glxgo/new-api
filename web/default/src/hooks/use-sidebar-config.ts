@@ -53,6 +53,7 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
     enabled: true,
     topup: true,
     personal: true,
+    virtual_membership: true,
   },
   admin: {
     enabled: true,
@@ -62,6 +63,8 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
     user: true,
     setting: true,
     subscription: true,
+    virtual_membership: true,
+    ingress: true,
   },
 }
 
@@ -108,6 +111,7 @@ const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
   '/usage-logs/task': { section: 'console', module: 'task' },
   '/wallet': { section: 'personal', module: 'topup' },
   '/profile': { section: 'personal', module: 'personal' },
+  '/virtual-membership': { section: 'personal', module: 'virtual_membership' },
   '/channels': { section: 'admin', module: 'channel' },
   '/models': { section: 'admin', module: 'models' },
   '/models/metadata': { section: 'admin', module: 'models' },
@@ -115,6 +119,8 @@ const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
   '/users': { section: 'admin', module: 'user' },
   '/redemption-codes': { section: 'admin', module: 'redemption' },
   '/subscriptions': { section: 'admin', module: 'subscription' },
+  '/virtual-memberships': { section: 'admin', module: 'virtual_membership' },
+  '/api-ingress': { section: 'admin', module: 'ingress' },
   '/system-settings': { section: 'admin', module: 'setting' },
   '/system-settings/site': { section: 'admin', module: 'setting' },
 }

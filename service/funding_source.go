@@ -165,6 +165,49 @@ type SubscriptionFunding struct {
 	PlanTitle       string
 }
 
+// VirtualMembershipFunding consumes a concrete virtual-membership ledger
+// bound to the API Key. Weekly and five-hour counters are updated together.
+type VirtualMembershipFunding struct {
+	requestId    string
+	userId       int
+	modelName    string
+	usingGroup   string
+	membershipId int
+	preConsumed  int64
+	planTitle    string
+}
+
+func (v *VirtualMembershipFunding) Source() string { return BillingSourceVirtualMembership }
+
+func (v *VirtualMembershipFunding) PreConsume(amount int) error {
+	if amount <= 0 {
+		return nil
+	}
+	if err := model.PreConsumeVirtualMembershipForToken(v.requestId, v.userId, v.modelName, int64(amount), v.usingGroup, v.membershipId); err != nil {
+		return err
+	}
+	v.preConsumed = int64(amount)
+	if membership, err := model.GetVirtualMembershipByIdForUser(v.userId, v.membershipId); err == nil && membership != nil {
+		v.planTitle = membership.PlanTitle
+	}
+	return nil
+}
+
+func (v *VirtualMembershipFunding) Settle(delta int) error {
+	if err := model.PostConsumeVirtualMembershipDelta(v.requestId, int64(delta)); err != nil {
+		return err
+	}
+	v.preConsumed += int64(delta)
+	return nil
+}
+
+func (v *VirtualMembershipFunding) Refund() error {
+	if v.preConsumed <= 0 {
+		return nil
+	}
+	return refundWithRetry(func() error { return model.RefundVirtualMembershipPreConsume(v.requestId) })
+}
+
 func (s *SubscriptionFunding) Source() string { return BillingSourceSubscription }
 
 func (s *SubscriptionFunding) PreConsume(_ int) error {

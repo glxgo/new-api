@@ -53,6 +53,7 @@ export const apiKeySchema = z.object({
   planned_subscription_id: z.number().optional().default(0),
   planned_subscription_group: z.string().optional().default(''),
   planned_subscription_effective: z.number().optional().default(0),
+  virtual_membership_id: z.number().optional().default(0),
   model_limits_enabled: z.boolean(),
   model_limits: z.string().nullish().default(''),
   allow_ips: z.string().nullish().default(''),
@@ -110,6 +111,7 @@ export interface ApiKeyFormData {
   subscription_allow_wallet: boolean
   subscription_wallet_limit: number
   cancel_planned_subscription: boolean
+  virtual_membership_id: number
 }
 
 export interface ApiKeySubscriptionHistory {

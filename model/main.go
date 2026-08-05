@@ -304,6 +304,12 @@ func migrateDB() error {
 		&LuckyRewardBucket{},
 		&LuckyPausePeriod{},
 		&SubscriptionConsumptionPriority{},
+		&APIIngressProfile{},
+		&VirtualMembershipSetting{},
+		&VirtualMembershipPlan{},
+		&VirtualMembershipOrder{},
+		&UserVirtualMembership{},
+		&VirtualMembershipPreConsumeRecord{},
 	)
 	if err != nil {
 		return err
@@ -320,7 +326,13 @@ func migrateDB() error {
 			return err
 		}
 	}
-	return EnsureDefaultLuckyCampaign()
+	if err := EnsureDefaultLuckyCampaign(); err != nil {
+		return err
+	}
+	if err := EnsureDefaultAPIIngressProfiles(); err != nil {
+		return err
+	}
+	return EnsureVirtualMembershipMigrations()
 }
 
 func migrateDBFast() error {
@@ -379,6 +391,12 @@ func migrateDBFast() error {
 		{&LuckyRewardBucket{}, "LuckyRewardBucket"},
 		{&LuckyPausePeriod{}, "LuckyPausePeriod"},
 		{&SubscriptionConsumptionPriority{}, "SubscriptionConsumptionPriority"},
+		{&APIIngressProfile{}, "APIIngressProfile"},
+		{&VirtualMembershipSetting{}, "VirtualMembershipSetting"},
+		{&VirtualMembershipPlan{}, "VirtualMembershipPlan"},
+		{&VirtualMembershipOrder{}, "VirtualMembershipOrder"},
+		{&UserVirtualMembership{}, "UserVirtualMembership"},
+		{&VirtualMembershipPreConsumeRecord{}, "VirtualMembershipPreConsumeRecord"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))
@@ -416,6 +434,12 @@ func migrateDBFast() error {
 		}
 	}
 	if err := EnsureDefaultLuckyCampaign(); err != nil {
+		return err
+	}
+	if err := EnsureDefaultAPIIngressProfiles(); err != nil {
+		return err
+	}
+	if err := EnsureVirtualMembershipMigrations(); err != nil {
 		return err
 	}
 	common.SysLog("database migrated")

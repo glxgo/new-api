@@ -1,0 +1,281 @@
+package controller
+
+import (
+	"strconv"
+
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/gin-gonic/gin"
+)
+
+type virtualMembershipPlanRequest struct {
+	Code            string  `json:"code"`
+	Title           string  `json:"title"`
+	Subtitle        string  `json:"subtitle"`
+	Description     string  `json:"description"`
+	PriceAmount     float64 `json:"price_amount"`
+	TwoGroupPrice   float64 `json:"two_group_price"`
+	ThreeGroupPrice float64 `json:"three_group_price"`
+	FourGroupPrice  float64 `json:"four_group_price"`
+	Currency        string  `json:"currency"`
+	DurationDays    int     `json:"duration_days"`
+	WeeklyQuota     int64   `json:"weekly_quota"`
+	FiveHourEnabled bool    `json:"five_hour_enabled"`
+	FiveHourQuota   int64   `json:"five_hour_quota"`
+	AllowedModels   string  `json:"allowed_models"`
+	AllowedGroup    string  `json:"allowed_group"`
+	Recommended     bool    `json:"recommended"`
+	Enabled         *bool   `json:"enabled"`
+	SortOrder       int     `json:"sort_order"`
+}
+
+func virtualMembershipPlanResponse(plan *model.VirtualMembershipPlan) gin.H {
+	if plan == nil {
+		return gin.H{}
+	}
+	variant := func(groupSize int) gin.H {
+		price, weekly, fiveHour, err := model.VirtualMembershipVariantForDisplay(plan, groupSize)
+		if err != nil {
+			price, weekly, fiveHour = 0, 0, 0
+		}
+		label := "单独购买"
+		if groupSize > 1 {
+			label = strconv.Itoa(groupSize) + " 人团"
+		}
+		return gin.H{"group_size": groupSize, "label": label, "price_amount": price, "weekly_quota": weekly, "five_hour_quota": fiveHour}
+	}
+	return gin.H{
+		"id": plan.Id, "code": plan.Code, "title": plan.Title, "subtitle": plan.Subtitle,
+		"description": plan.Description, "price_amount": plan.PriceAmount,
+		"two_group_price": plan.TwoGroupPrice, "three_group_price": plan.ThreeGroupPrice,
+		"four_group_price": plan.FourGroupPrice, "currency": plan.Currency,
+		"duration_days": plan.DurationDays, "weekly_quota": plan.WeeklyQuota,
+		"five_hour_enabled": plan.FiveHourEnabled, "five_hour_quota": plan.FiveHourQuota,
+		"allowed_models": plan.AllowedModels, "allowed_group": plan.AllowedGroup,
+		"recommended": plan.Recommended, "enabled": plan.Enabled, "sort_order": plan.SortOrder,
+		"variants": []gin.H{variant(1), variant(2), variant(3), variant(4)},
+	}
+}
+
+func virtualMembershipInstanceResponse(membership *model.UserVirtualMembership) gin.H {
+	if membership == nil {
+		return gin.H{}
+	}
+	return gin.H{
+		"id": membership.Id, "plan_id": membership.PlanId, "order_id": membership.OrderId,
+		"plan_title": membership.PlanTitle, "plan_code": membership.PlanCode, "group_size": membership.GroupSize,
+		"weekly_quota": membership.WeeklyQuota, "weekly_used": membership.WeeklyUsed,
+		"weekly_remaining":  maxInt64(membership.WeeklyQuota - membership.WeeklyUsed),
+		"weekly_percent":    model.VirtualMembershipQuotaPercent(membership.WeeklyUsed, membership.WeeklyQuota),
+		"five_hour_enabled": membership.FiveHourActive, "five_hour_quota": membership.FiveHourQuota,
+		"five_hour_used": membership.FiveHourUsed, "five_hour_remaining": maxInt64(membership.FiveHourQuota - membership.FiveHourUsed),
+		"five_hour_percent": model.VirtualMembershipQuotaPercent(membership.FiveHourUsed, membership.FiveHourQuota),
+		"weekly_reset_at":   membership.WeeklyResetAt, "five_hour_reset_at": membership.FiveHourResetAt,
+		"start_time": membership.StartTime, "end_time": membership.EndTime, "status": membership.Status,
+		"allowed_models": membership.AllowedModels, "allowed_group": membership.AllowedGroup,
+	}
+}
+
+func maxInt64(value int64) int64 {
+	if value < 0 {
+		return 0
+	}
+	return value
+}
+
+func virtualMembershipEpayMethods() []map[string]string {
+	if !isEpayTopUpEnabled() {
+		return []map[string]string{}
+	}
+	methods := make([]map[string]string, 0, len(operation_setting.PayMethods))
+	for _, method := range operation_setting.PayMethods {
+		if method["type"] == "" || method["type"] == model.PaymentMethodStripe || method["type"] == model.PaymentMethodCreem {
+			continue
+		}
+		methods = append(methods, method)
+	}
+	return methods
+}
+
+func GetVirtualMembershipPage(c *gin.Context) {
+	setting, err := model.GetVirtualMembershipSetting()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if !setting.Enabled {
+		common.ApiSuccess(c, gin.H{"announcement": setting.Announcement, "enabled": false, "plans": []gin.H{}, "memberships": []gin.H{}, "epay_enabled": false, "epay_methods": []map[string]string{}})
+		return
+	}
+	plans, err := model.ListVirtualMembershipPlans(false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	memberships, err := model.ListUserVirtualMemberships(c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	planItems := make([]gin.H, 0, len(plans))
+	for _, plan := range plans {
+		planItems = append(planItems, virtualMembershipPlanResponse(plan))
+	}
+	instanceItems := make([]gin.H, 0, len(memberships))
+	for _, membership := range memberships {
+		instanceItems = append(instanceItems, virtualMembershipInstanceResponse(membership))
+	}
+	common.ApiSuccess(c, gin.H{
+		"announcement": setting.Announcement, "enabled": setting.Enabled,
+		"plans": planItems, "memberships": instanceItems,
+		"epay_enabled": len(virtualMembershipEpayMethods()) > 0,
+		"epay_methods": virtualMembershipEpayMethods(),
+	})
+}
+
+func PurchaseVirtualMembership(c *gin.Context) {
+	if !requirePaymentCompliance(c) {
+		return
+	}
+	var req struct {
+		PlanId    int `json:"plan_id" binding:"required"`
+		GroupSize int `json:"group_size"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	if req.GroupSize == 0 {
+		req.GroupSize = 1
+	}
+	order, membership, err := model.PurchaseVirtualMembershipWithBalance(c.GetInt("id"), req.PlanId, req.GroupSize)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"order": order, "membership": virtualMembershipInstanceResponse(membership)})
+}
+
+func ListVirtualMembershipTokens(c *gin.Context) {
+	membershipId, _ := strconv.Atoi(c.Param("id"))
+	tokens, err := model.ListUserVirtualMembershipTokens(c.GetInt("id"), membershipId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"data": tokens})
+}
+
+func ReplaceVirtualMembershipTokens(c *gin.Context) {
+	membershipId, _ := strconv.Atoi(c.Param("id"))
+	var req struct {
+		TokenIds []int `json:"token_ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	if err := model.ReplaceUserVirtualMembershipTokens(c.GetInt("id"), membershipId, req.TokenIds); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, nil)
+}
+
+func AdminListVirtualMembershipPlans(c *gin.Context) {
+	plans, err := model.ListVirtualMembershipPlans(true)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	items := make([]gin.H, 0, len(plans))
+	for _, plan := range plans {
+		items = append(items, virtualMembershipPlanResponse(plan))
+	}
+	common.ApiSuccess(c, items)
+}
+
+func AdminSaveVirtualMembershipPlan(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	plan := &model.VirtualMembershipPlan{Id: id, Enabled: true}
+	var req virtualMembershipPlanRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	plan.Code, plan.Title, plan.Subtitle, plan.Description = req.Code, req.Title, req.Subtitle, req.Description
+	plan.PriceAmount, plan.TwoGroupPrice, plan.ThreeGroupPrice, plan.FourGroupPrice = req.PriceAmount, req.TwoGroupPrice, req.ThreeGroupPrice, req.FourGroupPrice
+	plan.Currency, plan.DurationDays, plan.WeeklyQuota = req.Currency, req.DurationDays, req.WeeklyQuota
+	plan.FiveHourEnabled, plan.FiveHourQuota = req.FiveHourEnabled, req.FiveHourQuota
+	plan.AllowedModels, plan.AllowedGroup, plan.Recommended, plan.SortOrder = req.AllowedModels, req.AllowedGroup, req.Recommended, req.SortOrder
+	if req.Enabled != nil {
+		plan.Enabled = *req.Enabled
+	}
+	if id > 0 {
+		var current model.VirtualMembershipPlan
+		if err := model.DB.First(&current, id).Error; err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		plan.CreatedAt = current.CreatedAt
+	}
+	if err := model.SaveVirtualMembershipPlan(plan); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, virtualMembershipPlanResponse(plan))
+}
+
+func AdminGetVirtualMembershipSetting(c *gin.Context) {
+	setting, err := model.GetVirtualMembershipSetting()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, setting)
+}
+
+func AdminSaveVirtualMembershipSetting(c *gin.Context) {
+	var req struct {
+		Announcement string `json:"announcement"`
+		Enabled      *bool  `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	setting, err := model.GetVirtualMembershipSetting()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	setting.Announcement = req.Announcement
+	if req.Enabled != nil {
+		setting.Enabled = *req.Enabled
+	}
+	if err := model.SaveVirtualMembershipSetting(setting); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, setting)
+}
+
+func AdminResetVirtualMemberships(c *gin.Context) {
+	affected, err := model.ResetAllVirtualMemberships()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"affected": affected, "next_reset_at": common.GetTimestamp() + 7*86400})
+}
+
+func AdminListVirtualMembershipOrders(c *gin.Context) {
+	userId, _ := strconv.Atoi(c.Query("user_id"))
+	orders, err := model.ListVirtualMembershipOrders(userId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"data": orders})
+}

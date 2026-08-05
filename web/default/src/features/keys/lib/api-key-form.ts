@@ -43,6 +43,7 @@ export function getApiKeyFormSchema(t: TFunction) {
       subscription_allow_wallet: z.boolean(),
       subscription_wallet_limit_dollars: z.number(),
       keep_planned_subscription: z.boolean(),
+      virtual_membership_id: z.number(),
       tokenCount: z.number().min(1).optional(),
     })
     .superRefine((data, ctx) => {
@@ -100,6 +101,7 @@ export const API_KEY_FORM_DEFAULT_VALUES: ApiKeyFormValues = {
   subscription_allow_wallet: false,
   subscription_wallet_limit_dollars: 0,
   keep_planned_subscription: false,
+  virtual_membership_id: 0,
   tokenCount: 1,
 }
 
@@ -152,6 +154,8 @@ export function transformFormDataToPayload(
         : 0,
     cancel_planned_subscription:
       data.subscription_mode === 'auto' && !data.keep_planned_subscription,
+    virtual_membership_id:
+      data.subscription_mode === 'auto' ? data.virtual_membership_id : 0,
   }
 }
 
@@ -187,6 +191,7 @@ export function transformApiKeyToFormDefaults(
     ),
     keep_planned_subscription:
       apiKey.subscription_mode === 'auto' && apiKey.planned_subscription_id > 0,
+    virtual_membership_id: apiKey.virtual_membership_id || 0,
     tokenCount: 1,
   }
 }

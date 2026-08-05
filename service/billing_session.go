@@ -69,7 +69,7 @@ func (s *BillingSession) Settle(actualQuota int) error {
 		settleErr := model.SettleSubscriptionPreConsume(
 			s.relayInfo.RequestId,
 			int64(delta),
-			int64(actualQuota),
+			int64(s.relayInfo.RestoreIngressMultiplier(actualQuota)),
 			channelId,
 			ratioPPM,
 			s.relayInfo.ForcePreConsume &&
@@ -198,6 +198,9 @@ func (s *BillingSession) needsRefundLocked() bool {
 	if sub, ok := s.funding.(*SubscriptionFunding); ok && sub.preConsumed > 0 {
 		return true
 	}
+	if virtual, ok := s.funding.(*VirtualMembershipFunding); ok && virtual.preConsumed > 0 {
+		return true
+	}
 	return false
 }
 
@@ -215,6 +218,9 @@ func (s *BillingSession) GetPaidSplit() (gift, principal int) {
 	// 订阅等其他资金来源不分池，全部记为本金。
 	if sub, ok := s.funding.(*SubscriptionFunding); ok {
 		return 0, int(sub.preConsumed)
+	}
+	if virtual, ok := s.funding.(*VirtualMembershipFunding); ok {
+		return 0, int(virtual.preConsumed)
 	}
 	return 0, s.preConsumedQuota
 }
@@ -300,7 +306,7 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 		}
 		// TODO: model 层应定义哨兵错误（如 ErrNoActiveSubscription），用 errors.Is 替代字符串匹配
 		errMsg := err.Error()
-		if strings.Contains(errMsg, "no active subscription") || strings.Contains(errMsg, "subscription quota insufficient") {
+		if strings.Contains(errMsg, "no active subscription") || strings.Contains(errMsg, "subscription quota insufficient") || strings.Contains(errMsg, "虚拟会员") {
 			return types.NewErrorWithStatusCode(fmt.Errorf("订阅额度不足或未配置订阅: %s", errMsg), types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 		}
 		if errors.Is(err, model.ErrTokenWalletFallbackLimitReached) ||
@@ -367,6 +373,16 @@ func (s *BillingSession) reserveFunding(delta int) error {
 			)
 		}
 		return nil
+	case *VirtualMembershipFunding:
+		if err := model.PreConsumeVirtualMembershipDelta(funding.requestId, int64(delta)); err != nil {
+			return types.NewErrorWithStatusCode(
+				fmt.Errorf("虚拟会员额度不足: %s", err.Error()),
+				types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
+				types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog(),
+			)
+		}
+		funding.preConsumed += int64(delta)
+		return nil
 	default:
 		return s.funding.Settle(delta)
 	}
@@ -403,6 +419,12 @@ func (s *BillingSession) rollbackFundingReserve(delta int) {
 	case *SubscriptionFunding:
 		if err := model.PostConsumeUserSubscriptionDelta(funding.subscriptionId, -int64(delta)); err != nil {
 			common.SysLog("error rolling back subscription funding reserve: " + err.Error())
+		}
+	case *VirtualMembershipFunding:
+		if err := model.RollbackVirtualMembershipDelta(funding.requestId, int64(delta)); err != nil {
+			common.SysLog("error rolling back virtual membership reserve: " + err.Error())
+		} else {
+			funding.preConsumed -= int64(delta)
 		}
 	}
 }
@@ -451,6 +473,8 @@ func (s *BillingSession) shouldTrust(c *gin.Context) bool {
 		// 2. SubscriptionFunding.PreConsume 忽略参数，始终用 s.amount 预扣
 		// 3. 若信任旁路将 effectiveQuota 设为 0，会导致 preConsumedQuota 与实际订阅预扣不一致
 		return false
+	case BillingSourceVirtualMembership:
+		return false
 	default:
 		return false
 	}
@@ -470,9 +494,19 @@ func (s *BillingSession) syncRelayInfo() {
 		info.SubscriptionAmountUsedAfterPreConsume = sub.AmountUsedAfter + int64(s.extraReserved)
 		info.SubscriptionPlanId = sub.PlanId
 		info.SubscriptionPlanTitle = sub.PlanTitle
+	} else if virtual, ok := s.funding.(*VirtualMembershipFunding); ok {
+		info.SubscriptionId = 0
+		info.SubscriptionPreConsumed = 0
+		info.VirtualMembershipId = virtual.membershipId
+		info.VirtualMembershipPreConsumed = virtual.preConsumed
+		info.VirtualMembershipPostDelta = 0
+		info.VirtualMembershipPlanTitle = virtual.planTitle
 	} else {
 		info.SubscriptionId = 0
 		info.SubscriptionPreConsumed = 0
+		info.VirtualMembershipId = 0
+		info.VirtualMembershipPreConsumed = 0
+		info.VirtualMembershipPlanTitle = ""
 		if wallet, ok := s.funding.(*WalletFunding); ok {
 			info.SubscriptionWalletFallbackUsed = wallet.walletFallback
 		}
@@ -500,11 +534,13 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 			relayInfo.SubscriptionWalletFallback = token.SubscriptionAllowWallet
 			relayInfo.SubscriptionWalletFallbackLimit = token.SubscriptionWalletLimit
 			relayInfo.SubscriptionWalletFallbackSpent = token.SubscriptionWalletUsed
+			relayInfo.VirtualMembershipId = token.VirtualMembershipId
 		}
 	}
 	instanceBinding := tokenBinding != nil &&
 		model.NormalizeTokenSubscriptionMode(tokenBinding.SubscriptionMode) == model.TokenSubscriptionModeInstance &&
 		tokenBinding.SubscriptionId > 0
+	virtualBinding := tokenBinding != nil && tokenBinding.VirtualMembershipId > 0
 
 	// 钱包路径需要先检查用户额度
 	tryWallet := func(walletFallback bool) (*BillingSession, *types.NewAPIError) {
@@ -570,6 +606,25 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 			return nil, apiErr
 		}
 		return session, nil
+	}
+
+	tryVirtualMembership := func() (*BillingSession, *types.NewAPIError) {
+		session := &BillingSession{
+			relayInfo: relayInfo,
+			funding: &VirtualMembershipFunding{
+				requestId: relayInfo.RequestId, userId: relayInfo.UserId,
+				modelName: relayInfo.OriginModelName, usingGroup: relayInfo.UsingGroup,
+				membershipId: tokenBinding.VirtualMembershipId,
+			},
+		}
+		if apiErr := session.preConsume(c, preConsumedQuota); apiErr != nil {
+			return nil, apiErr
+		}
+		return session, nil
+	}
+
+	if virtualBinding {
+		return tryVirtualMembership()
 	}
 
 	if instanceBinding {

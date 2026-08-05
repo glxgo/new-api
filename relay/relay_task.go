@@ -202,6 +202,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 			}
 		}
 	}
+	info.PriceData.Quota = info.ApplyIngressMultiplier(info.PriceData.Quota)
 
 	// 7. 预扣费（仅首次 — 重试时 info.Billing 已存在，跳过）
 	if info.Billing == nil && !info.PriceData.FreeModel {
@@ -263,6 +264,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 func recalcQuotaFromRatios(info *relaycommon.RelayInfo, ratios map[string]float64) int {
 	// 从 PriceData 获取不含 OtherRatios 的基础价格
 	baseQuota := info.PriceData.Quota
+	baseQuota = info.RestoreIngressMultiplier(baseQuota)
 	// 先除掉原有的 OtherRatios 恢复基础额度
 	for _, ra := range info.PriceData.OtherRatios {
 		if ra != 1.0 && ra > 0 {
@@ -276,7 +278,7 @@ func recalcQuotaFromRatios(info *relaycommon.RelayInfo, ratios map[string]float6
 			result *= ra
 		}
 	}
-	return int(result)
+	return info.ApplyIngressMultiplier(int(result))
 }
 
 var fetchRespBuilders = map[int]func(c *gin.Context) (respBody []byte, taskResp *dto.TaskError){

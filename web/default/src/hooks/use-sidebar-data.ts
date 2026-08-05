@@ -28,6 +28,7 @@ import {
   ChartLine,
   Key,
   LayoutDashboard,
+  Link2,
   ListTodo,
   MessageSquare,
   Activity,
@@ -38,6 +39,7 @@ import {
   Users,
   Wallet,
   Dices,
+  Sparkles,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
@@ -63,6 +65,11 @@ export function useSidebarData(): SidebarData {
       title: t('Wallet'),
       url: '/wallet',
       icon: Wallet,
+    },
+    {
+      title: '虚拟会员',
+      url: '/virtual-membership',
+      icon: Sparkles,
     },
     {
       title: t('Subscription Plans'),
@@ -114,6 +121,16 @@ export function useSidebarData(): SidebarData {
       title: t('Subscription Management'),
       url: '/subscriptions',
       icon: CreditCard,
+    },
+    {
+      title: '虚拟会员管理',
+      url: '/virtual-memberships',
+      icon: Sparkles,
+    },
+    {
+      title: 'API 入口与倍率',
+      url: '/api-ingress',
+      icon: Link2,
     },
     {
       title: t('System Settings'),

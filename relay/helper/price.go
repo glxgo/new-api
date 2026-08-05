@@ -61,6 +61,19 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) types.
 	return groupRatioInfo
 }
 
+func applyIngressQuota(c *gin.Context, info *relaycommon.RelayInfo, quota int) int {
+	if info == nil {
+		return quota
+	}
+	if ppm := c.GetInt64("api_ingress_multiplier_ppm"); ppm > 0 {
+		info.IngressMultiplierPPM = ppm
+	}
+	if code := c.GetString("api_ingress_code"); code != "" {
+		info.IngressCode = code
+	}
+	return info.ApplyIngressMultiplier(quota)
+}
+
 func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (types.PriceData, error) {
 	groupRatioInfo := HandleGroupRatio(c, info) // 先解析 auto → UsingGroup, 得到 GroupRatio(唯一分组售价倍率)
 	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
@@ -134,6 +147,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 			}
 		}
 	}
+	preConsumedQuota = applyIngressQuota(c, info, preConsumedQuota)
 
 	priceData := types.PriceData{
 		FreeModel:            freeModel,
@@ -150,6 +164,8 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		CacheCreation5mRatio: cacheCreationRatio5m,
 		CacheCreation1hRatio: cacheCreationRatio1h,
 		QuotaToPreConsume:    preConsumedQuota,
+		IngressMultiplierPPM: info.IngressMultiplierPPM,
+		IngressCode:          info.IngressCode,
 	}
 
 	if common.DebugEnabled {
@@ -210,12 +226,14 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 	}
 
 	priceData := types.PriceData{
-		FreeModel:      freeModel,
-		ModelPrice:     modelPrice,
-		ModelRatio:     modelRatio,
-		UsePrice:       usePrice,
-		Quota:          quota,
-		GroupRatioInfo: groupRatioInfo,
+		FreeModel:            freeModel,
+		ModelPrice:           modelPrice,
+		ModelRatio:           modelRatio,
+		UsePrice:             usePrice,
+		Quota:                quota,
+		GroupRatioInfo:       groupRatioInfo,
+		IngressMultiplierPPM: info.IngressMultiplierPPM,
+		IngressCode:          info.IngressCode,
 	}
 	return priceData, nil
 }
@@ -285,14 +303,19 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptT
 		EstimatedTier:             trace.MatchedTier,
 		QuotaPerUnit:              common.QuotaPerUnit,
 		ExprVersion:               billingexpr.ExprVersion(exprStr),
+		IngressMultiplierPPM:      info.IngressMultiplierPPM,
 	}
 	info.TieredBillingSnapshot = snapshot
 	info.BillingRequestInput = &requestInput
 
+	preConsumedQuota = applyIngressQuota(c, info, preConsumedQuota)
+
 	priceData := types.PriceData{
-		FreeModel:         freeModel,
-		GroupRatioInfo:    groupRatioInfo,
-		QuotaToPreConsume: preConsumedQuota,
+		FreeModel:            freeModel,
+		GroupRatioInfo:       groupRatioInfo,
+		QuotaToPreConsume:    preConsumedQuota,
+		IngressMultiplierPPM: info.IngressMultiplierPPM,
+		IngressCode:          info.IngressCode,
 	}
 
 	logger.LogDebug(c, "model_price_helper_tiered result: model=%s preConsume=%d quotaBeforeGroup=%.2f groupRatio=%.2f tier=%s", info.OriginModelName, preConsumedQuota, quotaBeforeGroup, groupRatioInfo.GroupRatio, trace.MatchedTier)

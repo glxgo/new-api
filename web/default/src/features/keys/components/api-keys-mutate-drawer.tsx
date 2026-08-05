@@ -77,6 +77,8 @@ import { MultiSelect } from '@/components/multi-select'
 import Stepper, { Step } from '@/components/reactbits/stepper'
 import { getSelfSubscriptionFull } from '@/features/subscriptions/api'
 import type { UserSubscription } from '@/features/subscriptions/types'
+import { getVirtualMembershipPage } from '@/features/virtual-membership/api'
+import type { UserVirtualMembership } from '@/features/virtual-membership/types'
 import { createApiKey, updateApiKey, getApiKey } from '../api'
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
 import {
@@ -108,6 +110,7 @@ function subscriptionBindingSignature(values: ApiKeyFormValues): string {
     allowWallet: values.subscription_allow_wallet,
     walletLimit: values.subscription_wallet_limit_dollars,
     keepPlanned: values.keep_planned_subscription,
+    virtualMembershipId: values.virtual_membership_id,
     group: values.group,
   })
 }
@@ -157,6 +160,13 @@ export function ApiKeysMutateDrawer({
   const selfSubQuery = useQuery({
     queryKey: ['self-subscription-full'],
     queryFn: getSelfSubscriptionFull,
+    enabled: open,
+    staleTime: 0,
+  })
+
+  const virtualMembershipQuery = useQuery({
+    queryKey: ['virtual-membership-page'],
+    queryFn: getVirtualMembershipPage,
     enabled: open,
     staleTime: 0,
   })
@@ -301,13 +311,13 @@ export function ApiKeysMutateDrawer({
         } else {
           // Nothing got created — un-collapse the Stepper back to the final
           // step so the user can adjust and retry.
-          resetStepperTo(hasSubscriptionStep ? 4 : 3)
+          resetStepperTo(hasSourceStep ? 4 : 3)
         }
       }
     } catch (_error) {
       toast.error(t(ERROR_MESSAGES.UNEXPECTED))
       if (!isUpdate) {
-        resetStepperTo(hasSubscriptionStep ? 4 : 3)
+        resetStepperTo(hasSourceStep ? 4 : 3)
       }
     } finally {
       submittingRef.current = false
@@ -334,20 +344,21 @@ export function ApiKeysMutateDrawer({
         'subscription_allow_same_group',
         'subscription_allow_wallet',
         'subscription_wallet_limit_dollars',
+        'virtual_membership_id',
       ]
       const quotaKeys = ['remain_quota_dollars', 'unlimited_quota']
       const advancedKeys = ['model_limits', 'allow_ips']
       let target = 1
       if (!errorKeys.some((k) => step1Keys.includes(k))) {
         if (
-          hasSubscriptionStep &&
+          hasSourceStep &&
           errorKeys.some((k) => subscriptionKeys.includes(k))
         ) {
           target = 2
         } else if (errorKeys.some((k) => quotaKeys.includes(k))) {
-          target = hasSubscriptionStep ? 3 : 2
+          target = hasSourceStep ? 3 : 2
         } else if (errorKeys.some((k) => advancedKeys.includes(k))) {
-          target = hasSubscriptionStep ? 4 : 3
+          target = hasSourceStep ? 4 : 3
         }
       }
       resetStepperTo(target)
@@ -425,6 +436,15 @@ export function ApiKeysMutateDrawer({
     (subscription) => subscription.id === selectedSubscriptionId
   )
 
+  const virtualMemberships = useMemo(() => {
+    const memberships = virtualMembershipQuery.data?.data?.memberships || []
+    return memberships.filter(
+      (membership): membership is UserVirtualMembership =>
+        membership.status === 'active'
+    )
+  }, [virtualMembershipQuery.data])
+  const hasSourceStep = hasSubscriptionStep || virtualMemberships.length > 0
+
   useEffect(() => {
     if (!open || isUpdate) return
     setSubscriptionChoiceConfirmed(false)
@@ -432,7 +452,7 @@ export function ApiKeysMutateDrawer({
 
   useEffect(() => {
     if (!open) return
-    if (!hasSubscriptionStep && !isUpdate) {
+    if (!hasSubscriptionStep && virtualMemberships.length === 0 && !isUpdate) {
       form.setValue('subscription_mode', 'auto')
       form.setValue('subscription_id', 0)
       return
@@ -454,6 +474,7 @@ export function ApiKeysMutateDrawer({
     selectedSubscriptionId,
     subscriptionInstances,
     subscriptionMode,
+    virtualMemberships.length,
   ])
 
   // Shared field groups — rendered both in the edit-mode one-shot form and the
@@ -627,6 +648,7 @@ export function ApiKeysMutateDrawer({
                 onValueChange={(value) => {
                   field.onChange(value)
                   setSubscriptionChoiceConfirmed(true)
+                  form.setValue('virtual_membership_id', 0)
                   if (value === 'auto') {
                     form.setValue('subscription_id', 0)
                   }
@@ -685,6 +707,87 @@ export function ApiKeysMutateDrawer({
           </FormItem>
         )}
       />
+
+      {virtualMemberships.length > 0 && (
+        <FormField
+          control={form.control}
+          name='virtual_membership_id'
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>虚拟会员额度</FormLabel>
+              <FormDescription>
+                绑定后，本 API Key 的请求会优先消耗所选虚拟会员额度。
+              </FormDescription>
+              <FormControl>
+                <RadioGroup
+                  value={field.value > 0 ? String(field.value) : '0'}
+                  onValueChange={(value) => {
+                    const membershipId = Number(value)
+                    field.onChange(membershipId)
+                    if (membershipId > 0) {
+                      form.setValue('subscription_mode', 'auto')
+                      form.setValue('subscription_id', 0)
+                      setSubscriptionChoiceConfirmed(true)
+                    }
+                  }}
+                  className='max-h-64 gap-2 overflow-y-auto pr-1'
+                >
+                  <label
+                    className={cn(
+                      'border-border bg-card flex cursor-pointer items-center gap-3 rounded-xl border p-3',
+                      field.value === 0 && 'border-primary bg-primary/5'
+                    )}
+                  >
+                    <RadioGroupItem value='0' />
+                    <span className='text-sm'>不绑定虚拟会员</span>
+                  </label>
+                  {virtualMemberships.map((membership) => {
+                    const incompatible =
+                      !!membership.allowed_group &&
+                      membership.allowed_group !== selectedGroup
+                    const unavailable =
+                      incompatible || membership.weekly_remaining <= 0
+                    return (
+                      <label
+                        key={membership.id}
+                        className={cn(
+                          'border-border bg-card grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border p-3',
+                          field.value === membership.id &&
+                            'border-primary bg-primary/5',
+                          unavailable &&
+                            'bg-muted/40 cursor-not-allowed opacity-65'
+                        )}
+                      >
+                        <RadioGroupItem
+                          value={String(membership.id)}
+                          disabled={unavailable}
+                        />
+                        <span className='min-w-0'>
+                          <span className='block truncate text-sm font-medium'>
+                            {membership.plan_title} · #{membership.id}
+                          </span>
+                          <span className='text-muted-foreground mt-1 block text-xs'>
+                            周余量 {formatQuota(membership.weekly_remaining)}
+                            {membership.five_hour_enabled
+                              ? ` · 5h ${formatQuota(membership.five_hour_remaining)}`
+                              : ''}
+                          </span>
+                        </span>
+                        <span className='text-muted-foreground text-[10px]'>
+                          {membership.group_size === 1
+                            ? '单独'
+                            : `${membership.group_size} 人团`}
+                        </span>
+                      </label>
+                    )
+                  })}
+                </RadioGroup>
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      )}
 
       {subscriptionMode === 'instance' && (
         <>
@@ -1166,7 +1269,7 @@ export function ApiKeysMutateDrawer({
                 {basicInfoFields}
               </SideDrawerSection>
 
-              {(isUpdate || hasSubscriptionStep) && (
+              {(isUpdate || hasSourceStep) && (
                 <SideDrawerSection>
                   <SideDrawerSectionHeader
                     title={t('Subscription ownership')}
@@ -1260,7 +1363,7 @@ export function ApiKeysMutateDrawer({
                     ])
                     return Boolean(okName && okGroup)
                   }
-                  if (hasSubscriptionStep && step === 2) {
+                  if (hasSourceStep && step === 2) {
                     if (!subscriptionChoiceConfirmed) {
                       toast.error(t('Please choose the quota source yourself'))
                       return false
@@ -1269,6 +1372,7 @@ export function ApiKeysMutateDrawer({
                       | 'subscription_mode'
                       | 'subscription_id'
                       | 'subscription_wallet_limit_dollars'
+                      | 'virtual_membership_id'
                     > = ['subscription_mode']
                     if (form.getValues('subscription_mode') === 'instance') {
                       fields.push('subscription_id')
@@ -1294,7 +1398,7 @@ export function ApiKeysMutateDrawer({
                     {basicInfoFields}
                   </SideDrawerSection>
                 </Step>
-                {hasSubscriptionStep && (
+                {hasSourceStep && (
                   <Step>
                     <SideDrawerSection>
                       <SideDrawerSectionHeader

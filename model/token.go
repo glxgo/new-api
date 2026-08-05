@@ -42,6 +42,7 @@ type Token struct {
 	PlannedSubscriptionId        int            `json:"planned_subscription_id" gorm:"not null;default:0;index"`
 	PlannedSubscriptionGroup     string         `json:"planned_subscription_group" gorm:"type:varchar(64);not null;default:''"`
 	PlannedSubscriptionEffective int64          `json:"planned_subscription_effective" gorm:"type:bigint;not null;default:0;index"`
+	VirtualMembershipId          int            `json:"virtual_membership_id" gorm:"not null;default:0;index"`
 	CancelPlannedSubscription    bool           `json:"cancel_planned_subscription" gorm:"-"`
 	DeletedAt                    gorm.DeletedAt `gorm:"index"`
 }
@@ -315,7 +316,7 @@ func (token *Token) Update() (err error) {
 		"subscription_allow_same_group", "subscription_allow_wallet",
 		"subscription_wallet_limit", "subscription_wallet_used", "subscription_wallet_cycle_id",
 		"planned_subscription_id", "planned_subscription_group",
-		"planned_subscription_effective").Updates(token).Error
+		"planned_subscription_effective", "virtual_membership_id").Updates(token).Error
 	return err
 }
 

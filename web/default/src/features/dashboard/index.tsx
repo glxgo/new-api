@@ -26,6 +26,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SectionPageLayout } from '@/components/layout'
 import { FadeIn } from '@/components/page-transition'
 import { MySubscriptionsDetail } from '@/features/wallet/components/my-subscriptions-detail'
+import { MyVirtualMembershipsDetail } from '@/features/wallet/components/my-virtual-memberships-detail'
 import { ModelsChartPreferences } from './components/models/models-chart-preferences'
 import { ModelsFilter } from './components/models/models-filter-dialog'
 import { SummaryCards } from './components/overview/summary-cards'
@@ -257,6 +258,7 @@ export function Dashboard() {
               </FadeIn>
               <FadeIn delay={0.08}>
                 <MySubscriptionsDetail />
+                <MyVirtualMembershipsDetail />
               </FadeIn>
               {isAdmin && (
                 <FadeIn delay={0.05}>

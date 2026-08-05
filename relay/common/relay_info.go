@@ -151,6 +151,10 @@ type RelayInfo struct {
 	// BillingSource indicates whether this request is billed from wallet quota or subscription.
 	// "" or "wallet" => wallet; "subscription" => subscription
 	BillingSource string
+	// IngressCode and IngressMultiplierPPM identify the public entrance used for
+	// this request. BillingMultiplierPPM is fixed-point (1_000_000 = 1.0x).
+	IngressCode          string
+	IngressMultiplierPPM int64
 	// SubscriptionId is the user_subscriptions.id used when BillingSource == "subscription"
 	SubscriptionId int
 	// SubscriptionPreConsumed is the amount pre-consumed on subscription item (quota units or 1)
@@ -160,6 +164,12 @@ type RelayInfo struct {
 	// SubscriptionPlanId / SubscriptionPlanTitle are used for logging/UI display.
 	SubscriptionPlanId    int
 	SubscriptionPlanTitle string
+	// VirtualMembershipId is the concrete virtual-membership entitlement bound
+	// to the API Key, when present.
+	VirtualMembershipId          int
+	VirtualMembershipPreConsumed int64
+	VirtualMembershipPostDelta   int64
+	VirtualMembershipPlanTitle   string
 	// RequestId is used for idempotent pre-consume/refund
 	RequestId string
 	// SubscriptionAmountTotal / SubscriptionAmountUsedAfterPreConsume are used to compute remaining in logs.
@@ -512,10 +522,12 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 
 		OriginModelName: common.GetContextKeyString(c, constant.ContextKeyOriginalModel),
 
-		TokenId:        common.GetContextKeyInt(c, constant.ContextKeyTokenId),
-		TokenKey:       common.GetContextKeyString(c, constant.ContextKeyTokenKey),
-		TokenUnlimited: common.GetContextKeyBool(c, constant.ContextKeyTokenUnlimited),
-		TokenGroup:     tokenGroup,
+		TokenId:              common.GetContextKeyInt(c, constant.ContextKeyTokenId),
+		TokenKey:             common.GetContextKeyString(c, constant.ContextKeyTokenKey),
+		TokenUnlimited:       common.GetContextKeyBool(c, constant.ContextKeyTokenUnlimited),
+		TokenGroup:           tokenGroup,
+		IngressCode:          c.GetString("api_ingress_code"),
+		IngressMultiplierPPM: c.GetInt64("api_ingress_multiplier_ppm"),
 
 		isFirstResponse: true,
 		RelayMode:       relayconstant.Path2RelayMode(c.Request.URL.Path),
@@ -551,6 +563,39 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 	}
 
 	return info
+}
+
+// ApplyIngressMultiplier converts the internal undiscounted quota into the
+// customer-facing quota. It is intentionally kept on RelayInfo so every
+// billing path (text, audio, realtime and task) uses one rule.
+func (info *RelayInfo) ApplyIngressMultiplier(quota int) int {
+	if info == nil || quota == 0 {
+		return quota
+	}
+	ppm := info.IngressMultiplierPPM
+	if ppm <= 0 || ppm == 1_000_000 {
+		return quota
+	}
+	if quota < 0 {
+		return -int((int64(-quota)*ppm + 999_999) / 1_000_000)
+	}
+	return int((int64(quota)*ppm + 999_999) / 1_000_000)
+}
+
+// RestoreIngressMultiplier returns the pre-discount sale quota for channel
+// cost accounting and immutable billing snapshots.
+func (info *RelayInfo) RestoreIngressMultiplier(quota int) int {
+	if info == nil || quota == 0 {
+		return quota
+	}
+	ppm := info.IngressMultiplierPPM
+	if ppm <= 0 || ppm == 1_000_000 {
+		return quota
+	}
+	if quota < 0 {
+		return -int((int64(-quota)*1_000_000 + ppm - 1) / ppm)
+	}
+	return int((int64(quota)*1_000_000 + ppm - 1) / ppm)
 }
 
 func cloneRequestHeaders(c *gin.Context) map[string]string {

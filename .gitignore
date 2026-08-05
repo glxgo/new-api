@@ -32,6 +32,7 @@ data/
 .gomodcache/
 .gocache-temp
 .gopath
+.toolchains/
 .test
 token_estimator_test.go
 skills-lock.json

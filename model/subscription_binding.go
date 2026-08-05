@@ -173,6 +173,9 @@ func ValidateTokenSubscriptionBindingInput(userId int, group string, input Token
 
 func applyBindingInput(token *Token, input TokenSubscriptionBindingInput) {
 	input.Mode = NormalizeTokenSubscriptionMode(input.Mode)
+	// Subscription and virtual-membership ledgers are mutually exclusive. The
+	// virtual-membership flow sets its id after applying this common mutation.
+	token.VirtualMembershipId = 0
 	token.SubscriptionMode = input.Mode
 	if input.Mode == TokenSubscriptionModeAuto {
 		token.SubscriptionId = 0
@@ -280,6 +283,7 @@ func UpdateTokenSubscriptionBinding(userId, tokenId int, input TokenSubscription
 				"planned_subscription_id":        token.PlannedSubscriptionId,
 				"planned_subscription_group":     token.PlannedSubscriptionGroup,
 				"planned_subscription_effective": token.PlannedSubscriptionEffective,
+				"virtual_membership_id":          token.VirtualMembershipId,
 			}).Error; err != nil {
 			return err
 		}
@@ -341,6 +345,7 @@ func UpdateTokenWithSubscriptionBinding(userId int, desired *Token, input TokenS
 		current.Group = strings.TrimSpace(desired.Group)
 		current.CrossGroupRetry = desired.CrossGroupRetry
 		applyBindingInput(&current, input)
+		current.VirtualMembershipId = desired.VirtualMembershipId
 		if err := tx.Model(&Token{}).Where("id = ? AND user_id = ?", current.Id, userId).
 			Updates(map[string]any{
 				"name":                           current.Name,
@@ -364,6 +369,7 @@ func UpdateTokenWithSubscriptionBinding(userId int, desired *Token, input TokenS
 				"planned_subscription_id":        current.PlannedSubscriptionId,
 				"planned_subscription_group":     current.PlannedSubscriptionGroup,
 				"planned_subscription_effective": current.PlannedSubscriptionEffective,
+				"virtual_membership_id":          current.VirtualMembershipId,
 			}).Error; err != nil {
 			return err
 		}
