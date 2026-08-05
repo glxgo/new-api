@@ -16,17 +16,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
 import { type Table as TanstackTable } from '@tanstack/react-table'
 import {
   ArrowRightLeft,
+  Check,
   Database,
   Edit3,
   Gauge,
   KeyRound,
-  Link2,
+  Loader2,
   Plus,
   Trash2,
 } from 'lucide-react'
@@ -57,6 +58,8 @@ import {
 import { StatusBadge } from '@/components/status-badge'
 import {
   getAPIIngressProfiles,
+  resolveAPIIngressBaseUrl,
+  resolveAPIIngressEndpoint,
   type APIIngressProfile,
 } from '@/features/api-ingress/api'
 import { useChatPresets } from '@/features/chat/hooks/use-chat-presets'
@@ -105,40 +108,91 @@ function resolvePublicApiEndpoint(serverAddress?: string | null) {
   )
 }
 
+type APIIngressLatency = number | 'testing' | 'error'
+
 function ApiIngressPreview({ fallbackEndpoint }: { fallbackEndpoint: string }) {
   const { data, isLoading } = useQuery({
     queryKey: ['api-ingress-profiles'],
     queryFn: getAPIIngressProfiles,
   })
-  const [latencies, setLatencies] = useState<
-    Record<string, number | 'testing' | 'error'>
-  >({})
-  const profiles = data?.data ?? []
+  const { selectedIngressCode, setSelectedIngressCode } = useApiKeys()
+  const [latencies, setLatencies] = useState<Record<string, APIIngressLatency>>(
+    {}
+  )
+  const profiles = (data?.data ?? []).filter((profile) => profile.enabled)
+
+  useEffect(() => {
+    if (!profiles.length) return
+    const selected =
+      profiles.find((profile) => profile.code === selectedIngressCode) ??
+      profiles.find((profile) => profile.default) ??
+      profiles[0]
+    if (selected && selected.code !== selectedIngressCode) {
+      setSelectedIngressCode(selected.code)
+    }
+  }, [profiles, selectedIngressCode, setSelectedIngressCode])
+
   const endpointFor = (profile: APIIngressProfile) =>
-    `${(profile.public_base_url || fallbackEndpoint).replace(/\/+$/, '')}/v1`
+    resolveAPIIngressEndpoint(profile, fallbackEndpoint)
 
   const copy = async (value: string) => {
     if (await copyToClipboard(value)) toast.success('已复制')
   }
-  const test = async (profile: APIIngressProfile) => {
-    const base = (profile.public_base_url || fallbackEndpoint).replace(
-      /\/+$/,
-      ''
-    )
-    setLatencies((current) => ({ ...current, [profile.code]: 'testing' }))
+  const measure = async (profile: APIIngressProfile): Promise<number | 'error'> => {
+    const base = resolveAPIIngressBaseUrl(profile, fallbackEndpoint)
     const started = performance.now()
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 8_000)
     try {
       const response = await fetch(`${base}/api/ingress/ping`, {
-        credentials: 'include',
+        // The probe is anonymous. Sending cookies cross-origin makes the
+        // direct endpoint's wildcard CORS response fail in browsers.
+        credentials: 'omit',
+        cache: 'no-store',
         headers: { 'X-New-API-Ingress': profile.code },
+        signal: controller.signal,
       })
       if (!response.ok) throw new Error('ping failed')
-      setLatencies((current) => ({
-        ...current,
-        [profile.code]: Math.round(performance.now() - started),
-      }))
+      return Math.round(performance.now() - started)
     } catch {
-      setLatencies((current) => ({ ...current, [profile.code]: 'error' }))
+      return 'error'
+    } finally {
+      window.clearTimeout(timeout)
+    }
+  }
+
+  const testAll = async () => {
+    if (!profiles.length || profiles.some((profile) => latencies[profile.code] === 'testing')) {
+      return
+    }
+    setLatencies(
+      Object.fromEntries(
+        profiles.map((profile) => [profile.code, 'testing'])
+      ) as Record<string, APIIngressLatency>
+    )
+    const results = await Promise.all(
+      profiles.map(async (profile) => ({
+        profile,
+        latency: await measure(profile),
+      }))
+    )
+    const nextLatencies = Object.fromEntries(
+      results.map(({ profile, latency }) => [profile.code, latency])
+    ) as Record<string, APIIngressLatency>
+    setLatencies(nextLatencies)
+
+    const fastest = results
+      .filter((result): result is { profile: APIIngressProfile; latency: number } =>
+        typeof result.latency === 'number'
+      )
+      .sort((a, b) => a.latency - b.latency)[0]
+    if (fastest) {
+      setSelectedIngressCode(fastest.profile.code)
+      toast.success(
+        `已自动选择 ${fastest.profile.display_name}（${fastest.latency} ms）`
+      )
+    } else {
+      toast.error('两个 API 入口均测速失败，请稍后重试')
     }
   }
 
@@ -150,62 +204,91 @@ function ApiIngressPreview({ fallbackEndpoint }: { fallbackEndpoint: string }) {
     )
   if (!profiles.length) return null
   return (
-    <div className='mt-3 space-y-2'>
-      <div className='text-muted-foreground flex items-center gap-2 text-[10px] font-medium tracking-wider uppercase'>
-        <Gauge className='size-3.5' />
-        API 请求入口
+    <div className='border-border/70 bg-background/70 min-w-0 flex-1 rounded-xl border p-2.5 shadow-xs'>
+      <div className='mb-2 flex flex-wrap items-center justify-between gap-2'>
+        <div className='text-muted-foreground flex items-center gap-2 text-[10px] font-medium tracking-wider uppercase'>
+          <Gauge className='size-3.5' />
+          API 请求入口
+          <span className='normal-case tracking-normal'>测速后自动选择低延迟入口</span>
+        </div>
+        <Button
+          type='button'
+          variant='outline'
+          size='sm'
+          className='h-7 shrink-0 rounded-full px-3 text-xs'
+          onClick={testAll}
+          disabled={profiles.some((profile) => latencies[profile.code] === 'testing')}
+        >
+          {profiles.some((profile) => latencies[profile.code] === 'testing') ? (
+            <Loader2 className='size-3.5 animate-spin' />
+          ) : (
+            <Gauge className='size-3.5' />
+          )}
+          一键测速
+        </Button>
       </div>
       <div className='grid gap-2 sm:grid-cols-2'>
         {profiles.map((profile) => {
           const latency = latencies[profile.code]
+          const selected = profile.code === selectedIngressCode
           return (
             <div
               key={profile.code}
-              className='border-border/70 bg-card rounded-xl border p-3'
+              className={cn(
+                'border-border/70 bg-card flex min-w-0 items-stretch overflow-hidden rounded-lg border transition-colors',
+                selected && 'border-emerald-500/70 bg-emerald-500/5'
+              )}
             >
-              <div className='flex items-center justify-between gap-2'>
-                <span className='text-xs font-semibold'>
-                  {profile.display_name}
-                </span>
-                <span className='rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600'>
-                  ×{profile.multiplier.toFixed(3)}
-                </span>
-              </div>
-              <code className='text-muted-foreground mt-2 block truncate font-mono text-[10px]'>
-                {endpointFor(profile)}
-              </code>
-              <div className='mt-2 flex items-center justify-between gap-2'>
-                <span className='text-muted-foreground text-[10px]'>
-                  {profile.network_mode === 'line'
-                    ? '线路机 → 落地机'
-                    : '用户直连落地机'}
-                </span>
-                <div className='flex gap-1'>
-                  <button
-                    type='button'
-                    className='text-muted-foreground hover:text-foreground text-[10px]'
-                    onClick={() => copy(endpointFor(profile))}
-                  >
-                    复制
-                  </button>
-                  <button
-                    type='button'
-                    className='text-[10px] text-emerald-600'
-                    onClick={() => test(profile)}
-                  >
-                    {latency === 'testing'
-                      ? '测速中…'
-                      : latency === 'error'
-                        ? '重试'
-                        : typeof latency === 'number'
-                          ? `${latency} ms`
-                          : '测速'}
-                  </button>
+              <button
+                type='button'
+                aria-pressed={selected}
+                onClick={() => setSelectedIngressCode(profile.code)}
+                className='hover:bg-muted/50 min-w-0 flex-1 px-3 py-2 text-left transition-colors focus-visible:outline-none'
+              >
+                <div className='flex items-center justify-between gap-2'>
+                  <span className='truncate text-xs font-semibold'>
+                    {profile.display_name}
+                  </span>
+                  <span className='shrink-0 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600'>
+                    ×{profile.multiplier.toFixed(3)}
+                  </span>
                 </div>
+                <code className='text-muted-foreground mt-1.5 block truncate font-mono text-[10px]'>
+                  {endpointFor(profile)}
+                </code>
+                <div className='text-muted-foreground mt-1 flex items-center gap-2 text-[10px]'>
+                  <span>
+                    {profile.network_mode === 'line'
+                      ? '线路机 → 落地机'
+                      : '用户直连落地机'}
+                  </span>
+                  {typeof latency === 'number' && (
+                    <span className='font-mono tabular-nums'>{latency} ms</span>
+                  )}
+                  {latency === 'error' && <span>测速失败</span>}
+                </div>
+              </button>
+              <div className='border-border/60 flex shrink-0 flex-col items-center justify-center gap-1 border-l px-2'>
+                {selected && <Check className='size-3.5 text-emerald-600' />}
+                <button
+                  type='button'
+                  className='text-muted-foreground hover:text-foreground text-[10px]'
+                  onClick={() => copy(endpointFor(profile))}
+                >
+                  复制
+                </button>
               </div>
             </div>
           )
         })}
+      </div>
+      <div className='text-muted-foreground mt-2 text-[10px]'>
+        当前使用：
+        <span className='text-foreground font-medium'>
+          {profiles.find((profile) => profile.code === selectedIngressCode)?.display_name ??
+            profiles[0]?.display_name}
+        </span>
+        ，点击卡片可手动切换
       </div>
     </div>
   )
@@ -387,8 +470,6 @@ function ApiKeysDesktopWorkspace({
   const [selectedKeyId, setSelectedKeyId] = useState<number | null>(null)
   const { setOpen, setCurrentRow, setResolvedKey, resolveRealKey } =
     useApiKeys()
-  const { serverAddress } = useChatPresets()
-  const apiEndpoint = resolvePublicApiEndpoint(serverAddress)
   const rows = table.getRowModel().rows
   const selectedRow =
     rows.find((row) => row.original.id === selectedKeyId) ?? rows[0]
@@ -594,7 +675,6 @@ function ApiKeysDesktopWorkspace({
               <span className='text-muted-foreground'>{t('API Key')}</span>
               <ApiKeyCell apiKey={apiKey} />
             </div>
-            <ApiIngressPreview fallbackEndpoint={apiEndpoint} />
             <div className='grid grid-cols-2 gap-3 border-t border-dashed pt-3'>
               <div>
                 <p className='text-muted-foreground mb-2 text-[10px]'>
@@ -847,22 +927,7 @@ export function ApiKeysTable() {
             singleSelect: true,
           },
         ],
-        leftActions: (
-          <button
-            type='button'
-            onClick={async () => {
-              const copied = await copyToClipboard(apiEndpoint)
-              if (copied) toast.success(t('Copied'))
-            }}
-            className='border-border/70 bg-background hover:bg-muted/60 flex max-w-full items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition-colors'
-          >
-            <span className='font-semibold'>API Base URL</span>
-            <code className='text-muted-foreground max-w-72 truncate font-mono'>
-              {apiEndpoint}
-            </code>
-            <Link2 className='size-3.5 shrink-0' />
-          </button>
-        ),
+        leftActions: <ApiIngressPreview fallbackEndpoint={apiEndpoint} />,
       }}
       mobile={
         <ApiKeysMobileList

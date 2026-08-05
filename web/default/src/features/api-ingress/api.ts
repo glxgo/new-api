@@ -22,6 +22,21 @@ export interface APIIngressResponse<T = unknown> {
   data?: T
 }
 
+export function resolveAPIIngressBaseUrl(
+  profile: Pick<APIIngressProfile, 'public_base_url'> | null | undefined,
+  fallback: string
+): string {
+  const raw = profile?.public_base_url?.trim() || fallback.trim()
+  return raw.replace(/\/v1\/?$/, '').replace(/\/+$/, '')
+}
+
+export function resolveAPIIngressEndpoint(
+  profile: Pick<APIIngressProfile, 'public_base_url'> | null | undefined,
+  fallback: string
+): string {
+  return `${resolveAPIIngressBaseUrl(profile, fallback)}/v1`
+}
+
 export async function getAPIIngressProfiles(): Promise<
   APIIngressResponse<APIIngressProfile[]>
 > {

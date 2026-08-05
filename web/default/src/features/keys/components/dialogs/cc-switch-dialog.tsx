@@ -27,6 +27,11 @@ import { ComboboxInput } from '@/components/ui/combobox-input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Dialog } from '@/components/dialog'
+import {
+  getAPIIngressProfiles,
+  resolveAPIIngressBaseUrl,
+} from '@/features/api-ingress/api'
+import { useApiKeys } from '../api-keys-provider'
 
 const APP_CONFIGS = {
   claude: {
@@ -101,9 +106,9 @@ function buildCCSwitchURL(
   models: Record<string, string>,
   apiKey: string,
   accessToken: string,
-  userId: number
+  userId: number,
+  serverAddress: string
 ): string {
-  const serverAddress = getServerAddress()
   const endpoint = app === 'codex' ? serverAddress + '/v1' : serverAddress
   const params = new URLSearchParams()
   params.set('resource', 'provider')
@@ -140,6 +145,7 @@ interface Props {
 
 export function CCSwitchDialog(props: Props) {
   const { t } = useTranslation()
+  const { selectedIngressCode } = useApiKeys()
   const [app, setApp] = useState<AppType>('claude')
   const [name, setName] = useState<string>(APP_CONFIGS.claude.defaultName)
   const [models, setModels] = useState<Record<string, string>>({})
@@ -147,6 +153,13 @@ export function CCSwitchDialog(props: Props) {
   const { data: modelsData } = useQuery({
     queryKey: ['user-models-ccswitch'],
     queryFn: getUserModels,
+    enabled: props.open,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const { data: ingressData } = useQuery({
+    queryKey: ['api-ingress-profiles'],
+    queryFn: getAPIIngressProfiles,
     enabled: props.open,
     staleTime: 5 * 60 * 1000,
   })
@@ -195,7 +208,25 @@ export function CCSwitchDialog(props: Props) {
     } catch {
       // 获取失败时静默，用户可在 CC Switch 里手动配置访问令牌
     }
-    const url = buildCCSwitchURL(app, name, models, key, accessToken, userId)
+    const fallbackAddress = getServerAddress()
+    const profiles = ingressData?.data ?? []
+    const selectedProfile =
+      profiles.find((profile) => profile.code === selectedIngressCode) ??
+      profiles.find((profile) => profile.default) ??
+      profiles[0]
+    const selectedAddress = resolveAPIIngressBaseUrl(
+      selectedProfile,
+      fallbackAddress
+    )
+    const url = buildCCSwitchURL(
+      app,
+      name,
+      models,
+      key,
+      accessToken,
+      userId,
+      selectedAddress
+    )
     window.open(url, '_blank')
     props.onOpenChange(false)
   }

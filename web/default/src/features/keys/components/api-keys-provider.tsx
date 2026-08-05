@@ -24,6 +24,13 @@ import { fetchTokenKey, fetchTokenKeysBatch } from '../api'
 import { ERROR_MESSAGES } from '../constants'
 import { type ApiKey, type ApiKeysDialogType } from '../types'
 
+export const API_INGRESS_SELECTION_STORAGE_KEY = 'new-api-selected-ingress'
+
+function readSelectedIngressCode(): string | null {
+  if (typeof window === 'undefined') return null
+  return window.localStorage.getItem(API_INGRESS_SELECTION_STORAGE_KEY)
+}
+
 type ApiKeysContextType = {
   open: ApiKeysDialogType | null
   setOpen: (str: ApiKeysDialogType | null) => void
@@ -39,6 +46,8 @@ type ApiKeysContextType = {
   loadingKeys: Record<number, boolean>
   copiedKeyId: number | null
   markKeyCopied: (id: number) => void
+  selectedIngressCode: string | null
+  setSelectedIngressCode: (code: string) => void
 }
 
 const ApiKeysContext = React.createContext<ApiKeysContextType | null>(null)
@@ -49,6 +58,9 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
   const [currentRow, setCurrentRow] = useState<ApiKey | null>(null)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   const [resolvedKey, setResolvedKey] = useState('')
+  const [selectedIngressCode, setSelectedIngressCodeState] = useState<string | null>(
+    readSelectedIngressCode
+  )
 
   const [resolvedKeys, setResolvedKeys] = useState<Record<number, string>>({})
   const [loadingKeys, setLoadingKeys] = useState<Record<number, boolean>>({})
@@ -65,6 +77,13 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
     setCopiedKeyId(id)
     clearTimeout(copiedTimerRef.current)
     copiedTimerRef.current = setTimeout(() => setCopiedKeyId(null), 2000)
+  }, [])
+
+  const setSelectedIngressCode = useCallback((code: string) => {
+    setSelectedIngressCodeState(code)
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(API_INGRESS_SELECTION_STORAGE_KEY, code)
+    }
   }, [])
 
   const triggerRefresh = useCallback(() => {
@@ -169,6 +188,8 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
         loadingKeys,
         copiedKeyId,
         markKeyCopied,
+        selectedIngressCode,
+        setSelectedIngressCode,
       }}
     >
       {children}
