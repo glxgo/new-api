@@ -91,10 +91,13 @@ var channelAffinitySetting = ChannelAffinitySetting{
 			ValueRegex:            "",
 			TTLSeconds:            0,
 			ParamOverrideTemplate: buildPassHeaderTemplate(codexCliPassThroughHeaders),
-			SkipRetryOnFailure:    false,
-			IncludeUsingGroup:     true,
-			IncludeRuleName:       true,
-			UserAgentInclude:      nil,
+			// Responses encrypted history is bound to the upstream credential
+			// that created it. Once a conversation key is present, do not
+			// fail over to another provider credential on the same request.
+			SkipRetryOnFailure: true,
+			IncludeUsingGroup:  true,
+			IncludeRuleName:    true,
+			UserAgentInclude:   nil,
 		},
 	},
 }

@@ -38,3 +38,15 @@ func TestShouldRetry_ClientCancellationStopsRetry(t *testing.T) {
 
 	require.False(t, shouldRetry(c, apiErr, 3))
 }
+
+func TestShouldRetry_InvalidResponsesEncryptedContentStopsRetry(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	apiErr := types.NewErrorWithStatusCode(
+		errors.New(`Request failed with status 400: code=invalid_encrypted_content`),
+		types.ErrorCodeBadResponseStatusCode,
+		http.StatusBadRequest,
+	)
+
+	require.False(t, shouldRetry(c, apiErr, 3))
+}

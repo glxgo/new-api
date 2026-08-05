@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -60,6 +61,51 @@ func TestResetStatusCode(t *testing.T) {
 			}
 			ResetStatusCode(newAPIError, tc.statusCodeConfig)
 			require.Equal(t, tc.expectedCode, newAPIError.StatusCode)
+		})
+	}
+}
+
+func TestIsNonRetryableResponsesEncryptedContentError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		statusCode int
+		message    string
+		want       bool
+	}{
+		{
+			name:       "invalid encrypted content code",
+			statusCode: http.StatusBadRequest,
+			message:    `Request failed with status 400: code=invalid_encrypted_content`,
+			want:       true,
+		},
+		{
+			name:       "verification message",
+			statusCode: http.StatusBadRequest,
+			message:    "The encrypted content for item could not be verified",
+			want:       true,
+		},
+		{
+			name:       "same text from upstream 502 remains retryable",
+			statusCode: http.StatusBadGateway,
+			message:    "The encrypted content for item could not be verified",
+			want:       false,
+		},
+		{
+			name:       "ordinary bad request",
+			statusCode: http.StatusBadRequest,
+			message:    "invalid model parameter",
+			want:       false,
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			err := types.NewErrorWithStatusCode(errors.New(test.message), types.ErrorCodeBadResponseStatusCode, test.statusCode)
+			require.Equal(t, test.want, IsNonRetryableResponsesEncryptedContentError(err))
 		})
 	}
 }

@@ -490,6 +490,9 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	if isClientRequestCanceled(c) {
 		return false
 	}
+	if service.IsNonRetryableResponsesEncryptedContentError(openaiErr) {
+		return false
+	}
 	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
 		return false
 	}

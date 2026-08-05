@@ -130,6 +130,32 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 	return
 }
 
+// IsNonRetryableResponsesEncryptedContentError identifies the deterministic
+// Responses validation failure returned when an upstream cannot decrypt or
+// verify an encrypted input item. Retrying the same request through another
+// provider credential cannot repair the encrypted history and may make the
+// conversation cross provider boundaries, so this error must be surfaced to
+// the client without an automatic channel retry.
+func IsNonRetryableResponsesEncryptedContentError(err *types.NewAPIError) bool {
+	if err == nil || err.StatusCode != http.StatusBadRequest {
+		return false
+	}
+
+	message := strings.ToLower(err.Error())
+	markers := []string{
+		"invalid_encrypted_content",
+		"encrypted content for item",
+		"encrypted content could not be verified",
+		"could not be decrypted or parsed",
+	}
+	for _, marker := range markers {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func ResetStatusCode(newApiErr *types.NewAPIError, statusCodeMappingStr string) {
 	if newApiErr == nil {
 		return
