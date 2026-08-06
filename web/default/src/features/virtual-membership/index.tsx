@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Gift, Gauge, Loader2, Users, Zap } from 'lucide-react'
+import {
+  Gift,
+  Gauge,
+  Loader2,
+  RefreshCw,
+  ShieldCheck,
+  Users,
+  Zap,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -458,68 +466,78 @@ export function VirtualMembership() {
   }
 
   return (
-    <SectionPageLayout>
-      <SectionPageLayout.Title>虚拟会员</SectionPageLayout.Title>
-      <SectionPageLayout.Content>
-        <div className='space-y-5'>
-          {page?.announcement?.trim() && (
-            <div className='bg-card rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 p-5'>
-              <Markdown>{page.announcement}</Markdown>
-            </div>
-          )}
-          <div className='grid gap-3 sm:grid-cols-3'>
-            <div className='bg-card rounded-2xl border p-4'>
-              <Gauge className='size-5 text-emerald-600' />
-              <p className='mt-3 text-sm font-semibold'>站内额度映射</p>
-              <p className='text-muted-foreground mt-1 text-xs'>
-                不是实际 GPT 会员，只提供对应额度。
-              </p>
-            </div>
-            <div className='bg-card rounded-2xl border p-4'>
-              <Users className='size-5 text-blue-600' />
-              <p className='mt-3 text-sm font-semibold'>自动成团</p>
-              <p className='text-muted-foreground mt-1 text-xs'>
-                2/3/4 人档位只均分额度，不等待其他成员。
-              </p>
-            </div>
-            <div className='bg-card rounded-2xl border p-4'>
-              <Zap className='size-5 text-amber-600' />
-              <p className='mt-3 text-sm font-semibold'>双周期额度</p>
-              <p className='text-muted-foreground mt-1 text-xs'>
-                管理员可按需开启 5 小时限额。
-              </p>
-            </div>
-          </div>
-          {memberships.length > 0 && (
-            <div>
-              <h2 className='mb-3 text-lg font-semibold'>我的虚拟会员</h2>
-              <div className='grid gap-4 lg:grid-cols-2'>
-                {memberships.map((item) => (
-                  <MembershipCard key={item.id} membership={item} />
-                ))}
-              </div>
-            </div>
-          )}
-          <div>
-            <h2 className='mb-3 text-lg font-semibold'>选择方案</h2>
-            {isLoading ? (
-              <div className='text-muted-foreground rounded-2xl border p-8 text-center'>
-                正在加载方案…
-              </div>
-            ) : (
-              <div className='grid gap-4 lg:grid-cols-3'>
-                {(page?.plans ?? []).map((plan) => (
-                  <PlanCard
-                    key={plan.id}
-                    plan={plan}
-                    onPurchase={openPurchase}
-                  />
-                ))}
+    <>
+      <SectionPageLayout>
+        <SectionPageLayout.Title>虚拟会员</SectionPageLayout.Title>
+        <SectionPageLayout.Content>
+          <div className='space-y-5'>
+            {page?.announcement?.trim() && (
+              <div className='bg-card rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 p-5'>
+                <Markdown>{page.announcement}</Markdown>
               </div>
             )}
+            <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-4'>
+              <div className='bg-card h-full rounded-2xl border p-4'>
+                <Gauge className='size-5 text-emerald-600' />
+                <p className='mt-3 text-sm font-semibold'>站内会员权益映射</p>
+                <p className='text-muted-foreground mt-1 text-xs leading-relaxed'>
+                  不提供实际 GPT
+                  会员，由本站进行托管，提供对应额度与可用的生图功能。无需复杂网络环境，无需复杂支付环境
+                </p>
+              </div>
+              <div className='bg-card h-full rounded-2xl border p-4'>
+                <Users className='size-5 text-blue-600' />
+                <p className='mt-3 text-sm font-semibold'>自动成团</p>
+                <p className='text-muted-foreground mt-1 text-xs leading-relaxed'>
+                  拼团均分额度的同时，还均分正常一个账号所对应的并发和rpm限制，无需其他成员，即可自动成团。
+                </p>
+              </div>
+              <div className='bg-card h-full rounded-2xl border p-4'>
+                <RefreshCw className='size-5 text-amber-600' />
+                <p className='mt-3 text-sm font-semibold'>同步官方周期重置</p>
+                <p className='text-muted-foreground mt-1 text-xs leading-relaxed'>
+                  oai官方重置套餐额度，我们也重置相对应的套餐额度
+                </p>
+              </div>
+              <div className='bg-card h-full rounded-2xl border p-4'>
+                <ShieldCheck className='size-5 text-rose-600' />
+                <p className='mt-3 text-sm font-semibold'>站内承担风险</p>
+                <p className='text-muted-foreground mt-1 text-xs leading-relaxed'>
+                  本站承担托管账号的全部风险与成本（家宽费、流量费等），出现封号等情况，损失由本站自行承担
+                </p>
+              </div>
+            </div>
+            {memberships.length > 0 && (
+              <div>
+                <h2 className='mb-3 text-lg font-semibold'>我的虚拟会员</h2>
+                <div className='grid gap-4 lg:grid-cols-2'>
+                  {memberships.map((item) => (
+                    <MembershipCard key={item.id} membership={item} />
+                  ))}
+                </div>
+              </div>
+            )}
+            <div>
+              <h2 className='mb-3 text-lg font-semibold'>选择方案</h2>
+              {isLoading ? (
+                <div className='text-muted-foreground rounded-2xl border p-8 text-center'>
+                  正在加载方案…
+                </div>
+              ) : (
+                <div className='grid gap-4 lg:grid-cols-3'>
+                  {(page?.plans ?? []).map((plan) => (
+                    <PlanCard
+                      key={plan.id}
+                      plan={plan}
+                      onPurchase={openPurchase}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      </SectionPageLayout.Content>
+        </SectionPageLayout.Content>
+      </SectionPageLayout>
       <VirtualMembershipPurchaseDialog
         open={purchaseOpen}
         onOpenChange={setPurchaseOpen}
@@ -528,6 +546,6 @@ export function VirtualMembership() {
         epayMethods={page?.epay_methods ?? []}
         onConfirm={handlePurchase}
       />
-    </SectionPageLayout>
+    </>
   )
 }
