@@ -4,11 +4,14 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
+	"net"
 	"net/smtp"
 	"slices"
 	"strings"
 	"time"
 )
+
+var smtpSendTimeout = 15 * time.Second
 
 func generateMessageID() (string, error) {
 	split := strings.Split(SMTPFrom, "@")
@@ -57,48 +60,71 @@ func SendEmail(subject string, receiver string, content string) error {
 	to := strings.Split(receiver, ";")
 	var err error
 	if SMTPPort == 465 || SMTPSSLEnabled {
-		tlsConfig := &tls.Config{
-			InsecureSkipVerify: true,
-			ServerName:         SMTPServer,
-		}
-		conn, err := tls.Dial("tcp", fmt.Sprintf("%s:%d", SMTPServer, SMTPPort), tlsConfig)
-		if err != nil {
-			return err
-		}
-		client, err := smtp.NewClient(conn, SMTPServer)
-		if err != nil {
-			return err
-		}
-		defer client.Close()
-		if err = client.Auth(auth); err != nil {
-			return err
-		}
-		if err = client.Mail(SMTPFrom); err != nil {
-			return err
-		}
-		receiverEmails := strings.Split(receiver, ";")
-		for _, receiver := range receiverEmails {
-			if err = client.Rcpt(receiver); err != nil {
-				return err
-			}
-		}
-		w, err := client.Data()
-		if err != nil {
-			return err
-		}
-		_, err = w.Write(mail)
-		if err != nil {
-			return err
-		}
-		err = w.Close()
-		if err != nil {
-			return err
-		}
+		err = sendSMTPMail(addr, SMTPServer, SMTPFrom, to, mail, auth, true)
 	} else {
-		err = smtp.SendMail(addr, auth, SMTPFrom, to, mail)
+		err = sendSMTPMail(addr, SMTPServer, SMTPFrom, to, mail, auth, false)
 	}
 	if err != nil {
 		SysError(fmt.Sprintf("failed to send email to %s: %v", receiver, err))
 	}
 	return err
+}
+
+func sendSMTPMail(addr string, serverName string, from string, to []string, mail []byte, auth smtp.Auth, implicitTLS bool) error {
+	conn, err := net.DialTimeout("tcp", addr, smtpSendTimeout)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if err = conn.SetDeadline(time.Now().Add(smtpSendTimeout)); err != nil {
+		return err
+	}
+
+	if implicitTLS {
+		tlsConn := tls.Client(conn, &tls.Config{
+			InsecureSkipVerify: true,
+			ServerName:         serverName,
+		})
+		if err = tlsConn.Handshake(); err != nil {
+			return err
+		}
+		conn = tlsConn
+	}
+
+	client, err := smtp.NewClient(conn, serverName)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	if !implicitTLS {
+		if ok, _ := client.Extension("STARTTLS"); ok {
+			err = client.StartTLS(&tls.Config{
+				InsecureSkipVerify: true,
+				ServerName:         serverName,
+			})
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if err = client.Auth(auth); err != nil {
+		return err
+	}
+	if err = client.Mail(from); err != nil {
+		return err
+	}
+	for _, recipient := range to {
+		if err = client.Rcpt(recipient); err != nil {
+			return err
+		}
+	}
+	w, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err = w.Write(mail); err != nil {
+		return err
+	}
+	return w.Close()
 }
