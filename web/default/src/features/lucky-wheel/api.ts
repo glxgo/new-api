@@ -34,7 +34,9 @@ interface ApiResponse<T> {
 
 export async function getLuckyWheelStatus() {
   return (
-    await api.get<ApiResponse<LuckyWheelStatus>>('/api/lucky-wheel/status')
+    await api.get<ApiResponse<LuckyWheelStatus>>('/api/lucky-wheel/status', {
+      skipErrorHandler: true,
+    })
   ).data
 }
 
@@ -45,6 +47,7 @@ export async function getLuckyCards() {
       {
         params: { page: 1, page_size: 100 },
         disableDuplicate: true,
+        skipErrorHandler: true,
       }
     )
   ).data
@@ -57,14 +60,18 @@ export async function getLuckyDraws(page = 1, pageSize = 10) {
       {
         params: { page, page_size: pageSize },
         disableDuplicate: true,
+        skipErrorHandler: true,
       }
     )
   ).data
 }
 
 export async function getLuckyRules() {
-  return (await api.get<ApiResponse<LuckyRuleSet[]>>('/api/lucky-wheel/rules'))
-    .data
+  return (
+    await api.get<ApiResponse<LuckyRuleSet[]>>('/api/lucky-wheel/rules', {
+      skipErrorHandler: true,
+    })
+  ).data
 }
 
 export async function createLuckyDraw(cardId: number, idempotencyKey: string) {

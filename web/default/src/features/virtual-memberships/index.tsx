@@ -3,8 +3,16 @@ import { RotateCcw, Save, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { SectionPageLayout } from '@/components/layout'
+import { getGroups } from '@/features/subscriptions/api'
 import {
   getAdminVirtualMembershipPlans,
   getAdminVirtualMembershipSetting,
@@ -41,17 +49,26 @@ export function VirtualMemberships() {
   const [editing, setEditing] = useState<Partial<VirtualMembershipPlan>>({
     ...emptyPlan,
   })
+  const [groupOptions, setGroupOptions] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
 
   const load = async () => {
     setLoading(true)
     try {
-      const [planResult, settingResult] = await Promise.all([
-        getAdminVirtualMembershipPlans(),
-        getAdminVirtualMembershipSetting(),
-      ])
-      setPlans(planResult.data ?? [])
-      if (settingResult.data) setSetting(settingResult.data)
+      const [planResult, settingResult, groupsResult] =
+        await Promise.allSettled([
+          getAdminVirtualMembershipPlans(),
+          getAdminVirtualMembershipSetting(),
+          getGroups(),
+        ])
+      if (planResult.status === 'fulfilled')
+        setPlans(planResult.value.data ?? [])
+      if (settingResult.status === 'fulfilled' && settingResult.value.data) {
+        setSetting(settingResult.value.data)
+      }
+      if (groupsResult.status === 'fulfilled' && groupsResult.value.success) {
+        setGroupOptions(groupsResult.value.data ?? [])
+      }
     } finally {
       setLoading(false)
     }
@@ -65,11 +82,18 @@ export function VirtualMemberships() {
   const updateField = (field: string, value: string | number | boolean) =>
     setEditing((current) => ({ ...current, [field]: value }))
   const savePlan = async () => {
+    if (
+      editing.five_hour_enabled &&
+      Number(editing.five_hour_quota ?? 0) <= 0
+    ) {
+      toast.error('开启 5 小时限额后，请填写大于 0 的额度')
+      return
+    }
     try {
       const result = await saveAdminVirtualMembershipPlan(editing)
       if (result.success) {
         toast.success('方案已保存')
-        setEditing(emptyPlan)
+        setEditing({ ...emptyPlan })
         await load()
       }
     } catch {
@@ -86,6 +110,10 @@ export function VirtualMemberships() {
     if (result.success)
       toast.success(`已重置 ${result.data?.affected ?? 0} 个虚拟会员`)
   }
+  const editingGroup = editing.allowed_group?.trim() ?? ''
+  const groups = Array.from(
+    new Set(groupOptions.concat(editingGroup ? [editingGroup] : []))
+  ).sort()
 
   return (
     <SectionPageLayout>
@@ -230,13 +258,35 @@ export function VirtualMemberships() {
                   updateField('allowed_models', event.target.value)
                 }
               />
-              <Input
-                placeholder='限定分组，可留空'
-                value={editing.allowed_group ?? ''}
-                onChange={(event) =>
-                  updateField('allowed_group', event.target.value)
-                }
-              />
+              <label className='block text-xs'>
+                <span className='text-muted-foreground mb-1 block'>
+                  限定分组
+                </span>
+                <Select
+                  value={editingGroup || '__none__'}
+                  onValueChange={(value) =>
+                    updateField(
+                      'allowed_group',
+                      value === '__none__' ? '' : (value ?? '')
+                    )
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder='不限分组' />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value='__none__'>不限分组</SelectItem>
+                    {groups.map((group) => (
+                      <SelectItem key={group} value={group}>
+                        {group}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className='text-muted-foreground mt-1 block'>
+                  与订阅套餐使用同一组列表；选择“不限分组”表示不限制。
+                </span>
+              </label>
               <label className='block text-sm'>
                 <input
                   className='mr-2'
@@ -248,30 +298,26 @@ export function VirtualMemberships() {
                 />
                 开启 5 小时限额
               </label>
-              {editing.five_hour_enabled && (
-                <label className='block text-xs'>
-                  <span className='text-muted-foreground mb-1 block'>
-                    5 小时额度
-                  </span>
-                  <Input
-                    type='number'
-                    min={0}
-                    value={editing.five_hour_quota ?? 0}
-                    onChange={(event) =>
-                      updateField(
-                        'five_hour_quota',
-                        event.target.value === ''
-                          ? 0
-                          : Number(event.target.value)
-                      )
-                    }
-                    placeholder='开启后必须填写，例如 100000'
-                  />
-                  <span className='text-muted-foreground mt-1 block'>
-                    开启后按 2/3/4 人档位自动均分；保存时必须大于 0。
-                  </span>
-                </label>
-              )}
+              <label className='block text-xs'>
+                <span className='text-muted-foreground mb-1 block'>
+                  5 小时额度（开启后生效）
+                </span>
+                <Input
+                  type='number'
+                  min={0}
+                  value={editing.five_hour_quota ?? ''}
+                  onChange={(event) =>
+                    updateField(
+                      'five_hour_quota',
+                      event.target.value === '' ? 0 : Number(event.target.value)
+                    )
+                  }
+                  placeholder='例如 100000'
+                />
+                <span className='text-muted-foreground mt-1 block'>
+                  开启后按 2/3/4 人档位自动均分；开启时必须填写大于 0 的数值。
+                </span>
+              </label>
               <label className='block text-sm'>
                 <input
                   className='mr-2'

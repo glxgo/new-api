@@ -345,3 +345,18 @@ func TestLuckySubscriptionProgressDistinguishesNoResetAndNoSubscription(t *testi
 	require.False(t, missing.Eligible)
 	require.Zero(t, missing.NextCardAt)
 }
+
+func TestLuckySubscriptionProgressSkipsMalformedLegacySubscription(t *testing.T) {
+	db := setupLuckyWheelTestDB(t)
+	now := time.Now().Unix()
+	require.NoError(t, db.Create(&UserSubscription{
+		UserId: 44, PlanId: 0, PlanSnapshot: "",
+		Status: "active", StartTime: now - 60, EndTime: now + 7*86400,
+	}).Error)
+
+	progress, err := GetLuckySubscriptionProgress(44, now)
+	require.NoError(t, err)
+	require.True(t, progress.Subscribed)
+	require.False(t, progress.Eligible)
+	require.Zero(t, progress.NextCardAt)
+}

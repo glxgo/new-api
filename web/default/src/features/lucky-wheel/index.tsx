@@ -125,6 +125,7 @@ export function LuckyWheel() {
   const [rules, setRules] = useState<LuckyRuleSet[]>([])
   const [selectedCardId, setSelectedCardId] = useState('')
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [drawing, setDrawing] = useState(false)
   const [rotation, setRotation] = useState(0)
   const [pendingResult, setPendingResult] = useState<LuckyDraw | null>(null)
@@ -176,31 +177,55 @@ export function LuckyWheel() {
   )
 
   async function refresh(preferredCardId = '', requestedDrawPage = 1) {
-    const [statusRes, cardsRes, drawsRes, rulesRes] = await Promise.all([
-      getLuckyWheelStatus(),
-      getLuckyCards(),
-      getLuckyDraws(requestedDrawPage, DRAW_PAGE_SIZE),
-      getLuckyRules(),
-    ])
-    if (statusRes.success) setStatus(statusRes.data)
-    if (cardsRes.success) setCards(cardsRes.data.items)
-    if (drawsRes.success) {
-      setDraws(drawsRes.data.items)
-      setDrawTotal(drawsRes.data.total)
-      setDrawPage(drawsRes.data.page)
+    setLoadError(false)
+    const [statusResult, cardsResult, drawsResult, rulesResult] =
+      await Promise.allSettled([
+        getLuckyWheelStatus(),
+        getLuckyCards(),
+        getLuckyDraws(requestedDrawPage, DRAW_PAGE_SIZE),
+        getLuckyRules(),
+      ])
+    if (statusResult.status === 'fulfilled' && statusResult.value.success) {
+      setStatus(statusResult.value.data)
     }
-    if (rulesRes.success) setRules(rulesRes.data)
-    if (cardsRes.success) {
+    if (cardsResult.status === 'fulfilled' && cardsResult.value.success) {
+      setCards(cardsResult.value.data.items)
+    }
+    if (drawsResult.status === 'fulfilled' && drawsResult.value.success) {
+      setDraws(drawsResult.value.data.items)
+      setDrawTotal(drawsResult.value.data.total)
+      setDrawPage(drawsResult.value.data.page)
+    }
+    if (rulesResult.status === 'fulfilled' && rulesResult.value.success) {
+      setRules(rulesResult.value.data)
+    }
+    if (cardsResult.status === 'fulfilled' && cardsResult.value.success) {
       setSelectedCardId((current) =>
-        chooseAvailableCardId(cardsRes.data.items, preferredCardId || current)
+        chooseAvailableCardId(
+          cardsResult.value.data.items,
+          preferredCardId || current
+        )
       )
+    }
+    const results = [statusResult, cardsResult, drawsResult, rulesResult]
+    if (
+      results.some(
+        (result) =>
+          result.status === 'rejected' ||
+          (result.status === 'fulfilled' && !result.value.success)
+      )
+    ) {
+      throw new Error('幸运大转盘接口加载失败')
     }
   }
 
   useEffect(() => {
     const loadTimer = window.setTimeout(() => {
       refresh()
-        .catch(() => toast.error('幸运大转盘加载失败，请稍后重试'))
+        .catch(() => {
+          setLoadError(true)
+          toast.error('幸运大转盘加载失败，请稍后重试')
+        })
         .finally(() => setLoading(false))
     }, 0)
     return () => window.clearTimeout(loadTimer)
@@ -308,6 +333,27 @@ export function LuckyWheel() {
       <SectionPageLayout.Title>幸运大转盘</SectionPageLayout.Title>
       <SectionPageLayout.Content>
         <div className='space-y-5'>
+          {loadError && (
+            <Alert variant='destructive'>
+              <Info />
+              <AlertTitle>幸运大转盘暂时无法加载</AlertTitle>
+              <AlertDescription className='flex flex-wrap items-center gap-3'>
+                <span>部分接口响应异常，页面其余内容仍可保留。</span>
+                <Button
+                  size='sm'
+                  variant='outline'
+                  onClick={() => {
+                    setLoading(true)
+                    refresh()
+                      .catch(() => setLoadError(true))
+                      .finally(() => setLoading(false))
+                  }}
+                >
+                  重新加载
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
           {status?.campaign.draw_paused && (
             <Alert>
               <Info />

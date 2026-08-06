@@ -499,11 +499,14 @@ func GetLuckySubscriptionProgress(userId int, now int64) (LuckySubscriptionProgr
 			continue
 		}
 		plan, err := planForUserSubscriptionTx(DB, subscription)
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if err != nil {
+			// Lucky wheel progress is auxiliary metadata. A legacy subscription
+			// with a deleted or malformed plan must not make the whole page 500.
+			// Normal subscription consumption still validates the plan strictly.
 			continue
 		}
-		if err != nil {
-			return progress, err
+		if plan == nil {
+			continue
 		}
 		if !plan.LuckyCardOnReset ||
 			NormalizeResetPeriod(plan.QuotaResetPeriod) == SubscriptionResetNever {

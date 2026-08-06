@@ -3,6 +3,7 @@ import { Activity, Link2, Save, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { SectionPageLayout } from '@/components/layout'
 import {
   deleteAdminAPIIngressProfile,
@@ -148,10 +149,11 @@ export function APIIngress() {
                 value={editing.network_mode ?? ''}
                 onChange={(event) => update('network_mode', event.target.value)}
               />
-              <Input
+              <Textarea
                 placeholder='说明'
                 value={editing.description ?? ''}
                 onChange={(event) => update('description', event.target.value)}
+                className='min-h-20'
               />
               <label className='text-xs'>
                 <span className='text-muted-foreground mb-1 block'>

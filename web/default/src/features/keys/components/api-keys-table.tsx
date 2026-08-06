@@ -138,31 +138,43 @@ function ApiIngressPreview({ fallbackEndpoint }: { fallbackEndpoint: string }) {
   const copy = async (value: string) => {
     if (await copyToClipboard(value)) toast.success('已复制')
   }
-  const measure = async (profile: APIIngressProfile): Promise<number | 'error'> => {
+  const measure = async (
+    profile: APIIngressProfile
+  ): Promise<number | 'error'> => {
     const base = resolveAPIIngressBaseUrl(profile, fallbackEndpoint)
-    const started = performance.now()
-    const controller = new AbortController()
-    const timeout = window.setTimeout(() => controller.abort(), 8_000)
+    const ping = async () => {
+      const controller = new AbortController()
+      const timeout = window.setTimeout(() => controller.abort(), 8_000)
+      try {
+        const response = await fetch(`${base}/api/ingress/ping`, {
+          // The probe is anonymous. Sending cookies cross-origin makes the
+          // direct endpoint's wildcard CORS response fail in browsers.
+          credentials: 'omit',
+          cache: 'no-store',
+          headers: { 'X-New-API-Ingress': profile.code },
+          signal: controller.signal,
+        })
+        if (!response.ok) throw new Error('ping failed')
+      } finally {
+        window.clearTimeout(timeout)
+      }
+    }
     try {
-      const response = await fetch(`${base}/api/ingress/ping`, {
-        // The probe is anonymous. Sending cookies cross-origin makes the
-        // direct endpoint's wildcard CORS response fail in browsers.
-        credentials: 'omit',
-        cache: 'no-store',
-        headers: { 'X-New-API-Ingress': profile.code },
-        signal: controller.signal,
-      })
-      if (!response.ok) throw new Error('ping failed')
+      // 第一次请求可能包含 DNS/TLS/连接建立成本；先预热，再测量复用连接后的真实延迟。
+      await ping()
+      const started = performance.now()
+      await ping()
       return Math.round(performance.now() - started)
     } catch {
       return 'error'
-    } finally {
-      window.clearTimeout(timeout)
     }
   }
 
   const testAll = async () => {
-    if (!profiles.length || profiles.some((profile) => latencies[profile.code] === 'testing')) {
+    if (
+      !profiles.length ||
+      profiles.some((profile) => latencies[profile.code] === 'testing')
+    ) {
       return
     }
     setLatencies(
@@ -182,8 +194,9 @@ function ApiIngressPreview({ fallbackEndpoint }: { fallbackEndpoint: string }) {
     setLatencies(nextLatencies)
 
     const fastest = results
-      .filter((result): result is { profile: APIIngressProfile; latency: number } =>
-        typeof result.latency === 'number'
+      .filter(
+        (result): result is { profile: APIIngressProfile; latency: number } =>
+          typeof result.latency === 'number'
       )
       .sort((a, b) => a.latency - b.latency)[0]
     if (fastest) {
@@ -209,7 +222,9 @@ function ApiIngressPreview({ fallbackEndpoint }: { fallbackEndpoint: string }) {
         <div className='text-muted-foreground flex items-center gap-2 text-[10px] font-medium tracking-wider uppercase'>
           <Gauge className='size-3.5' />
           API 请求入口
-          <span className='normal-case tracking-normal'>测速后自动选择低延迟入口</span>
+          <span className='tracking-normal normal-case'>
+            测速后自动选择低延迟入口
+          </span>
         </div>
         <Button
           type='button'
@@ -217,7 +232,9 @@ function ApiIngressPreview({ fallbackEndpoint }: { fallbackEndpoint: string }) {
           size='sm'
           className='h-7 shrink-0 rounded-full px-3 text-xs'
           onClick={testAll}
-          disabled={profiles.some((profile) => latencies[profile.code] === 'testing')}
+          disabled={profiles.some(
+            (profile) => latencies[profile.code] === 'testing'
+          )}
         >
           {profiles.some((profile) => latencies[profile.code] === 'testing') ? (
             <Loader2 className='size-3.5 animate-spin' />
@@ -256,6 +273,11 @@ function ApiIngressPreview({ fallbackEndpoint }: { fallbackEndpoint: string }) {
                 <code className='text-muted-foreground mt-1.5 block truncate font-mono text-[10px]'>
                   {endpointFor(profile)}
                 </code>
+                {profile.description?.trim() && (
+                  <p className='text-muted-foreground mt-1 line-clamp-2 text-[10px] whitespace-pre-wrap'>
+                    {profile.description.trim()}
+                  </p>
+                )}
                 <div className='text-muted-foreground mt-1 flex items-center gap-2 text-[10px]'>
                   <span>
                     {profile.network_mode === 'line'
@@ -285,8 +307,8 @@ function ApiIngressPreview({ fallbackEndpoint }: { fallbackEndpoint: string }) {
       <div className='text-muted-foreground mt-2 text-[10px]'>
         当前使用：
         <span className='text-foreground font-medium'>
-          {profiles.find((profile) => profile.code === selectedIngressCode)?.display_name ??
-            profiles[0]?.display_name}
+          {profiles.find((profile) => profile.code === selectedIngressCode)
+            ?.display_name ?? profiles[0]?.display_name}
         </span>
         ，点击卡片可手动切换
       </div>
