@@ -329,7 +329,62 @@ func SaveVirtualMembershipPlan(plan *VirtualMembershipPlan) error {
 	if err := plan.Validate(); err != nil {
 		return err
 	}
-	return DB.Save(plan).Error
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(plan).Error; err != nil {
+			return err
+		}
+		if plan.Id <= 0 {
+			return nil
+		}
+		return syncVirtualMembershipFiveHourEntitlementsTx(tx, plan)
+	})
+}
+
+// syncVirtualMembershipFiveHourEntitlementsTx applies the current plan's
+// 5-hour policy to memberships that are usable now. Weekly quota and the other
+// purchased snapshots stay immutable; only the administrator-controlled
+// 5-hour switch and limit are live plan settings.
+func syncVirtualMembershipFiveHourEntitlementsTx(tx *gorm.DB, plan *VirtualMembershipPlan) error {
+	if tx == nil || plan == nil || plan.Id <= 0 {
+		return nil
+	}
+	now := common.GetTimestamp()
+	var memberships []UserVirtualMembership
+	if err := tx.Where(
+		"plan_id = ? AND status = ? AND start_time <= ? AND end_time > ?",
+		plan.Id, VirtualMembershipStatusActive, now, now,
+	).Find(&memberships).Error; err != nil {
+		return err
+	}
+	for i := range memberships {
+		membership := &memberships[i]
+		groupSize := membership.GroupSize
+		if groupSize <= 0 {
+			groupSize = 1
+		}
+		updates := map[string]interface{}{"updated_at": now}
+		if !plan.FiveHourEnabled {
+			updates["five_hour_active"] = false
+			updates["five_hour_quota"] = int64(0)
+			updates["five_hour_used"] = int64(0)
+			updates["five_hour_start"] = int64(0)
+			updates["five_hour_reset_at"] = int64(0)
+		} else {
+			updates["five_hour_active"] = true
+			updates["five_hour_quota"] = plan.FiveHourQuota / int64(groupSize)
+			if !membership.FiveHourActive || membership.FiveHourResetAt <= 0 {
+				updates["five_hour_used"] = int64(0)
+				updates["five_hour_start"] = now
+				updates["five_hour_reset_at"] = now + 5*3600
+			}
+		}
+		if err := tx.Model(&UserVirtualMembership{}).
+			Where("id = ?", membership.Id).
+			Updates(updates).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func getVirtualMembershipPlanTx(tx *gorm.DB, planId int) (*VirtualMembershipPlan, error) {

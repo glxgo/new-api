@@ -10,8 +10,11 @@ import {
   Zap,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { formatTimestampToDate } from '@/lib/format'
+import { useAuthStore } from '@/stores/auth-store'
+import { DEFAULT_CURRENCY_CONFIG } from '@/stores/system-config-store'
+import { formatQuota, formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { useSystemConfig } from '@/hooks/use-system-config'
 import { Button } from '@/components/ui/button'
 import { Markdown } from '@/components/ui/markdown'
 import {
@@ -32,7 +35,7 @@ import {
 import type { UserVirtualMembership, VirtualMembershipPlan } from './types'
 
 function quotaLabel(value: number) {
-  return value.toLocaleString('en-US')
+  return formatQuota(value)
 }
 
 function capacityLabel(value: number) {
@@ -131,6 +134,7 @@ function VirtualMembershipPurchaseDialog({
   plan,
   groupSize,
   epayMethods,
+  userQuota,
   onConfirm,
 }: {
   open: boolean
@@ -138,19 +142,19 @@ function VirtualMembershipPurchaseDialog({
   plan: VirtualMembershipPlan | null
   groupSize: number
   epayMethods: { type: string; name?: string }[]
+  userQuota: number
   onConfirm: (payment: PaymentSelection) => Promise<boolean>
 }) {
-  const [payment, setPayment] = useState<PaymentSelection>({ type: 'balance' })
+  const { currency } = useSystemConfig()
+  const [selectedEpayMethod, setSelectedEpayMethod] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
     let active = true
     void Promise.resolve().then(() => {
       if (!active) return
-      setPayment(
-        open && epayMethods.length > 0
-          ? { type: 'epay', method: epayMethods[0].type }
-          : { type: 'balance' }
+      setSelectedEpayMethod(
+        open && epayMethods.length > 0 ? epayMethods[0].type : ''
       )
     })
     return () => {
@@ -165,13 +169,22 @@ function VirtualMembershipPurchaseDialog({
     plan.variants[0]
   const groupLabel =
     variant?.label ?? (groupSize === 1 ? '单独购买' : `${groupSize} 人团`)
-  const paymentLabel =
-    payment.type === 'balance'
-      ? '钱包余额'
-      : epayMethods.find((item) => item.type === payment.method)?.name ||
-        payment.method
+  const selectedEpayMethodLabel =
+    epayMethods.find((item) => item.type === selectedEpayMethod)?.name ||
+    selectedEpayMethod ||
+    '请选择付款方式'
+  const quotaPerUnit =
+    currency?.quotaPerUnit && currency.quotaPerUnit > 0
+      ? currency.quotaPerUnit
+      : DEFAULT_CURRENCY_CONFIG.quotaPerUnit
+  const balanceCost = Math.max(
+    0,
+    Math.ceil((variant?.price_amount ?? 0) * quotaPerUnit)
+  )
+  const availableQuota = Math.max(0, userQuota)
+  const insufficientBalance = availableQuota < balanceCost
 
-  const confirm = async () => {
+  const confirm = async (payment: PaymentSelection) => {
     setSubmitting(true)
     try {
       if (await onConfirm(payment)) onOpenChange(false)
@@ -229,79 +242,70 @@ function VirtualMembershipPurchaseDialog({
         </div>
       </div>
 
-      <div className='space-y-2'>
-        <p className='text-sm font-medium'>付款方式</p>
-        <div className='grid gap-2'>
-          <Button
-            type='button'
-            variant={payment.type === 'balance' ? 'default' : 'outline'}
-            className='justify-start'
-            onClick={() => setPayment({ type: 'balance' })}
-          >
-            钱包余额
-          </Button>
-          {epayMethods.length > 0 && (
-            <div className='grid grid-cols-[minmax(0,1fr)_auto] gap-2'>
-              <Select
-                items={epayMethods.map((method) => ({
-                  value: method.type,
-                  label: method.name || method.type,
-                }))}
-                value={payment.type === 'epay' ? payment.method : ''}
-                onValueChange={(value) =>
-                  value && setPayment({ type: 'epay', method: value })
-                }
-              >
-                <SelectTrigger
-                  className={cn(
-                    'w-full',
-                    payment.type === 'epay' &&
-                      'border-primary bg-primary/5 text-primary'
-                  )}
-                  onClick={() => {
-                    if (payment.type !== 'epay') {
-                      setPayment({ type: 'epay', method: epayMethods[0].type })
-                    }
-                  }}
-                >
-                  <SelectValue>{paymentLabel}</SelectValue>
-                </SelectTrigger>
-                <SelectContent alignItemWithTrigger={false}>
-                  <SelectGroup>
-                    {epayMethods.map((method) => (
-                      <SelectItem key={method.type} value={method.type}>
-                        {method.name || method.type}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <Button
-                type='button'
-                variant={payment.type === 'epay' ? 'default' : 'outline'}
-                onClick={() =>
-                  setPayment({ type: 'epay', method: epayMethods[0].type })
-                }
-              >
-                选择
-              </Button>
-            </div>
-          )}
+      <div className='flex flex-col gap-2 rounded-xl border p-4'>
+        <div className='flex items-center justify-between gap-2 text-xs'>
+          <span className='text-muted-foreground'>必需</span>
+          <span>{formatQuota(balanceCost)}</span>
         </div>
-        <p className='text-muted-foreground text-xs'>
-          当前选择：{paymentLabel}
-        </p>
+        <div className='flex items-center justify-between gap-2 text-xs'>
+          <span className='text-muted-foreground'>可用</span>
+          <span>{formatQuota(availableQuota)}</span>
+        </div>
+        {insufficientBalance && (
+          <p className='text-destructive rounded-lg border px-3 py-2 text-sm'>
+            钱包余额不足
+          </p>
+        )}
+        <Button
+          type='button'
+          variant='outline'
+          onClick={() => void confirm({ type: 'balance' })}
+          disabled={submitting || insufficientBalance}
+        >
+          使用余额支付
+        </Button>
       </div>
 
-      <Button
-        type='button'
-        className='w-full'
-        onClick={confirm}
-        disabled={submitting}
-      >
-        {submitting && <Loader2 className='animate-spin' />}
-        确认支付
-      </Button>
+      {epayMethods.length > 0 && (
+        <div className='space-y-3'>
+          <p className='text-muted-foreground text-xs'>选择支付方式</p>
+          <div className='grid grid-cols-[minmax(0,1fr)_auto] gap-2'>
+            <Select
+              items={epayMethods.map((method) => ({
+                value: method.type,
+                label: method.name || method.type,
+              }))}
+              value={selectedEpayMethod}
+              onValueChange={(value) =>
+                value !== null && setSelectedEpayMethod(value)
+              }
+            >
+              <SelectTrigger className='w-full'>
+                <SelectValue>{selectedEpayMethodLabel}</SelectValue>
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                <SelectGroup>
+                  {epayMethods.map((method) => (
+                    <SelectItem key={method.type} value={method.type}>
+                      {method.name || method.type}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Button
+              type='button'
+              onClick={() =>
+                void confirm({ type: 'epay', method: selectedEpayMethod })
+              }
+              disabled={submitting || !selectedEpayMethod}
+            >
+              {submitting && <Loader2 className='animate-spin' />}
+              支付
+            </Button>
+          </div>
+        </div>
+      )}
     </Dialog>
   )
 }
@@ -393,6 +397,7 @@ function PlanCard({
 }
 
 export function VirtualMembership() {
+  const userQuota = useAuthStore((state) => state.auth.user?.quota ?? 0)
   const [refresh, setRefresh] = useState(0)
   const [purchasePlan, setPurchasePlan] =
     useState<VirtualMembershipPlan | null>(null)
@@ -544,6 +549,7 @@ export function VirtualMembership() {
         plan={purchasePlan}
         groupSize={purchaseGroupSize}
         epayMethods={page?.epay_methods ?? []}
+        userQuota={userQuota}
         onConfirm={handlePurchase}
       />
     </>

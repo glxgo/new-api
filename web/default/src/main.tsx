@@ -89,7 +89,9 @@ const queryClient = new QueryClient({
         }
         if (error.response?.status === 500) {
           toast.error(i18next.t('Internal Server Error!'))
-          router.navigate({ to: '/500' })
+          // A background card or statistics request must not replace the
+          // entire application with the generic 500 route. The failing query
+          // keeps its own error state while the rest of the site remains usable.
         }
       }
     },

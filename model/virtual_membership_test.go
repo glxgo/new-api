@@ -1,6 +1,13 @@
 package model
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+)
 
 func TestVirtualMembershipVariantDividesQuotaByGroupSize(t *testing.T) {
 	plan := &VirtualMembershipPlan{
@@ -71,5 +78,107 @@ func TestVirtualMembershipPlanDefaultsToDedicatedGroup(t *testing.T) {
 	plan.Normalize()
 	if plan.AllowedGroup != VirtualMembershipDefaultAllowedGroup {
 		t.Fatalf("allowed group = %q, want %q", plan.AllowedGroup, VirtualMembershipDefaultAllowedGroup)
+	}
+}
+
+func setupVirtualMembershipTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(
+		sqlite.Open(fmt.Sprintf("file:virtual-membership-%d?mode=memory&cache=shared", time.Now().UnixNano())),
+		&gorm.Config{},
+	)
+	if err != nil {
+		t.Fatalf("open test database: %v", err)
+	}
+	if err := db.AutoMigrate(&VirtualMembershipPlan{}, &UserVirtualMembership{}); err != nil {
+		t.Fatalf("migrate test database: %v", err)
+	}
+	previousDB := DB
+	DB = db
+	t.Cleanup(func() { DB = previousDB })
+	return db
+}
+
+func TestSaveVirtualMembershipPlanSyncsFiveHourPolicyToActiveMemberships(t *testing.T) {
+	db := setupVirtualMembershipTestDB(t)
+	now := time.Now().Unix()
+	plan := &VirtualMembershipPlan{
+		Code: "plus", Title: "GPT Plus", PriceAmount: 10, WeeklyQuota: 50_000_000,
+		DurationDays: 30, Enabled: true,
+	}
+	if err := SaveVirtualMembershipPlan(plan); err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+	memberships := []UserVirtualMembership{
+		{
+			PlanId: plan.Id, UserId: 1, GroupSize: 1, Status: VirtualMembershipStatusActive,
+			StartTime: now - 60, EndTime: now + 86400, FiveHourUsed: 9,
+		},
+		{
+			PlanId: plan.Id, UserId: 2, GroupSize: 2, Status: VirtualMembershipStatusActive,
+			StartTime: now - 60, EndTime: now + 86400,
+		},
+		{
+			PlanId: plan.Id, UserId: 3, GroupSize: 1, Status: VirtualMembershipStatusExpired,
+			StartTime: now - 86400, EndTime: now - 60,
+		},
+	}
+	if err := db.Create(&memberships).Error; err != nil {
+		t.Fatalf("create memberships: %v", err)
+	}
+
+	plan.FiveHourEnabled = true
+	plan.FiveHourQuota = 10_000_000
+	if err := SaveVirtualMembershipPlan(plan); err != nil {
+		t.Fatalf("enable 5-hour policy: %v", err)
+	}
+	var active []UserVirtualMembership
+	if err := db.Where("status = ?", VirtualMembershipStatusActive).Order("id").Find(&active).Error; err != nil {
+		t.Fatalf("load active memberships: %v", err)
+	}
+	if !active[0].FiveHourActive || active[0].FiveHourQuota != 10_000_000 || active[0].FiveHourUsed != 0 {
+		t.Fatalf("single membership after enable = %+v", active[0])
+	}
+	if !active[1].FiveHourActive || active[1].FiveHourQuota != 5_000_000 || active[1].FiveHourUsed != 0 {
+		t.Fatalf("two-person membership after enable = %+v", active[1])
+	}
+	firstResetAt := active[0].FiveHourResetAt
+	if firstResetAt <= now {
+		t.Fatalf("reset time = %d, want after %d", firstResetAt, now)
+	}
+
+	if err := db.Model(&UserVirtualMembership{}).Where("id = ?", active[0].Id).
+		Update("five_hour_used", 2_000_000).Error; err != nil {
+		t.Fatalf("seed used quota: %v", err)
+	}
+	plan.FiveHourQuota = 20_000_000
+	if err := SaveVirtualMembershipPlan(plan); err != nil {
+		t.Fatalf("change 5-hour quota: %v", err)
+	}
+	var updated UserVirtualMembership
+	if err := db.First(&updated, active[0].Id).Error; err != nil {
+		t.Fatalf("reload membership: %v", err)
+	}
+	if updated.FiveHourQuota != 20_000_000 || updated.FiveHourUsed != 2_000_000 || updated.FiveHourResetAt != firstResetAt {
+		t.Fatalf("membership after quota change = %+v", updated)
+	}
+
+	plan.FiveHourEnabled = false
+	if err := SaveVirtualMembershipPlan(plan); err != nil {
+		t.Fatalf("disable 5-hour policy: %v", err)
+	}
+	if err := db.First(&updated, active[0].Id).Error; err != nil {
+		t.Fatalf("reload disabled membership: %v", err)
+	}
+	if updated.FiveHourActive || updated.FiveHourQuota != 0 || updated.FiveHourUsed != 0 || updated.FiveHourResetAt != 0 {
+		t.Fatalf("membership after disable = %+v", updated)
+	}
+
+	var expired UserVirtualMembership
+	if err := db.Where("status = ?", VirtualMembershipStatusExpired).First(&expired).Error; err != nil {
+		t.Fatalf("load expired membership: %v", err)
+	}
+	if expired.FiveHourActive || expired.FiveHourQuota != 0 {
+		t.Fatalf("expired membership was changed = %+v", expired)
 	}
 }

@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react'
 import { RotateCcw, Save, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
+import {
+  formatQuota,
+  parseQuotaFromDollars,
+  quotaUnitsToDollars,
+} from '@/lib/format'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -43,6 +48,14 @@ const emptyPlan: Partial<VirtualMembershipPlan> = {
   recommended: false,
   enabled: true,
   sort_order: 0,
+}
+
+function planToEditor(plan: VirtualMembershipPlan) {
+  return {
+    ...plan,
+    weekly_quota: quotaUnitsToDollars(plan.weekly_quota),
+    five_hour_quota: quotaUnitsToDollars(plan.five_hour_quota),
+  }
 }
 
 export function VirtualMemberships() {
@@ -92,7 +105,13 @@ export function VirtualMemberships() {
       return
     }
     try {
-      const result = await saveAdminVirtualMembershipPlan(editing)
+      const result = await saveAdminVirtualMembershipPlan({
+        ...editing,
+        weekly_quota: parseQuotaFromDollars(Number(editing.weekly_quota ?? 0)),
+        five_hour_quota: parseQuotaFromDollars(
+          Number(editing.five_hour_quota ?? 0)
+        ),
+      })
       if (result.success) {
         toast.success('方案已保存')
         setEditing({ ...emptyPlan })
@@ -176,7 +195,7 @@ export function VirtualMemberships() {
                   <button
                     key={plan.id}
                     type='button'
-                    onClick={() => setEditing({ ...plan })}
+                    onClick={() => setEditing(planToEditor(plan))}
                     className='hover:bg-muted/50 flex w-full items-center justify-between border-b p-5 text-left last:border-b-0'
                   >
                     <div>
@@ -187,9 +206,9 @@ export function VirtualMemberships() {
                         </span>
                       </p>
                       <p className='text-muted-foreground mt-1 text-xs'>
-                        周 {plan.weekly_quota.toLocaleString()} · 5h{' '}
+                        周 {formatQuota(plan.weekly_quota)} · 5h{' '}
                         {plan.five_hour_enabled
-                          ? plan.five_hour_quota.toLocaleString()
+                          ? formatQuota(plan.five_hour_quota)
                           : '关闭'}
                         {' · 并发 '}
                         {plan.concurrency_limit > 0
@@ -240,7 +259,7 @@ export function VirtualMemberships() {
                   ['two_group_price', '2 人团价格'],
                   ['three_group_price', '3 人团价格'],
                   ['four_group_price', '4 人团价格'],
-                  ['weekly_quota', '周额度'],
+                  ['weekly_quota', '周额度（美元）'],
                   ['duration_days', '有效天数'],
                   ['concurrency_limit', '会员并发上限'],
                   ['rpm_limit', '会员 RPM 上限'],
@@ -311,7 +330,7 @@ export function VirtualMemberships() {
               </label>
               <label className='block text-xs'>
                 <span className='text-muted-foreground mb-1 block'>
-                  5 小时额度（开启后生效）
+                  5 小时额度（美元，开启后生效）
                 </span>
                 <Input
                   type='number'
@@ -323,10 +342,11 @@ export function VirtualMemberships() {
                       event.target.value === '' ? 0 : Number(event.target.value)
                     )
                   }
-                  placeholder='例如 100000'
+                  placeholder='例如 20'
                 />
                 <span className='text-muted-foreground mt-1 block'>
-                  开启后按 2/3/4 人档位自动均分；开启时必须填写大于 0 的数值。
+                  保存时会换算为系统额度；开启后按 2/3/4
+                  人档位自动均分，并同步到已生效会员。
                 </span>
               </label>
               <p className='text-muted-foreground text-xs'>
