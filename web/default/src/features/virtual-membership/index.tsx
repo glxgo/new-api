@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Gift, Gauge, Loader2, Users, Zap } from 'lucide-react'
 import { toast } from 'sonner'
@@ -116,6 +116,21 @@ function VirtualMembershipPurchaseDialog({
 }) {
   const [payment, setPayment] = useState<PaymentSelection>({ type: 'balance' })
   const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    void Promise.resolve().then(() => {
+      if (!active) return
+      setPayment(
+        open && epayMethods.length > 0
+          ? { type: 'epay', method: epayMethods[0].type }
+          : { type: 'balance' }
+      )
+    })
+    return () => {
+      active = false
+    }
+  }, [open, epayMethods])
 
   if (!plan) return null
 
@@ -245,7 +260,12 @@ function VirtualMembershipPurchaseDialog({
         </p>
       </div>
 
-      <Button className='w-full' onClick={confirm} disabled={submitting}>
+      <Button
+        type='button'
+        className='w-full'
+        onClick={confirm}
+        disabled={submitting}
+      >
         {submitting && <Loader2 className='animate-spin' />}
         确认支付
       </Button>

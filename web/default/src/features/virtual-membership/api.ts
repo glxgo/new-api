@@ -29,7 +29,13 @@ export async function payVirtualMembershipEpay(data: {
   payment_method: string
 }): Promise<ApiResponse<Record<string, string>> & { url?: string }> {
   const res = await api.post('/api/virtual-membership/epay/pay', data)
-  return res.data
+  return {
+    ...res.data,
+    // Keep the virtual-membership payment flow compatible with the
+    // subscription payment API when an adapter exposes the URL on the
+    // Axios response instead of inside response.data.
+    url: res.data.url || (res as unknown as { url?: string }).url,
+  }
 }
 
 export async function getAdminVirtualMembershipPlans(): Promise<
