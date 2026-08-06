@@ -20,3 +20,18 @@ func TestIngressMultiplierDefaultsToOriginalPrice(t *testing.T) {
 		t.Fatalf("default multiplier quota = %d, want 123", got)
 	}
 }
+
+func TestIngressDisplayNameAndFinalQuotaAreRetainedForLogs(t *testing.T) {
+	info := &RelayInfo{
+		IngressCode:          "direct",
+		IngressDisplayName:   "海外直链 URL",
+		IngressMultiplierPPM: 950_000,
+		FinalConsumedQuota:   95,
+	}
+	if got := info.RestoreIngressMultiplier(info.FinalConsumedQuota); got != 100 {
+		t.Fatalf("original quota = %d, want 100", got)
+	}
+	if info.IngressDisplayName != "海外直链 URL" {
+		t.Fatalf("display name = %q", info.IngressDisplayName)
+	}
+}

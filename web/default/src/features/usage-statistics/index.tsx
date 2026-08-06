@@ -287,6 +287,7 @@ export function UsageStatistics() {
     },
     staleTime: 30_000,
     refetchOnWindowFocus: false,
+    retry: false,
   })
   const data = query.data
   const summary = data?.summary
@@ -413,8 +414,20 @@ export function UsageStatistics() {
           </div>
 
           {query.isError && (
-            <div className='border-destructive/25 bg-destructive/5 text-destructive mb-4 rounded-lg border px-3 py-2 text-sm'>
-              {t('Usage statistics could not be loaded. Please try again.')}
+            <div className='border-destructive/25 bg-destructive/5 text-destructive mb-4 flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm'>
+              <span>
+                {t('Usage statistics could not be loaded. Please try again.')}
+              </span>
+              <Button
+                type='button'
+                variant='ghost'
+                size='sm'
+                onClick={() => void query.refetch()}
+                disabled={query.isFetching}
+                className='text-destructive hover:bg-destructive/10 hover:text-destructive shrink-0'
+              >
+                {t('Retry')}
+              </Button>
             </div>
           )}
 

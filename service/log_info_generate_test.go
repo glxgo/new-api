@@ -7,6 +7,23 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 )
 
+func TestAppendIngressBillingInfoRecordsRouteAndDiscountedPrice(t *testing.T) {
+	info := &relaycommon.RelayInfo{
+		IngressCode:          "direct",
+		IngressDisplayName:   "海外直链 URL",
+		IngressMultiplierPPM: 950_000,
+		FinalConsumedQuota:   95,
+	}
+	other := map[string]interface{}{}
+	appendIngressBillingInfo(info, other)
+	if other["ingress_code"] != "direct" || other["ingress_display_name"] != "海外直链 URL" {
+		t.Fatalf("route fields = %#v", other)
+	}
+	if other["ingress_multiplier"] != 0.95 || other["ingress_billed_quota"] != 95 || other["ingress_original_quota"] != 100 {
+		t.Fatalf("billing fields = %#v", other)
+	}
+}
+
 func TestRelayFirstTokenDurationUsesUpstreamStartTime(t *testing.T) {
 	requestStart := time.Unix(1_700_000_000, 0)
 	upstreamStart := requestStart.Add(3 * time.Second)

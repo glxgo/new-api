@@ -545,6 +545,10 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 	if planGroupErr != nil {
 		return nil, types.NewError(planGroupErr, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
 	}
+	virtualMembershipPlanGroup, virtualPlanGroupErr := model.HasVirtualMembershipPlanByGroup(relayInfo.UsingGroup)
+	if virtualPlanGroupErr != nil {
+		return nil, types.NewError(virtualPlanGroupErr, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
+	}
 	subscriptionGroupBinding, groupBindingErr := model.HasActiveUserSubscriptionByGroup(relayInfo.UserId, relayInfo.UsingGroup)
 	if groupBindingErr != nil {
 		return nil, types.NewError(groupBindingErr, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
@@ -633,6 +637,20 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 
 	if virtualBinding {
 		return tryVirtualMembership()
+	}
+
+	// A virtual-membership plan group is a hard entitlement boundary. If the
+	// key was placed in that group without an explicit membership binding, fail
+	// clearly instead of silently charging the wallet. Once a bound membership
+	// is exhausted, the virtual path above returns the quota error directly and
+	// never reaches wallet fallback.
+	if virtualMembershipPlanGroup {
+		return nil, types.NewErrorWithStatusCode(
+			errors.New("当前 API Key 未绑定可用的虚拟会员额度"),
+			types.ErrorCodeInsufficientUserQuota,
+			http.StatusForbidden,
+			types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog(),
+		)
 	}
 
 	if instanceBinding {

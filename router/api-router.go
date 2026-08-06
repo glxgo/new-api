@@ -448,7 +448,7 @@ func SetApiRouter(router *gin.Engine) {
 		dashboardTrafficRoute.GET("/self", middleware.UserAuth(), controller.GetDashboardTrafficSelf)
 
 		usageStatisticsRoute := apiRouter.Group("/usage-statistics")
-		usageStatisticsRoute.GET("/self", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.GetUsageStatisticsSelf)
+		usageStatisticsRoute.GET("/self", middleware.UserAuth(), middleware.UsageStatisticsRateLimit(), controller.GetUsageStatisticsSelf)
 
 		logRoute.Use(middleware.CORS(), middleware.CriticalRateLimit())
 		{

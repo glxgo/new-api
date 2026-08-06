@@ -172,15 +172,38 @@ export function ApiKeysMutateDrawer({
   })
 
   const models = modelsData?.data || []
-  const groupsRaw = groupsData?.data || {}
-  const groups: ApiKeyGroupOption[] = Object.entries(groupsRaw).map(
-    ([key, info]) => ({
-      value: key,
-      label: key,
-      desc: info.desc || key,
-      ratio: info.ratio,
-    })
-  )
+  const virtualMembershipGroups: string[] = useMemo(() => {
+    const memberships = virtualMembershipQuery.data?.data?.memberships || []
+    return Array.from(
+      new Set(
+        memberships
+          .filter((membership) => membership.status === 'active')
+          .map((membership) => membership.allowed_group?.trim() || '')
+          .filter(Boolean)
+      )
+    )
+  }, [virtualMembershipQuery.data])
+  const groups: ApiKeyGroupOption[] = useMemo(() => {
+    const groupsRaw = groupsData?.data || {}
+    const options: ApiKeyGroupOption[] = Object.entries(groupsRaw).map(
+      ([key, info]) => ({
+        value: key,
+        label: key,
+        desc: info.desc || key,
+        ratio: info.ratio,
+      })
+    )
+    const known = new Set(options.map((option) => option.value))
+    for (const group of virtualMembershipGroups) {
+      if (known.has(group)) continue
+      options.push({
+        value: group,
+        label: group,
+        desc: '虚拟会员专属分组',
+      })
+    }
+    return options
+  }, [groupsData?.data, virtualMembershipGroups])
   const subscribedGroups: string[] = useMemo(() => {
     const subs = selfSubQuery.data?.data?.subscriptions || []
     const now = selfSubQuery.dataUpdatedAt / 1000
@@ -508,6 +531,7 @@ export function ApiKeysMutateDrawer({
                 onValueChange={field.onChange}
                 placeholder={t('Select a group')}
                 subscribedGroups={subscribedGroups}
+                virtualMembershipGroups={virtualMembershipGroups}
               />
             </FormControl>
             <FormMessage />

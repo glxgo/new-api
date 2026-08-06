@@ -40,3 +40,11 @@ func TestVirtualMembershipQuotaPercent(t *testing.T) {
 		t.Fatalf("zero quota percent = %d, want 0", got)
 	}
 }
+
+func TestVirtualMembershipPlanDefaultsToDedicatedGroup(t *testing.T) {
+	plan := &VirtualMembershipPlan{}
+	plan.Normalize()
+	if plan.AllowedGroup != VirtualMembershipDefaultAllowedGroup {
+		t.Fatalf("allowed group = %q, want %q", plan.AllowedGroup, VirtualMembershipDefaultAllowedGroup)
+	}
+}

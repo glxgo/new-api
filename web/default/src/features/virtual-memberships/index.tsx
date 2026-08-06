@@ -37,7 +37,7 @@ const emptyPlan: Partial<VirtualMembershipPlan> = {
   five_hour_enabled: false,
   five_hour_quota: 0,
   allowed_models: '',
-  allowed_group: '',
+  allowed_group: 'gpt会员分组',
   recommended: false,
   enabled: true,
   sort_order: 0,

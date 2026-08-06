@@ -343,6 +343,34 @@ function BillingBreakdown(props: {
     }
   }
 
+  if (other.ingress_code || other.ingress_display_name) {
+    rows.push({
+      label: t('Request Route'),
+      value: other.ingress_display_name || other.ingress_code || '-',
+    })
+    if (other.ingress_multiplier != null) {
+      rows.push({
+        label: t('Route Discount'),
+        value: `×${other.ingress_multiplier.toFixed(3)}`,
+      })
+    }
+    if (other.ingress_billed_quota != null) {
+      rows.push({
+        label: t('Route Discounted Price'),
+        value: formatLogQuota(other.ingress_billed_quota),
+      })
+    }
+    if (
+      other.ingress_original_quota != null &&
+      other.ingress_original_quota !== other.ingress_billed_quota
+    ) {
+      rows.push({
+        label: t('Original Route Price'),
+        value: formatLogQuota(other.ingress_original_quota),
+      })
+    }
+  }
+
   rows.push({
     label: t('Total Cost'),
     value: formatLogQuota(log.quota),

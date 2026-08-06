@@ -61,6 +61,7 @@ type ApiKeyGroupComboboxProps = {
   // Groups the user has unlocked via an active subscription plan. These are
   // pinned to the top of the list and badged as a "Plan Group".
   subscribedGroups?: string[]
+  virtualMembershipGroups?: string[]
 }
 
 function formatGroupRatio(
@@ -129,6 +130,18 @@ function PlanGroupBadge() {
   )
 }
 
+function VirtualMembershipGroupBadge() {
+  const { t } = useTranslation()
+  return (
+    <Badge
+      variant='outline'
+      className='shrink-0 border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700 sm:text-xs dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300'
+    >
+      {t('Virtual Membership Group')}
+    </Badge>
+  )
+}
+
 export function ApiKeyGroupCombobox({
   options,
   value,
@@ -136,6 +149,7 @@ export function ApiKeyGroupCombobox({
   placeholder,
   disabled,
   subscribedGroups,
+  virtualMembershipGroups,
 }: ApiKeyGroupComboboxProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -146,8 +160,14 @@ export function ApiKeyGroupCombobox({
     () => new Set((subscribedGroups ?? []).filter(Boolean)),
     [subscribedGroups]
   )
+  const virtualMembershipSet = useMemo(
+    () => new Set((virtualMembershipGroups ?? []).filter(Boolean)),
+    [virtualMembershipGroups]
+  )
   const isSubscribed = (val: string) => subscribedSet.has(val)
+  const isVirtualMembership = (val: string) => virtualMembershipSet.has(val)
   const selectedIsSubscribed = !!value && isSubscribed(value)
+  const selectedIsVirtualMembership = !!value && isVirtualMembership(value)
 
   const filteredOptions = useMemo(() => {
     const search = searchValue.trim().toLowerCase()
@@ -165,12 +185,15 @@ export function ApiKeyGroupCombobox({
     // Stable sort: subscribed plan groups first (preserving original order),
     // then the rest. Keeps the highlighting deterministic across re-renders.
     return [...matched].sort((a, b) => {
+      const aVirtual = isVirtualMembership(a.value) ? 0 : 1
+      const bVirtual = isVirtualMembership(b.value) ? 0 : 1
+      if (aVirtual !== bVirtual) return aVirtual - bVirtual
       const aSub = isSubscribed(a.value) ? 0 : 1
       const bSub = isSubscribed(b.value) ? 0 : 1
       return aSub - bSub
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [options, searchValue, subscribedSet])
+  }, [options, searchValue, subscribedSet, virtualMembershipSet])
 
   const handleSelect = (selectedValue: string) => {
     onValueChange(selectedValue)
@@ -178,11 +201,15 @@ export function ApiKeyGroupCombobox({
     setSearchValue('')
   }
 
-  const subscribedOptions = filteredOptions.filter((option) =>
-    isSubscribed(option.value)
+  const subscribedOptions = filteredOptions.filter(
+    (option) => isSubscribed(option.value) && !isVirtualMembership(option.value)
+  )
+  const virtualMembershipOptions = filteredOptions.filter((option) =>
+    isVirtualMembership(option.value)
   )
   const otherOptions = filteredOptions.filter(
-    (option) => !isSubscribed(option.value)
+    (option) =>
+      !isSubscribed(option.value) && !isVirtualMembership(option.value)
   )
 
   const renderOption = (option: ApiKeyGroupOption) => (
@@ -239,17 +266,29 @@ export function ApiKeyGroupCombobox({
       />
       <CommandList className={mobile ? 'max-h-[55dvh] pb-2' : 'max-h-[360px]'}>
         <CommandEmpty>{t('No group found.')}</CommandEmpty>
+        {virtualMembershipOptions.length > 0 && (
+          <CommandGroup heading={t('Virtual Membership Group')}>
+            {virtualMembershipOptions.map(renderOption)}
+          </CommandGroup>
+        )}
+        {virtualMembershipOptions.length > 0 &&
+          subscribedOptions.length > 0 && <CommandSeparator />}
         {subscribedOptions.length > 0 && (
           <CommandGroup heading={t('Plan Group')}>
             {subscribedOptions.map(renderOption)}
           </CommandGroup>
         )}
-        {subscribedOptions.length > 0 && otherOptions.length > 0 && (
-          <CommandSeparator />
-        )}
+        {(virtualMembershipOptions.length > 0 ||
+          subscribedOptions.length > 0) &&
+          otherOptions.length > 0 && <CommandSeparator />}
         {otherOptions.length > 0 && (
           <CommandGroup
-            heading={subscribedOptions.length > 0 ? t('Other') : undefined}
+            heading={
+              virtualMembershipOptions.length > 0 ||
+              subscribedOptions.length > 0
+                ? t('Other')
+                : undefined
+            }
           >
             {otherOptions.map(renderOption)}
           </CommandGroup>
@@ -272,7 +311,11 @@ export function ApiKeyGroupCombobox({
           )}
         </span>
         <span className='hidden items-center gap-1.5 sm:flex'>
-          {selectedIsSubscribed && <PlanGroupBadge />}
+          {selectedIsVirtualMembership ? (
+            <VirtualMembershipGroupBadge />
+          ) : selectedIsSubscribed ? (
+            <PlanGroupBadge />
+          ) : null}
           <GroupRatioBadge ratio={selectedOption?.ratio} />
         </span>
       </span>

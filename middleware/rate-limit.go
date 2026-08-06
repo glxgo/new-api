@@ -203,3 +203,19 @@ func SearchRateLimit() func(c *gin.Context) {
 	}
 	return userRateLimitFactory(common.SearchRateLimitNum, common.SearchRateLimitDuration, "SR")
 }
+
+// UsageStatisticsRateLimit protects the relatively expensive, read-only
+// usage aggregation endpoint without sharing a public-IP bucket with login,
+// payment, or other critical operations.
+// Configurable via USAGE_STATISTICS_RATE_LIMIT_ENABLE / USAGE_STATISTICS_RATE_LIMIT /
+// USAGE_STATISTICS_RATE_LIMIT_DURATION.
+func UsageStatisticsRateLimit() func(c *gin.Context) {
+	if !common.UsageStatisticsRateLimitEnable {
+		return defNext
+	}
+	return userRateLimitFactory(
+		common.UsageStatisticsRateLimitNum,
+		common.UsageStatisticsRateLimitDuration,
+		"US",
+	)
+}

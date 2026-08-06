@@ -55,6 +55,18 @@ func GetUserGroups(c *gin.Context) {
 			}
 		}
 	}
+	// 虚拟会员即凭证: 会员专属分组也要出现在 API Key 下拉中，
+	// 否则用户只能绑定会员实例而无法选择对应的线路分组。
+	if membershipGroups, err := model.GetActiveUserVirtualMembershipAllowedGroups(userId); err == nil {
+		for _, g := range membershipGroups {
+			if _, exists := usableGroups[g]; !exists {
+				usableGroups[g] = map[string]interface{}{
+					"ratio": service.GetUserGroupRatio(userGroup, g),
+					"desc":  "虚拟会员专属分组",
+				}
+			}
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

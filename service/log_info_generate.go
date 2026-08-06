@@ -165,6 +165,7 @@ func appendBillingInfo(relayInfo *relaycommon.RelayInfo, other map[string]interf
 	if relayInfo.BillingSource != "" {
 		other["billing_source"] = relayInfo.BillingSource
 	}
+	appendIngressBillingInfo(relayInfo, other)
 	if relayInfo.UserSetting.BillingPreference != "" {
 		other["billing_preference"] = relayInfo.UserSetting.BillingPreference
 	}
@@ -235,6 +236,28 @@ func appendBillingInfo(relayInfo *relaycommon.RelayInfo, other map[string]interf
 		// Wallet quota is not deducted when billed from subscription.
 		other["wallet_quota_deducted"] = 0
 	}
+}
+
+func appendIngressBillingInfo(relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {
+	if relayInfo == nil || other == nil || relayInfo.IngressCode == "" {
+		return
+	}
+	name := relayInfo.IngressDisplayName
+	if name == "" {
+		name = relayInfo.IngressCode
+	}
+	multiplierPPM := relayInfo.IngressMultiplierPPM
+	if multiplierPPM <= 0 {
+		multiplierPPM = 1_000_000
+	}
+	multiplier := float64(multiplierPPM) / 1_000_000
+	other["ingress_code"] = relayInfo.IngressCode
+	other["ingress_display_name"] = name
+	other["ingress_multiplier"] = multiplier
+	// Restore only the customer-facing sale quota. This is intentionally not
+	// the upstream channel cost, which remains recorded separately.
+	other["ingress_billed_quota"] = relayInfo.FinalConsumedQuota
+	other["ingress_original_quota"] = relayInfo.RestoreIngressMultiplier(relayInfo.FinalConsumedQuota)
 }
 
 func appendRequestConversionChain(relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {

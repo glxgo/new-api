@@ -321,6 +321,13 @@ var (
 	SearchRateLimitEnable         = true
 	SearchRateLimitNum            = 10
 	SearchRateLimitDuration int64 = 60
+
+	// Usage statistics is a bounded, read-only endpoint. Keep its limiter
+	// user-scoped so one public IP cannot exhaust the window for other users or
+	// consume the same budget as payment/login operations.
+	UsageStatisticsRateLimitEnable         = true
+	UsageStatisticsRateLimitNum            = 60
+	UsageStatisticsRateLimitDuration int64 = 60
 )
 
 var RateLimitKeyExpirationDuration = 20 * time.Minute

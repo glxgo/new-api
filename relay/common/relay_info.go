@@ -154,7 +154,11 @@ type RelayInfo struct {
 	// IngressCode and IngressMultiplierPPM identify the public entrance used for
 	// this request. BillingMultiplierPPM is fixed-point (1_000_000 = 1.0x).
 	IngressCode          string
+	IngressDisplayName   string
 	IngressMultiplierPPM int64
+	// FinalConsumedQuota is the customer-facing quota after settlement and
+	// entrance discount. It is populated before the consume log is generated.
+	FinalConsumedQuota int
 	// SubscriptionId is the user_subscriptions.id used when BillingSource == "subscription"
 	SubscriptionId int
 	// SubscriptionPreConsumed is the amount pre-consumed on subscription item (quota units or 1)
@@ -527,6 +531,7 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 		TokenUnlimited:       common.GetContextKeyBool(c, constant.ContextKeyTokenUnlimited),
 		TokenGroup:           tokenGroup,
 		IngressCode:          c.GetString("api_ingress_code"),
+		IngressDisplayName:   c.GetString("api_ingress_display_name"),
 		IngressMultiplierPPM: c.GetInt64("api_ingress_multiplier_ppm"),
 
 		isFirstResponse: true,

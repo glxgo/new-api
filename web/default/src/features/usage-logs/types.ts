@@ -189,6 +189,11 @@ export interface LogOtherData {
   is_system_prompt_overwritten?: boolean
   po?: string[]
   billing_source?: string
+  ingress_code?: string
+  ingress_display_name?: string
+  ingress_multiplier?: number
+  ingress_original_quota?: number
+  ingress_billed_quota?: number
   group?: string
   stream_status?: {
     status?: string

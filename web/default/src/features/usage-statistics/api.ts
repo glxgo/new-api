@@ -24,6 +24,7 @@ export async function getUsageStatistics(
 ): Promise<UsageStatisticsResponse> {
   const response = await api.get('/api/usage-statistics/self', {
     params: { range },
+    skipErrorHandler: true,
   })
   return response.data
 }

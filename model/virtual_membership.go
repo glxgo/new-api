@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -12,6 +13,11 @@ import (
 )
 
 const (
+	// VirtualMembershipDefaultAllowedGroup is the dedicated model group used
+	// by newly created virtual-membership plans. It is also treated as a
+	// membership-only billing boundary by the billing session.
+	VirtualMembershipDefaultAllowedGroup = "gpt会员分组"
+
 	VirtualMembershipStatusActive    = "active"
 	VirtualMembershipStatusExpired   = "expired"
 	VirtualMembershipStatusCancelled = "cancelled"
@@ -123,6 +129,10 @@ func (p *VirtualMembershipPlan) Normalize() {
 	if p.Currency == "" {
 		p.Currency = "USD"
 	}
+	p.AllowedGroup = strings.TrimSpace(p.AllowedGroup)
+	if p.AllowedGroup == "" {
+		p.AllowedGroup = VirtualMembershipDefaultAllowedGroup
+	}
 	if p.DurationDays <= 0 {
 		p.DurationDays = 30
 	}
@@ -130,6 +140,59 @@ func (p *VirtualMembershipPlan) Normalize() {
 		p.CreatedAt = common.GetTimestamp()
 	}
 	p.UpdatedAt = common.GetTimestamp()
+}
+
+// HasVirtualMembershipPlanByGroup reports whether a group is reserved by a
+// virtual-membership plan. A key using such a group must be explicitly bound
+// to a membership; it must never fall back to wallet billing after the
+// membership entitlement is exhausted.
+func HasVirtualMembershipPlanByGroup(group string) (bool, error) {
+	group = strings.TrimSpace(group)
+	if group == "" {
+		return false, nil
+	}
+	var count int64
+	query := DB.Model(&VirtualMembershipPlan{}).Where("allowed_group = ?", group)
+	if group == VirtualMembershipDefaultAllowedGroup {
+		// Plans created before the dedicated default was introduced may still
+		// have an empty snapshot in the database. Treat those legacy rows as the
+		// default group until an administrator saves them again.
+		query = query.Or("allowed_group = ''")
+	}
+	if err := query.Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// GetActiveUserVirtualMembershipAllowedGroups returns the currently active
+// membership groups for API-key creation. The time predicates make the
+// result safe even before the periodic status maintenance has run.
+func GetActiveUserVirtualMembershipAllowedGroups(userId int) ([]string, error) {
+	if userId <= 0 {
+		return nil, nil
+	}
+	now := common.GetTimestamp()
+	var memberships []UserVirtualMembership
+	err := DB.Where("user_id = ? AND status = ? AND start_time <= ? AND end_time > ?", userId, VirtualMembershipStatusActive, now, now).
+		Find(&memberships).Error
+	if err != nil {
+		return nil, err
+	}
+	groupSet := make(map[string]struct{}, len(memberships))
+	for _, membership := range memberships {
+		group := strings.TrimSpace(membership.AllowedGroup)
+		if group == "" {
+			group = VirtualMembershipDefaultAllowedGroup
+		}
+		groupSet[group] = struct{}{}
+	}
+	groups := make([]string, 0, len(groupSet))
+	for group := range groupSet {
+		groups = append(groups, group)
+	}
+	sort.Strings(groups)
+	return groups, nil
 }
 
 func (p *VirtualMembershipPlan) Validate() error {
@@ -184,7 +247,15 @@ func ListVirtualMembershipPlans(includeDisabled bool) ([]*VirtualMembershipPlan,
 		query = query.Where("enabled = ?", true)
 	}
 	var plans []*VirtualMembershipPlan
-	return plans, query.Find(&plans).Error
+	if err := query.Find(&plans).Error; err != nil {
+		return nil, err
+	}
+	for _, plan := range plans {
+		if plan != nil && strings.TrimSpace(plan.AllowedGroup) == "" {
+			plan.AllowedGroup = VirtualMembershipDefaultAllowedGroup
+		}
+	}
+	return plans, nil
 }
 
 func GetVirtualMembershipPlanById(planId int) (*VirtualMembershipPlan, error) {
