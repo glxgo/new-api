@@ -1,11 +1,13 @@
 package model
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
@@ -84,6 +86,15 @@ func TestVirtualMembershipPlanDefaultsToDedicatedGroup(t *testing.T) {
 
 func setupVirtualMembershipTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
+	previousRatio := ratio_setting.GroupRatio2JSONString()
+	common.OptionMapRWMutex.Lock()
+	previousOptionMap := common.OptionMap
+	isolatedOptionMap := make(map[string]string, len(previousOptionMap))
+	for key, value := range previousOptionMap {
+		isolatedOptionMap[key] = value
+	}
+	common.OptionMap = isolatedOptionMap
+	common.OptionMapRWMutex.Unlock()
 	db, err := gorm.Open(
 		sqlite.Open(fmt.Sprintf("file:virtual-membership-%d?mode=memory&cache=shared", time.Now().UnixNano())),
 		&gorm.Config{},
@@ -91,12 +102,18 @@ func setupVirtualMembershipTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open test database: %v", err)
 	}
-	if err := db.AutoMigrate(&User{}, &VirtualMembershipPlan{}, &UserVirtualMembership{}); err != nil {
+	if err := db.AutoMigrate(&User{}, &Option{}, &VirtualMembershipPlan{}, &UserVirtualMembership{}); err != nil {
 		t.Fatalf("migrate test database: %v", err)
 	}
 	previousDB := DB
 	DB = db
-	t.Cleanup(func() { DB = previousDB })
+	t.Cleanup(func() {
+		DB = previousDB
+		_ = ratio_setting.UpdateGroupRatioByJSONString(previousRatio)
+		common.OptionMapRWMutex.Lock()
+		common.OptionMap = previousOptionMap
+		common.OptionMapRWMutex.Unlock()
+	})
 	return db
 }
 
@@ -164,6 +181,157 @@ func TestAdminGrantVirtualMembershipCreatesZeroMoneyAuditOrder(t *testing.T) {
 	}
 	if membership.ConcurrencyLimit != 5 || membership.RPMLimit != 30 {
 		t.Fatalf("membership limits = %d/%d", membership.ConcurrencyLimit, membership.RPMLimit)
+	}
+}
+
+func TestEnsureVirtualMembershipGroupRegisteredAddsNonSelectableRoutingGroup(t *testing.T) {
+	db := setupVirtualMembershipTestDB(t)
+	if err := db.AutoMigrate(&Option{}); err != nil {
+		t.Fatalf("migrate option: %v", err)
+	}
+	if err := db.Create(&Option{Key: "GroupRatio", Value: `{"default":1}`}).Error; err != nil {
+		t.Fatalf("create group ratio option: %v", err)
+	}
+	if err := db.Create(&Option{Key: "UserUsableGroups", Value: `{"default":"默认分组"}`}).Error; err != nil {
+		t.Fatalf("create usable groups option: %v", err)
+	}
+
+	previousRatio := ratio_setting.GroupRatio2JSONString()
+	common.OptionMapRWMutex.RLock()
+	previousOptionMap := common.OptionMap
+	common.OptionMapRWMutex.RUnlock()
+	t.Cleanup(func() {
+		_ = ratio_setting.UpdateGroupRatioByJSONString(previousRatio)
+		common.OptionMapRWMutex.Lock()
+		common.OptionMap = previousOptionMap
+		common.OptionMapRWMutex.Unlock()
+	})
+	common.OptionMapRWMutex.Lock()
+	common.OptionMap = nil
+	common.OptionMapRWMutex.Unlock()
+
+	if err := EnsureVirtualMembershipGroupRegistered(VirtualMembershipDefaultAllowedGroup); err != nil {
+		t.Fatalf("register virtual membership group: %v", err)
+	}
+
+	var ratioOption Option
+	if err := db.First(&ratioOption, "`key` = ?", "GroupRatio").Error; err != nil {
+		t.Fatalf("load group ratio option: %v", err)
+	}
+	var ratios map[string]float64
+	if err := json.Unmarshal([]byte(ratioOption.Value), &ratios); err != nil {
+		t.Fatalf("decode group ratios: %v", err)
+	}
+	if ratios[VirtualMembershipDefaultAllowedGroup] != 1 {
+		t.Fatalf("membership group ratio = %v, want 1", ratios[VirtualMembershipDefaultAllowedGroup])
+	}
+	if !ratio_setting.ContainsGroupRatio(VirtualMembershipDefaultAllowedGroup) {
+		t.Fatal("membership group was not refreshed in memory")
+	}
+
+	var usableOption Option
+	if err := db.First(&usableOption, "`key` = ?", "UserUsableGroups").Error; err != nil {
+		t.Fatalf("load usable groups option: %v", err)
+	}
+	var usable map[string]string
+	if err := json.Unmarshal([]byte(usableOption.Value), &usable); err != nil {
+		t.Fatalf("decode usable groups: %v", err)
+	}
+	if _, exists := usable[VirtualMembershipDefaultAllowedGroup]; exists {
+		t.Fatal("membership-only group must not become globally selectable")
+	}
+}
+
+func TestAdminDeleteVirtualMembershipUnbindsTokensAndPreservesAudit(t *testing.T) {
+	db := setupVirtualMembershipTestDB(t)
+	if err := db.AutoMigrate(&Token{}, &VirtualMembershipPreConsumeRecord{}); err != nil {
+		t.Fatalf("migrate delete dependencies: %v", err)
+	}
+	user := User{Username: "delete-member", Status: common.UserStatusEnabled}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	membership := UserVirtualMembership{
+		UserId: user.Id, PlanId: 1, PlanTitle: "GPT Plus", PlanCode: "plus",
+		GroupSize: 1, WeeklyQuota: 50_000_000, Status: VirtualMembershipStatusActive,
+	}
+	if err := db.Create(&membership).Error; err != nil {
+		t.Fatalf("create membership: %v", err)
+	}
+	token := Token{
+		UserId: user.Id, Name: "member-key", Key: "delete-member-key",
+		Group: VirtualMembershipDefaultAllowedGroup, VirtualMembershipId: membership.Id,
+	}
+	if err := db.Create(&token).Error; err != nil {
+		t.Fatalf("create token: %v", err)
+	}
+	audit := VirtualMembershipPreConsumeRecord{
+		RequestId: "settled-delete-audit", MembershipId: membership.Id, UserId: user.Id,
+		PreConsumed: 100, FinalQuota: 100, Status: VirtualMembershipRecordSettled,
+	}
+	if err := db.Create(&audit).Error; err != nil {
+		t.Fatalf("create settled audit: %v", err)
+	}
+
+	unbound, err := AdminDeleteVirtualMembership(membership.Id)
+	if err != nil {
+		t.Fatalf("delete membership: %v", err)
+	}
+	if unbound != 1 {
+		t.Fatalf("unbound tokens = %d, want 1", unbound)
+	}
+	var membershipCount int64
+	if err := db.Model(&UserVirtualMembership{}).Where("id = ?", membership.Id).Count(&membershipCount).Error; err != nil {
+		t.Fatalf("count membership: %v", err)
+	}
+	if membershipCount != 0 {
+		t.Fatalf("membership count = %d, want 0", membershipCount)
+	}
+	var updatedToken Token
+	if err := db.First(&updatedToken, token.Id).Error; err != nil {
+		t.Fatalf("load token: %v", err)
+	}
+	if updatedToken.VirtualMembershipId != 0 || updatedToken.Group != VirtualMembershipDefaultAllowedGroup {
+		t.Fatalf("token binding/group = %d/%q", updatedToken.VirtualMembershipId, updatedToken.Group)
+	}
+	var auditCount int64
+	if err := db.Model(&VirtualMembershipPreConsumeRecord{}).Where("id = ?", audit.Id).Count(&auditCount).Error; err != nil {
+		t.Fatalf("count audit: %v", err)
+	}
+	if auditCount != 1 {
+		t.Fatalf("audit count = %d, want 1", auditCount)
+	}
+}
+
+func TestAdminDeleteVirtualMembershipBlocksPendingSettlement(t *testing.T) {
+	db := setupVirtualMembershipTestDB(t)
+	if err := db.AutoMigrate(&Token{}, &VirtualMembershipPreConsumeRecord{}); err != nil {
+		t.Fatalf("migrate delete dependencies: %v", err)
+	}
+	membership := UserVirtualMembership{
+		UserId: 7, PlanId: 1, PlanTitle: "GPT Plus", PlanCode: "plus",
+		GroupSize: 1, WeeklyQuota: 50_000_000, Status: VirtualMembershipStatusActive,
+	}
+	if err := db.Create(&membership).Error; err != nil {
+		t.Fatalf("create membership: %v", err)
+	}
+	pending := VirtualMembershipPreConsumeRecord{
+		RequestId: "pending-delete-audit", MembershipId: membership.Id, UserId: membership.UserId,
+		PreConsumed: 100, Status: VirtualMembershipRecordPending,
+	}
+	if err := db.Create(&pending).Error; err != nil {
+		t.Fatalf("create pending audit: %v", err)
+	}
+
+	if _, err := AdminDeleteVirtualMembership(membership.Id); err == nil {
+		t.Fatal("delete should fail while a settlement is pending")
+	}
+	var membershipCount int64
+	if err := db.Model(&UserVirtualMembership{}).Where("id = ?", membership.Id).Count(&membershipCount).Error; err != nil {
+		t.Fatalf("count membership: %v", err)
+	}
+	if membershipCount != 1 {
+		t.Fatalf("membership count = %d, want 1", membershipCount)
 	}
 }
 

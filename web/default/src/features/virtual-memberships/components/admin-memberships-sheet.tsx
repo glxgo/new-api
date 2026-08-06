@@ -23,11 +23,13 @@ import {
   Gauge,
   RefreshCw,
   Search,
+  Trash2,
   UserRound,
   UserPlus,
   Users,
   WalletCards,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { formatQuotaAsUSD } from '@/lib/currency'
 import { formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -57,11 +59,16 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
   sideDrawerContentClassName,
   sideDrawerHeaderClassName,
 } from '@/components/drawer-layout'
-import { getAdminVirtualMemberships } from '@/features/virtual-membership/api'
+import {
+  deleteAdminVirtualMembership,
+  getAdminVirtualMemberships,
+} from '@/features/virtual-membership/api'
+import type { AdminVirtualMembership } from '@/features/virtual-membership/types'
 import { GrantMembershipDialog } from './grant-membership-dialog'
 
 type MembershipStatus = 'all' | 'active' | 'expired' | 'cancelled'
@@ -168,6 +175,9 @@ export function AdminMembershipsSheet({
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<MembershipStatus>('all')
   const [grantOpen, setGrantOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] =
+    useState<AdminVirtualMembership | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['admin-virtual-memberships'],
     queryFn: getAdminVirtualMemberships,
@@ -198,6 +208,31 @@ export function AdminMembershipsSheet({
   const activeRemaining = memberships
     .filter((membership) => membership.status === 'active')
     .reduce((sum, membership) => sum + membership.weekly_remaining, 0)
+
+  const deleteMembership = async () => {
+    if (!deleteTarget || deleting) return
+    setDeleting(true)
+    try {
+      const result = await deleteAdminVirtualMembership(deleteTarget.id)
+      if (!result.success) {
+        toast.error(result.message || '删除虚拟会员失败')
+        return
+      }
+      const unbound = result.data?.unbound_tokens ?? 0
+      toast.success(
+        unbound > 0
+          ? `虚拟会员已删除，已解除 ${unbound} 个 API Key 的会员绑定`
+          : '虚拟会员已删除'
+      )
+      setDeleteTarget(null)
+      await refetch()
+    } catch {
+      // The shared API interceptor presents backend failures, including a
+      // membership that still has an in-flight settlement.
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   return (
     <>
@@ -375,12 +410,24 @@ export function AdminMembershipsSheet({
                             </p>
                           </TableCell>
                           <TableCell className='pr-4 text-right align-top'>
-                            <Badge
-                              variant='outline'
-                              className={meta?.className}
-                            >
-                              {meta?.label || membership.status}
-                            </Badge>
+                            <div className='flex flex-col items-end gap-2'>
+                              <Badge
+                                variant='outline'
+                                className={meta?.className}
+                              >
+                                {meta?.label || membership.status}
+                              </Badge>
+                              <Button
+                                type='button'
+                                variant='ghost'
+                                size='sm'
+                                className='text-destructive hover:bg-destructive/10 hover:text-destructive h-7 px-2 text-xs'
+                                onClick={() => setDeleteTarget(membership)}
+                              >
+                                <Trash2 className='size-3.5' />
+                                删除
+                              </Button>
+                            </div>
                             {membership.user_deleted && (
                               <p className='text-destructive mt-1 text-[10px]'>
                                 用户已删除
@@ -407,6 +454,46 @@ export function AdminMembershipsSheet({
         onSuccess={async () => {
           await refetch()
         }}
+      />
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !deleting) setDeleteTarget(null)
+        }}
+        title='删除虚拟会员'
+        desc={
+          deleteTarget ? (
+            <div className='space-y-2 text-sm'>
+              <p>
+                确定删除
+                <span className='text-foreground mx-1 font-medium'>
+                  {deleteTarget.display_name ||
+                    deleteTarget.username ||
+                    `用户 #${deleteTarget.user_id}`}
+                </span>
+                的
+                <span className='text-foreground mx-1 font-medium'>
+                  {deleteTarget.plan_title}
+                </span>
+                吗？
+              </p>
+              <p>
+                会员实例会立即移除，购买订单和已结算用量审计仍保留。关联的 API
+                Key 会自动解除会员绑定。
+              </p>
+              <p className='text-destructive'>
+                API Key
+                的会员专属分组不会改成钱包分组；未重新绑定会员或修改分组前，请求会因无会员额度而失败，不会扣钱包余额。
+              </p>
+            </div>
+          ) : (
+            ''
+          )
+        }
+        confirmText='确认删除'
+        destructive
+        isLoading={deleting}
+        handleConfirm={() => void deleteMembership()}
       />
     </>
   )

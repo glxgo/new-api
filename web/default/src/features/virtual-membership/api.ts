@@ -95,3 +95,12 @@ export async function grantAdminVirtualMembership(data: {
   const res = await api.post('/api/virtual-membership/admin/memberships', data)
   return res.data
 }
+
+export async function deleteAdminVirtualMembership(
+  membershipId: number
+): Promise<ApiResponse<{ unbound_tokens: number }>> {
+  const res = await api.delete(
+    `/api/virtual-membership/admin/memberships/${membershipId}`
+  )
+  return res.data
+}

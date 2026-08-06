@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"gorm.io/gorm"
 )
 
@@ -340,6 +342,13 @@ func SaveVirtualMembershipPlan(plan *VirtualMembershipPlan) error {
 	if err := plan.Validate(); err != nil {
 		return err
 	}
+	// Channel editors and administrator group settings are backed by
+	// GroupRatio, while virtual memberships keep their entitlement group on
+	// the plan snapshot. Register the routing group without adding it to
+	// UserUsableGroups, so only users with an active membership can select it.
+	if err := EnsureVirtualMembershipGroupRegistered(plan.AllowedGroup); err != nil {
+		return err
+	}
 	return DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(plan).Error; err != nil {
 			return err
@@ -349,6 +358,50 @@ func SaveVirtualMembershipPlan(plan *VirtualMembershipPlan) error {
 		}
 		return syncVirtualMembershipFiveHourEntitlementsTx(tx, plan)
 	})
+}
+
+// EnsureVirtualMembershipGroupRegistered makes a membership entitlement group
+// available to channel/group administration. It deliberately does not add the
+// group to UserUsableGroups: membership holders receive it dynamically through
+// GetUserGroups, while ordinary users must not be able to select it.
+func EnsureVirtualMembershipGroupRegistered(group string) error {
+	group = strings.TrimSpace(group)
+	if group == "" {
+		group = VirtualMembershipDefaultAllowedGroup
+	}
+
+	var option Option
+	result := DB.Where(optionKeyWhereClause(), "GroupRatio").First(&option)
+	ratios := make(map[string]float64)
+	if result.Error == nil && strings.TrimSpace(option.Value) != "" {
+		if err := json.Unmarshal([]byte(option.Value), &ratios); err != nil {
+			return fmt.Errorf("解析分组倍率配置失败: %w", err)
+		}
+	} else if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		for name, ratio := range ratio_setting.GetGroupRatioCopy() {
+			ratios[name] = ratio
+		}
+	} else if result.Error != nil {
+		return result.Error
+	}
+
+	if _, exists := ratios[group]; exists {
+		// Keep the runtime map synchronized when this helper is called outside
+		// the normal option-loading startup sequence.
+		if !ratio_setting.ContainsGroupRatio(group) && option.Value != "" {
+			return updateOptionMap("GroupRatio", option.Value)
+		}
+		return nil
+	}
+	ratios[group] = 1
+	value, err := json.Marshal(ratios)
+	if err != nil {
+		return err
+	}
+	// Use the checked bulk writer rather than UpdateOption: the latter keeps
+	// legacy best-effort database writes and can report success after a failed
+	// Save, which would make the group disappear again after a restart.
+	return UpdateOptionsBulk(map[string]string{"GroupRatio": string(value)})
 }
 
 // syncVirtualMembershipFiveHourEntitlementsTx applies the current plan's
@@ -822,6 +875,59 @@ func ListAdminVirtualMemberships() ([]*AdminVirtualMembershipRecord, error) {
 	return records, err
 }
 
+// AdminDeleteVirtualMembership removes an entitlement while preserving its
+// order and settled usage audit records. Any bound API keys are detached in
+// the same transaction. An in-flight pre-consumption blocks deletion because
+// its settlement still needs the membership ledger row.
+func AdminDeleteVirtualMembership(membershipId int) (int64, error) {
+	if membershipId <= 0 {
+		return 0, errors.New("虚拟会员不存在")
+	}
+	var unboundTokens int64
+	var tokenKeys []string
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var membership UserVirtualMembership
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&membership, membershipId).Error; err != nil {
+			return err
+		}
+
+		var pendingCount int64
+		if err := tx.Model(&VirtualMembershipPreConsumeRecord{}).
+			Where("membership_id = ? AND status = ?", membershipId, VirtualMembershipRecordPending).
+			Count(&pendingCount).Error; err != nil {
+			return err
+		}
+		if pendingCount > 0 {
+			return errors.New("该会员存在正在结算的请求，请稍后再删除")
+		}
+
+		if err := tx.Model(&Token{}).
+			Where("virtual_membership_id = ?", membershipId).
+			Pluck("key", &tokenKeys).Error; err != nil {
+			return err
+		}
+		result := tx.Model(&Token{}).
+			Where("virtual_membership_id = ?", membershipId).
+			Update("virtual_membership_id", 0)
+		if result.Error != nil {
+			return result.Error
+		}
+		unboundTokens = result.RowsAffected
+		return tx.Where("id = ?", membershipId).Delete(&UserVirtualMembership{}).Error
+	})
+	if err == nil && common.RedisEnabled {
+		for _, tokenKey := range tokenKeys {
+			if cacheErr := cacheDeleteToken(tokenKey); cacheErr != nil {
+				// Never log the token itself. The database commit remains the
+				// source of truth and the cache entry expires naturally if Redis
+				// is temporarily unavailable.
+				common.SysLog(fmt.Sprintf("删除虚拟会员 #%d 后清理 API Key 缓存失败: %v", membershipId, cacheErr))
+			}
+		}
+	}
+	return unboundTokens, err
+}
+
 func ListVirtualMembershipOrders(userId int) ([]*VirtualMembershipOrder, error) {
 	var orders []*VirtualMembershipOrder
 	query := DB.Order("id desc")
@@ -1171,6 +1277,17 @@ func ResetAllVirtualMemberships() (int64, error) {
 func EnsureVirtualMembershipMigrations() error {
 	if err := EnsureDefaultVirtualMembershipSetting(); err != nil {
 		return err
+	}
+	groups := []string{VirtualMembershipDefaultAllowedGroup}
+	var storedGroups []string
+	if err := DB.Model(&VirtualMembershipPlan{}).Distinct("allowed_group").Pluck("allowed_group", &storedGroups).Error; err != nil {
+		return err
+	}
+	groups = append(groups, storedGroups...)
+	for _, group := range groups {
+		if err := EnsureVirtualMembershipGroupRegistered(group); err != nil {
+			return err
+		}
 	}
 	var count int64
 	if err := DB.Model(&VirtualMembershipPlan{}).Count(&count).Error; err != nil {

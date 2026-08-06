@@ -323,6 +323,20 @@ func AdminGrantVirtualMembership(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"order_id": order.Id, "membership": item})
 }
 
+func AdminDeleteVirtualMembership(c *gin.Context) {
+	membershipId, _ := strconv.Atoi(c.Param("id"))
+	if membershipId <= 0 {
+		common.ApiErrorMsg(c, "无效的虚拟会员ID")
+		return
+	}
+	unboundTokens, err := model.AdminDeleteVirtualMembership(membershipId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"unbound_tokens": unboundTokens})
+}
+
 func AdminListVirtualMembershipOrders(c *gin.Context) {
 	userId, _ := strconv.Atoi(c.Query("user_id"))
 	orders, err := model.ListVirtualMembershipOrders(userId)

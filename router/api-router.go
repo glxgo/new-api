@@ -212,6 +212,7 @@ func SetApiRouter(router *gin.Engine) {
 			virtualMembershipAdminRoute.POST("/reset", controller.AdminResetVirtualMemberships)
 			virtualMembershipAdminRoute.GET("/memberships", controller.AdminListVirtualMemberships)
 			virtualMembershipAdminRoute.POST("/memberships", controller.AdminGrantVirtualMembership)
+			virtualMembershipAdminRoute.DELETE("/memberships/:id", controller.AdminDeleteVirtualMembership)
 			virtualMembershipAdminRoute.GET("/orders", controller.AdminListVirtualMembershipOrders)
 		}
 

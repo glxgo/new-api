@@ -337,6 +337,12 @@ func migrateLegacySensitiveWords() {
 func updateOptionMap(key string, value string) (err error) {
 	common.OptionMapRWMutex.Lock()
 	defer common.OptionMapRWMutex.Unlock()
+	// Database migrations can persist a newly introduced option before
+	// InitOptionMap has allocated the runtime map. Keep that startup path safe;
+	// InitOptionMap will still rebuild the complete map immediately afterwards.
+	if common.OptionMap == nil {
+		common.OptionMap = make(map[string]string)
+	}
 	common.OptionMap[key] = value
 
 	// 检查是否是模型配置 - 使用更规范的方式处理
