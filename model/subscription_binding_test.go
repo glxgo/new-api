@@ -49,6 +49,20 @@ func testSubscriptionPlan(title, group string) SubscriptionPlan {
 	}
 }
 
+func TestHasSubscriptionPlanByGroupReservesPackageGroup(t *testing.T) {
+	db := setupSubscriptionBindingTestDB(t)
+	plan := testSubscriptionPlan("package group", "package-only")
+	require.NoError(t, db.Create(&plan).Error)
+
+	reserved, err := HasSubscriptionPlanByGroup("package-only")
+	require.NoError(t, err)
+	require.True(t, reserved)
+
+	reserved, err = HasSubscriptionPlanByGroup("wallet-group")
+	require.NoError(t, err)
+	require.False(t, reserved)
+}
+
 func TestSubscriptionOrderSnapshotDoesNotDriftAfterPlanEdit(t *testing.T) {
 	db := setupSubscriptionBindingTestDB(t)
 	plan := testSubscriptionPlan("old terms", "team-a")

@@ -541,6 +541,10 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		model.NormalizeTokenSubscriptionMode(tokenBinding.SubscriptionMode) == model.TokenSubscriptionModeInstance &&
 		tokenBinding.SubscriptionId > 0
 	virtualBinding := tokenBinding != nil && tokenBinding.VirtualMembershipId > 0
+	subscriptionPlanGroup, planGroupErr := model.HasSubscriptionPlanByGroup(relayInfo.UsingGroup)
+	if planGroupErr != nil {
+		return nil, types.NewError(planGroupErr, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
+	}
 	subscriptionGroupBinding, groupBindingErr := model.HasActiveUserSubscriptionByGroup(relayInfo.UserId, relayInfo.UsingGroup)
 	if groupBindingErr != nil {
 		return nil, types.NewError(groupBindingErr, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
@@ -647,7 +651,7 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 
 	// 套餐限定分组是订阅额度专属入口，即使用户的全局计费偏好允许余额回退，
 	// 该分组也不能改走余额，避免套餐请求误扣钱包余额。
-	if subscriptionGroupBinding {
+	if subscriptionPlanGroup || subscriptionGroupBinding {
 		return trySubscription()
 	}
 

@@ -1322,6 +1322,23 @@ func HasActiveUserSubscriptionByGroup(userId int, group string) (bool, error) {
 	return count > 0, nil
 }
 
+// HasSubscriptionPlanByGroup reports whether a group is reserved by any
+// subscription plan. Such groups are subscription-only even when the current
+// user has no matching active subscription; wallet fallback must not bypass
+// the package-group boundary.
+func HasSubscriptionPlanByGroup(group string) (bool, error) {
+	if strings.TrimSpace(group) == "" {
+		return false, nil
+	}
+	var count int64
+	if err := DB.Model(&SubscriptionPlan{}).
+		Where("allowed_group = ?", group).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // GetActiveUserSubscriptionAllowedGroups 返回用户有效订阅绑定的 AllowedGroup 列表(去重, 供分组下拉/凭证用)。
 func GetActiveUserSubscriptionAllowedGroups(userId int) ([]string, error) {
 	if userId <= 0 {
