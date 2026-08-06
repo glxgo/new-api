@@ -147,7 +147,7 @@ func TestBuildResponsesStreamTerminalEventUpstreamFailed(t *testing.T) {
 	c.Set(common.RequestIdKey, "req-upstream-failed")
 	status := relaycommon.NewStreamStatus()
 	status.SetUpstreamTerminal(relaycommon.UpstreamTerminal{
-		EventType:      "response.failed",
+		EventType:      "error",
 		HTTPStatus:     200,
 		ResponseID:     "resp_failed_1",
 		ResponseStatus: "failed",
@@ -169,7 +169,7 @@ func TestBuildResponsesStreamTerminalEventUpstreamFailed(t *testing.T) {
 	if event == nil {
 		t.Fatal("event is nil")
 	}
-	if event.TerminalStatus != "upstream_failed" || event.UpstreamTerminalEvent != "response.failed" {
+	if event.TerminalStatus != "upstream_failed" || event.UpstreamTerminalEvent != "error" {
 		t.Fatalf("unexpected terminal classification: %#v", event)
 	}
 	if event.UpstreamHttpStatus != 200 || event.UpstreamResponseId != "resp_failed_1" || event.UpstreamResponseStatus != "failed" {

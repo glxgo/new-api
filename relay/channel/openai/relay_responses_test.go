@@ -131,6 +131,26 @@ func TestOaiResponsesStreamHandler_TopLevelResponseError(t *testing.T) {
 	require.Equal(t, "bad prompt", terminal.ErrorMessage)
 }
 
+func TestOaiResponsesStreamHandler_TopLevelErrorEventIsTerminal(t *testing.T) {
+	c, info, resp, _ := newResponsesStreamTest(t,
+		"data: {\"type\":\"error\",\"error\":{\"type\":\"server_error\",\"code\":\"upstream_overloaded\",\"message\":\"upstream overloaded\"}}\n\n")
+
+	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
+
+	require.Nil(t, usage)
+	require.NotNil(t, apiErr)
+	require.Equal(t, types.ErrorCode("upstream_overloaded"), apiErr.GetErrorCode())
+	require.Equal(t, http.StatusBadGateway, apiErr.StatusCode)
+	require.True(t, types.IsSkipRetryError(apiErr))
+	require.True(t, common.GetContextKeyBool(c, appconstant.ContextKeyRelayErrorAlreadyStreamed))
+	require.NotNil(t, info.StreamStatus)
+	require.Equal(t, relaycommon.StreamEndReasonHandlerStop, info.StreamStatus.EndReason)
+	terminal := info.StreamStatus.UpstreamTerminalSnapshot()
+	require.Equal(t, "error", terminal.EventType)
+	require.Equal(t, "upstream_overloaded", terminal.ErrorCode)
+	require.Equal(t, "upstream overloaded", terminal.ErrorMessage)
+}
+
 func TestOaiResponsesStreamHandler_CyberPolicyRewritesClientEvent(t *testing.T) {
 	oldInterception := common.CyberPolicyInterceptionEnabled
 	common.CyberPolicyInterceptionEnabled = true

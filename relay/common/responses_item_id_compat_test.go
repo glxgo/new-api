@@ -31,6 +31,21 @@ func TestNormalizeResponsesInputItemIDsRepairsKnownGenericIDs(t *testing.T) {
 	require.True(t, gjson.GetBytes(got, "custom.preserved").Bool())
 }
 
+func TestNormalizeResponsesInputItemIDsRepairsProviderResponseMessageIDs(t *testing.T) {
+	body := []byte(`{
+		"input":[
+			{"type":"message","id":"resp_0bfb033d1ff7a0ee016a72d0389fc4819bbb6ec2557d139e37_msg","role":"assistant","content":[]},
+			{"type":"function_call","id":"resp_0bfb033d1ff7a0ee016a72d0389fc4819bbb6ec2557d139e37_msg"}
+		]
+	}`)
+
+	got, report, err := NormalizeResponsesInputItemIDs(body)
+	require.NoError(t, err)
+	require.Equal(t, ResponsesInputItemIDNormalizationReport{Message: 1}, report)
+	require.Equal(t, "msg_0bfb033d1ff7a0ee016a72d0389fc4819bbb6ec2557d139e37_msg", gjson.GetBytes(got, "input.0.id").String())
+	require.Equal(t, "resp_0bfb033d1ff7a0ee016a72d0389fc4819bbb6ec2557d139e37_msg", gjson.GetBytes(got, "input.1.id").String())
+}
+
 func TestNormalizeResponsesInputItemIDsLeavesUnknownAndCanonicalIDsUntouched(t *testing.T) {
 	body := []byte(`{
 		"input":[

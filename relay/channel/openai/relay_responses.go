@@ -102,7 +102,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		if streamResponse.Response != nil && info.StreamStatus != nil {
 			info.StreamStatus.SetUpstreamResponseID(streamResponse.Response.ID)
 		}
-		if streamResponse.Type == "response.failed" || streamResponse.Type == "response.error" {
+		if streamResponse.Type == "error" || streamResponse.Type == "response.failed" || streamResponse.Type == "response.error" {
 			recordResponsesUpstreamTerminal(info, resp.StatusCode, streamResponse)
 			streamErr = responsesTerminalError(streamResponse, types.ErrorCodeUpstreamResponseFailed)
 			if common.CyberPolicyInterceptionEnabled && service.IsCyberPolicyError(streamErr) {

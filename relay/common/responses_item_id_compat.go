@@ -12,6 +12,28 @@ import (
 const responsesGenericItemIDPrefix = "item_"
 const ginKeyResponsesInputItemIDNormalization = "responses_input_item_id_normalization"
 
+// Some Responses-compatible providers build an assistant message ID from the
+// response ID (resp_<opaque>_msg) instead of using the required msg_ prefix.
+// Keep this deliberately narrow: only the observed alphanumeric form is
+// eligible, and only when the input item is known to be a message.
+func isSyntheticResponsesMessageID(id string) bool {
+	const responsePrefix = "resp_"
+	const messageSuffix = "_msg"
+	if !strings.HasPrefix(id, responsePrefix) || !strings.HasSuffix(id, messageSuffix) {
+		return false
+	}
+	opaque := id[len(responsePrefix) : len(id)-len(messageSuffix)]
+	if opaque == "" {
+		return false
+	}
+	for _, char := range opaque {
+		if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') && (char < '0' || char > '9') {
+			return false
+		}
+	}
+	return true
+}
+
 // ResponsesInputItemIDNormalizationReport contains only aggregate metadata;
 // it never exposes complete response item identifiers or request content.
 type ResponsesInputItemIDNormalizationReport struct {
@@ -45,11 +67,12 @@ func AppendResponsesInputItemIDNormalizationAdminInfo(c *gin.Context, adminInfo 
 	adminInfo["responses_input_item_id_normalization"] = report
 }
 
-// NormalizeResponsesInputItemIDs repairs a compatibility defect emitted by
-// some Responses-compatible providers: output items are assigned a generic
-// item_ ID even though the item type requires a typed prefix when the item is
-// replayed as input. Keep the opaque suffix and every other byte of the item;
-// only the proven reasoning and message cases are normalized.
+// NormalizeResponsesInputItemIDs repairs narrowly identified compatibility
+// defects emitted by some Responses-compatible providers: output items are
+// assigned a generic item_ ID, or a response-scoped resp_*_msg ID, even though
+// the item type requires a typed prefix when it is replayed as input. Keep the
+// opaque suffix and every other byte of the item; only the proven reasoning
+// and message cases are normalized.
 func NormalizeResponsesInputItemIDs(body []byte) ([]byte, ResponsesInputItemIDNormalizationReport, error) {
 	var report ResponsesInputItemIDNormalizationReport
 	input := gjson.GetBytes(body, "input")
@@ -65,27 +88,27 @@ func NormalizeResponsesInputItemIDs(body []byte) ([]byte, ResponsesInputItemIDNo
 	replacements := make([]replacement, 0)
 	for index, item := range input.Array() {
 		id := strings.TrimSpace(item.Get("id").String())
-		if !strings.HasPrefix(id, responsesGenericItemIDPrefix) || len(id) == len(responsesGenericItemIDPrefix) {
-			continue
-		}
-
 		itemType := strings.TrimSpace(item.Get("type").String())
 		if itemType == "" && strings.TrimSpace(item.Get("role").String()) != "" {
 			itemType = "message"
 		}
 
-		var typedPrefix string
-		switch itemType {
-		case "reasoning":
-			typedPrefix = "rs_"
-		case "message":
-			typedPrefix = "msg_"
+		var normalizedID string
+		switch {
+		case itemType == "message" && isSyntheticResponsesMessageID(id):
+			// Replace only the invalid leading response prefix. Retaining the
+			// opaque suffix avoids collapsing two provider-generated IDs.
+			normalizedID = "msg_" + strings.TrimPrefix(id, "resp_")
+		case strings.HasPrefix(id, responsesGenericItemIDPrefix) && len(id) > len(responsesGenericItemIDPrefix) && itemType == "reasoning":
+			normalizedID = "rs_" + strings.TrimPrefix(id, responsesGenericItemIDPrefix)
+		case strings.HasPrefix(id, responsesGenericItemIDPrefix) && len(id) > len(responsesGenericItemIDPrefix) && itemType == "message":
+			normalizedID = "msg_" + strings.TrimPrefix(id, responsesGenericItemIDPrefix)
 		default:
 			continue
 		}
 		replacements = append(replacements, replacement{
 			path: fmt.Sprintf("input.%d.id", index),
-			id:   typedPrefix + strings.TrimPrefix(id, responsesGenericItemIDPrefix),
+			id:   normalizedID,
 			kind: itemType,
 		})
 	}

@@ -134,7 +134,7 @@ func buildResponsesStreamTerminalEvent(c *gin.Context, info *relaycommon.RelayIn
 		terminalStatus = "client_gone"
 	case upstreamTerminal.EventType == "response.incomplete":
 		terminalStatus = "incomplete"
-	case upstreamTerminal.EventType == "response.failed" || upstreamTerminal.EventType == "response.error":
+	case upstreamTerminal.EventType == "error" || upstreamTerminal.EventType == "response.failed" || upstreamTerminal.EventType == "response.error":
 		terminalStatus = "upstream_failed"
 	}
 
