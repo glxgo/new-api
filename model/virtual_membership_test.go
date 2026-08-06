@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
@@ -90,13 +91,80 @@ func setupVirtualMembershipTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open test database: %v", err)
 	}
-	if err := db.AutoMigrate(&VirtualMembershipPlan{}, &UserVirtualMembership{}); err != nil {
+	if err := db.AutoMigrate(&User{}, &VirtualMembershipPlan{}, &UserVirtualMembership{}); err != nil {
 		t.Fatalf("migrate test database: %v", err)
 	}
 	previousDB := DB
 	DB = db
 	t.Cleanup(func() { DB = previousDB })
 	return db
+}
+
+func TestListAdminVirtualMembershipsIncludesUserAndRefreshesDueQuota(t *testing.T) {
+	db := setupVirtualMembershipTestDB(t)
+	now := common.GetTimestamp()
+	user := User{Username: "member-owner", DisplayName: "会员用户", Email: "member@example.com"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	membership := UserVirtualMembership{
+		UserId: user.Id, PlanId: 1, PlanTitle: "GPT Plus", PlanCode: "plus",
+		GroupSize: 1, WeeklyQuota: 50_000_000, WeeklyUsed: 10_000_000,
+		WeeklyResetAt: now - 1, StartTime: now - 86400, EndTime: now + 86400,
+		Status: VirtualMembershipStatusActive,
+	}
+	if err := db.Create(&membership).Error; err != nil {
+		t.Fatalf("create membership: %v", err)
+	}
+
+	records, err := ListAdminVirtualMemberships()
+	if err != nil {
+		t.Fatalf("list admin memberships: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("record count = %d, want 1", len(records))
+	}
+	record := records[0]
+	if record.Username != user.Username || record.DisplayName != user.DisplayName || record.Email != user.Email {
+		t.Fatalf("user identity = %+v", record)
+	}
+	if record.Membership.WeeklyUsed != 0 || record.Membership.WeeklyResetAt <= now {
+		t.Fatalf("membership quota was not refreshed: %+v", record.Membership)
+	}
+}
+
+func TestAdminGrantVirtualMembershipCreatesZeroMoneyAuditOrder(t *testing.T) {
+	db := setupVirtualMembershipTestDB(t)
+	if err := db.AutoMigrate(&VirtualMembershipOrder{}); err != nil {
+		t.Fatalf("migrate order: %v", err)
+	}
+	user := User{Username: "grant-owner", Status: common.UserStatusEnabled}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	plan := VirtualMembershipPlan{
+		Code: "pro5x", Title: "GPT Pro 5x", PriceAmount: 199,
+		TwoGroupPrice: 120, DurationDays: 30, WeeklyQuota: 100_000_000,
+		FiveHourEnabled: true, FiveHourQuota: 20_000_000,
+		ConcurrencyLimit: 10, RPMLimit: 60, Enabled: true,
+	}
+	if err := db.Create(&plan).Error; err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	order, membership, err := AdminGrantVirtualMembership(user.Id, plan.Id, 2)
+	if err != nil {
+		t.Fatalf("grant membership: %v", err)
+	}
+	if order.Money != 0 || order.PaymentProvider != VirtualMembershipAdminGrant || order.Status != VirtualMembershipOrderSuccess {
+		t.Fatalf("audit order = %+v", order)
+	}
+	if membership.UserId != user.Id || membership.GroupSize != 2 || membership.WeeklyQuota != plan.WeeklyQuota/2 {
+		t.Fatalf("membership = %+v", membership)
+	}
+	if membership.ConcurrencyLimit != 5 || membership.RPMLimit != 30 {
+		t.Fatalf("membership limits = %d/%d", membership.ConcurrencyLimit, membership.RPMLimit)
+	}
 }
 
 func TestSaveVirtualMembershipPlanSyncsFiveHourPolicyToActiveMemberships(t *testing.T) {

@@ -1,6 +1,7 @@
 import { api } from '@/lib/api'
 import type { ApiResponse } from '@/features/subscriptions/types'
 import type {
+  AdminVirtualMembership,
   UserVirtualMembership,
   VirtualMembershipPageData,
   VirtualMembershipPlan,
@@ -74,5 +75,23 @@ export async function resetAdminVirtualMemberships(): Promise<
   ApiResponse<{ affected: number; next_reset_at: number }>
 > {
   const res = await api.post('/api/virtual-membership/admin/reset')
+  return res.data
+}
+
+export async function getAdminVirtualMemberships(): Promise<
+  ApiResponse<AdminVirtualMembership[]>
+> {
+  const res = await api.get('/api/virtual-membership/admin/memberships')
+  return res.data
+}
+
+export async function grantAdminVirtualMembership(data: {
+  user_id: number
+  plan_id: number
+  group_size: number
+}): Promise<
+  ApiResponse<{ order_id: number; membership: UserVirtualMembership }>
+> {
+  const res = await api.post('/api/virtual-membership/admin/memberships', data)
   return res.data
 }

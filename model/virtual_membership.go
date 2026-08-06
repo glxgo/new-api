@@ -27,6 +27,7 @@ const (
 	VirtualMembershipRecordPending   = "pending"
 	VirtualMembershipRecordSettled   = "settled"
 	VirtualMembershipRecordRefunded  = "refunded"
+	VirtualMembershipAdminGrant      = "admin_grant"
 )
 
 type VirtualMembershipSetting struct {
@@ -111,6 +112,16 @@ type UserVirtualMembership struct {
 	AllowedGroup     string `json:"allowed_group" gorm:"type:varchar(64);default:''"`
 	CreatedAt        int64  `json:"created_at" gorm:"bigint"`
 	UpdatedAt        int64  `json:"updated_at" gorm:"bigint"`
+}
+
+// AdminVirtualMembershipRecord combines a purchased entitlement with the
+// minimum user identity required by the administrator membership list.
+type AdminVirtualMembershipRecord struct {
+	Membership  *UserVirtualMembership
+	Username    string
+	DisplayName string
+	Email       string
+	UserDeleted bool
 }
 
 type VirtualMembershipPreConsumeRecord struct {
@@ -520,6 +531,53 @@ func CreateVirtualMembershipEpayOrder(userId, planId, groupSize int, tradeNo, pa
 	return order, err
 }
 
+// AdminGrantVirtualMembership creates a paid-equivalent membership without
+// charging the user. A zero-money success order is retained as the audit trail.
+func AdminGrantVirtualMembership(userId, planId, groupSize int) (*VirtualMembershipOrder, *UserVirtualMembership, error) {
+	if userId <= 0 || planId <= 0 {
+		return nil, nil, errors.New("用户或虚拟会员方案无效")
+	}
+	if groupSize == 0 {
+		groupSize = 1
+	}
+	var order *VirtualMembershipOrder
+	var membership UserVirtualMembership
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var user User
+		if err := tx.Select("id", "status").First(&user, userId).Error; err != nil {
+			return errors.New("用户不存在")
+		}
+		if user.Status != common.UserStatusEnabled {
+			return errors.New("用户当前未启用")
+		}
+
+		tradeNo := fmt.Sprintf("vm-admin-%d-%s", time.Now().UnixNano(), common.GetRandomString(6))
+		var err error
+		order, err = createVirtualMembershipOrderTx(
+			tx, userId, planId, groupSize, tradeNo,
+			VirtualMembershipAdminGrant, VirtualMembershipAdminGrant,
+			VirtualMembershipOrderSuccess,
+		)
+		if err != nil {
+			return err
+		}
+		order.Money = 0
+		order.CompleteTime = common.GetTimestamp()
+		order.ProviderPayload = "granted_by_admin"
+		if err := tx.Save(order).Error; err != nil {
+			return err
+		}
+		if err := createVirtualMembershipFromOrderTx(tx, order); err != nil {
+			return err
+		}
+		return tx.Where("order_id = ?", order.Id).First(&membership).Error
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return order, &membership, nil
+}
+
 func GetVirtualMembershipOrderByTradeNo(tradeNo string) *VirtualMembershipOrder {
 	if strings.TrimSpace(tradeNo) == "" {
 		return nil
@@ -711,6 +769,57 @@ func ListUserVirtualMemberships(userId int) ([]*UserVirtualMembership, error) {
 		return nil
 	})
 	return memberships, err
+}
+
+// ListAdminVirtualMemberships returns every purchased membership with its
+// owner. Lifecycle and quota resets are applied before the values are exposed
+// so the administrator sees the same current balance as the user dashboard.
+func ListAdminVirtualMemberships() ([]*AdminVirtualMembershipRecord, error) {
+	records := make([]*AdminVirtualMembershipRecord, 0)
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var memberships []*UserVirtualMembership
+		if err := tx.Order("id desc").Find(&memberships).Error; err != nil {
+			return err
+		}
+
+		now := common.GetTimestamp()
+		userIds := make([]int, 0, len(memberships))
+		seenUserIds := make(map[int]struct{}, len(memberships))
+		for _, membership := range memberships {
+			if err := virtualMembershipResetIfDue(tx, membership, now); err != nil {
+				return err
+			}
+			if _, exists := seenUserIds[membership.UserId]; !exists {
+				seenUserIds[membership.UserId] = struct{}{}
+				userIds = append(userIds, membership.UserId)
+			}
+		}
+
+		usersById := make(map[int]User, len(userIds))
+		if len(userIds) > 0 {
+			var users []User
+			if err := tx.Unscoped().Select("id", "username", "display_name", "email", "deleted_at").
+				Where("id IN ?", userIds).Find(&users).Error; err != nil {
+				return err
+			}
+			for _, user := range users {
+				usersById[user.Id] = user
+			}
+		}
+
+		for _, membership := range memberships {
+			user := usersById[membership.UserId]
+			records = append(records, &AdminVirtualMembershipRecord{
+				Membership:  membership,
+				Username:    user.Username,
+				DisplayName: user.DisplayName,
+				Email:       user.Email,
+				UserDeleted: user.DeletedAt.Valid,
+			})
+		}
+		return nil
+	})
+	return records, err
 }
 
 func ListVirtualMembershipOrders(userId int) ([]*VirtualMembershipOrder, error) {

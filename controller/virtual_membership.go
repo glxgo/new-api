@@ -275,6 +275,54 @@ func AdminResetVirtualMemberships(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"affected": affected, "next_reset_at": common.GetTimestamp() + 7*86400})
 }
 
+func AdminListVirtualMemberships(c *gin.Context) {
+	records, err := model.ListAdminVirtualMemberships()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	items := make([]gin.H, 0, len(records))
+	for _, record := range records {
+		if record == nil || record.Membership == nil {
+			continue
+		}
+		item := virtualMembershipInstanceResponse(record.Membership)
+		item["user_id"] = record.Membership.UserId
+		item["username"] = record.Username
+		item["display_name"] = record.DisplayName
+		item["email"] = record.Email
+		item["user_deleted"] = record.UserDeleted
+		items = append(items, item)
+	}
+	common.ApiSuccess(c, items)
+}
+
+func AdminGrantVirtualMembership(c *gin.Context) {
+	if !requirePaymentCompliance(c) {
+		return
+	}
+	var req struct {
+		UserId    int `json:"user_id"`
+		PlanId    int `json:"plan_id"`
+		GroupSize int `json:"group_size"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.UserId <= 0 || req.PlanId <= 0 {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	if req.GroupSize == 0 {
+		req.GroupSize = 1
+	}
+	order, membership, err := model.AdminGrantVirtualMembership(req.UserId, req.PlanId, req.GroupSize)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	item := virtualMembershipInstanceResponse(membership)
+	item["user_id"] = req.UserId
+	common.ApiSuccess(c, gin.H{"order_id": order.Id, "membership": item})
+}
+
 func AdminListVirtualMembershipOrders(c *gin.Context) {
 	userId, _ := strconv.Atoi(c.Query("user_id"))
 	orders, err := model.ListVirtualMembershipOrders(userId)

@@ -210,6 +210,8 @@ func SetApiRouter(router *gin.Engine) {
 			virtualMembershipAdminRoute.GET("/setting", controller.AdminGetVirtualMembershipSetting)
 			virtualMembershipAdminRoute.PUT("/setting", controller.AdminSaveVirtualMembershipSetting)
 			virtualMembershipAdminRoute.POST("/reset", controller.AdminResetVirtualMemberships)
+			virtualMembershipAdminRoute.GET("/memberships", controller.AdminListVirtualMemberships)
+			virtualMembershipAdminRoute.POST("/memberships", controller.AdminGrantVirtualMembership)
 			virtualMembershipAdminRoute.GET("/orders", controller.AdminListVirtualMembershipOrders)
 		}
 

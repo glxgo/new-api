@@ -62,6 +62,14 @@ export interface UserVirtualMembership {
   allowed_group?: string
 }
 
+export interface AdminVirtualMembership extends UserVirtualMembership {
+  user_id: number
+  username: string
+  display_name?: string
+  email?: string
+  user_deleted?: boolean
+}
+
 export interface VirtualMembershipPageData {
   announcement: string
   enabled: boolean
