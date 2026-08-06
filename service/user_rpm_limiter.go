@@ -41,11 +41,22 @@ type localRPMBucket struct {
 
 var localUserRPM = struct {
 	sync.Mutex
-	buckets map[int]*localRPMBucket
-}{buckets: make(map[int]*localRPMBucket)}
+	buckets map[string]*localRPMBucket
+}{buckets: make(map[string]*localRPMBucket)}
 
 func userRPMKey(userId int) string {
 	return "rate_limit:user_rpm:" + strconv.Itoa(userId)
+}
+
+// UserRPMKey is the stable Redis/local key for a user's normal RPM pool.
+func UserRPMKey(userId int) string {
+	return userRPMKey(userId)
+}
+
+// VirtualMembershipRPMKey is intentionally separate from the normal user
+// pool so the two limits never consume each other's requests.
+func VirtualMembershipRPMKey(userId, membershipId int) string {
+	return userRPMKey(userId) + ":virtual:" + strconv.Itoa(membershipId)
 }
 
 func nextUserRPMRequestId() string {
@@ -56,10 +67,16 @@ func nextUserRPMRequestId() string {
 // one-minute window. Channel retries happen after this middleware and therefore
 // do not consume additional RPM slots.
 func AcquireUserRPM(userId, limit int) (bool, int) {
+	return AcquireUserRPMByKey(userRPMKey(userId), limit)
+}
+
+// AcquireUserRPMByKey acquires one request from an arbitrary rolling-RPM
+// pool. Keeping the pool key separate lets a membership key have its own RPM
+// budget without sharing the user's normal wallet/API-key budget.
+func AcquireUserRPMByKey(key string, limit int) (bool, int) {
 	if limit <= 0 {
 		return true, 0
 	}
-	key := userRPMKey(userId)
 	if common.RedisEnabled && common.RDB != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		result, err := common.RDB.Eval(ctx, acquireRollingRPMScript, []string{key}, limit, userRPMWindow.Milliseconds(), nextUserRPMRequestId()).Int64Slice()
@@ -69,16 +86,20 @@ func AcquireUserRPM(userId, limit int) (bool, int) {
 		}
 		logger.LogWarn(nil, fmt.Sprintf("Redis user RPM limiter unavailable for %s, using local fallback: %v", key, err))
 	}
-	return acquireLocalUserRPM(userId, limit, time.Now())
+	return acquireLocalUserRPMByKey(key, limit, time.Now())
 }
 
 func acquireLocalUserRPM(userId, limit int, now time.Time) (bool, int) {
+	return acquireLocalUserRPMByKey(userRPMKey(userId), limit, now)
+}
+
+func acquireLocalUserRPMByKey(key string, limit int, now time.Time) (bool, int) {
 	localUserRPM.Lock()
 	defer localUserRPM.Unlock()
-	bucket := localUserRPM.buckets[userId]
+	bucket := localUserRPM.buckets[key]
 	if bucket == nil {
 		bucket = &localRPMBucket{}
-		localUserRPM.buckets[userId] = bucket
+		localUserRPM.buckets[key] = bucket
 	}
 	cutoff := now.Add(-userRPMWindow)
 	kept := bucket.requests[:0]
@@ -96,7 +117,12 @@ func acquireLocalUserRPM(userId, limit int, now time.Time) (bool, int) {
 }
 
 func GetUserRPM(userId int) int {
-	key := userRPMKey(userId)
+	return GetRPMByKey(userRPMKey(userId))
+}
+
+// GetRPMByKey returns the current rolling request count for an arbitrary
+// capacity pool.
+func GetRPMByKey(key string) int {
 	if common.RedisEnabled && common.RDB != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		now := time.Now().UnixMilli()
@@ -109,13 +135,17 @@ func GetUserRPM(userId int) int {
 			return int(countCmd.Val())
 		}
 	}
-	return getLocalUserRPMCount(userId, time.Now())
+	return getLocalUserRPMCountByKey(key, time.Now())
 }
 
 func getLocalUserRPMCount(userId int, now time.Time) int {
+	return getLocalUserRPMCountByKey(userRPMKey(userId), now)
+}
+
+func getLocalUserRPMCountByKey(key string, now time.Time) int {
 	localUserRPM.Lock()
 	defer localUserRPM.Unlock()
-	bucket := localUserRPM.buckets[userId]
+	bucket := localUserRPM.buckets[key]
 	if bucket == nil {
 		return 0
 	}
@@ -132,6 +162,6 @@ func getLocalUserRPMCount(userId int, now time.Time) int {
 
 func resetLocalUserRPMForTest() {
 	localUserRPM.Lock()
-	localUserRPM.buckets = make(map[int]*localRPMBucket)
+	localUserRPM.buckets = make(map[string]*localRPMBucket)
 	localUserRPM.Unlock()
 }

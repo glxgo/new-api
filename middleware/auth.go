@@ -461,14 +461,32 @@ func TokenAuth() func(c *gin.Context) {
 		}
 		concurrencyLimit := userCache.EffectiveConcurrencyLimit()
 		rpmLimit := userCache.EffectiveRPMLimit()
-		rpmAcquired, currentRPM := service.AcquireUserRPM(token.UserId, rpmLimit)
+		concurrencyPoolKey := service.UserConcurrencyKey(token.UserId)
+		rpmPoolKey := service.UserRPMKey(token.UserId)
+		// A key bound to an active virtual membership uses the purchased
+		// capacity snapshot for that membership group. The pool keys are also
+		// separate, so member traffic and ordinary groups do not affect one
+		// another. If a binding has expired, the billing path below remains the
+		// source of truth and returns the membership entitlement error.
+		if token.VirtualMembershipId > 0 {
+			capacity, capacityErr := model.GetActiveUserVirtualMembershipCapacity(token.UserId, token.VirtualMembershipId, userGroup)
+			if capacityErr != nil {
+				common.SysLog(fmt.Sprintf("resolve virtual membership capacity failed for user %d membership %d: %v", token.UserId, token.VirtualMembershipId, capacityErr))
+			} else if capacity != nil {
+				concurrencyLimit = capacity.ConcurrencyLimit
+				rpmLimit = capacity.RPMLimit
+				concurrencyPoolKey = service.VirtualMembershipConcurrencyKey(token.UserId, capacity.MembershipId)
+				rpmPoolKey = service.VirtualMembershipRPMKey(token.UserId, capacity.MembershipId)
+			}
+		}
+		rpmAcquired, currentRPM := service.AcquireUserRPMByKey(rpmPoolKey, rpmLimit)
 		if !rpmAcquired {
 			abortWithOpenAiMessage(c, http.StatusTooManyRequests,
 				fmt.Sprintf("当前账号每分钟请求数已达到上限（%d RPM），请稍后重试", rpmLimit),
 				types.ErrorCode("user_rpm_exceeded"))
 			return
 		}
-		lease, acquired, currentConcurrency := service.AcquireUserConcurrencyWithCount(token.UserId, concurrencyLimit)
+		lease, acquired, currentConcurrency := service.AcquireConcurrencyWithCountByKey(concurrencyPoolKey, concurrencyLimit)
 		if !acquired {
 			abortWithOpenAiMessage(c, http.StatusTooManyRequests,
 				fmt.Sprintf("当前账号并发已达到上限（%d），请等待正在执行的请求完成后重试", concurrencyLimit),

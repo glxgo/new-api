@@ -32,6 +32,31 @@ func TestVirtualMembershipVariantFallsBackToBasePrice(t *testing.T) {
 	}
 }
 
+func TestVirtualMembershipVariantSplitsCapacityLimits(t *testing.T) {
+	plan := &VirtualMembershipPlan{
+		PriceAmount: 12, TwoGroupPrice: 8, WeeklyQuota: 100,
+		ConcurrencyLimit: 10, RPMLimit: 10,
+	}
+
+	_, _, _, concurrency, rpm, err := VirtualMembershipVariantLimitsForDisplay(plan, 2)
+	if err != nil {
+		t.Fatalf("variant error: %v", err)
+	}
+	if concurrency != 5 || rpm != 5 {
+		t.Fatalf("capacity = (%d, %d), want (5, 5)", concurrency, rpm)
+	}
+
+	plan.ConcurrencyLimit = 1
+	plan.RPMLimit = 0
+	_, _, _, concurrency, rpm, err = VirtualMembershipVariantLimitsForDisplay(plan, 4)
+	if err != nil {
+		t.Fatalf("small-limit variant error: %v", err)
+	}
+	if concurrency != 1 || rpm != 0 {
+		t.Fatalf("small capacity = (%d, %d), want (1, 0)", concurrency, rpm)
+	}
+}
+
 func TestVirtualMembershipQuotaPercent(t *testing.T) {
 	if got := VirtualMembershipQuotaPercent(25, 100); got != 25 {
 		t.Fatalf("quota percent = %d, want 25", got)

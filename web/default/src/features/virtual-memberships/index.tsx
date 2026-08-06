@@ -36,6 +36,8 @@ const emptyPlan: Partial<VirtualMembershipPlan> = {
   weekly_quota: 0,
   five_hour_enabled: false,
   five_hour_quota: 0,
+  concurrency_limit: 0,
+  rpm_limit: 0,
   allowed_models: '',
   allowed_group: 'gpt会员分组',
   recommended: false,
@@ -189,6 +191,12 @@ export function VirtualMemberships() {
                         {plan.five_hour_enabled
                           ? plan.five_hour_quota.toLocaleString()
                           : '关闭'}
+                        {' · 并发 '}
+                        {plan.concurrency_limit > 0
+                          ? plan.concurrency_limit
+                          : '不限'}
+                        {' · RPM '}
+                        {plan.rpm_limit > 0 ? plan.rpm_limit : '不限'}
                       </p>
                     </div>
                     <span className='text-emerald-600'>编辑</span>
@@ -234,6 +242,8 @@ export function VirtualMemberships() {
                   ['four_group_price', '4 人团价格'],
                   ['weekly_quota', '周额度'],
                   ['duration_days', '有效天数'],
+                  ['concurrency_limit', '会员并发上限'],
+                  ['rpm_limit', '会员 RPM 上限'],
                 ].map(([field, label]) => (
                   <label key={field} className='text-xs'>
                     <span className='text-muted-foreground mb-1 block'>
@@ -247,6 +257,7 @@ export function VirtualMemberships() {
                       onChange={(event) =>
                         updateField(field, Number(event.target.value))
                       }
+                      min={0}
                     />
                   </label>
                 ))}
@@ -318,6 +329,10 @@ export function VirtualMemberships() {
                   开启后按 2/3/4 人档位自动均分；开启时必须填写大于 0 的数值。
                 </span>
               </label>
+              <p className='text-muted-foreground text-xs'>
+                并发和 RPM 填 0 表示不限；2/3/4 人档位会按人数向下均分，最小为
+                1。
+              </p>
               <label className='block text-sm'>
                 <input
                   className='mr-2'

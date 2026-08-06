@@ -329,11 +329,37 @@ func acquireLocalConcurrencySlot(key string, limit int, requestId string, ttl, h
 }
 
 func AcquireUserConcurrency(userId, limit int) (*ConcurrencyLease, bool) {
-	return acquireConcurrencySlot("concurrency:user:"+strconv.Itoa(userId), limit)
+	return AcquireConcurrencyByKey(UserConcurrencyKey(userId), limit)
 }
 
 func AcquireUserConcurrencyWithCount(userId, limit int) (*ConcurrencyLease, bool, int) {
-	return acquireConcurrencySlotWithTimingAndCount("concurrency:user:"+strconv.Itoa(userId), limit, concurrencySlotTTL, concurrencySlotHeartbeatInterval)
+	return AcquireConcurrencyWithCountByKey(UserConcurrencyKey(userId), limit)
+}
+
+// UserConcurrencyKey is the stable Redis/local key for a user's normal
+// capacity pool.
+func UserConcurrencyKey(userId int) string {
+	return "concurrency:user:" + strconv.Itoa(userId)
+}
+
+// VirtualMembershipConcurrencyKey is intentionally separate from the normal
+// user pool so the two limits never consume each other's slots.
+func VirtualMembershipConcurrencyKey(userId, membershipId int) string {
+	return "concurrency:user:" + strconv.Itoa(userId) + ":virtual:" + strconv.Itoa(membershipId)
+}
+
+// AcquireConcurrencyByKey acquires a concurrency lease from an arbitrary
+// capacity pool. User-level callers use the user key above, while special
+// entitlements such as virtual memberships can use an independent pool key.
+func AcquireConcurrencyByKey(key string, limit int) (*ConcurrencyLease, bool) {
+	return acquireConcurrencySlot(key, limit)
+}
+
+// AcquireConcurrencyWithCountByKey is the counted form of
+// AcquireConcurrencyByKey. The key must be stable for the lifetime of the
+// capacity pool so Redis and the local fallback enforce the same boundary.
+func AcquireConcurrencyWithCountByKey(key string, limit int) (*ConcurrencyLease, bool, int) {
+	return acquireConcurrencySlotWithTimingAndCount(key, limit, concurrencySlotTTL, concurrencySlotHeartbeatInterval)
 }
 
 func AcquireChannelConcurrency(channelId, limit int) (*ConcurrencyLease, bool) {
@@ -382,7 +408,12 @@ func getLocalConcurrencyCount(key string, now time.Time) int {
 }
 
 func GetUserConcurrency(userId int) int {
-	return getConcurrencyCount("concurrency:user:" + strconv.Itoa(userId))
+	return GetConcurrencyByKey(UserConcurrencyKey(userId))
+}
+
+// GetConcurrencyByKey returns the active request count for an arbitrary pool.
+func GetConcurrencyByKey(key string) int {
+	return getConcurrencyCount(key)
 }
 
 func GetChannelConcurrency(channelId int) int {

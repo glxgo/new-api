@@ -6,6 +6,8 @@ export interface VirtualMembershipVariant {
   price_amount: number
   weekly_quota: number
   five_hour_quota: number
+  concurrency_limit: number
+  rpm_limit: number
 }
 
 export interface VirtualMembershipPlan {
@@ -23,6 +25,8 @@ export interface VirtualMembershipPlan {
   weekly_quota: number
   five_hour_enabled: boolean
   five_hour_quota: number
+  concurrency_limit: number
+  rpm_limit: number
   recommended: boolean
   enabled: boolean
   sort_order: number
@@ -47,6 +51,8 @@ export interface UserVirtualMembership {
   five_hour_used: number
   five_hour_remaining: number
   five_hour_percent: number
+  concurrency_limit: number
+  rpm_limit: number
   weekly_reset_at: number
   five_hour_reset_at: number
   start_time: number

@@ -37,3 +37,27 @@ func TestLocalUserCapacitySnapshots(t *testing.T) {
 	require.NotContains(t, snapshots, 0)
 	require.NotContains(t, snapshots, -1)
 }
+
+func TestVirtualMembershipCapacityPoolsAreIndependent(t *testing.T) {
+	oldRedisEnabled, oldRDB := common.RedisEnabled, common.RDB
+	common.RedisEnabled, common.RDB = false, nil
+	t.Cleanup(func() {
+		resetLocalConcurrencyForTest()
+		resetLocalUserRPMForTest()
+		common.RedisEnabled, common.RDB = oldRedisEnabled, oldRDB
+	})
+	resetLocalConcurrencyForTest()
+	resetLocalUserRPMForTest()
+
+	normalLease, ok, _ := AcquireConcurrencyWithCountByKey(UserConcurrencyKey(55), 1)
+	require.True(t, ok)
+	t.Cleanup(normalLease.Release)
+	memberLease, ok, _ := AcquireConcurrencyWithCountByKey(VirtualMembershipConcurrencyKey(55, 9), 1)
+	require.True(t, ok)
+	t.Cleanup(memberLease.Release)
+
+	accepted, _ := AcquireUserRPMByKey(UserRPMKey(55), 1)
+	require.True(t, accepted)
+	accepted, _ = AcquireUserRPMByKey(VirtualMembershipRPMKey(55, 9), 1)
+	require.True(t, accepted)
+}

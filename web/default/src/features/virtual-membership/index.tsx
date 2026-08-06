@@ -27,6 +27,10 @@ function quotaLabel(value: number) {
   return value.toLocaleString('en-US')
 }
 
+function capacityLabel(value: number) {
+  return value > 0 ? value.toLocaleString('en-US') : '不限'
+}
+
 function UsageBar({
   value,
   tone = 'bg-emerald-500',
@@ -89,6 +93,20 @@ function MembershipCard({ membership }: { membership: UserVirtualMembership }) {
             </p>
           </div>
         )}
+        <div className='grid grid-cols-2 gap-3 text-sm'>
+          <div className='bg-muted/40 rounded-lg px-3 py-2'>
+            <p className='text-muted-foreground text-xs'>会员并发</p>
+            <p className='mt-1 font-semibold'>
+              {capacityLabel(membership.concurrency_limit)}
+            </p>
+          </div>
+          <div className='bg-muted/40 rounded-lg px-3 py-2'>
+            <p className='text-muted-foreground text-xs'>会员 RPM</p>
+            <p className='mt-1 font-semibold'>
+              {capacityLabel(membership.rpm_limit)}
+            </p>
+          </div>
+        </div>
       </div>
       <p className='text-muted-foreground mt-4 text-xs'>
         有效期至 {formatTimestampToDate(membership.end_time)}
@@ -194,6 +212,13 @@ function VirtualMembershipPurchaseDialog({
             </span>
           </div>
         )}
+        <div className='flex items-center justify-between gap-3 text-sm'>
+          <span className='text-muted-foreground'>会员并发 / RPM</span>
+          <span className='font-medium'>
+            {capacityLabel(variant?.concurrency_limit ?? 0)} /{' '}
+            {capacityLabel(variant?.rpm_limit ?? 0)}
+          </span>
+        </div>
       </div>
 
       <div className='space-y-2'>
@@ -336,13 +361,22 @@ function PlanCard({
                   5h {quotaLabel(item.five_hour_quota)}
                 </span>
               )}
+              <span className='text-muted-foreground mt-1 block text-[11px]'>
+                并发 {capacityLabel(item.concurrency_limit)} · RPM{' '}
+                {capacityLabel(item.rpm_limit)}
+              </span>
             </span>
           </button>
         ))}
       </div>
       <Button
+        type='button'
         className='mt-5 w-full rounded-xl bg-emerald-600 hover:bg-emerald-700'
-        onClick={() => onPurchase(plan, selectedGroup)}
+        onClick={(event) => {
+          event.preventDefault()
+          onPurchase(plan, selectedGroup)
+        }}
+        aria-label={`购买 ${plan.title}`}
       >
         <Zap className='size-4' /> 立即购买
       </Button>

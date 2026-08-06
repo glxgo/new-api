@@ -40,71 +40,77 @@ type VirtualMembershipSetting struct {
 // only change the price and divide the quotas; no waiting-room/group state is
 // persisted because the product is a pricing strategy, not a real group.
 type VirtualMembershipPlan struct {
-	Id              int     `json:"id"`
-	Code            string  `json:"code" gorm:"uniqueIndex;type:varchar(64)"`
-	Title           string  `json:"title" gorm:"type:varchar(128)"`
-	Subtitle        string  `json:"subtitle" gorm:"type:varchar(255)"`
-	Description     string  `json:"description" gorm:"type:text"`
-	PriceAmount     float64 `json:"price_amount"`
-	TwoGroupPrice   float64 `json:"two_group_price"`
-	ThreeGroupPrice float64 `json:"three_group_price"`
-	FourGroupPrice  float64 `json:"four_group_price"`
-	Currency        string  `json:"currency" gorm:"type:varchar(8);not null;default:'USD'"`
-	DurationDays    int     `json:"duration_days" gorm:"not null;default:30"`
-	WeeklyQuota     int64   `json:"weekly_quota" gorm:"type:bigint;not null;default:0"`
-	FiveHourEnabled bool    `json:"five_hour_enabled" gorm:"not null;default:false"`
-	FiveHourQuota   int64   `json:"five_hour_quota" gorm:"type:bigint;not null;default:0"`
-	AllowedModels   string  `json:"allowed_models" gorm:"type:text"`
-	AllowedGroup    string  `json:"allowed_group" gorm:"type:varchar(64);default:''"`
-	Recommended     bool    `json:"recommended" gorm:"not null;default:false"`
-	Enabled         bool    `json:"enabled" gorm:"not null;default:true;index"`
-	SortOrder       int     `json:"sort_order" gorm:"not null;default:0"`
-	CreatedAt       int64   `json:"created_at" gorm:"bigint"`
-	UpdatedAt       int64   `json:"updated_at" gorm:"bigint"`
+	Id               int     `json:"id"`
+	Code             string  `json:"code" gorm:"uniqueIndex;type:varchar(64)"`
+	Title            string  `json:"title" gorm:"type:varchar(128)"`
+	Subtitle         string  `json:"subtitle" gorm:"type:varchar(255)"`
+	Description      string  `json:"description" gorm:"type:text"`
+	PriceAmount      float64 `json:"price_amount"`
+	TwoGroupPrice    float64 `json:"two_group_price"`
+	ThreeGroupPrice  float64 `json:"three_group_price"`
+	FourGroupPrice   float64 `json:"four_group_price"`
+	Currency         string  `json:"currency" gorm:"type:varchar(8);not null;default:'USD'"`
+	DurationDays     int     `json:"duration_days" gorm:"not null;default:30"`
+	WeeklyQuota      int64   `json:"weekly_quota" gorm:"type:bigint;not null;default:0"`
+	FiveHourEnabled  bool    `json:"five_hour_enabled" gorm:"not null;default:false"`
+	FiveHourQuota    int64   `json:"five_hour_quota" gorm:"type:bigint;not null;default:0"`
+	ConcurrencyLimit int     `json:"concurrency_limit" gorm:"not null;default:0"`
+	RPMLimit         int     `json:"rpm_limit" gorm:"not null;default:0"`
+	AllowedModels    string  `json:"allowed_models" gorm:"type:text"`
+	AllowedGroup     string  `json:"allowed_group" gorm:"type:varchar(64);default:''"`
+	Recommended      bool    `json:"recommended" gorm:"not null;default:false"`
+	Enabled          bool    `json:"enabled" gorm:"not null;default:true;index"`
+	SortOrder        int     `json:"sort_order" gorm:"not null;default:0"`
+	CreatedAt        int64   `json:"created_at" gorm:"bigint"`
+	UpdatedAt        int64   `json:"updated_at" gorm:"bigint"`
 }
 
 type VirtualMembershipOrder struct {
-	Id              int     `json:"id"`
-	UserId          int     `json:"user_id" gorm:"index"`
-	PlanId          int     `json:"plan_id" gorm:"index"`
-	GroupSize       int     `json:"group_size" gorm:"not null;default:1"`
-	Money           float64 `json:"money"`
-	WeeklyQuota     int64   `json:"weekly_quota" gorm:"type:bigint;not null;default:0"`
-	FiveHourQuota   int64   `json:"five_hour_quota" gorm:"type:bigint;not null;default:0"`
-	FiveHourActive  bool    `json:"five_hour_active" gorm:"not null;default:false"`
-	TradeNo         string  `json:"trade_no" gorm:"uniqueIndex;type:varchar(255)"`
-	PaymentMethod   string  `json:"payment_method" gorm:"type:varchar(50)"`
-	PaymentProvider string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
-	Status          string  `json:"status" gorm:"type:varchar(32);index"`
-	CreateTime      int64   `json:"create_time" gorm:"bigint"`
-	CompleteTime    int64   `json:"complete_time" gorm:"bigint"`
-	ProviderPayload string  `json:"-" gorm:"type:text"`
-	PlanSnapshot    string  `json:"-" gorm:"type:text"`
+	Id               int     `json:"id"`
+	UserId           int     `json:"user_id" gorm:"index"`
+	PlanId           int     `json:"plan_id" gorm:"index"`
+	GroupSize        int     `json:"group_size" gorm:"not null;default:1"`
+	Money            float64 `json:"money"`
+	WeeklyQuota      int64   `json:"weekly_quota" gorm:"type:bigint;not null;default:0"`
+	FiveHourQuota    int64   `json:"five_hour_quota" gorm:"type:bigint;not null;default:0"`
+	FiveHourActive   bool    `json:"five_hour_active" gorm:"not null;default:false"`
+	ConcurrencyLimit int     `json:"concurrency_limit" gorm:"not null;default:0"`
+	RPMLimit         int     `json:"rpm_limit" gorm:"not null;default:0"`
+	TradeNo          string  `json:"trade_no" gorm:"uniqueIndex;type:varchar(255)"`
+	PaymentMethod    string  `json:"payment_method" gorm:"type:varchar(50)"`
+	PaymentProvider  string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
+	Status           string  `json:"status" gorm:"type:varchar(32);index"`
+	CreateTime       int64   `json:"create_time" gorm:"bigint"`
+	CompleteTime     int64   `json:"complete_time" gorm:"bigint"`
+	ProviderPayload  string  `json:"-" gorm:"type:text"`
+	PlanSnapshot     string  `json:"-" gorm:"type:text"`
 }
 
 type UserVirtualMembership struct {
-	Id              int    `json:"id"`
-	UserId          int    `json:"user_id" gorm:"index"`
-	PlanId          int    `json:"plan_id" gorm:"index"`
-	OrderId         int    `json:"order_id" gorm:"index"`
-	PlanTitle       string `json:"plan_title" gorm:"type:varchar(128)"`
-	PlanCode        string `json:"plan_code" gorm:"type:varchar(64)"`
-	GroupSize       int    `json:"group_size" gorm:"not null;default:1"`
-	WeeklyQuota     int64  `json:"weekly_quota" gorm:"type:bigint;not null;default:0"`
-	WeeklyUsed      int64  `json:"weekly_used" gorm:"type:bigint;not null;default:0"`
-	FiveHourQuota   int64  `json:"five_hour_quota" gorm:"type:bigint;not null;default:0"`
-	FiveHourUsed    int64  `json:"five_hour_used" gorm:"type:bigint;not null;default:0"`
-	FiveHourActive  bool   `json:"five_hour_active" gorm:"not null;default:false"`
-	WeeklyResetAt   int64  `json:"weekly_reset_at" gorm:"bigint;index"`
-	FiveHourStart   int64  `json:"five_hour_start" gorm:"bigint"`
-	FiveHourResetAt int64  `json:"five_hour_reset_at" gorm:"bigint"`
-	StartTime       int64  `json:"start_time" gorm:"bigint"`
-	EndTime         int64  `json:"end_time" gorm:"bigint;index"`
-	Status          string `json:"status" gorm:"type:varchar(32);index"`
-	AllowedModels   string `json:"allowed_models" gorm:"type:text"`
-	AllowedGroup    string `json:"allowed_group" gorm:"type:varchar(64);default:''"`
-	CreatedAt       int64  `json:"created_at" gorm:"bigint"`
-	UpdatedAt       int64  `json:"updated_at" gorm:"bigint"`
+	Id               int    `json:"id"`
+	UserId           int    `json:"user_id" gorm:"index"`
+	PlanId           int    `json:"plan_id" gorm:"index"`
+	OrderId          int    `json:"order_id" gorm:"index"`
+	PlanTitle        string `json:"plan_title" gorm:"type:varchar(128)"`
+	PlanCode         string `json:"plan_code" gorm:"type:varchar(64)"`
+	GroupSize        int    `json:"group_size" gorm:"not null;default:1"`
+	WeeklyQuota      int64  `json:"weekly_quota" gorm:"type:bigint;not null;default:0"`
+	WeeklyUsed       int64  `json:"weekly_used" gorm:"type:bigint;not null;default:0"`
+	FiveHourQuota    int64  `json:"five_hour_quota" gorm:"type:bigint;not null;default:0"`
+	FiveHourUsed     int64  `json:"five_hour_used" gorm:"type:bigint;not null;default:0"`
+	FiveHourActive   bool   `json:"five_hour_active" gorm:"not null;default:false"`
+	ConcurrencyLimit int    `json:"concurrency_limit" gorm:"not null;default:0"`
+	RPMLimit         int    `json:"rpm_limit" gorm:"not null;default:0"`
+	WeeklyResetAt    int64  `json:"weekly_reset_at" gorm:"bigint;index"`
+	FiveHourStart    int64  `json:"five_hour_start" gorm:"bigint"`
+	FiveHourResetAt  int64  `json:"five_hour_reset_at" gorm:"bigint"`
+	StartTime        int64  `json:"start_time" gorm:"bigint"`
+	EndTime          int64  `json:"end_time" gorm:"bigint;index"`
+	Status           string `json:"status" gorm:"type:varchar(32);index"`
+	AllowedModels    string `json:"allowed_models" gorm:"type:text"`
+	AllowedGroup     string `json:"allowed_group" gorm:"type:varchar(64);default:''"`
+	CreatedAt        int64  `json:"created_at" gorm:"bigint"`
+	UpdatedAt        int64  `json:"updated_at" gorm:"bigint"`
 }
 
 type VirtualMembershipPreConsumeRecord struct {
@@ -195,6 +201,45 @@ func GetActiveUserVirtualMembershipAllowedGroups(userId int) ([]string, error) {
 	return groups, nil
 }
 
+// VirtualMembershipCapacity is the purchased, per-membership capacity that
+// applies to a key bound to the membership's dedicated group.
+type VirtualMembershipCapacity struct {
+	MembershipId     int
+	ConcurrencyLimit int
+	RPMLimit         int
+	AllowedGroup     string
+}
+
+// GetActiveUserVirtualMembershipCapacity resolves the capacity snapshot for
+// a bound API key. A missing/expired binding intentionally returns nil so the
+// normal billing and key-validation paths can produce their own entitlement
+// error instead of silently changing billing behavior here.
+func GetActiveUserVirtualMembershipCapacity(userId, membershipId int, group string) (*VirtualMembershipCapacity, error) {
+	if userId <= 0 || membershipId <= 0 {
+		return nil, nil
+	}
+	var membership UserVirtualMembership
+	now := common.GetTimestamp()
+	err := DB.Where("id = ? AND user_id = ? AND status = ? AND start_time <= ? AND end_time > ?", membershipId, userId, VirtualMembershipStatusActive, now, now).First(&membership).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	allowedGroup := strings.TrimSpace(membership.AllowedGroup)
+	if allowedGroup == "" {
+		allowedGroup = VirtualMembershipDefaultAllowedGroup
+	}
+	if strings.TrimSpace(group) != allowedGroup {
+		return nil, nil
+	}
+	return &VirtualMembershipCapacity{
+		MembershipId: membership.Id, ConcurrencyLimit: membership.ConcurrencyLimit,
+		RPMLimit: membership.RPMLimit, AllowedGroup: allowedGroup,
+	}, nil
+}
+
 func (p *VirtualMembershipPlan) Validate() error {
 	if p == nil || p.Code == "" || p.Title == "" {
 		return errors.New("虚拟会员编码和名称不能为空")
@@ -207,6 +252,9 @@ func (p *VirtualMembershipPlan) Validate() error {
 	}
 	if p.WeeklyQuota < 0 || p.FiveHourQuota < 0 {
 		return errors.New("虚拟会员额度不能为负数")
+	}
+	if p.ConcurrencyLimit < 0 || p.RPMLimit < 0 {
+		return errors.New("虚拟会员并发和 RPM 不能为负数")
 	}
 	if p.FiveHourEnabled && p.FiveHourQuota <= 0 {
 		return errors.New("开启 5 小时限额后必须填写 5 小时额度")
@@ -296,9 +344,20 @@ func getVirtualMembershipPlanTx(tx *gorm.DB, planId int) (*VirtualMembershipPlan
 	return &plan, nil
 }
 
-func virtualMembershipVariant(plan *VirtualMembershipPlan, groupSize int) (float64, int64, int64, error) {
+func splitVirtualMembershipLimit(value, groupSize int) int {
+	if value <= 0 {
+		return 0
+	}
+	result := value / groupSize
+	if result <= 0 {
+		return 1
+	}
+	return result
+}
+
+func virtualMembershipVariantWithLimits(plan *VirtualMembershipPlan, groupSize int) (float64, int64, int64, int, int, error) {
 	if groupSize != 1 && groupSize != 2 && groupSize != 3 && groupSize != 4 {
-		return 0, 0, 0, errors.New("虚拟会员仅支持单独购买、2 人团、3 人团和 4 人团")
+		return 0, 0, 0, 0, 0, errors.New("虚拟会员仅支持单独购买、2 人团、3 人团和 4 人团")
 	}
 	price := plan.PriceAmount
 	if groupSize == 2 && plan.TwoGroupPrice > 0 {
@@ -311,9 +370,16 @@ func virtualMembershipVariant(plan *VirtualMembershipPlan, groupSize int) (float
 		price = plan.FourGroupPrice
 	}
 	if price <= 0 {
-		return 0, 0, 0, errors.New("该虚拟会员方案暂未配置此档位价格")
+		return 0, 0, 0, 0, 0, errors.New("该虚拟会员方案暂未配置此档位价格")
 	}
-	return price, plan.WeeklyQuota / int64(groupSize), plan.FiveHourQuota / int64(groupSize), nil
+	return price, plan.WeeklyQuota / int64(groupSize), plan.FiveHourQuota / int64(groupSize),
+		splitVirtualMembershipLimit(plan.ConcurrencyLimit, groupSize),
+		splitVirtualMembershipLimit(plan.RPMLimit, groupSize), nil
+}
+
+func virtualMembershipVariant(plan *VirtualMembershipPlan, groupSize int) (float64, int64, int64, error) {
+	price, weekly, fiveHour, _, _, err := virtualMembershipVariantWithLimits(plan, groupSize)
+	return price, weekly, fiveHour, err
 }
 
 // VirtualMembershipVariantForDisplay exposes the same fallback and quota
@@ -323,26 +389,36 @@ func VirtualMembershipVariantForDisplay(plan *VirtualMembershipPlan, groupSize i
 	return virtualMembershipVariant(plan, groupSize)
 }
 
-type virtualMembershipSnapshot struct {
-	PlanId          int     `json:"plan_id"`
-	Code            string  `json:"code"`
-	Title           string  `json:"title"`
-	Price           float64 `json:"price"`
-	GroupSize       int     `json:"group_size"`
-	WeeklyQuota     int64   `json:"weekly_quota"`
-	FiveHourQuota   int64   `json:"five_hour_quota"`
-	FiveHourEnabled bool    `json:"five_hour_enabled"`
-	AllowedModels   string  `json:"allowed_models"`
-	AllowedGroup    string  `json:"allowed_group"`
-	DurationDays    int     `json:"duration_days"`
+// VirtualMembershipVariantLimitsForDisplay returns the checkout variant with
+// its purchased concurrency and RPM limits. A zero limit means unlimited,
+// matching the existing user/channel capacity convention.
+func VirtualMembershipVariantLimitsForDisplay(plan *VirtualMembershipPlan, groupSize int) (float64, int64, int64, int, int, error) {
+	return virtualMembershipVariantWithLimits(plan, groupSize)
 }
 
-func buildVirtualMembershipSnapshot(plan *VirtualMembershipPlan, price float64, groupSize int, weekly, fiveHour int64) string {
+type virtualMembershipSnapshot struct {
+	PlanId           int     `json:"plan_id"`
+	Code             string  `json:"code"`
+	Title            string  `json:"title"`
+	Price            float64 `json:"price"`
+	GroupSize        int     `json:"group_size"`
+	WeeklyQuota      int64   `json:"weekly_quota"`
+	FiveHourQuota    int64   `json:"five_hour_quota"`
+	FiveHourEnabled  bool    `json:"five_hour_enabled"`
+	ConcurrencyLimit int     `json:"concurrency_limit"`
+	RPMLimit         int     `json:"rpm_limit"`
+	AllowedModels    string  `json:"allowed_models"`
+	AllowedGroup     string  `json:"allowed_group"`
+	DurationDays     int     `json:"duration_days"`
+}
+
+func buildVirtualMembershipSnapshot(plan *VirtualMembershipPlan, price float64, groupSize int, weekly, fiveHour int64, concurrency, rpm int) string {
 	data, _ := common.Marshal(virtualMembershipSnapshot{
 		PlanId: plan.Id, Code: plan.Code, Title: plan.Title, Price: price,
 		GroupSize: groupSize, WeeklyQuota: weekly, FiveHourQuota: fiveHour,
 		FiveHourEnabled: plan.FiveHourEnabled, AllowedModels: plan.AllowedModels,
 		AllowedGroup: plan.AllowedGroup, DurationDays: plan.DurationDays,
+		ConcurrencyLimit: concurrency, RPMLimit: rpm,
 	})
 	return string(data)
 }
@@ -358,7 +434,7 @@ func createVirtualMembershipOrderTx(tx *gorm.DB, userId, planId, groupSize int, 
 	if !plan.Enabled {
 		return nil, errors.New("虚拟会员方案未启用")
 	}
-	price, weekly, fiveHour, err := virtualMembershipVariant(plan, groupSize)
+	price, weekly, fiveHour, concurrency, rpm, err := virtualMembershipVariantWithLimits(plan, groupSize)
 	if err != nil {
 		return nil, err
 	}
@@ -369,8 +445,9 @@ func createVirtualMembershipOrderTx(tx *gorm.DB, userId, planId, groupSize int, 
 	order := &VirtualMembershipOrder{
 		UserId: userId, PlanId: plan.Id, GroupSize: groupSize, Money: price,
 		WeeklyQuota: weekly, FiveHourQuota: fiveHour, FiveHourActive: plan.FiveHourEnabled,
+		ConcurrencyLimit: concurrency, RPMLimit: rpm,
 		TradeNo: tradeNo, PaymentMethod: paymentMethod, PaymentProvider: paymentProvider,
-		Status: status, CreateTime: now, PlanSnapshot: buildVirtualMembershipSnapshot(plan, price, groupSize, weekly, fiveHour),
+		Status: status, CreateTime: now, PlanSnapshot: buildVirtualMembershipSnapshot(plan, price, groupSize, weekly, fiveHour, concurrency, rpm),
 	}
 	if err := tx.Create(order).Error; err != nil {
 		return nil, err
@@ -417,9 +494,16 @@ func createVirtualMembershipFromOrderTx(tx *gorm.DB, order *VirtualMembershipOrd
 		snapshot = virtualMembershipSnapshot{
 			PlanId: plan.Id, Code: plan.Code, Title: plan.Title, GroupSize: order.GroupSize,
 			WeeklyQuota: order.WeeklyQuota, FiveHourQuota: order.FiveHourQuota,
+			ConcurrencyLimit: order.ConcurrencyLimit, RPMLimit: order.RPMLimit,
 			FiveHourEnabled: order.FiveHourActive, AllowedModels: plan.AllowedModels,
 			AllowedGroup: plan.AllowedGroup, DurationDays: plan.DurationDays,
 		}
+	}
+	if snapshot.ConcurrencyLimit == 0 && order.ConcurrencyLimit > 0 {
+		snapshot.ConcurrencyLimit = order.ConcurrencyLimit
+	}
+	if snapshot.RPMLimit == 0 && order.RPMLimit > 0 {
+		snapshot.RPMLimit = order.RPMLimit
 	}
 	durationDays := snapshot.DurationDays
 	if durationDays <= 0 {
@@ -433,6 +517,7 @@ func createVirtualMembershipFromOrderTx(tx *gorm.DB, order *VirtualMembershipOrd
 		UserId: order.UserId, PlanId: order.PlanId, OrderId: order.Id,
 		PlanTitle: snapshot.Title, PlanCode: snapshot.Code, GroupSize: order.GroupSize,
 		WeeklyQuota: order.WeeklyQuota, FiveHourQuota: order.FiveHourQuota,
+		ConcurrencyLimit: snapshot.ConcurrencyLimit, RPMLimit: snapshot.RPMLimit,
 		FiveHourActive: order.FiveHourActive, WeeklyResetAt: now + 7*86400,
 		FiveHourStart: now, FiveHourResetAt: now + 5*3600,
 		StartTime: now, EndTime: now + int64(durationDays)*86400,
@@ -511,7 +596,7 @@ func PurchaseVirtualMembershipWithBalance(userId, planId, groupSize int) (*Virtu
 		if !plan.Enabled {
 			return errors.New("虚拟会员方案未启用")
 		}
-		price, weekly, fiveHour, err := virtualMembershipVariant(plan, groupSize)
+		price, weekly, fiveHour, concurrency, rpm, err := virtualMembershipVariantWithLimits(plan, groupSize)
 		if err != nil {
 			return err
 		}
@@ -527,10 +612,11 @@ func PurchaseVirtualMembershipWithBalance(userId, planId, groupSize int) (*Virtu
 			return errors.New("本金余额不足，请先充值")
 		}
 		tradeNo := fmt.Sprintf("vm-%s-%s", common.GetTimeString(), common.GetRandomString(8))
-		planSnapshot := buildVirtualMembershipSnapshot(plan, price, groupSize, weekly, fiveHour)
+		planSnapshot := buildVirtualMembershipSnapshot(plan, price, groupSize, weekly, fiveHour, concurrency, rpm)
 		order = VirtualMembershipOrder{
 			UserId: userId, PlanId: plan.Id, GroupSize: groupSize, Money: price,
 			WeeklyQuota: weekly, FiveHourQuota: fiveHour, FiveHourActive: plan.FiveHourEnabled,
+			ConcurrencyLimit: concurrency, RPMLimit: rpm,
 			TradeNo: tradeNo, PaymentMethod: PaymentMethodBalance, PaymentProvider: PaymentProviderBalance, Status: VirtualMembershipOrderSuccess,
 			CreateTime: now, CompleteTime: now, PlanSnapshot: planSnapshot,
 		}
@@ -541,6 +627,7 @@ func PurchaseVirtualMembershipWithBalance(userId, planId, groupSize int) (*Virtu
 		membership = UserVirtualMembership{
 			UserId: userId, PlanId: plan.Id, OrderId: order.Id, PlanTitle: plan.Title, PlanCode: plan.Code,
 			GroupSize: groupSize, WeeklyQuota: weekly, FiveHourQuota: fiveHour, FiveHourActive: plan.FiveHourEnabled,
+			ConcurrencyLimit: concurrency, RPMLimit: rpm,
 			WeeklyResetAt: now + 7*86400, FiveHourStart: now, FiveHourResetAt: now + 5*3600,
 			StartTime: now, EndTime: end, Status: VirtualMembershipStatusActive,
 			AllowedModels: plan.AllowedModels, AllowedGroup: plan.AllowedGroup,
