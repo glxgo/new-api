@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Gauge, RotateCcw, Users } from 'lucide-react'
-import { formatQuota, formatTimestampToDate } from '@/lib/format'
+import { formatQuotaAsUSD } from '@/lib/currency'
+import { formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { TitledCard } from '@/components/ui/titled-card'
 import { getVirtualMembershipPage } from '@/features/virtual-membership/api'
@@ -111,7 +112,8 @@ function QuotaLine({
       <div className='mb-1 flex items-baseline justify-between gap-2'>
         <span className='text-muted-foreground text-[10px]'>{label}</span>
         <span className='text-xs tabular-nums'>
-          {formatQuota(Math.max(0, total - used))} / {formatQuota(total)}
+          {formatQuotaAsUSD(Math.max(0, total - used))} /{' '}
+          {formatQuotaAsUSD(total)}
         </span>
       </div>
       <div className='bg-muted h-1.5 overflow-hidden rounded-full'>

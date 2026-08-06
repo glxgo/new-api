@@ -12,6 +12,7 @@ import {
 import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/auth-store'
 import { DEFAULT_CURRENCY_CONFIG } from '@/stores/system-config-store'
+import { formatQuotaAsUSD } from '@/lib/currency'
 import { formatQuota, formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useSystemConfig } from '@/hooks/use-system-config'
@@ -38,6 +39,14 @@ function quotaLabel(value: number) {
   return formatQuota(value)
 }
 
+function membershipQuotaLabel(value: number) {
+  return formatQuotaAsUSD(value, {
+    digitsLarge: 2,
+    digitsSmall: 4,
+    abbreviate: true,
+  })
+}
+
 function capacityLabel(value: number) {
   return value > 0 ? value.toLocaleString('en-US') : '不限'
 }
@@ -50,7 +59,7 @@ function UsageBar({
   tone?: string
 }) {
   return (
-    <div className='bg-muted h-2 overflow-hidden rounded-full'>
+    <div className='bg-muted h-1.5 overflow-hidden rounded-full'>
       <div
         className={cn('h-full rounded-full transition-all', tone)}
         style={{ width: `${Math.min(100, value)}%` }}
@@ -61,27 +70,29 @@ function UsageBar({
 
 function MembershipCard({ membership }: { membership: UserVirtualMembership }) {
   return (
-    <div className='bg-card/90 rounded-2xl border p-5 shadow-sm'>
+    <div className='bg-card/90 rounded-xl border p-4 shadow-sm'>
       <div className='flex items-start justify-between gap-3'>
-        <div>
-          <p className='text-lg font-semibold'>{membership.plan_title}</p>
+        <div className='min-w-0'>
+          <p className='truncate text-base font-semibold'>
+            {membership.plan_title}
+          </p>
           <p className='text-muted-foreground text-xs'>
             {membership.group_size === 1
               ? '单独购买'
               : `${membership.group_size} 人团 · 自动均分额度`}
           </p>
         </div>
-        <span className='rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-600'>
+        <span className='shrink-0 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600'>
           {membership.status === 'active' ? '生效中' : membership.status}
         </span>
       </div>
-      <div className='mt-5 space-y-4'>
+      <div className='mt-3 space-y-3'>
         <div>
-          <div className='mb-1.5 flex items-center justify-between text-sm'>
+          <div className='mb-1 flex items-center justify-between text-xs'>
             <span className='font-medium'>周限额</span>
             <span className='text-muted-foreground tabular-nums'>
-              {quotaLabel(membership.weekly_remaining)} /{' '}
-              {quotaLabel(membership.weekly_quota)}
+              {membershipQuotaLabel(membership.weekly_remaining)} /{' '}
+              {membershipQuotaLabel(membership.weekly_quota)}
             </span>
           </div>
           <UsageBar value={membership.weekly_percent} tone='bg-amber-500' />
@@ -91,11 +102,11 @@ function MembershipCard({ membership }: { membership: UserVirtualMembership }) {
         </div>
         {membership.five_hour_enabled && (
           <div>
-            <div className='mb-1.5 flex items-center justify-between text-sm'>
+            <div className='mb-1 flex items-center justify-between text-xs'>
               <span className='font-medium'>5 小时限额</span>
               <span className='text-muted-foreground tabular-nums'>
-                {quotaLabel(membership.five_hour_remaining)} /{' '}
-                {quotaLabel(membership.five_hour_quota)}
+                {membershipQuotaLabel(membership.five_hour_remaining)} /{' '}
+                {membershipQuotaLabel(membership.five_hour_quota)}
               </span>
             </div>
             <UsageBar value={membership.five_hour_percent} />
@@ -104,22 +115,22 @@ function MembershipCard({ membership }: { membership: UserVirtualMembership }) {
             </p>
           </div>
         )}
-        <div className='grid grid-cols-2 gap-3 text-sm'>
-          <div className='bg-muted/40 rounded-lg px-3 py-2'>
-            <p className='text-muted-foreground text-xs'>会员并发</p>
-            <p className='mt-1 font-semibold'>
+        <div className='grid grid-cols-2 gap-2 text-xs'>
+          <div className='bg-muted/40 rounded-lg px-2.5 py-2'>
+            <p className='text-muted-foreground text-[10px]'>会员并发</p>
+            <p className='mt-0.5 font-semibold'>
               {capacityLabel(membership.concurrency_limit)}
             </p>
           </div>
-          <div className='bg-muted/40 rounded-lg px-3 py-2'>
-            <p className='text-muted-foreground text-xs'>会员 RPM</p>
-            <p className='mt-1 font-semibold'>
+          <div className='bg-muted/40 rounded-lg px-2.5 py-2'>
+            <p className='text-muted-foreground text-[10px]'>会员 RPM</p>
+            <p className='mt-0.5 font-semibold'>
               {capacityLabel(membership.rpm_limit)}
             </p>
           </div>
         </div>
       </div>
-      <p className='text-muted-foreground mt-4 text-xs'>
+      <p className='text-muted-foreground mt-3 text-[11px]'>
         有效期至 {formatTimestampToDate(membership.end_time)}
       </p>
     </div>
@@ -515,7 +526,7 @@ export function VirtualMembership() {
             {memberships.length > 0 && (
               <div>
                 <h2 className='mb-3 text-lg font-semibold'>我的虚拟会员</h2>
-                <div className='grid gap-4 lg:grid-cols-2'>
+                <div className='grid gap-3 md:grid-cols-2 xl:grid-cols-3'>
                   {memberships.map((item) => (
                     <MembershipCard key={item.id} membership={item} />
                   ))}

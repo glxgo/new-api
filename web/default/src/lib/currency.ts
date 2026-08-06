@@ -461,6 +461,27 @@ export function formatQuotaWithCurrency(
 }
 
 /**
+ * Format raw quota values as USD regardless of the site-wide display mode.
+ * Use this when two views must present the same monetary quota unit.
+ */
+export function formatQuotaAsUSD(
+  quota: number | null | undefined,
+  options?: CurrencyFormatOptions
+): string {
+  if (quota == null || Number.isNaN(quota)) return '-'
+
+  const { config } = getCurrencyDisplay()
+  const amountUSD = quota / config.quotaPerUnit
+
+  return formatCurrencyValue(amountUSD, mergeOptions(options), {
+    kind: 'currency',
+    symbol: '$',
+    currencyCode: 'USD',
+    exchangeRate: 1,
+  })
+}
+
+/**
  * Get the current currency label for UI display.
  *
  * Returns a simple string label representing the current display currency.
