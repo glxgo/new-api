@@ -63,7 +63,7 @@ export function MySubscriptionsDetail() {
     try {
       const res = await getSelfSubscriptionFull()
       if (res.success && res.data) {
-        setAllSubscriptions(res.data.all_subscriptions || [])
+        setAllSubscriptions(res.data.subscriptions || [])
         setSubscriptionReferenceTime(Date.now() / 1000)
       }
     } catch {

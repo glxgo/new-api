@@ -371,8 +371,15 @@ function PlanCard({
           >
             <span>
               <span className='block text-sm font-medium'>{item.label}</span>
-              <span className='text-primary mt-1 block text-base font-semibold'>
-                ¥{item.price_amount.toFixed(2)}
+              <span className='mt-1 flex flex-wrap items-baseline gap-2'>
+                <span className='text-primary text-base font-semibold'>
+                  ¥{item.price_amount.toFixed(2)}
+                </span>
+                {item.original_price_amount > item.price_amount && (
+                  <span className='text-muted-foreground text-xs tabular-nums line-through decoration-1'>
+                    ¥{item.original_price_amount.toFixed(2)}
+                  </span>
+                )}
               </span>
             </span>
             <span className='text-right'>

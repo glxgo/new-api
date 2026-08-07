@@ -10,26 +10,30 @@ import (
 )
 
 type virtualMembershipPlanRequest struct {
-	Code             string  `json:"code"`
-	Title            string  `json:"title"`
-	Subtitle         string  `json:"subtitle"`
-	Description      string  `json:"description"`
-	PriceAmount      float64 `json:"price_amount"`
-	TwoGroupPrice    float64 `json:"two_group_price"`
-	ThreeGroupPrice  float64 `json:"three_group_price"`
-	FourGroupPrice   float64 `json:"four_group_price"`
-	Currency         string  `json:"currency"`
-	DurationDays     int     `json:"duration_days"`
-	WeeklyQuota      int64   `json:"weekly_quota"`
-	FiveHourEnabled  bool    `json:"five_hour_enabled"`
-	FiveHourQuota    int64   `json:"five_hour_quota"`
-	ConcurrencyLimit int     `json:"concurrency_limit"`
-	RPMLimit         int     `json:"rpm_limit"`
-	AllowedModels    string  `json:"allowed_models"`
-	AllowedGroup     string  `json:"allowed_group"`
-	Recommended      bool    `json:"recommended"`
-	Enabled          *bool   `json:"enabled"`
-	SortOrder        int     `json:"sort_order"`
+	Code                    string  `json:"code"`
+	Title                   string  `json:"title"`
+	Subtitle                string  `json:"subtitle"`
+	Description             string  `json:"description"`
+	OriginalPriceAmount     float64 `json:"original_price_amount"`
+	PriceAmount             float64 `json:"price_amount"`
+	TwoGroupOriginalPrice   float64 `json:"two_group_original_price"`
+	TwoGroupPrice           float64 `json:"two_group_price"`
+	ThreeGroupOriginalPrice float64 `json:"three_group_original_price"`
+	ThreeGroupPrice         float64 `json:"three_group_price"`
+	FourGroupOriginalPrice  float64 `json:"four_group_original_price"`
+	FourGroupPrice          float64 `json:"four_group_price"`
+	Currency                string  `json:"currency"`
+	DurationDays            int     `json:"duration_days"`
+	WeeklyQuota             int64   `json:"weekly_quota"`
+	FiveHourEnabled         bool    `json:"five_hour_enabled"`
+	FiveHourQuota           int64   `json:"five_hour_quota"`
+	ConcurrencyLimit        int     `json:"concurrency_limit"`
+	RPMLimit                int     `json:"rpm_limit"`
+	AllowedModels           string  `json:"allowed_models"`
+	AllowedGroup            string  `json:"allowed_group"`
+	Recommended             bool    `json:"recommended"`
+	Enabled                 *bool   `json:"enabled"`
+	SortOrder               int     `json:"sort_order"`
 }
 
 func virtualMembershipPlanResponse(plan *model.VirtualMembershipPlan) gin.H {
@@ -45,13 +49,18 @@ func virtualMembershipPlanResponse(plan *model.VirtualMembershipPlan) gin.H {
 		if groupSize > 1 {
 			label = strconv.Itoa(groupSize) + " 人团"
 		}
-		return gin.H{"group_size": groupSize, "label": label, "price_amount": price, "weekly_quota": weekly, "five_hour_quota": fiveHour, "concurrency_limit": concurrency, "rpm_limit": rpm}
+		originalPrice, originalPriceErr := model.VirtualMembershipOriginalPriceForDisplay(plan, groupSize)
+		if originalPriceErr != nil {
+			originalPrice = 0
+		}
+		return gin.H{"group_size": groupSize, "label": label, "original_price_amount": originalPrice, "price_amount": price, "weekly_quota": weekly, "five_hour_quota": fiveHour, "concurrency_limit": concurrency, "rpm_limit": rpm}
 	}
 	return gin.H{
 		"id": plan.Id, "code": plan.Code, "title": plan.Title, "subtitle": plan.Subtitle,
-		"description": plan.Description, "price_amount": plan.PriceAmount,
-		"two_group_price": plan.TwoGroupPrice, "three_group_price": plan.ThreeGroupPrice,
-		"four_group_price": plan.FourGroupPrice, "currency": plan.Currency,
+		"description": plan.Description, "original_price_amount": plan.OriginalPriceAmount, "price_amount": plan.PriceAmount,
+		"two_group_original_price": plan.TwoGroupOriginalPrice, "two_group_price": plan.TwoGroupPrice,
+		"three_group_original_price": plan.ThreeGroupOriginalPrice, "three_group_price": plan.ThreeGroupPrice,
+		"four_group_original_price": plan.FourGroupOriginalPrice, "four_group_price": plan.FourGroupPrice, "currency": plan.Currency,
 		"duration_days": plan.DurationDays, "weekly_quota": plan.WeeklyQuota,
 		"five_hour_enabled": plan.FiveHourEnabled, "five_hour_quota": plan.FiveHourQuota,
 		"concurrency_limit": plan.ConcurrencyLimit, "rpm_limit": plan.RPMLimit,
@@ -209,7 +218,10 @@ func AdminSaveVirtualMembershipPlan(c *gin.Context) {
 		return
 	}
 	plan.Code, plan.Title, plan.Subtitle, plan.Description = req.Code, req.Title, req.Subtitle, req.Description
-	plan.PriceAmount, plan.TwoGroupPrice, plan.ThreeGroupPrice, plan.FourGroupPrice = req.PriceAmount, req.TwoGroupPrice, req.ThreeGroupPrice, req.FourGroupPrice
+	plan.OriginalPriceAmount, plan.PriceAmount = req.OriginalPriceAmount, req.PriceAmount
+	plan.TwoGroupOriginalPrice, plan.TwoGroupPrice = req.TwoGroupOriginalPrice, req.TwoGroupPrice
+	plan.ThreeGroupOriginalPrice, plan.ThreeGroupPrice = req.ThreeGroupOriginalPrice, req.ThreeGroupPrice
+	plan.FourGroupOriginalPrice, plan.FourGroupPrice = req.FourGroupOriginalPrice, req.FourGroupPrice
 	plan.Currency, plan.DurationDays, plan.WeeklyQuota = req.Currency, req.DurationDays, req.WeeklyQuota
 	plan.FiveHourEnabled, plan.FiveHourQuota = req.FiveHourEnabled, req.FiveHourQuota
 	plan.ConcurrencyLimit, plan.RPMLimit = req.ConcurrencyLimit, req.RPMLimit

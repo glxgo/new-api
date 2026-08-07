@@ -336,15 +336,6 @@ export function SubscriptionPlansCard({
                       {t('No Active')}
                     </span>
                   )}
-                  {allSubscriptions.length > activeSubscriptions.length && (
-                    <>
-                      <span className='text-muted-foreground/30'>·</span>
-                      <span className='text-muted-foreground'>
-                        {allSubscriptions.length - activeSubscriptions.length}{' '}
-                        {t('expired')}
-                      </span>
-                    </>
-                  )}
                 </span>
               </div>
               <div className='flex w-full items-center gap-2 sm:w-auto'>
@@ -448,11 +439,11 @@ export function SubscriptionPlansCard({
               </p>
             )}
 
-            {hasAny && (
+            {hasActive && (
               <>
                 <Separator className='my-3' />
                 <div className='subscription-card-grid'>
-                  {allSubscriptions.map((sub) => {
+                  {activeSubscriptions.map((sub) => {
                     const subscription = sub.subscription
                     const totalAmount = Number(subscription?.amount_total || 0)
                     const usedAmount = Number(subscription?.amount_used || 0)

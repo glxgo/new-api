@@ -42,6 +42,21 @@ func TestVirtualMembershipVariantFallsBackToBasePrice(t *testing.T) {
 	}
 }
 
+func TestVirtualMembershipOriginalPriceForDisplayUsesTierPrice(t *testing.T) {
+	plan := &VirtualMembershipPlan{
+		OriginalPriceAmount: 20, TwoGroupOriginalPrice: 18,
+		ThreeGroupOriginalPrice: 16, FourGroupOriginalPrice: 14,
+	}
+
+	price, err := VirtualMembershipOriginalPriceForDisplay(plan, 3)
+	if err != nil {
+		t.Fatalf("original price error: %v", err)
+	}
+	if price != 16 {
+		t.Fatalf("original price = %v, want 16", price)
+	}
+}
+
 func TestVirtualMembershipVariantSplitsCapacityLimits(t *testing.T) {
 	plan := &VirtualMembershipPlan{
 		PriceAmount: 12, TwoGroupPrice: 8, WeeklyQuota: 100,
@@ -115,6 +130,35 @@ func setupVirtualMembershipTestDB(t *testing.T) *gorm.DB {
 		common.OptionMapRWMutex.Unlock()
 	})
 	return db
+}
+
+func TestListUserVirtualMembershipsReturnsOnlyCurrentActiveInstances(t *testing.T) {
+	db := setupVirtualMembershipTestDB(t)
+	now := common.GetTimestamp()
+	memberships := []UserVirtualMembership{
+		{UserId: 41, PlanId: 1, PlanTitle: "active", Status: VirtualMembershipStatusActive, StartTime: now - 60, EndTime: now + 60},
+		{UserId: 41, PlanId: 1, PlanTitle: "elapsed", Status: VirtualMembershipStatusActive, StartTime: now - 120, EndTime: now - 60},
+		{UserId: 41, PlanId: 1, PlanTitle: "expired", Status: VirtualMembershipStatusExpired, StartTime: now - 120, EndTime: now - 60},
+		{UserId: 41, PlanId: 1, PlanTitle: "future", Status: VirtualMembershipStatusActive, StartTime: now + 60, EndTime: now + 120},
+	}
+	if err := db.Create(&memberships).Error; err != nil {
+		t.Fatalf("create memberships: %v", err)
+	}
+
+	got, err := ListUserVirtualMemberships(41)
+	if err != nil {
+		t.Fatalf("list memberships: %v", err)
+	}
+	if len(got) != 1 || got[0].PlanTitle != "active" {
+		t.Fatalf("memberships = %#v, want only active", got)
+	}
+	var elapsed UserVirtualMembership
+	if err := db.Where("plan_title = ?", "elapsed").First(&elapsed).Error; err != nil {
+		t.Fatalf("load elapsed membership: %v", err)
+	}
+	if elapsed.Status != VirtualMembershipStatusExpired {
+		t.Fatalf("elapsed status = %q, want expired", elapsed.Status)
+	}
 }
 
 func TestListAdminVirtualMembershipsIncludesUserAndRefreshesDueQuota(t *testing.T) {

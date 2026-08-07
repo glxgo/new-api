@@ -43,29 +43,33 @@ type VirtualMembershipSetting struct {
 // only change the price and divide the quotas; no waiting-room/group state is
 // persisted because the product is a pricing strategy, not a real group.
 type VirtualMembershipPlan struct {
-	Id               int     `json:"id"`
-	Code             string  `json:"code" gorm:"uniqueIndex;type:varchar(64)"`
-	Title            string  `json:"title" gorm:"type:varchar(128)"`
-	Subtitle         string  `json:"subtitle" gorm:"type:varchar(255)"`
-	Description      string  `json:"description" gorm:"type:text"`
-	PriceAmount      float64 `json:"price_amount"`
-	TwoGroupPrice    float64 `json:"two_group_price"`
-	ThreeGroupPrice  float64 `json:"three_group_price"`
-	FourGroupPrice   float64 `json:"four_group_price"`
-	Currency         string  `json:"currency" gorm:"type:varchar(8);not null;default:'USD'"`
-	DurationDays     int     `json:"duration_days" gorm:"not null;default:30"`
-	WeeklyQuota      int64   `json:"weekly_quota" gorm:"type:bigint;not null;default:0"`
-	FiveHourEnabled  bool    `json:"five_hour_enabled" gorm:"not null;default:false"`
-	FiveHourQuota    int64   `json:"five_hour_quota" gorm:"type:bigint;not null;default:0"`
-	ConcurrencyLimit int     `json:"concurrency_limit" gorm:"not null;default:0"`
-	RPMLimit         int     `json:"rpm_limit" gorm:"not null;default:0"`
-	AllowedModels    string  `json:"allowed_models" gorm:"type:text"`
-	AllowedGroup     string  `json:"allowed_group" gorm:"type:varchar(64);default:''"`
-	Recommended      bool    `json:"recommended" gorm:"not null;default:false"`
-	Enabled          bool    `json:"enabled" gorm:"not null;default:true;index"`
-	SortOrder        int     `json:"sort_order" gorm:"not null;default:0"`
-	CreatedAt        int64   `json:"created_at" gorm:"bigint"`
-	UpdatedAt        int64   `json:"updated_at" gorm:"bigint"`
+	Id                      int     `json:"id"`
+	Code                    string  `json:"code" gorm:"uniqueIndex;type:varchar(64)"`
+	Title                   string  `json:"title" gorm:"type:varchar(128)"`
+	Subtitle                string  `json:"subtitle" gorm:"type:varchar(255)"`
+	Description             string  `json:"description" gorm:"type:text"`
+	OriginalPriceAmount     float64 `json:"original_price_amount"`
+	PriceAmount             float64 `json:"price_amount"`
+	TwoGroupOriginalPrice   float64 `json:"two_group_original_price"`
+	TwoGroupPrice           float64 `json:"two_group_price"`
+	ThreeGroupOriginalPrice float64 `json:"three_group_original_price"`
+	ThreeGroupPrice         float64 `json:"three_group_price"`
+	FourGroupOriginalPrice  float64 `json:"four_group_original_price"`
+	FourGroupPrice          float64 `json:"four_group_price"`
+	Currency                string  `json:"currency" gorm:"type:varchar(8);not null;default:'USD'"`
+	DurationDays            int     `json:"duration_days" gorm:"not null;default:30"`
+	WeeklyQuota             int64   `json:"weekly_quota" gorm:"type:bigint;not null;default:0"`
+	FiveHourEnabled         bool    `json:"five_hour_enabled" gorm:"not null;default:false"`
+	FiveHourQuota           int64   `json:"five_hour_quota" gorm:"type:bigint;not null;default:0"`
+	ConcurrencyLimit        int     `json:"concurrency_limit" gorm:"not null;default:0"`
+	RPMLimit                int     `json:"rpm_limit" gorm:"not null;default:0"`
+	AllowedModels           string  `json:"allowed_models" gorm:"type:text"`
+	AllowedGroup            string  `json:"allowed_group" gorm:"type:varchar(64);default:''"`
+	Recommended             bool    `json:"recommended" gorm:"not null;default:false"`
+	Enabled                 bool    `json:"enabled" gorm:"not null;default:true;index"`
+	SortOrder               int     `json:"sort_order" gorm:"not null;default:0"`
+	CreatedAt               int64   `json:"created_at" gorm:"bigint"`
+	UpdatedAt               int64   `json:"updated_at" gorm:"bigint"`
 }
 
 type VirtualMembershipOrder struct {
@@ -260,7 +264,10 @@ func (p *VirtualMembershipPlan) Validate() error {
 	if strings.ContainsAny(p.Code, " /\\") {
 		return errors.New("虚拟会员编码不能包含空格或路径分隔符")
 	}
-	if p.PriceAmount < 0 || p.TwoGroupPrice < 0 || p.ThreeGroupPrice < 0 || p.FourGroupPrice < 0 {
+	if p.OriginalPriceAmount < 0 || p.PriceAmount < 0 ||
+		p.TwoGroupOriginalPrice < 0 || p.TwoGroupPrice < 0 ||
+		p.ThreeGroupOriginalPrice < 0 || p.ThreeGroupPrice < 0 ||
+		p.FourGroupOriginalPrice < 0 || p.FourGroupPrice < 0 {
 		return errors.New("虚拟会员价格不能为负数")
 	}
 	if p.WeeklyQuota < 0 || p.FiveHourQuota < 0 {
@@ -513,6 +520,27 @@ func VirtualMembershipVariantForDisplay(plan *VirtualMembershipPlan, groupSize i
 // matching the existing user/channel capacity convention.
 func VirtualMembershipVariantLimitsForDisplay(plan *VirtualMembershipPlan, groupSize int) (float64, int64, int64, int, int, error) {
 	return virtualMembershipVariantWithLimits(plan, groupSize)
+}
+
+// VirtualMembershipOriginalPriceForDisplay resolves the operator-configured
+// crossed-out price for a purchase tier. It is display-only and never changes
+// the amount charged by checkout.
+func VirtualMembershipOriginalPriceForDisplay(plan *VirtualMembershipPlan, groupSize int) (float64, error) {
+	if plan == nil {
+		return 0, errors.New("虚拟会员方案不存在")
+	}
+	switch groupSize {
+	case 1:
+		return plan.OriginalPriceAmount, nil
+	case 2:
+		return plan.TwoGroupOriginalPrice, nil
+	case 3:
+		return plan.ThreeGroupOriginalPrice, nil
+	case 4:
+		return plan.FourGroupOriginalPrice, nil
+	default:
+		return 0, errors.New("虚拟会员仅支持单独购买、2 人团、3 人团和 4 人团")
+	}
 }
 
 type virtualMembershipSnapshot struct {
@@ -819,6 +847,14 @@ func ListUserVirtualMemberships(userId int) ([]*UserVirtualMembership, error) {
 				return err
 			}
 		}
+		active := memberships[:0]
+		for _, membership := range memberships {
+			if membership != nil && membership.Status == VirtualMembershipStatusActive &&
+				membership.StartTime <= now && membership.EndTime > now {
+				active = append(active, membership)
+			}
+		}
+		memberships = active
 		return nil
 	})
 	return memberships, err

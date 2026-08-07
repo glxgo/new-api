@@ -63,13 +63,6 @@ import {
   type APIIngressProfile,
 } from '@/features/api-ingress/api'
 import { useChatPresets } from '@/features/chat/hooks/use-chat-presets'
-import { getUserProfile } from '@/features/profile/api'
-import {
-  ConcurrencyCard,
-  RpmCard,
-} from '@/features/profile/components/concurrency-card'
-import { resolveCurrentRpm, resolveRpmLimit } from '@/features/profile/rpm'
-import type { UserProfile } from '@/features/profile/types'
 import { resolveTutorialApiBaseUrl } from '@/features/tutorial/content'
 import { getApiKeys, searchApiKeys } from '../api'
 import {
@@ -92,14 +85,6 @@ import { DataTableBulkActions } from './data-table-bulk-actions'
 import { DataTableRowActions } from './data-table-row-actions'
 
 const route = getRouteApi('/_authenticated/keys/')
-
-type ConcurrencySnapshot = {
-  current: number
-  limit: number
-  currentRpm: number | null
-  rpmLimit: number
-  loading: boolean
-}
 
 function resolvePublicApiEndpoint(serverAddress?: string | null) {
   return resolveTutorialApiBaseUrl(
@@ -217,7 +202,7 @@ function ApiIngressPreview({ fallbackEndpoint }: { fallbackEndpoint: string }) {
     )
   if (!profiles.length) return null
   return (
-    <div className='border-border/70 bg-background/70 min-w-0 flex-1 rounded-xl border p-2.5 shadow-xs'>
+    <div className='border-border/70 bg-background/70 min-w-0 rounded-xl border p-3 shadow-xs'>
       <div className='mb-2 flex flex-wrap items-center justify-between gap-2'>
         <div className='text-muted-foreground flex items-center gap-2 text-[10px] font-medium tracking-wider uppercase'>
           <Gauge className='size-3.5' />
@@ -244,7 +229,7 @@ function ApiIngressPreview({ fallbackEndpoint }: { fallbackEndpoint: string }) {
           一键测速
         </Button>
       </div>
-      <div className='grid gap-2 sm:grid-cols-2'>
+      <div className='grid gap-2'>
         {profiles.map((profile) => {
           const latency = latencies[profile.code]
           const selected = profile.code === selectedIngressCode
@@ -346,11 +331,9 @@ function ApiKeysMobileSkeleton() {
 function ApiKeysMobileList({
   table,
   isLoading,
-  concurrency,
 }: {
   table: TanstackTable<ApiKey>
   isLoading: boolean
-  concurrency: ConcurrencySnapshot
 }) {
   const { t } = useTranslation()
   const rows = table.getRowModel().rows
@@ -431,30 +414,6 @@ function ApiKeysMobileList({
                 </span>
               )}
             </div>
-            <div className='flex items-center justify-between gap-2 text-xs'>
-              <span className='text-muted-foreground'>RPM</span>
-              <span className='font-mono font-medium tabular-nums'>
-                {concurrency.loading
-                  ? '—'
-                  : `${concurrency.currentRpm ?? '—'} / ${concurrency.rpmLimit}`}
-                <span className='text-muted-foreground ml-1 font-sans text-[10px] font-normal'>
-                  {t('Account shared')}
-                </span>
-              </span>
-            </div>
-            <div className='flex items-center justify-between gap-2 text-xs'>
-              <span className='text-muted-foreground'>
-                {t('Current Concurrency')}
-              </span>
-              <span className='font-mono font-medium tabular-nums'>
-                {concurrency.loading
-                  ? '—'
-                  : `${concurrency.current} / ${concurrency.limit}`}
-                <span className='text-muted-foreground ml-1 font-sans text-[10px] font-normal'>
-                  {t('Account shared')}
-                </span>
-              </span>
-            </div>
           </div>
         )
       })}
@@ -465,12 +424,11 @@ function ApiKeysMobileList({
 function ApiKeysDesktopSkeleton() {
   return (
     <div className='@container/api-key-workspace'>
-      <div className='grid items-start gap-4 @2xl/api-key-workspace:grid-cols-[12rem_minmax(0,1fr)] @3xl/api-key-workspace:grid-cols-[12rem_minmax(18rem,1fr)_15rem]'>
+      <div className='grid items-start gap-4 @2xl/api-key-workspace:grid-cols-[12rem_minmax(0,1fr)] @3xl/api-key-workspace:grid-cols-[12rem_minmax(18rem,1fr)_18rem]'>
         <Skeleton className='h-72 rounded-xl' />
         <Skeleton className='h-96 rounded-xl' />
-        <div className='grid gap-3 @2xl/api-key-workspace:col-start-2 @2xl/api-key-workspace:grid-cols-2 @3xl/api-key-workspace:col-start-3 @3xl/api-key-workspace:row-start-1 @3xl/api-key-workspace:grid-cols-1'>
-          <Skeleton className='h-48 rounded-xl' />
-          <Skeleton className='h-40 rounded-xl' />
+        <div className='@2xl/api-key-workspace:col-start-2 @3xl/api-key-workspace:col-start-3 @3xl/api-key-workspace:row-start-1'>
+          <Skeleton className='h-96 rounded-xl' />
         </div>
       </div>
     </div>
@@ -480,13 +438,11 @@ function ApiKeysDesktopSkeleton() {
 function ApiKeysDesktopWorkspace({
   table,
   isLoading,
-  profile,
-  profileLoading,
+  apiEndpoint,
 }: {
   table: TanstackTable<ApiKey>
   isLoading: boolean
-  profile: UserProfile | null
-  profileLoading: boolean
+  apiEndpoint: string
 }) {
   const { t } = useTranslation()
   const [selectedKeyId, setSelectedKeyId] = useState<number | null>(null)
@@ -552,7 +508,7 @@ function ApiKeysDesktopWorkspace({
 
   return (
     <div className='@container/api-key-workspace'>
-      <div className='grid items-start gap-4 @2xl/api-key-workspace:grid-cols-[12rem_minmax(0,1fr)] @3xl/api-key-workspace:grid-cols-[12rem_minmax(18rem,1fr)_15rem]'>
+      <div className='grid items-start gap-4 @2xl/api-key-workspace:grid-cols-[12rem_minmax(0,1fr)] @3xl/api-key-workspace:grid-cols-[12rem_minmax(18rem,1fr)_18rem]'>
         <div className='self-start'>
           <div className='border-border/70 bg-background relative z-10 ml-4 flex w-28 items-center gap-2 rounded-t-xl border border-b-0 px-3 py-2'>
             <KeyRound className='size-3.5' />
@@ -795,9 +751,8 @@ function ApiKeysDesktopWorkspace({
           </div>
         </section>
 
-        <aside className='grid gap-3 @2xl/api-key-workspace:col-start-2 @2xl/api-key-workspace:grid-cols-2 @3xl/api-key-workspace:col-start-3 @3xl/api-key-workspace:row-start-1 @3xl/api-key-workspace:grid-cols-1'>
-          <ConcurrencyCard profile={profile} loading={profileLoading} compact />
-          <RpmCard profile={profile} loading={profileLoading} />
+        <aside className='@2xl/api-key-workspace:col-start-2 @3xl/api-key-workspace:col-start-3 @3xl/api-key-workspace:row-start-1'>
+          <ApiIngressPreview fallbackEndpoint={apiEndpoint} />
         </aside>
       </div>
     </div>
@@ -810,21 +765,6 @@ export function ApiKeysTable() {
   const { serverAddress } = useChatPresets()
   const apiEndpoint = resolvePublicApiEndpoint(serverAddress)
   const columns = useApiKeysColumns()
-  const { data: profileResponse, isLoading: concurrencyLoading } = useQuery({
-    queryKey: ['api-keys-concurrency'],
-    queryFn: getUserProfile,
-    refetchInterval: 10_000,
-    refetchIntervalInBackground: false,
-  })
-  const profile = profileResponse?.data ?? null
-  const concurrency: ConcurrencySnapshot = {
-    current: profile?.current_concurrency ?? 0,
-    limit: profile?.concurrency_limit ?? 8,
-    currentRpm: resolveCurrentRpm(profile),
-    rpmLimit: resolveRpmLimit(profile),
-    loading: concurrencyLoading,
-  }
-
   const {
     globalFilter,
     onGlobalFilterChange,
@@ -949,21 +889,18 @@ export function ApiKeysTable() {
             singleSelect: true,
           },
         ],
-        leftActions: <ApiIngressPreview fallbackEndpoint={apiEndpoint} />,
       }}
       mobile={
-        <ApiKeysMobileList
-          table={table}
-          isLoading={isLoading}
-          concurrency={concurrency}
-        />
+        <div className='space-y-3'>
+          <ApiIngressPreview fallbackEndpoint={apiEndpoint} />
+          <ApiKeysMobileList table={table} isLoading={isLoading} />
+        </div>
       }
       desktop={
         <ApiKeysDesktopWorkspace
           table={table}
           isLoading={isLoading}
-          profile={profile}
-          profileLoading={concurrencyLoading}
+          apiEndpoint={apiEndpoint}
         />
       }
       tableClassName='border-border/70 bg-background/75 rounded-xl shadow-xs'

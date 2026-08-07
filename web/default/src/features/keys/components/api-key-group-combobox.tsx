@@ -370,7 +370,7 @@ export function ApiKeyGroupCombobox({
         {triggerContent}
       </PopoverTrigger>
       <PopoverContent
-        className='data-closed:zoom-out-95 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 data-[side=top]:slide-in-from-bottom-1 w-[26rem] max-w-[calc(100vw-1.5rem)] origin-(--transform-origin) overflow-hidden rounded-xl p-0 shadow-lg data-closed:duration-100 data-open:duration-150 motion-reduce:duration-0'
+        className='data-closed:zoom-out-95 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 data-[side=top]:slide-in-from-bottom-1 w-(--anchor-width) max-w-(--available-width) origin-(--transform-origin) overflow-hidden rounded-xl p-0 shadow-lg data-closed:duration-100 data-open:duration-150 motion-reduce:duration-0'
         align='start'
         collisionPadding={12}
         onWheel={(event) => event.stopPropagation()}

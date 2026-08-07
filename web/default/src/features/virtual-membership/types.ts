@@ -3,6 +3,7 @@ import type { ApiResponse } from '@/features/subscriptions/types'
 export interface VirtualMembershipVariant {
   group_size: number
   label: string
+  original_price_amount: number
   price_amount: number
   weekly_quota: number
   five_hour_quota: number
@@ -16,9 +17,13 @@ export interface VirtualMembershipPlan {
   title: string
   subtitle?: string
   description?: string
+  original_price_amount: number
   price_amount: number
+  two_group_original_price: number
   two_group_price: number
+  three_group_original_price: number
   three_group_price: number
+  four_group_original_price: number
   four_group_price: number
   currency: string
   duration_days: number
