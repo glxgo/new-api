@@ -307,7 +307,9 @@ export function UsageStatistics() {
         key: 'deduction',
         title: t('Quota Deduction'),
         value: formatQuota(summary?.quota ?? 0),
-        description: t('Wallet and subscription deductions'),
+        description: t(
+          'Wallet, subscription, and virtual membership deductions'
+        ),
         icon: ReceiptText,
         tone: 'rose' as const,
         details: [
@@ -318,6 +320,10 @@ export function UsageStatistics() {
           {
             label: t('Subscription'),
             value: formatQuota(summary?.subscription_quota ?? 0),
+          },
+          {
+            label: t('Virtual Membership'),
+            value: formatQuota(summary?.virtual_membership_quota ?? 0),
           },
         ],
       },

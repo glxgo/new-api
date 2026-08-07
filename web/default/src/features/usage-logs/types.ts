@@ -222,6 +222,11 @@ export interface LogOtherData {
   subscription_consumed?: number
   subscription_remain?: number
   subscription_total?: number
+  virtual_membership_id?: number
+  virtual_membership_plan_title?: string
+  virtual_membership_pre_consumed?: number
+  virtual_membership_post_delta?: number
+  virtual_membership_consumed?: number
   token_subscription_mode?: string
   configured_subscription_id?: number
   planned_subscription_id?: number

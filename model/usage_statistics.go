@@ -12,19 +12,20 @@ import (
 // bounded period. RequestCount includes both successful relay calls and relay
 // errors, while token/quota fields include successful consume logs only.
 type UsageStatisticsSummary struct {
-	RequestCount      int64   `json:"request_count"`
-	SuccessCount      int64   `json:"success_count"`
-	ErrorCount        int64   `json:"error_count"`
-	SuccessRate       float64 `json:"success_rate"`
-	Quota             int64   `json:"quota"`
-	WalletQuota       int64   `json:"wallet_quota"`
-	SubscriptionQuota int64   `json:"subscription_quota"`
-	PromptTokens      int64   `json:"prompt_tokens"`
-	CacheTokens       int64   `json:"cache_tokens"`
-	EffectivePrompt   int64   `json:"effective_prompt_tokens"`
-	CompletionTokens  int64   `json:"completion_tokens"`
-	TotalTokens       int64   `json:"total_tokens"`
-	CacheHitRate      float64 `json:"cache_hit_rate"`
+	RequestCount           int64   `json:"request_count"`
+	SuccessCount           int64   `json:"success_count"`
+	ErrorCount             int64   `json:"error_count"`
+	SuccessRate            float64 `json:"success_rate"`
+	Quota                  int64   `json:"quota"`
+	WalletQuota            int64   `json:"wallet_quota"`
+	SubscriptionQuota      int64   `json:"subscription_quota"`
+	VirtualMembershipQuota int64   `json:"virtual_membership_quota"`
+	PromptTokens           int64   `json:"prompt_tokens"`
+	CacheTokens            int64   `json:"cache_tokens"`
+	EffectivePrompt        int64   `json:"effective_prompt_tokens"`
+	CompletionTokens       int64   `json:"completion_tokens"`
+	TotalTokens            int64   `json:"total_tokens"`
+	CacheHitRate           float64 `json:"cache_hit_rate"`
 }
 
 type UsageStatisticsPoint struct {
@@ -71,7 +72,8 @@ func usageStatisticsAggregateSelect() string {
 		COALESCE(SUM(CASE WHEN type = %d THEN 1 ELSE 0 END), 0) AS error_count,
 		COALESCE(SUM(CASE WHEN type = %d THEN quota ELSE 0 END), 0) AS quota,
 		COALESCE(SUM(CASE WHEN type = %d AND COALESCE(billing_source, '') = 'subscription' THEN quota ELSE 0 END), 0) AS subscription_quota,
-		COALESCE(SUM(CASE WHEN type = %d AND COALESCE(billing_source, '') <> 'subscription' THEN quota ELSE 0 END), 0) AS wallet_quota,
+		COALESCE(SUM(CASE WHEN type = %d AND COALESCE(billing_source, '') = 'virtual_membership' THEN quota ELSE 0 END), 0) AS virtual_membership_quota,
+		COALESCE(SUM(CASE WHEN type = %d AND COALESCE(billing_source, '') IN ('', 'wallet') THEN quota ELSE 0 END), 0) AS wallet_quota,
 		COALESCE(SUM(CASE WHEN type = %d THEN prompt_tokens ELSE 0 END), 0) AS prompt_tokens,
 		COALESCE(SUM(CASE WHEN type = %d AND prompt_tokens > 0 THEN cache_tokens ELSE 0 END), 0) AS cache_tokens,
 		COALESCE(SUM(CASE WHEN type = %d AND prompt_tokens > 0 THEN CASE WHEN cache_tokens > prompt_tokens THEN prompt_tokens + cache_tokens ELSE prompt_tokens END ELSE 0 END), 0) AS effective_prompt,
@@ -79,6 +81,7 @@ func usageStatisticsAggregateSelect() string {
 		COALESCE(SUM(CASE WHEN type = %d THEN prompt_tokens + completion_tokens ELSE 0 END), 0) AS total_tokens`,
 		LogTypeConsume,
 		LogTypeError,
+		LogTypeConsume,
 		LogTypeConsume,
 		LogTypeConsume,
 		LogTypeConsume,

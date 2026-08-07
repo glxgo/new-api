@@ -58,6 +58,7 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 		other["is_model_mapped"] = true
 		other["upstream_model_name"] = info.UpstreamModelName
 	}
+	appendBillingInfo(info, other)
 	affAdminIdSnap, inviterIdSnap, inviter2IdSnap := GetAffiliateSnapshot(info.UserId)
 	// 双池记账(阶段2b): 从 BillingSession 取实际拆分, 无则回退全本金。
 	paidGift, paidPrincipal := paidSplitForLog(info, info.PriceData.Quota)

@@ -103,9 +103,11 @@ func (s *BillingSession) Settle(actualQuota int) error {
 				s.relayInfo.UserId, s.relayInfo.TokenId, delta, tokenErr.Error()))
 		}
 	}
-	// 3) 更新 relayInfo 上的订阅 PostDelta（用于日志）
+	// 3) 更新 relayInfo 上的套餐 PostDelta（用于日志）
 	if isSubscription {
 		s.relayInfo.SubscriptionPostDelta += int64(delta)
+	} else if s.funding.Source() == BillingSourceVirtualMembership {
+		s.relayInfo.VirtualMembershipPostDelta += int64(delta)
 	}
 	s.settled = true
 	return errors.Join(tokenErr, costErr)

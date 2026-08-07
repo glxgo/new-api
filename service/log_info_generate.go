@@ -161,7 +161,7 @@ func appendBillingInfo(relayInfo *relaycommon.RelayInfo, other map[string]interf
 	if relayInfo == nil || other == nil {
 		return
 	}
-	// billing_source: "wallet" or "subscription"
+	// billing_source: "wallet", "subscription" or "virtual_membership"
 	if relayInfo.BillingSource != "" {
 		other["billing_source"] = relayInfo.BillingSource
 	}
@@ -234,6 +234,28 @@ func appendBillingInfo(relayInfo *relaycommon.RelayInfo, other map[string]interf
 			other["subscription_consumed"] = consumed
 		}
 		// Wallet quota is not deducted when billed from subscription.
+		other["wallet_quota_deducted"] = 0
+	} else if relayInfo.BillingSource == BillingSourceVirtualMembership {
+		if relayInfo.VirtualMembershipId != 0 {
+			other["virtual_membership_id"] = relayInfo.VirtualMembershipId
+		}
+		if relayInfo.VirtualMembershipPlanTitle != "" {
+			other["virtual_membership_plan_title"] = relayInfo.VirtualMembershipPlanTitle
+		}
+		if relayInfo.VirtualMembershipPreConsumed > 0 {
+			other["virtual_membership_pre_consumed"] = relayInfo.VirtualMembershipPreConsumed
+		}
+		if relayInfo.VirtualMembershipPostDelta != 0 {
+			other["virtual_membership_post_delta"] = relayInfo.VirtualMembershipPostDelta
+		}
+		consumed := relayInfo.VirtualMembershipPreConsumed + relayInfo.VirtualMembershipPostDelta
+		if consumed < 0 {
+			consumed = 0
+		}
+		if consumed > 0 {
+			other["virtual_membership_consumed"] = consumed
+		}
+		// Virtual membership requests consume only the entitlement ledger.
 		other["wallet_quota_deducted"] = 0
 	}
 }

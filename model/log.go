@@ -70,7 +70,7 @@ type Log struct {
 	Inviter2IdSnap      int    `json:"inviter2_id_snap" gorm:"default:0;column:inviter2_id_snap"`
 	Settled             bool   `json:"settled" gorm:"default:false;column:settled;index:idx_logs_settle"`
 	SettleBatchId       string `json:"settle_batch_id" gorm:"type:varchar(40);column:settle_batch_id;index:idx_logs_settle"`
-	BillingSource       string `json:"billing_source" gorm:"type:varchar(16);default:'';column:billing_source"` // wallet/subscription，订阅消费不计分润(购买时已分润)
+	BillingSource       string `json:"billing_source" gorm:"type:varchar(32);default:'';column:billing_source"` // wallet/subscription/virtual_membership，套餐类消费不计分润(购买时已分润)
 	SubscriptionId      int    `json:"subscription_id" gorm:"default:0;column:subscription_id;index"`
 	CostRuleVersion     int    `json:"cost_rule_version" gorm:"default:1;column:cost_rule_version;index"`
 	ChannelCostRatioPPM *int64 `json:"channel_cost_ratio_ppm" gorm:"column:channel_cost_ratio_ppm;default:null"`
@@ -323,7 +323,7 @@ type RecordConsumeLogParams struct {
 	IsStream            bool                   `json:"is_stream"`
 	Group               string                 `json:"group"`
 	Other               map[string]interface{} `json:"other"`
-	BillingSource       string                 `json:"billing_source"` // wallet/subscription
+	BillingSource       string                 `json:"billing_source"` // wallet/subscription/virtual_membership
 	SubscriptionId      int                    `json:"subscription_id"`
 	CostRuleVersion     int                    `json:"cost_rule_version"`
 	ChannelCostRatioPPM *int64                 `json:"channel_cost_ratio_ppm"`
@@ -418,7 +418,7 @@ type RecordTaskBillingLogParams struct {
 	TokenId             int
 	Group               string
 	Other               map[string]interface{}
-	BillingSource       string // wallet/subscription
+	BillingSource       string // wallet/subscription/virtual_membership
 	SubscriptionId      int
 	CostRuleVersion     int
 	ChannelCostRatioPPM *int64

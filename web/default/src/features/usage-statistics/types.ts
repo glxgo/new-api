@@ -27,6 +27,7 @@ export interface UsageStatisticsSummary {
   quota: number
   wallet_quota: number
   subscription_quota: number
+  virtual_membership_quota: number
   prompt_tokens: number
   cache_tokens: number
   effective_prompt_tokens: number

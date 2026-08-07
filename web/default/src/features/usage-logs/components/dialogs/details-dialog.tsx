@@ -475,7 +475,9 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const isConsume = props.log.type === 2
   const isTopup = props.log.type === 1
   const isManage = props.log.type === 3
-  const isSubscription = other?.billing_source === 'subscription'
+  const billingSource = other?.billing_source || props.log.billing_source
+  const isSubscription = billingSource === 'subscription'
+  const isVirtualMembership = billingSource === 'virtual_membership'
   const isTieredBilling =
     isConsume &&
     !isViolation &&
@@ -1155,6 +1157,46 @@ export function DetailsDialog(props: DetailsDialogProps) {
               <DetailRow
                 label={t('Remaining')}
                 value={`${formatLogQuota(other.subscription_remain)}${other.subscription_total != null ? ` / ${formatLogQuota(other.subscription_total)}` : ''}`}
+                mono
+              />
+            )}
+          </DetailSection>
+        )}
+
+        {isVirtualMembership && other && (
+          <DetailSection label={t('Virtual Membership Billing')}>
+            {other.virtual_membership_plan_title && (
+              <DetailRow
+                label={t('Plan')}
+                value={other.virtual_membership_plan_title}
+              />
+            )}
+            {other.virtual_membership_id && (
+              <DetailRow
+                label={t('Instance')}
+                value={`#${other.virtual_membership_id}`}
+                mono
+              />
+            )}
+            {other.virtual_membership_pre_consumed != null && (
+              <DetailRow
+                label={t('Pre-consumed')}
+                value={formatLogQuota(other.virtual_membership_pre_consumed)}
+                mono
+              />
+            )}
+            {other.virtual_membership_post_delta != null &&
+              other.virtual_membership_post_delta !== 0 && (
+                <DetailRow
+                  label={t('Post Delta')}
+                  value={formatLogQuota(other.virtual_membership_post_delta)}
+                  mono
+                />
+              )}
+            {other.virtual_membership_consumed != null && (
+              <DetailRow
+                label={t('Final Consumed')}
+                value={formatLogQuota(other.virtual_membership_consumed)}
                 mono
               />
             )}

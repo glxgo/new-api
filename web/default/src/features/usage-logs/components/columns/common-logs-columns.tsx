@@ -844,16 +844,22 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
 
         const quota = row.getValue('quota') as number
         const other = parseLogOther(log.other)
-        const isSubscription = other?.billing_source === 'subscription'
+        const billingSource = other?.billing_source || log.billing_source
+        const isSubscription = billingSource === 'subscription'
+        const isVirtualMembership = billingSource === 'virtual_membership'
 
-        if (isSubscription) {
+        if (isSubscription || isVirtualMembership) {
           return (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger
                   render={
                     <StatusBadge
-                      label={t('Subscription')}
+                      label={
+                        isVirtualMembership
+                          ? t('Virtual Membership')
+                          : t('Subscription')
+                      }
                       variant='success'
                       size='sm'
                       copyable={false}
@@ -863,7 +869,10 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                 />
                 <TooltipContent>
                   <span>
-                    {t('Deducted by subscription')}: {formatLogQuota(quota)}
+                    {isVirtualMembership
+                      ? t('Deducted by virtual membership')
+                      : t('Deducted by subscription')}
+                    : {formatLogQuota(quota)}
                   </span>
                 </TooltipContent>
               </Tooltip>

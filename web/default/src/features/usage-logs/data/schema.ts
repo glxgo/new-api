@@ -45,6 +45,8 @@ export const usageLogSchema = z.object({
   other: z.string().default(''),
   request_id: z.string().default(''),
   upstream_request_id: z.string().default(''),
+  billing_source: z.string().default(''),
+  subscription_id: z.number().default(0),
   user_concurrency: z.number().default(0),
   user_concurrency_limit: z.number().default(0),
   user_rpm: z.number().default(0),

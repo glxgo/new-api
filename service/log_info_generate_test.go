@@ -24,6 +24,28 @@ func TestAppendIngressBillingInfoRecordsRouteAndDiscountedPrice(t *testing.T) {
 	}
 }
 
+func TestAppendBillingInfoRecordsVirtualMembershipSource(t *testing.T) {
+	info := &relaycommon.RelayInfo{
+		BillingSource:                BillingSourceVirtualMembership,
+		VirtualMembershipId:          7,
+		VirtualMembershipPlanTitle:   "GPT Plus",
+		VirtualMembershipPreConsumed: 120,
+		VirtualMembershipPostDelta:   -20,
+	}
+	other := map[string]interface{}{}
+	appendBillingInfo(info, other)
+
+	if other["billing_source"] != BillingSourceVirtualMembership {
+		t.Fatalf("billing source = %#v", other["billing_source"])
+	}
+	if other["virtual_membership_id"] != 7 || other["virtual_membership_plan_title"] != "GPT Plus" {
+		t.Fatalf("virtual membership identity = %#v", other)
+	}
+	if other["virtual_membership_consumed"] != int64(100) || other["wallet_quota_deducted"] != 0 {
+		t.Fatalf("virtual membership billing values = %#v", other)
+	}
+}
+
 func TestRelayFirstTokenDurationUsesUpstreamStartTime(t *testing.T) {
 	requestStart := time.Unix(1_700_000_000, 0)
 	upstreamStart := requestStart.Add(3 * time.Second)

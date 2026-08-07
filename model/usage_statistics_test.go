@@ -65,6 +65,11 @@ func TestGetUserUsageStatisticsAggregatesRequestHealthCacheAndBilling(t *testing
 			Quota: 200, PromptTokens: 40, CacheTokens: 60, CompletionTokens: 10,
 			BillingSource: "subscription", SubscriptionId: 10,
 		},
+		{
+			UserId: 1, CreatedAt: 172, Type: LogTypeConsume, ModelName: "gpt-test",
+			Quota: 50, PromptTokens: 20, CacheTokens: 5, CompletionTokens: 5,
+			BillingSource: "virtual_membership",
+		},
 		{UserId: 1, CreatedAt: 175, Type: LogTypeError, ModelName: "gpt-test"},
 		{UserId: 2, CreatedAt: 180, Type: LogTypeConsume, ModelName: "ignored", Quota: 999},
 	}
@@ -72,29 +77,30 @@ func TestGetUserUsageStatisticsAggregatesRequestHealthCacheAndBilling(t *testing
 
 	stats, err := GetUserUsageStatistics(1, 100, 220, 60)
 	require.NoError(t, err)
-	require.EqualValues(t, 3, stats.Summary.RequestCount)
-	require.EqualValues(t, 2, stats.Summary.SuccessCount)
+	require.EqualValues(t, 4, stats.Summary.RequestCount)
+	require.EqualValues(t, 3, stats.Summary.SuccessCount)
 	require.EqualValues(t, 1, stats.Summary.ErrorCount)
-	require.InDelta(t, 66.6667, stats.Summary.SuccessRate, 0.001)
-	require.EqualValues(t, 300, stats.Summary.Quota)
+	require.InDelta(t, 75, stats.Summary.SuccessRate, 0.001)
+	require.EqualValues(t, 350, stats.Summary.Quota)
 	require.EqualValues(t, 100, stats.Summary.WalletQuota)
 	require.EqualValues(t, 200, stats.Summary.SubscriptionQuota)
-	require.EqualValues(t, 140, stats.Summary.PromptTokens)
-	require.EqualValues(t, 90, stats.Summary.CacheTokens)
-	require.EqualValues(t, 200, stats.Summary.EffectivePrompt)
-	require.EqualValues(t, 30, stats.Summary.CompletionTokens)
-	require.EqualValues(t, 170, stats.Summary.TotalTokens)
-	require.InDelta(t, 45, stats.Summary.CacheHitRate, 0.001)
+	require.EqualValues(t, 50, stats.Summary.VirtualMembershipQuota)
+	require.EqualValues(t, 160, stats.Summary.PromptTokens)
+	require.EqualValues(t, 95, stats.Summary.CacheTokens)
+	require.EqualValues(t, 220, stats.Summary.EffectivePrompt)
+	require.EqualValues(t, 35, stats.Summary.CompletionTokens)
+	require.EqualValues(t, 195, stats.Summary.TotalTokens)
+	require.InDelta(t, 43.1818, stats.Summary.CacheHitRate, 0.001)
 
 	require.Len(t, stats.Series, 3)
 	require.EqualValues(t, 1, stats.Series[0].RequestCount)
-	require.EqualValues(t, 2, stats.Series[1].RequestCount)
+	require.EqualValues(t, 3, stats.Series[1].RequestCount)
 	require.Zero(t, stats.Series[2].RequestCount)
 
 	require.Len(t, stats.Models, 1)
 	require.Equal(t, "gpt-test", stats.Models[0].ModelName)
-	require.EqualValues(t, 2, stats.Models[0].RequestCount)
-	require.EqualValues(t, 170, stats.Models[0].TotalTokens)
+	require.EqualValues(t, 3, stats.Models[0].RequestCount)
+	require.EqualValues(t, 195, stats.Models[0].TotalTokens)
 
 	require.Len(t, stats.Subscriptions, 1)
 	require.EqualValues(t, 10, stats.Subscriptions[0].SubscriptionId)
