@@ -32,7 +32,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { DEFAULT_DISCOUNT_RATE } from '../../constants'
 import { formatCurrency, getPaymentIcon } from '../../lib'
-import type { PaymentMethod } from '../../types'
+import type { PaymentMethod, TopUpCouponQuote } from '../../types'
 
 interface PaymentConfirmDialogProps {
   open: boolean
@@ -45,6 +45,7 @@ interface PaymentConfirmDialogProps {
   processing: boolean
   discountRate?: number
   usdExchangeRate?: number
+  couponQuote?: TopUpCouponQuote | null
 }
 
 export function PaymentConfirmDialog({
@@ -58,6 +59,7 @@ export function PaymentConfirmDialog({
   processing,
   discountRate = DEFAULT_DISCOUNT_RATE,
   usdExchangeRate = 1,
+  couponQuote,
 }: PaymentConfirmDialogProps) {
   const { t } = useTranslation()
   const hasDiscount = discountRate > 0 && discountRate < 1 && paymentAmount > 0
@@ -121,6 +123,15 @@ export function PaymentConfirmDialog({
                   {formatCurrency(discountAmount)}
                 </span>
               </div>
+            </div>
+          )}
+
+          {couponQuote && !calculating && (
+            <div className='flex items-center justify-between rounded-lg bg-emerald-500/10 p-3 text-sm'>
+              <span className='text-muted-foreground'>优惠码</span>
+              <span className='font-medium text-emerald-700 dark:text-emerald-300'>
+                {couponQuote.coupon.code} · ×{couponQuote.coupon.discount}
+              </span>
             </div>
           )}
 

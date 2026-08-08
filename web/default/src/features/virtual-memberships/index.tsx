@@ -1,3 +1,21 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
 import { useEffect, useState } from 'react'
 import { RotateCcw, Save, Sparkles, Users } from 'lucide-react'
 import { toast } from 'sonner'
@@ -41,6 +59,7 @@ const emptyPlan: Partial<VirtualMembershipPlan> = {
   three_group_price: 0,
   four_group_original_price: 0,
   four_group_price: 0,
+  fixed_profit_amount: 0,
   currency: 'USD',
   duration_days: 30,
   weekly_quota: 0,
@@ -72,6 +91,7 @@ export function VirtualMemberships() {
   const [groupOptions, setGroupOptions] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [membershipsOpen, setMembershipsOpen] = useState(false)
+  const [resetPlanCode, setResetPlanCode] = useState('all')
 
   const load = async () => {
     setLoading(true)
@@ -131,9 +151,15 @@ export function VirtualMemberships() {
     const result = await saveAdminVirtualMembershipSetting(setting)
     if (result.success) toast.success('公告已保存')
   }
-  const resetAll = async () => {
-    if (!window.confirm('确认重置所有虚拟会员的周额度和 5 小时额度吗？')) return
-    const result = await resetAdminVirtualMemberships()
+  const resetByPlan = async () => {
+    const target =
+      resetPlanCode === 'all'
+        ? '所有虚拟会员'
+        : `${plans.find((plan) => plan.code === resetPlanCode)?.title ?? resetPlanCode} 用户`
+    if (!window.confirm(`确认重置${target}的周额度和 5 小时额度吗？`)) return
+    const result = await resetAdminVirtualMemberships(
+      resetPlanCode === 'all' ? {} : { plan_code: resetPlanCode }
+    )
     if (result.success)
       toast.success(`已重置 ${result.data?.affected ?? 0} 个虚拟会员`)
   }
@@ -147,7 +173,7 @@ export function VirtualMemberships() {
       <SectionPageLayout>
         <SectionPageLayout.Title>虚拟会员管理</SectionPageLayout.Title>
         <SectionPageLayout.Actions>
-          <div className='flex items-center gap-2'>
+          <div className='flex flex-wrap items-center gap-2'>
             <Button
               variant='outline'
               size='sm'
@@ -156,9 +182,25 @@ export function VirtualMemberships() {
               <Users className='size-4' />
               已购会员
             </Button>
-            <Button variant='outline' size='sm' onClick={resetAll}>
+            <Select
+              value={resetPlanCode}
+              onValueChange={(value) => setResetPlanCode(value ?? 'all')}
+            >
+              <SelectTrigger className='h-8 w-40'>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='all'>全部会员类型</SelectItem>
+                {plans.map((plan) => (
+                  <SelectItem key={plan.id} value={plan.code}>
+                    {plan.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant='outline' size='sm' onClick={resetByPlan}>
               <RotateCcw className='size-4' />
-              全量重置额度
+              按类型重置
             </Button>
           </div>
         </SectionPageLayout.Actions>
@@ -236,6 +278,8 @@ export function VirtualMemberships() {
                             : '不限'}
                           {' · RPM '}
                           {plan.rpm_limit > 0 ? plan.rpm_limit : '不限'}
+                          {' · 固定利润 $'}
+                          {plan.fixed_profit_amount}
                         </p>
                       </div>
                       <span className='text-emerald-600'>编辑</span>
@@ -283,6 +327,7 @@ export function VirtualMemberships() {
                     ['three_group_price', '3 人团现价'],
                     ['four_group_original_price', '4 人团原价'],
                     ['four_group_price', '4 人团现价'],
+                    ['fixed_profit_amount', '单账号固定利润（美元）'],
                     ['weekly_quota', '周额度（美元）'],
                     ['duration_days', '有效天数'],
                     ['concurrency_limit', '会员并发上限'],

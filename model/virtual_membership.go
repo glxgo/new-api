@@ -11,6 +11,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
@@ -56,6 +57,7 @@ type VirtualMembershipPlan struct {
 	ThreeGroupPrice         float64 `json:"three_group_price"`
 	FourGroupOriginalPrice  float64 `json:"four_group_original_price"`
 	FourGroupPrice          float64 `json:"four_group_price"`
+	FixedProfitAmount       float64 `json:"fixed_profit_amount" gorm:"not null;default:0"`
 	Currency                string  `json:"currency" gorm:"type:varchar(8);not null;default:'USD'"`
 	DurationDays            int     `json:"duration_days" gorm:"not null;default:30"`
 	WeeklyQuota             int64   `json:"weekly_quota" gorm:"type:bigint;not null;default:0"`
@@ -83,6 +85,8 @@ type VirtualMembershipOrder struct {
 	FiveHourActive   bool    `json:"five_hour_active" gorm:"not null;default:false"`
 	ConcurrencyLimit int     `json:"concurrency_limit" gorm:"not null;default:0"`
 	RPMLimit         int     `json:"rpm_limit" gorm:"not null;default:0"`
+	ProfitQuota      int64   `json:"profit_quota" gorm:"type:bigint;not null;default:0"`
+	DividendState    string  `json:"dividend_state" gorm:"type:varchar(32);not null;default:'pending';index"`
 	TradeNo          string  `json:"trade_no" gorm:"uniqueIndex;type:varchar(255)"`
 	PaymentMethod    string  `json:"payment_method" gorm:"type:varchar(50)"`
 	PaymentProvider  string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
@@ -269,6 +273,9 @@ func (p *VirtualMembershipPlan) Validate() error {
 		p.ThreeGroupOriginalPrice < 0 || p.ThreeGroupPrice < 0 ||
 		p.FourGroupOriginalPrice < 0 || p.FourGroupPrice < 0 {
 		return errors.New("虚拟会员价格不能为负数")
+	}
+	if p.FixedProfitAmount < 0 {
+		return errors.New("虚拟会员固定利润不能为负数")
 	}
 	if p.WeeklyQuota < 0 || p.FiveHourQuota < 0 {
 		return errors.New("虚拟会员额度不能为负数")
@@ -543,6 +550,17 @@ func VirtualMembershipOriginalPriceForDisplay(plan *VirtualMembershipPlan, group
 	}
 }
 
+func VirtualMembershipProfitForDisplay(plan *VirtualMembershipPlan, groupSize int) (float64, error) {
+	if plan == nil {
+		return 0, errors.New("虚拟会员方案不存在")
+	}
+	if groupSize < 1 || groupSize > 4 {
+		return 0, errors.New("虚拟会员仅支持单独购买、2 人团、3 人团和 4 人团")
+	}
+	return decimal.NewFromFloat(plan.FixedProfitAmount).
+		Div(decimal.NewFromInt(int64(groupSize))).Round(6).InexactFloat64(), nil
+}
+
 type virtualMembershipSnapshot struct {
 	PlanId           int     `json:"plan_id"`
 	Code             string  `json:"code"`
@@ -554,18 +572,19 @@ type virtualMembershipSnapshot struct {
 	FiveHourEnabled  bool    `json:"five_hour_enabled"`
 	ConcurrencyLimit int     `json:"concurrency_limit"`
 	RPMLimit         int     `json:"rpm_limit"`
+	ProfitQuota      int64   `json:"profit_quota"`
 	AllowedModels    string  `json:"allowed_models"`
 	AllowedGroup     string  `json:"allowed_group"`
 	DurationDays     int     `json:"duration_days"`
 }
 
-func buildVirtualMembershipSnapshot(plan *VirtualMembershipPlan, price float64, groupSize int, weekly, fiveHour int64, concurrency, rpm int) string {
+func buildVirtualMembershipSnapshot(plan *VirtualMembershipPlan, price float64, groupSize int, weekly, fiveHour int64, concurrency, rpm int, profitQuota int64) string {
 	data, _ := common.Marshal(virtualMembershipSnapshot{
 		PlanId: plan.Id, Code: plan.Code, Title: plan.Title, Price: price,
 		GroupSize: groupSize, WeeklyQuota: weekly, FiveHourQuota: fiveHour,
 		FiveHourEnabled: plan.FiveHourEnabled, AllowedModels: plan.AllowedModels,
 		AllowedGroup: plan.AllowedGroup, DurationDays: plan.DurationDays,
-		ConcurrencyLimit: concurrency, RPMLimit: rpm,
+		ConcurrencyLimit: concurrency, RPMLimit: rpm, ProfitQuota: profitQuota,
 	})
 	return string(data)
 }
@@ -588,13 +607,17 @@ func createVirtualMembershipOrderTx(tx *gorm.DB, userId, planId, groupSize int, 
 	if price < 0.01 {
 		return nil, errors.New("虚拟会员金额过低")
 	}
+	profitQuota := decimal.NewFromFloat(plan.FixedProfitAmount).
+		Mul(decimal.NewFromFloat(common.QuotaPerUnit)).
+		Div(decimal.NewFromInt(int64(groupSize))).Round(0).IntPart()
 	now := common.GetTimestamp()
 	order := &VirtualMembershipOrder{
 		UserId: userId, PlanId: plan.Id, GroupSize: groupSize, Money: price,
 		WeeklyQuota: weekly, FiveHourQuota: fiveHour, FiveHourActive: plan.FiveHourEnabled,
 		ConcurrencyLimit: concurrency, RPMLimit: rpm,
+		ProfitQuota: profitQuota, DividendState: SubscriptionDividendPending,
 		TradeNo: tradeNo, PaymentMethod: paymentMethod, PaymentProvider: paymentProvider,
-		Status: status, CreateTime: now, PlanSnapshot: buildVirtualMembershipSnapshot(plan, price, groupSize, weekly, fiveHour, concurrency, rpm),
+		Status: status, CreateTime: now, PlanSnapshot: buildVirtualMembershipSnapshot(plan, price, groupSize, weekly, fiveHour, concurrency, rpm, profitQuota),
 	}
 	if err := tx.Create(order).Error; err != nil {
 		return nil, err
@@ -645,6 +668,7 @@ func AdminGrantVirtualMembership(userId, planId, groupSize int) (*VirtualMembers
 		order.Money = 0
 		order.CompleteTime = common.GetTimestamp()
 		order.ProviderPayload = "granted_by_admin"
+		order.DividendState = SubscriptionDividendSkippedSource
 		if err := tx.Save(order).Error; err != nil {
 			return err
 		}
@@ -691,6 +715,7 @@ func createVirtualMembershipFromOrderTx(tx *gorm.DB, order *VirtualMembershipOrd
 			ConcurrencyLimit: order.ConcurrencyLimit, RPMLimit: order.RPMLimit,
 			FiveHourEnabled: order.FiveHourActive, AllowedModels: plan.AllowedModels,
 			AllowedGroup: plan.AllowedGroup, DurationDays: plan.DurationDays,
+			ProfitQuota: order.ProfitQuota,
 		}
 	}
 	if snapshot.ConcurrencyLimit == 0 && order.ConcurrencyLimit > 0 {
@@ -721,11 +746,43 @@ func createVirtualMembershipFromOrderTx(tx *gorm.DB, order *VirtualMembershipOrd
 	return tx.Create(membership).Error
 }
 
+func settleVirtualMembershipDividendTx(tx *gorm.DB, order *VirtualMembershipOrder) ([]int, error) {
+	if tx == nil || order == nil || order.Id <= 0 {
+		return nil, errors.New("虚拟会员利润结算订单无效")
+	}
+	if order.DividendState == SubscriptionDividendDone ||
+		order.DividendState == SubscriptionDividendSkippedNoProfit ||
+		order.DividendState == SubscriptionDividendSkippedSource {
+		return nil, nil
+	}
+	if order.PaymentProvider == VirtualMembershipAdminGrant || order.ProfitQuota <= 0 {
+		state := SubscriptionDividendSkippedNoProfit
+		if order.PaymentProvider == VirtualMembershipAdminGrant {
+			state = SubscriptionDividendSkippedSource
+		}
+		order.DividendState = state
+		return nil, tx.Model(order).Update("dividend_state", state).Error
+	}
+	var buyer User
+	if err := tx.Omit("password").Where("id = ?", order.UserId).First(&buyer).Error; err != nil {
+		return nil, err
+	}
+	giftRecipients, err := settleOrderDividendTx(
+		tx, &buyer, order.ProfitQuota, fmt.Sprintf("vm-order-%d", order.Id), walletProfitDividendRatePolicy(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	order.DividendState = SubscriptionDividendDone
+	return giftRecipients, tx.Model(order).Update("dividend_state", SubscriptionDividendDone).Error
+}
+
 func CompleteVirtualMembershipOrder(tradeNo, providerPayload, expectedPaymentProvider, actualPaymentMethod string) error {
 	if strings.TrimSpace(tradeNo) == "" {
 		return errors.New("tradeNo is empty")
 	}
-	return DB.Transaction(func(tx *gorm.DB) error {
+	var giftRecipients []int
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		var order VirtualMembershipOrder
 		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("trade_no = ?", tradeNo).First(&order).Error; err != nil {
 			return errors.New("虚拟会员订单不存在")
@@ -750,8 +807,17 @@ func CompleteVirtualMembershipOrder(tradeNo, providerPayload, expectedPaymentPro
 		if actualPaymentMethod != "" {
 			order.PaymentMethod = actualPaymentMethod
 		}
-		return tx.Save(&order).Error
+		if err := tx.Save(&order).Error; err != nil {
+			return err
+		}
+		var err error
+		giftRecipients, err = settleVirtualMembershipDividendTx(tx, &order)
+		return err
 	})
+	if err == nil {
+		invalidateDividendGiftCaches(giftRecipients)
+	}
+	return err
 }
 
 func ExpireVirtualMembershipOrder(tradeNo, expectedPaymentProvider string) error {
@@ -782,6 +848,7 @@ func PurchaseVirtualMembershipWithBalance(userId, planId, groupSize int) (*Virtu
 	now := common.GetTimestamp()
 	var order VirtualMembershipOrder
 	var membership UserVirtualMembership
+	var giftRecipients []int
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		plan, err := getVirtualMembershipPlanTx(tx, planId)
 		if err != nil {
@@ -806,11 +873,15 @@ func PurchaseVirtualMembershipWithBalance(userId, planId, groupSize int) (*Virtu
 			return errors.New("本金余额不足，请先充值")
 		}
 		tradeNo := fmt.Sprintf("vm-%s-%s", common.GetTimeString(), common.GetRandomString(8))
-		planSnapshot := buildVirtualMembershipSnapshot(plan, price, groupSize, weekly, fiveHour, concurrency, rpm)
+		profitQuota := decimal.NewFromFloat(plan.FixedProfitAmount).
+			Mul(decimal.NewFromFloat(common.QuotaPerUnit)).
+			Div(decimal.NewFromInt(int64(groupSize))).Round(0).IntPart()
+		planSnapshot := buildVirtualMembershipSnapshot(plan, price, groupSize, weekly, fiveHour, concurrency, rpm, profitQuota)
 		order = VirtualMembershipOrder{
 			UserId: userId, PlanId: plan.Id, GroupSize: groupSize, Money: price,
 			WeeklyQuota: weekly, FiveHourQuota: fiveHour, FiveHourActive: plan.FiveHourEnabled,
 			ConcurrencyLimit: concurrency, RPMLimit: rpm,
+			ProfitQuota: profitQuota, DividendState: SubscriptionDividendPending,
 			TradeNo: tradeNo, PaymentMethod: PaymentMethodBalance, PaymentProvider: PaymentProviderBalance, Status: VirtualMembershipOrderSuccess,
 			CreateTime: now, CompleteTime: now, PlanSnapshot: planSnapshot,
 		}
@@ -827,11 +898,16 @@ func PurchaseVirtualMembershipWithBalance(userId, planId, groupSize int) (*Virtu
 			AllowedModels: plan.AllowedModels, AllowedGroup: plan.AllowedGroup,
 			CreatedAt: now, UpdatedAt: now,
 		}
-		return tx.Create(&membership).Error
+		if err := tx.Create(&membership).Error; err != nil {
+			return err
+		}
+		giftRecipients, err = settleVirtualMembershipDividendTx(tx, &order)
+		return err
 	})
 	if err != nil {
 		return nil, nil, err
 	}
+	invalidateDividendGiftCaches(giftRecipients)
 	return &order, &membership, nil
 }
 
@@ -1296,11 +1372,28 @@ func RefundVirtualMembershipPreConsume(requestId string) error {
 	})
 }
 
-func ResetAllVirtualMemberships() (int64, error) {
+type VirtualMembershipResetScope struct {
+	MembershipId int
+	UserId       int
+	PlanCode     string
+}
+
+func ResetVirtualMemberships(scope VirtualMembershipResetScope) (int64, error) {
 	now := common.GetTimestamp()
 	var affected int64
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		result := tx.Model(&UserVirtualMembership{}).Where("status = ?", VirtualMembershipStatusActive).Updates(map[string]interface{}{
+		query := tx.Model(&UserVirtualMembership{}).
+			Where("status = ? AND start_time <= ? AND end_time > ?", VirtualMembershipStatusActive, now, now)
+		if scope.MembershipId > 0 {
+			query = query.Where("id = ?", scope.MembershipId)
+		}
+		if scope.UserId > 0 {
+			query = query.Where("user_id = ?", scope.UserId)
+		}
+		if code := strings.TrimSpace(strings.ToLower(scope.PlanCode)); code != "" {
+			query = query.Where("LOWER(plan_code) = ?", code)
+		}
+		result := query.Updates(map[string]interface{}{
 			"weekly_used": 0, "five_hour_used": 0, "weekly_reset_at": now + 7*86400,
 			"five_hour_start": now, "five_hour_reset_at": now + 5*3600, "updated_at": now,
 		})
@@ -1308,6 +1401,32 @@ func ResetAllVirtualMemberships() (int64, error) {
 		return result.Error
 	})
 	return affected, err
+}
+
+func ResetAllVirtualMemberships() (int64, error) {
+	return ResetVirtualMemberships(VirtualMembershipResetScope{})
+}
+
+const virtualMembershipProfitDefaultsMigrationKey = "VirtualMembershipProfitDefaultsV1"
+
+func ensureVirtualMembershipProfitDefaults() error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var marker Option
+		if err := tx.Where(commonKeyCol+" = ?", virtualMembershipProfitDefaultsMigrationKey).First(&marker).Error; err == nil {
+			return nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		defaults := map[string]float64{"plus": 60, "pro5x": 200, "pro20x": 100}
+		for code, amount := range defaults {
+			if err := tx.Model(&VirtualMembershipPlan{}).
+				Where("LOWER(code) = ? AND fixed_profit_amount = 0", code).
+				Update("fixed_profit_amount", amount).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Create(&Option{Key: virtualMembershipProfitDefaultsMigrationKey, Value: "true"}).Error
+	})
 }
 
 func EnsureVirtualMembershipMigrations() error {
@@ -1325,6 +1444,9 @@ func EnsureVirtualMembershipMigrations() error {
 			return err
 		}
 	}
+	if err := ensureVirtualMembershipProfitDefaults(); err != nil {
+		return err
+	}
 	var count int64
 	if err := DB.Model(&VirtualMembershipPlan{}).Count(&count).Error; err != nil {
 		return err
@@ -1336,9 +1458,9 @@ func EnsureVirtualMembershipMigrations() error {
 	// products purchasable. The administrator fills price and quota before
 	// enabling them.
 	plans := []*VirtualMembershipPlan{
-		{Code: "plus", Title: "GPT Plus", Enabled: false, SortOrder: 10},
-		{Code: "pro5x", Title: "GPT Pro 5x", Enabled: false, SortOrder: 20},
-		{Code: "pro20x", Title: "GPT Pro 20x", Enabled: false, SortOrder: 30},
+		{Code: "plus", Title: "GPT Plus", FixedProfitAmount: 60, Enabled: false, SortOrder: 10},
+		{Code: "pro5x", Title: "GPT Pro 5x", FixedProfitAmount: 200, Enabled: false, SortOrder: 20},
+		{Code: "pro20x", Title: "GPT Pro 20x", FixedProfitAmount: 100, Enabled: false, SortOrder: 30},
 	}
 	for _, plan := range plans {
 		plan.Normalize()

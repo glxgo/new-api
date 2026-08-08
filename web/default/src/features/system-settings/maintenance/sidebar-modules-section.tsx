@@ -124,6 +124,14 @@ export function SidebarModulesSection({
         title: t('Profile'),
         description: t('Personal settings and profile management.'),
       },
+      virtual_membership: {
+        title: '虚拟会员',
+        description: '购买并查看站内虚拟会员权益。',
+      },
+      announcements: {
+        title: '公告',
+        description: '查看未读公告与历史公告。',
+      },
     },
     admin: {
       channel: {
@@ -149,6 +157,18 @@ export function SidebarModulesSection({
       subscription: {
         title: t('Subscription Management'),
         description: t('Manage subscription plans and pricing.'),
+      },
+      virtual_membership: {
+        title: '虚拟会员管理',
+        description: '管理会员方案、用户实例和额度重置。',
+      },
+      ingress: {
+        title: 'API 入口与倍率',
+        description: '管理用户 API 入口、线路说明和计费倍率。',
+      },
+      topup_coupon: {
+        title: '充值优惠码',
+        description: '管理余额充值优惠码、折扣与单用户限次。',
       },
     },
   }

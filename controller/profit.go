@@ -42,6 +42,14 @@ func GetProfitSummary(c *gin.Context) {
 		Select("COALESCE(SUM(total_gross),0)").
 		Where("status = ? AND created_at >= ? AND created_at < ?", model.AffiliateSettleStatusDone, start, end).
 		Scan(&settledGross)
+	var virtualMembershipGross int64
+	model.DB.Model(&model.VirtualMembershipOrder{}).
+		Select("COALESCE(SUM(profit_quota),0)").
+		Where("status = ? AND dividend_state = ? AND payment_provider != ? AND complete_time >= ? AND complete_time < ?",
+			model.VirtualMembershipOrderSuccess, model.SubscriptionDividendDone,
+			model.VirtualMembershipAdminGrant, start, end).
+		Scan(&virtualMembershipGross)
+	settledGross += virtualMembershipGross
 
 	// 3. 各项分润(dividend_records 按 type 汇总)
 	type typeAmt struct {
@@ -68,15 +76,16 @@ func GetProfitSummary(c *gin.Context) {
 	netProfit := settledGross - rebate - adminDiv - rootDiv
 
 	common.ApiSuccess(c, gin.H{
-		"start":            start,
-		"end":              end,
-		"total_consume":    consume.TotalQuota, // 全站消费(quota)
-		"total_cost":       consume.TotalCost,  // 全站成本(quota)
-		"settled_gross":    settledGross,       // 已结算总毛利
-		"affiliate_rebate": rebate,             // 已发拉新返利
-		"admin_dividend":   adminDiv,           // 已发管理员分红
-		"root_dividend":    rootDiv,            // 已发超管分红
-		"net_profit":       netProfit,          // 净利润 = 毛利 - 拉新 - 管理员 - 超管
+		"start":                    start,
+		"end":                      end,
+		"total_consume":            consume.TotalQuota, // 全站消费(quota)
+		"total_cost":               consume.TotalCost,  // 全站成本(quota)
+		"settled_gross":            settledGross,       // 已结算总毛利
+		"virtual_membership_gross": virtualMembershipGross,
+		"affiliate_rebate":         rebate,    // 已发拉新返利
+		"admin_dividend":           adminDiv,  // 已发管理员分红
+		"root_dividend":            rootDiv,   // 已发超管分红
+		"net_profit":               netProfit, // 净利润 = 毛利 - 拉新 - 管理员 - 超管
 	})
 }
 
@@ -123,7 +132,9 @@ func GetDividendRecords(c *gin.Context) {
 		}
 		return tx
 	}
-	const aggSelect = "dividend_records.source_user_id, dividend_records.batch_id, MAX(users.username) AS source_username, CASE WHEN MAX(dividend_records.request_count) > 0 THEN MAX(dividend_records.gross_profit) ELSE SUM(dividend_records.gross_profit) END AS gross_profit, SUM(dividend_records.amount) AS amount, MAX(dividend_records.source_usage) AS source_usage, MAX(dividend_records.source_recharge_cents) AS source_recharge_cents, MAX(dividend_records.request_count) AS request_count, COUNT(*) AS record_count, MIN(dividend_records.created_at) AS created_at"
+	// Daily rows and order rows both repeat the same gross-profit base for each
+	// recipient. Legacy per-request rows are the only rows that must be summed.
+	const aggSelect = "dividend_records.source_user_id, dividend_records.batch_id, MAX(users.username) AS source_username, CASE WHEN MAX(dividend_records.request_count) > 0 OR dividend_records.batch_id LIKE 'order-%' THEN MAX(dividend_records.gross_profit) ELSE SUM(dividend_records.gross_profit) END AS gross_profit, SUM(dividend_records.amount) AS amount, MAX(dividend_records.source_usage) AS source_usage, MAX(dividend_records.source_recharge_cents) AS source_recharge_cents, MAX(dividend_records.request_count) AS request_count, COUNT(*) AS record_count, MIN(dividend_records.created_at) AS created_at"
 	var total int64
 	applyFilters().Joins("LEFT JOIN users ON users.id = dividend_records.source_user_id").Select(aggSelect).Group("dividend_records.source_user_id, dividend_records.batch_id").Count(&total)
 	var records []dividendRecordAggregate

@@ -17,9 +17,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState } from 'react'
-import { Info, Receipt } from 'lucide-react'
+import { Info, Loader2, Receipt, TicketPercent } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Dialog } from '@/components/dialog'
 import { useRedemption } from '../../hooks/use-redemption'
 import type {
@@ -28,6 +30,7 @@ import type {
   PresetAmount,
   TopupInfo,
   WaffoPayMethod,
+  TopUpCouponQuote,
 } from '../../types'
 import { RechargeFormCard } from '../recharge-form-card'
 
@@ -49,6 +52,12 @@ interface RechargeDialogProps {
   onOpenBilling?: () => void
   onCreemProductSelect: (product: CreemProduct) => void
   onWaffoMethodSelect: (method: WaffoPayMethod, index: number) => void
+  couponEnabled?: boolean
+  couponCode: string
+  couponQuote: TopUpCouponQuote | null
+  applyingCoupon: boolean
+  onCouponCodeChange: (value: string) => void
+  onApplyCoupon: () => void
 }
 
 export function RechargeDialog({
@@ -69,6 +78,12 @@ export function RechargeDialog({
   onOpenBilling,
   onCreemProductSelect,
   onWaffoMethodSelect,
+  couponEnabled = false,
+  couponCode,
+  couponQuote,
+  applyingCoupon,
+  onCouponCodeChange,
+  onApplyCoupon,
 }: RechargeDialogProps) {
   const { t } = useTranslation()
   const [redemptionCode, setRedemptionCode] = useState('')
@@ -121,6 +136,48 @@ export function RechargeDialog({
           onWaffoMethodSelect={onWaffoMethodSelect}
           enableWaffoPancakeTopup={topupInfo?.enable_waffo_pancake_topup}
         />
+
+        {couponEnabled && (
+          <section className='rounded-2xl border p-4'>
+            <div className='mb-3 flex items-center gap-2 font-medium'>
+              <TicketPercent className='size-4 text-emerald-600' />
+              充值优惠码
+            </div>
+            <div className='flex gap-2'>
+              <Input
+                value={couponCode}
+                onChange={(event) => onCouponCodeChange(event.target.value)}
+                placeholder='输入优惠码'
+                className='font-mono uppercase'
+              />
+              <Button
+                type='button'
+                variant='outline'
+                disabled={!couponCode.trim() || applyingCoupon}
+                onClick={onApplyCoupon}
+              >
+                {applyingCoupon && <Loader2 className='size-4 animate-spin' />}
+                应用
+              </Button>
+            </div>
+            {couponQuote && (
+              <div className='mt-3 rounded-xl bg-emerald-500/10 px-3 py-2 text-sm'>
+                <p className='font-medium text-emerald-700 dark:text-emerald-300'>
+                  {couponQuote.coupon.title} · ×{couponQuote.coupon.discount}
+                </p>
+                {couponQuote.coupon.description && (
+                  <p className='text-muted-foreground mt-1 text-xs'>
+                    {couponQuote.coupon.description}
+                  </p>
+                )}
+                <p className='text-muted-foreground mt-1 text-xs'>
+                  本账号还可使用 {couponQuote.remaining_uses}{' '}
+                  次；仅适用于支付宝等 Epay 在线支付。
+                </p>
+              </div>
+            )}
+          </section>
+        )}
 
         <Alert>
           <Info className='h-4 w-4' />

@@ -20,6 +20,9 @@ type TopUp struct {
 	TradeNo         string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
 	PaymentMethod   string  `json:"payment_method" gorm:"type:varchar(50)"`
 	PaymentProvider string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
+	CouponId        int     `json:"coupon_id" gorm:"index;not null;default:0"`
+	CouponCode      string  `json:"coupon_code" gorm:"type:varchar(64);not null;default:''"`
+	CouponDiscount  float64 `json:"coupon_discount" gorm:"not null;default:1"`
 	CreateTime      int64   `json:"create_time"`
 	CompleteTime    int64   `json:"complete_time"`
 	// BalanceAfter 充值完成后用户余额快照(quota 单位, 本金+赠金)，
@@ -244,6 +247,9 @@ func CompleteEpayTopUp(tradeNo string, actualPaymentMethod string) (*TopUp, int,
 			return fmt.Errorf("user %d not found", completed.UserId)
 		}
 		if _, err := RecordTopUpRechargeCreditTx(tx, &completed); err != nil {
+			return err
+		}
+		if err := completeTopUpCouponUseTx(tx, &completed); err != nil {
 			return err
 		}
 		_, err := RecordLuckyRechargeTx(tx, &completed)

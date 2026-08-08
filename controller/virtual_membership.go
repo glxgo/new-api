@@ -22,6 +22,7 @@ type virtualMembershipPlanRequest struct {
 	ThreeGroupPrice         float64 `json:"three_group_price"`
 	FourGroupOriginalPrice  float64 `json:"four_group_original_price"`
 	FourGroupPrice          float64 `json:"four_group_price"`
+	FixedProfitAmount       float64 `json:"fixed_profit_amount"`
 	Currency                string  `json:"currency"`
 	DurationDays            int     `json:"duration_days"`
 	WeeklyQuota             int64   `json:"weekly_quota"`
@@ -53,7 +54,11 @@ func virtualMembershipPlanResponse(plan *model.VirtualMembershipPlan) gin.H {
 		if originalPriceErr != nil {
 			originalPrice = 0
 		}
-		return gin.H{"group_size": groupSize, "label": label, "original_price_amount": originalPrice, "price_amount": price, "weekly_quota": weekly, "five_hour_quota": fiveHour, "concurrency_limit": concurrency, "rpm_limit": rpm}
+		profit, profitErr := model.VirtualMembershipProfitForDisplay(plan, groupSize)
+		if profitErr != nil {
+			profit = 0
+		}
+		return gin.H{"group_size": groupSize, "label": label, "original_price_amount": originalPrice, "price_amount": price, "fixed_profit_amount": profit, "weekly_quota": weekly, "five_hour_quota": fiveHour, "concurrency_limit": concurrency, "rpm_limit": rpm}
 	}
 	return gin.H{
 		"id": plan.Id, "code": plan.Code, "title": plan.Title, "subtitle": plan.Subtitle,
@@ -61,7 +66,8 @@ func virtualMembershipPlanResponse(plan *model.VirtualMembershipPlan) gin.H {
 		"two_group_original_price": plan.TwoGroupOriginalPrice, "two_group_price": plan.TwoGroupPrice,
 		"three_group_original_price": plan.ThreeGroupOriginalPrice, "three_group_price": plan.ThreeGroupPrice,
 		"four_group_original_price": plan.FourGroupOriginalPrice, "four_group_price": plan.FourGroupPrice, "currency": plan.Currency,
-		"duration_days": plan.DurationDays, "weekly_quota": plan.WeeklyQuota,
+		"fixed_profit_amount": plan.FixedProfitAmount,
+		"duration_days":       plan.DurationDays, "weekly_quota": plan.WeeklyQuota,
 		"five_hour_enabled": plan.FiveHourEnabled, "five_hour_quota": plan.FiveHourQuota,
 		"concurrency_limit": plan.ConcurrencyLimit, "rpm_limit": plan.RPMLimit,
 		"allowed_models": plan.AllowedModels, "allowed_group": plan.AllowedGroup,
@@ -222,6 +228,7 @@ func AdminSaveVirtualMembershipPlan(c *gin.Context) {
 	plan.TwoGroupOriginalPrice, plan.TwoGroupPrice = req.TwoGroupOriginalPrice, req.TwoGroupPrice
 	plan.ThreeGroupOriginalPrice, plan.ThreeGroupPrice = req.ThreeGroupOriginalPrice, req.ThreeGroupPrice
 	plan.FourGroupOriginalPrice, plan.FourGroupPrice = req.FourGroupOriginalPrice, req.FourGroupPrice
+	plan.FixedProfitAmount = req.FixedProfitAmount
 	plan.Currency, plan.DurationDays, plan.WeeklyQuota = req.Currency, req.DurationDays, req.WeeklyQuota
 	plan.FiveHourEnabled, plan.FiveHourQuota = req.FiveHourEnabled, req.FiveHourQuota
 	plan.ConcurrencyLimit, plan.RPMLimit = req.ConcurrencyLimit, req.RPMLimit
@@ -279,7 +286,20 @@ func AdminSaveVirtualMembershipSetting(c *gin.Context) {
 }
 
 func AdminResetVirtualMemberships(c *gin.Context) {
-	affected, err := model.ResetAllVirtualMemberships()
+	var req struct {
+		MembershipId int    `json:"membership_id"`
+		UserId       int    `json:"user_id"`
+		PlanCode     string `json:"plan_code"`
+	}
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			common.ApiErrorMsg(c, "参数错误")
+			return
+		}
+	}
+	affected, err := model.ResetVirtualMemberships(model.VirtualMembershipResetScope{
+		MembershipId: req.MembershipId, UserId: req.UserId, PlanCode: req.PlanCode,
+	})
 	if err != nil {
 		common.ApiError(c, err)
 		return

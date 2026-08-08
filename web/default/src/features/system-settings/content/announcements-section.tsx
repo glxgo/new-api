@@ -156,10 +156,15 @@ export function AnnouncementsSection({
     try {
       const parsed = JSON.parse(data || '[]')
       if (Array.isArray(parsed)) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setAnnouncements(
           parsed.map((item, idx) => ({
             ...item,
-            id: item.id || idx + 1,
+            id:
+              item.id ||
+              (Number.isFinite(new Date(item.publishDate).getTime())
+                ? new Date(item.publishDate).getTime() + idx
+                : idx + 1),
           }))
         )
       }
@@ -169,6 +174,7 @@ export function AnnouncementsSection({
   }, [data])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsEnabled(enabled)
   }, [enabled])
 
@@ -254,7 +260,10 @@ export function AnnouncementsSection({
       )
       toast.success(t('Announcement updated. Click "Save Settings" to apply.'))
     } else {
-      const newId = Math.max(...announcements.map((item) => item.id), 0) + 1
+      // Timestamp IDs stay unique even after old history is deleted, so a new
+      // announcement can never inherit an ID that users already marked read.
+      let newId = new Date(values.publishDate).getTime()
+      while (announcements.some((item) => item.id === newId)) newId += 1
       setAnnouncements((prev) => [...prev, { id: newId, ...values }])
       toast.success(t('Announcement added. Click "Save Settings" to apply.'))
     }

@@ -39,6 +39,7 @@ import type {
   WaffoPancakePaymentRequest,
   WaffoPancakePaymentResponse,
   FinancialConsumeDaily,
+  TopUpCouponQuote,
 } from './types'
 
 // ============================================================================
@@ -77,6 +78,15 @@ export async function calculateAmount(
   request: AmountRequest
 ): Promise<AmountResponse> {
   const res = await api.post('/api/user/amount', request, {
+    skipBusinessError: true,
+  } as Record<string, unknown>)
+  return res.data
+}
+
+export async function previewTopUpCoupon(
+  request: AmountRequest
+): Promise<ApiResponse<TopUpCouponQuote>> {
+  const res = await api.post('/api/user/topup/coupon/preview', request, {
     skipBusinessError: true,
   } as Record<string, unknown>)
   return res.data

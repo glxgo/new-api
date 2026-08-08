@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -119,6 +120,7 @@ func GetTopUpInfo(c *gin.Context) {
 		"amount_options":          operation_setting.GetPaymentSetting().AmountOptions,
 		"discount":                operation_setting.GetPaymentSetting().AmountDiscount,
 		"topup_link":              common.TopUpLink,
+		"coupon_enabled":          model.HasEnabledTopUpCoupons(),
 	}
 	common.ApiSuccess(c, data)
 }
@@ -126,10 +128,12 @@ func GetTopUpInfo(c *gin.Context) {
 type EpayRequest struct {
 	Amount        int64  `json:"amount"`
 	PaymentMethod string `json:"payment_method"`
+	CouponCode    string `json:"coupon_code"`
 }
 
 type AmountRequest struct {
-	Amount int64 `json:"amount"`
+	Amount     int64  `json:"amount"`
+	CouponCode string `json:"coupon_code"`
 }
 
 func GetEpayClient() *epay.Client {
@@ -204,7 +208,20 @@ func RequestEpay(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "获取用户分组失败"})
 		return
 	}
-	payMoney := getPayMoney(req.Amount, group)
+	originalPayMoney := getPayMoney(req.Amount, group)
+	payMoney := originalPayMoney
+	if strings.TrimSpace(req.CouponCode) != "" {
+		quote, quoteErr := model.QuoteTopUpCoupon(id, req.CouponCode, originalPayMoney)
+		if quoteErr != nil {
+			c.JSON(http.StatusOK, gin.H{"message": "error", "data": quoteErr.Error()})
+			return
+		}
+		if quote == nil {
+			c.JSON(http.StatusOK, gin.H{"message": "error", "data": "优惠码无效"})
+			return
+		}
+		payMoney = quote.DiscountedMoney
+	}
 	if payMoney < 0.01 {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "充值金额过低"})
 		return
@@ -255,10 +272,10 @@ func RequestEpay(c *gin.Context) {
 		CreateTime:      time.Now().Unix(),
 		Status:          common.TopUpStatusPending,
 	}
-	err = topUp.Insert()
+	err = model.CreateTopUpWithCoupon(topUp, req.CouponCode, originalPayMoney)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("易支付 创建充值订单失败 user_id=%d trade_no=%s payment_method=%s amount=%d error=%q", id, tradeNo, req.PaymentMethod, req.Amount, err.Error()))
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": err.Error()})
 		return
 	}
 	logger.LogInfo(c.Request.Context(), fmt.Sprintf("易支付 充值订单创建成功 user_id=%d trade_no=%s payment_method=%s amount=%d money=%.2f uri=%q params=%q", id, tradeNo, req.PaymentMethod, req.Amount, payMoney, uri, common.GetJsonString(params)))
@@ -406,7 +423,19 @@ func RequestAmount(c *gin.Context) {
 		return
 	}
 	payMoney := getPayMoney(req.Amount, group)
-	if payMoney <= 0.01 {
+	if strings.TrimSpace(req.CouponCode) != "" {
+		quote, quoteErr := model.QuoteTopUpCoupon(id, req.CouponCode, payMoney)
+		if quoteErr != nil {
+			c.JSON(http.StatusOK, gin.H{"message": "error", "data": quoteErr.Error()})
+			return
+		}
+		if quote == nil {
+			c.JSON(http.StatusOK, gin.H{"message": "error", "data": "优惠码无效"})
+			return
+		}
+		payMoney = quote.DiscountedMoney
+	}
+	if payMoney < 0.01 {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "充值金额过低"})
 		return
 	}

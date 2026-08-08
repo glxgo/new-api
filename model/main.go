@@ -294,6 +294,8 @@ func migrateDB() error {
 		&Withdraw{},
 		&ConcurrencyApplication{},
 		&RechargeCredit{},
+		&TopUpCoupon{},
+		&TopUpCouponUse{},
 		&UserSecurityIncident{},
 		&LuckyCampaign{},
 		&LuckyRuleSet{},
@@ -310,6 +312,7 @@ func migrateDB() error {
 		&VirtualMembershipOrder{},
 		&UserVirtualMembership{},
 		&VirtualMembershipPreConsumeRecord{},
+		&UserAnnouncementRead{},
 	)
 	if err != nil {
 		return err
@@ -384,6 +387,8 @@ func migrateDBFast() error {
 		{&Withdraw{}, "Withdraw"},
 		{&ConcurrencyApplication{}, "ConcurrencyApplication"},
 		{&RechargeCredit{}, "RechargeCredit"},
+		{&TopUpCoupon{}, "TopUpCoupon"},
+		{&TopUpCouponUse{}, "TopUpCouponUse"},
 		{&UserSecurityIncident{}, "UserSecurityIncident"},
 		{&LuckyCampaign{}, "LuckyCampaign"},
 		{&LuckyRuleSet{}, "LuckyRuleSet"},
@@ -400,6 +405,7 @@ func migrateDBFast() error {
 		{&VirtualMembershipOrder{}, "VirtualMembershipOrder"},
 		{&UserVirtualMembership{}, "UserVirtualMembership"},
 		{&VirtualMembershipPreConsumeRecord{}, "VirtualMembershipPreConsumeRecord"},
+		{&UserAnnouncementRead{}, "UserAnnouncementRead"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))

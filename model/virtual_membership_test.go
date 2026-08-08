@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 
@@ -28,6 +29,58 @@ func TestVirtualMembershipVariantDividesQuotaByGroupSize(t *testing.T) {
 	if price != 8 || weekly != 50 || fiveHour != 10 {
 		t.Fatalf("variant = (%v, %d, %d), want (8, 50, 10)", price, weekly, fiveHour)
 	}
+}
+
+func TestVirtualMembershipProfitDividesByGroupSize(t *testing.T) {
+	plan := &VirtualMembershipPlan{FixedProfitAmount: 200}
+	profit, err := VirtualMembershipProfitForDisplay(plan, 4)
+	if err != nil {
+		t.Fatalf("profit variant error: %v", err)
+	}
+	if profit != 50 {
+		t.Fatalf("profit = %v, want 50", profit)
+	}
+}
+
+func TestVirtualMembershipCompletionSettlesFixedProfitExactlyOnce(t *testing.T) {
+	db := setupSubscriptionChannelCostTestDB(t)
+	useWalletDividendTestRates(t)
+	require.NoError(t, db.AutoMigrate(
+		&VirtualMembershipPlan{},
+		&VirtualMembershipOrder{},
+		&UserVirtualMembership{},
+	))
+	root := User{Username: "vm-profit-root", Role: common.RoleRootUser, AffCode: "vmpr01"}
+	inviter := User{Username: "vm-profit-inviter", Role: common.RoleCommonUser, AffCode: "vmpi01"}
+	require.NoError(t, db.Create(&root).Error)
+	require.NoError(t, db.Create(&inviter).Error)
+	buyer := User{
+		Username: "vm-profit-buyer", Role: common.RoleCommonUser,
+		AffCode: "vmpb01", InviterId: inviter.Id, Status: common.UserStatusEnabled,
+	}
+	require.NoError(t, db.Create(&buyer).Error)
+	plan := VirtualMembershipPlan{
+		Code: "plus", Title: "GPT Plus", PriceAmount: 129, TwoGroupPrice: 70,
+		FixedProfitAmount: 60, DurationDays: 30, WeeklyQuota: 100,
+		AllowedGroup: VirtualMembershipDefaultAllowedGroup, Enabled: true,
+	}
+	require.NoError(t, db.Create(&plan).Error)
+	order, err := CreateVirtualMembershipEpayOrder(buyer.Id, plan.Id, 2, "vm-profit-order", "alipay")
+	require.NoError(t, err)
+	expectedProfit := int64(30 * common.QuotaPerUnit)
+	require.Equal(t, expectedProfit, order.ProfitQuota)
+
+	require.NoError(t, CompleteVirtualMembershipOrder(order.TradeNo, "paid", PaymentProviderEpay, "alipay"))
+	require.NoError(t, CompleteVirtualMembershipOrder(order.TradeNo, "paid-again", PaymentProviderEpay, "alipay"))
+
+	require.NoError(t, db.First(order, order.Id).Error)
+	require.Equal(t, SubscriptionDividendDone, order.DividendState)
+	var records []DividendRecord
+	require.NoError(t, db.Where("source_ref = ?", fmt.Sprintf("vm-order-%d", order.Id)).Find(&records).Error)
+	require.Len(t, records, 2)
+	var refreshedInviter User
+	require.NoError(t, db.First(&refreshedInviter, inviter.Id).Error)
+	require.Equal(t, int(expectedProfit/10), refreshedInviter.GiftQuota)
 }
 
 func TestVirtualMembershipVariantFallsBackToBasePrice(t *testing.T) {
@@ -159,6 +212,31 @@ func TestListUserVirtualMembershipsReturnsOnlyCurrentActiveInstances(t *testing.
 	if elapsed.Status != VirtualMembershipStatusExpired {
 		t.Fatalf("elapsed status = %q, want expired", elapsed.Status)
 	}
+}
+
+func TestResetVirtualMembershipsSupportsPlanAndSingleInstance(t *testing.T) {
+	db := setupVirtualMembershipTestDB(t)
+	now := common.GetTimestamp()
+	memberships := []UserVirtualMembership{
+		{UserId: 51, PlanId: 1, PlanCode: "plus", PlanTitle: "Plus A", WeeklyQuota: 100, WeeklyUsed: 70, Status: VirtualMembershipStatusActive, StartTime: now - 60, EndTime: now + 3600},
+		{UserId: 52, PlanId: 1, PlanCode: "plus", PlanTitle: "Plus B", WeeklyQuota: 100, WeeklyUsed: 80, Status: VirtualMembershipStatusActive, StartTime: now - 60, EndTime: now + 3600},
+		{UserId: 53, PlanId: 2, PlanCode: "pro5x", PlanTitle: "Pro", WeeklyQuota: 100, WeeklyUsed: 90, Status: VirtualMembershipStatusActive, StartTime: now - 60, EndTime: now + 3600},
+	}
+	require.NoError(t, db.Create(&memberships).Error)
+	affected, err := ResetVirtualMemberships(VirtualMembershipResetScope{PlanCode: "PLUS"})
+	require.NoError(t, err)
+	require.Equal(t, int64(2), affected)
+	var refreshed []UserVirtualMembership
+	require.NoError(t, db.Order("id").Find(&refreshed).Error)
+	require.Zero(t, refreshed[0].WeeklyUsed)
+	require.Zero(t, refreshed[1].WeeklyUsed)
+	require.Equal(t, int64(90), refreshed[2].WeeklyUsed)
+
+	affected, err = ResetVirtualMemberships(VirtualMembershipResetScope{MembershipId: refreshed[2].Id})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), affected)
+	require.NoError(t, db.First(&refreshed[2], refreshed[2].Id).Error)
+	require.Zero(t, refreshed[2].WeeklyUsed)
 }
 
 func TestListAdminVirtualMembershipsIncludesUserAndRefreshesDueQuota(t *testing.T) {

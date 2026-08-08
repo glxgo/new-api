@@ -22,6 +22,7 @@ import { ConfigDrawer } from '@/components/config-drawer'
 import { LanguageSwitcher } from '@/components/language-switcher'
 import { NotificationPopover } from '@/components/notification-popover'
 import { ProfileDropdown } from '@/components/profile-dropdown'
+import { UnreadAnnouncementDialog } from '@/features/announcements/unread-announcement-dialog'
 import { defaultTopNavLinks } from '../config/top-nav.config'
 import { type TopNavLink } from '../types'
 import { Header } from './header'
@@ -105,6 +106,7 @@ export function AppHeader({
 
   return (
     <>
+      <UnreadAnnouncementDialog />
       <Header>
         <SystemBrand variant='inline' />
 

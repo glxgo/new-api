@@ -112,6 +112,7 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.POST("/topup", middleware.CriticalRateLimit(), controller.TopUp)
 				selfRoute.POST("/pay", middleware.CriticalRateLimit(), controller.RequestEpay)
 				selfRoute.POST("/amount", controller.RequestAmount)
+				selfRoute.POST("/topup/coupon/preview", controller.PreviewTopUpCoupon)
 				selfRoute.POST("/stripe/pay", middleware.CriticalRateLimit(), controller.RequestStripePay)
 				selfRoute.POST("/stripe/amount", controller.RequestStripeAmount)
 				selfRoute.POST("/creem/pay", middleware.CriticalRateLimit(), controller.RequestCreemPay)
@@ -121,6 +122,8 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), controller.RequestWaffoPancakePay)
 				selfRoute.POST("/aff_transfer", controller.TransferAffQuota)
 				selfRoute.PUT("/setting", controller.UpdateUserSetting)
+				selfRoute.GET("/announcements", controller.GetUserAnnouncements)
+				selfRoute.POST("/announcements/read", controller.MarkUserAnnouncementsRead)
 
 				// 2FA routes
 				selfRoute.GET("/2fa/status", controller.Get2FAStatus)
@@ -214,6 +217,14 @@ func SetApiRouter(router *gin.Engine) {
 			virtualMembershipAdminRoute.POST("/memberships", controller.AdminGrantVirtualMembership)
 			virtualMembershipAdminRoute.DELETE("/memberships/:id", controller.AdminDeleteVirtualMembership)
 			virtualMembershipAdminRoute.GET("/orders", controller.AdminListVirtualMembershipOrders)
+		}
+		topUpCouponAdminRoute := apiRouter.Group("/topup-coupon/admin")
+		topUpCouponAdminRoute.Use(middleware.AdminAuth())
+		{
+			topUpCouponAdminRoute.GET("", controller.AdminListTopUpCoupons)
+			topUpCouponAdminRoute.POST("", controller.AdminSaveTopUpCoupon)
+			topUpCouponAdminRoute.PUT("/:id", controller.AdminSaveTopUpCoupon)
+			topUpCouponAdminRoute.DELETE("/:id", controller.AdminDeleteTopUpCoupon)
 		}
 
 		ingressRoute := apiRouter.Group("/ingress")

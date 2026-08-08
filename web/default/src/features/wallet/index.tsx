@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { useAuthStore, type AuthUser } from '@/stores/auth-store'
 import { getSelf } from '@/lib/api'
 import { useStatus } from '@/hooks/use-status'
@@ -27,6 +28,7 @@ import { Button } from '@/components/ui/button'
 import { SectionPageLayout } from '@/components/layout'
 import { WithdrawRequestSheet } from '@/features/withdraw/components/withdraw-request-sheet'
 import { WITHDRAW_TYPE } from '@/features/withdraw/types'
+import { isApiSuccess, previewTopUpCoupon } from './api'
 import { AffiliateRewardsCard } from './components/affiliate-rewards-card'
 import { BillingHistoryDialog } from './components/dialogs/billing-history-dialog'
 import { CreemConfirmDialog } from './components/dialogs/creem-confirm-dialog'
@@ -50,6 +52,7 @@ import {
 import {
   getDefaultPaymentType,
   getMinTopupAmount,
+  isStripePayment,
   isWaffoPancakePayment,
 } from './lib'
 import type {
@@ -58,6 +61,7 @@ import type {
   PresetAmount,
   CreemProduct,
   WaffoPayMethod,
+  TopUpCouponQuote,
 } from './types'
 
 interface WalletProps {
@@ -83,6 +87,9 @@ export function Wallet(props: WalletProps) {
   const [selectedCreemProduct, setSelectedCreemProduct] =
     useState<CreemProduct | null>(null)
   const [withdrawOpen, setWithdrawOpen] = useState(false)
+  const [couponCode, setCouponCode] = useState('')
+  const [couponQuote, setCouponQuote] = useState<TopUpCouponQuote | null>(null)
+  const [applyingCoupon, setApplyingCoupon] = useState(false)
 
   const { status } = useStatus()
   const { currency } = useSystemConfig()
@@ -135,12 +142,14 @@ export function Wallet(props: WalletProps) {
   }, [setAuthUser])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchUser()
   }, [fetchUser])
 
   useEffect(() => {
     if (props.initialShowHistory || props.initialShowRecharge) {
       if (props.initialShowHistory) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setBillingDialogOpen(true)
       }
       if (props.initialShowRecharge) {
@@ -154,6 +163,7 @@ export function Wallet(props: WalletProps) {
   useEffect(() => {
     if (topupInfo && topupAmount === 0) {
       const minTopup = getMinTopupAmount(topupInfo)
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setTopupAmount(minTopup)
 
       // Calculate initial payment amount with default payment type
@@ -171,6 +181,7 @@ export function Wallet(props: WalletProps) {
   const handleSelectPreset = (preset: PresetAmount) => {
     setTopupAmount(preset.value)
     setSelectedPreset(preset.value)
+    setCouponQuote(null)
     calculatePaymentAmount(preset.value, getCurrentPaymentType())
   }
 
@@ -178,7 +189,34 @@ export function Wallet(props: WalletProps) {
   const handleTopupAmountChange = (amount: number) => {
     setTopupAmount(amount)
     setSelectedPreset(null)
+    setCouponQuote(null)
     calculatePaymentAmount(amount, getCurrentPaymentType())
+  }
+
+  const handleApplyCoupon = async () => {
+    const paymentType = getCurrentPaymentType()
+    setApplyingCoupon(true)
+    try {
+      const response = await previewTopUpCoupon({
+        amount: topupAmount,
+        coupon_code: couponCode,
+      })
+      if (!isApiSuccess(response) || !response.data) {
+        setCouponQuote(null)
+        toast.error(response.message || '优惠码无效')
+        return
+      }
+      setCouponCode(response.data.coupon.code)
+      setCouponQuote(response.data)
+      await calculatePaymentAmount(
+        topupAmount,
+        paymentType,
+        response.data.coupon.code
+      )
+      toast.success('优惠码已应用')
+    } finally {
+      setApplyingCoupon(false)
+    }
   }
 
   // Handle payment method selection
@@ -194,7 +232,13 @@ export function Wallet(props: WalletProps) {
       }
 
       // Calculate payment amount and show confirmation dialog
-      await calculatePaymentAmount(topupAmount, method.type)
+      const supportsCoupon =
+        !isStripePayment(method.type) && !isWaffoPancakePayment(method.type)
+      await calculatePaymentAmount(
+        topupAmount,
+        method.type,
+        supportsCoupon ? couponQuote?.coupon.code : undefined
+      )
       setConfirmDialogOpen(true)
     } finally {
       setPaymentLoading(null)
@@ -206,9 +250,17 @@ export function Wallet(props: WalletProps) {
     if (!selectedPaymentMethod) return
 
     const isPancake = isWaffoPancakePayment(selectedPaymentMethod.type)
+    const activeCoupon =
+      !isPancake && !isStripePayment(selectedPaymentMethod.type)
+        ? couponQuote
+        : null
     const success = isPancake
       ? await processWaffoPancakePayment(topupAmount)
-      : await processPayment(topupAmount, selectedPaymentMethod.type)
+      : await processPayment(
+          topupAmount,
+          selectedPaymentMethod.type,
+          activeCoupon?.coupon.code
+        )
 
     if (success) {
       setConfirmDialogOpen(false)
@@ -330,6 +382,15 @@ export function Wallet(props: WalletProps) {
         onOpenBilling={() => setBillingDialogOpen(true)}
         onCreemProductSelect={handleCreemProductSelect}
         onWaffoMethodSelect={handleWaffoMethodSelect}
+        couponEnabled={topupInfo?.coupon_enabled}
+        couponCode={couponCode}
+        couponQuote={couponQuote}
+        applyingCoupon={applyingCoupon}
+        onCouponCodeChange={(value) => {
+          setCouponCode(value)
+          setCouponQuote(null)
+        }}
+        onApplyCoupon={() => void handleApplyCoupon()}
       />
 
       <PaymentConfirmDialog
@@ -341,8 +402,22 @@ export function Wallet(props: WalletProps) {
         paymentMethod={selectedPaymentMethod}
         calculating={calculating}
         processing={processing || pancakeProcessing}
-        discountRate={getDiscountRate()}
+        discountRate={
+          couponQuote &&
+          selectedPaymentMethod &&
+          !isStripePayment(selectedPaymentMethod.type) &&
+          !isWaffoPancakePayment(selectedPaymentMethod.type)
+            ? getDiscountRate() * couponQuote.coupon.discount
+            : getDiscountRate()
+        }
         usdExchangeRate={effectiveUsdExchangeRate}
+        couponQuote={
+          selectedPaymentMethod &&
+          !isStripePayment(selectedPaymentMethod.type) &&
+          !isWaffoPancakePayment(selectedPaymentMethod.type)
+            ? couponQuote
+            : null
+        }
       />
 
       <TransferDialog

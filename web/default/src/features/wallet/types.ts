@@ -161,6 +161,23 @@ export interface TopupInfo {
   payment_compliance_confirmed?: boolean
   /** Current compliance terms version */
   payment_compliance_terms_version?: string
+  /** Whether at least one balance top-up coupon is currently available */
+  coupon_enabled?: boolean
+}
+
+export interface TopUpCouponQuote {
+  coupon: {
+    id: number
+    code: string
+    title: string
+    description: string
+    discount: number
+    user_limit: number
+  }
+  original_money: number
+  discounted_money: number
+  used_count: number
+  remaining_uses: number
 }
 
 /**
@@ -189,6 +206,8 @@ export interface PaymentRequest {
   amount: number
   /** Payment method identifier */
   payment_method: string
+  /** Optional balance top-up coupon, supported by the Epay flow */
+  coupon_code?: string
 }
 
 /**
@@ -215,6 +234,7 @@ export interface WaffoPancakePaymentRequest {
 export interface AmountRequest {
   /** Topup amount to calculate */
   amount: number
+  coupon_code?: string
 }
 
 /**

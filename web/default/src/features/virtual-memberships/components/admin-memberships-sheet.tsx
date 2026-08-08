@@ -67,6 +67,7 @@ import {
 import {
   deleteAdminVirtualMembership,
   getAdminVirtualMemberships,
+  resetAdminVirtualMemberships,
 } from '@/features/virtual-membership/api'
 import type { AdminVirtualMembership } from '@/features/virtual-membership/types'
 import { GrantMembershipDialog } from './grant-membership-dialog'
@@ -178,6 +179,7 @@ export function AdminMembershipsSheet({
   const [deleteTarget, setDeleteTarget] =
     useState<AdminVirtualMembership | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [resettingId, setResettingId] = useState<number | null>(null)
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['admin-virtual-memberships'],
     queryFn: getAdminVirtualMemberships,
@@ -231,6 +233,30 @@ export function AdminMembershipsSheet({
       // membership that still has an in-flight settlement.
     } finally {
       setDeleting(false)
+    }
+  }
+
+  const resetMembership = async (membership: AdminVirtualMembership) => {
+    if (
+      resettingId !== null ||
+      !window.confirm(
+        `确认重置 ${membership.display_name || membership.username || `用户 #${membership.user_id}`} 的 ${membership.plan_title} 额度吗？`
+      )
+    )
+      return
+    setResettingId(membership.id)
+    try {
+      const result = await resetAdminVirtualMemberships({
+        membership_id: membership.id,
+      })
+      if (!result.success) {
+        toast.error(result.message || '重置虚拟会员失败')
+        return
+      }
+      toast.success(`已重置 ${result.data?.affected ?? 0} 个会员实例`)
+      await refetch()
+    } finally {
+      setResettingId(null)
     }
   }
 
@@ -417,6 +443,23 @@ export function AdminMembershipsSheet({
                               >
                                 {meta?.label || membership.status}
                               </Badge>
+                              <Button
+                                type='button'
+                                variant='ghost'
+                                size='sm'
+                                className='h-7 px-2 text-xs text-emerald-700 hover:bg-emerald-500/10 hover:text-emerald-700'
+                                disabled={resettingId !== null}
+                                onClick={() => void resetMembership(membership)}
+                              >
+                                <RefreshCw
+                                  className={cn(
+                                    'size-3.5',
+                                    resettingId === membership.id &&
+                                      'animate-spin'
+                                  )}
+                                />
+                                重置额度
+                              </Button>
                               <Button
                                 type='button'
                                 variant='ghost'

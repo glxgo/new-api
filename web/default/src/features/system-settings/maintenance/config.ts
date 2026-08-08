@@ -71,6 +71,8 @@ export const SIDEBAR_MODULES_DEFAULT: SidebarModulesAdminConfig = {
     enabled: true,
     topup: true,
     personal: true,
+    virtual_membership: true,
+    announcements: true,
   },
   admin: {
     enabled: true,
@@ -80,6 +82,9 @@ export const SIDEBAR_MODULES_DEFAULT: SidebarModulesAdminConfig = {
     user: true,
     setting: true,
     subscription: true,
+    virtual_membership: true,
+    ingress: true,
+    topup_coupon: true,
   },
 }
 

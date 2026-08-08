@@ -45,6 +45,7 @@ import { Route as AuthenticatedVirtualMembershipIndexRouteImport } from './route
 import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
 import { Route as AuthenticatedUsageStatisticsIndexRouteImport } from './routes/_authenticated/usage-statistics/index'
 import { Route as AuthenticatedUsageLogsIndexRouteImport } from './routes/_authenticated/usage-logs/index'
+import { Route as AuthenticatedTopupCouponsIndexRouteImport } from './routes/_authenticated/topup-coupons/index'
 import { Route as AuthenticatedSystemSettingsIndexRouteImport } from './routes/_authenticated/system-settings/index'
 import { Route as AuthenticatedSubscriptionsIndexRouteImport } from './routes/_authenticated/subscriptions/index'
 import { Route as AuthenticatedSubscriptionPlansIndexRouteImport } from './routes/_authenticated/subscription-plans/index'
@@ -61,6 +62,7 @@ import { Route as AuthenticatedDividendIndexRouteImport } from './routes/_authen
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
 import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authenticated/channels/index'
 import { Route as AuthenticatedApiIngressIndexRouteImport } from './routes/_authenticated/api-ingress/index'
+import { Route as AuthenticatedAnnouncementsIndexRouteImport } from './routes/_authenticated/announcements/index'
 import { Route as AuthenticatedAffiliateIndexRouteImport } from './routes/_authenticated/affiliate/index'
 import { Route as AuthenticatedUsageLogsSectionRouteImport } from './routes/_authenticated/usage-logs/$section'
 import { Route as AuthenticatedModelsSectionRouteImport } from './routes/_authenticated/models/$section'
@@ -268,6 +270,12 @@ const AuthenticatedUsageLogsIndexRoute =
     path: '/usage-logs/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedTopupCouponsIndexRoute =
+  AuthenticatedTopupCouponsIndexRouteImport.update({
+    id: '/topup-coupons/',
+    path: '/topup-coupons/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedSystemSettingsIndexRoute =
   AuthenticatedSystemSettingsIndexRouteImport.update({
     id: '/',
@@ -361,6 +369,12 @@ const AuthenticatedApiIngressIndexRoute =
   AuthenticatedApiIngressIndexRouteImport.update({
     id: '/api-ingress/',
     path: '/api-ingress/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAnnouncementsIndexRoute =
+  AuthenticatedAnnouncementsIndexRouteImport.update({
+    id: '/announcements/',
+    path: '/announcements/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedAffiliateIndexRoute =
@@ -522,6 +536,7 @@ export interface FileRoutesByFullPath {
   '/models/$section': typeof AuthenticatedModelsSectionRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/affiliate/': typeof AuthenticatedAffiliateIndexRoute
+  '/announcements/': typeof AuthenticatedAnnouncementsIndexRoute
   '/api-ingress/': typeof AuthenticatedApiIngressIndexRoute
   '/channels/': typeof AuthenticatedChannelsIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
@@ -538,6 +553,7 @@ export interface FileRoutesByFullPath {
   '/subscription-plans/': typeof AuthenticatedSubscriptionPlansIndexRoute
   '/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
   '/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
+  '/topup-coupons/': typeof AuthenticatedTopupCouponsIndexRoute
   '/usage-logs/': typeof AuthenticatedUsageLogsIndexRoute
   '/usage-statistics/': typeof AuthenticatedUsageStatisticsIndexRoute
   '/users/': typeof AuthenticatedUsersIndexRoute
@@ -594,6 +610,7 @@ export interface FileRoutesByTo {
   '/models/$section': typeof AuthenticatedModelsSectionRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/affiliate': typeof AuthenticatedAffiliateIndexRoute
+  '/announcements': typeof AuthenticatedAnnouncementsIndexRoute
   '/api-ingress': typeof AuthenticatedApiIngressIndexRoute
   '/channels': typeof AuthenticatedChannelsIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
@@ -610,6 +627,7 @@ export interface FileRoutesByTo {
   '/subscription-plans': typeof AuthenticatedSubscriptionPlansIndexRoute
   '/subscriptions': typeof AuthenticatedSubscriptionsIndexRoute
   '/system-settings': typeof AuthenticatedSystemSettingsIndexRoute
+  '/topup-coupons': typeof AuthenticatedTopupCouponsIndexRoute
   '/usage-logs': typeof AuthenticatedUsageLogsIndexRoute
   '/usage-statistics': typeof AuthenticatedUsageStatisticsIndexRoute
   '/users': typeof AuthenticatedUsersIndexRoute
@@ -670,6 +688,7 @@ export interface FileRoutesById {
   '/_authenticated/models/$section': typeof AuthenticatedModelsSectionRoute
   '/_authenticated/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/_authenticated/affiliate/': typeof AuthenticatedAffiliateIndexRoute
+  '/_authenticated/announcements/': typeof AuthenticatedAnnouncementsIndexRoute
   '/_authenticated/api-ingress/': typeof AuthenticatedApiIngressIndexRoute
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
@@ -686,6 +705,7 @@ export interface FileRoutesById {
   '/_authenticated/subscription-plans/': typeof AuthenticatedSubscriptionPlansIndexRoute
   '/_authenticated/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
   '/_authenticated/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
+  '/_authenticated/topup-coupons/': typeof AuthenticatedTopupCouponsIndexRoute
   '/_authenticated/usage-logs/': typeof AuthenticatedUsageLogsIndexRoute
   '/_authenticated/usage-statistics/': typeof AuthenticatedUsageStatisticsIndexRoute
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
@@ -745,6 +765,7 @@ export interface FileRouteTypes {
     | '/models/$section'
     | '/usage-logs/$section'
     | '/affiliate/'
+    | '/announcements/'
     | '/api-ingress/'
     | '/channels/'
     | '/dashboard/'
@@ -761,6 +782,7 @@ export interface FileRouteTypes {
     | '/subscription-plans/'
     | '/subscriptions/'
     | '/system-settings/'
+    | '/topup-coupons/'
     | '/usage-logs/'
     | '/usage-statistics/'
     | '/users/'
@@ -817,6 +839,7 @@ export interface FileRouteTypes {
     | '/models/$section'
     | '/usage-logs/$section'
     | '/affiliate'
+    | '/announcements'
     | '/api-ingress'
     | '/channels'
     | '/dashboard'
@@ -833,6 +856,7 @@ export interface FileRouteTypes {
     | '/subscription-plans'
     | '/subscriptions'
     | '/system-settings'
+    | '/topup-coupons'
     | '/usage-logs'
     | '/usage-statistics'
     | '/users'
@@ -892,6 +916,7 @@ export interface FileRouteTypes {
     | '/_authenticated/models/$section'
     | '/_authenticated/usage-logs/$section'
     | '/_authenticated/affiliate/'
+    | '/_authenticated/announcements/'
     | '/_authenticated/api-ingress/'
     | '/_authenticated/channels/'
     | '/_authenticated/dashboard/'
@@ -908,6 +933,7 @@ export interface FileRouteTypes {
     | '/_authenticated/subscription-plans/'
     | '/_authenticated/subscriptions/'
     | '/_authenticated/system-settings/'
+    | '/_authenticated/topup-coupons/'
     | '/_authenticated/usage-logs/'
     | '/_authenticated/usage-statistics/'
     | '/_authenticated/users/'
@@ -1209,6 +1235,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedUsageLogsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/topup-coupons/': {
+      id: '/_authenticated/topup-coupons/'
+      path: '/topup-coupons'
+      fullPath: '/topup-coupons/'
+      preLoaderRoute: typeof AuthenticatedTopupCouponsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/system-settings/': {
       id: '/_authenticated/system-settings/'
       path: '/'
@@ -1319,6 +1352,13 @@ declare module '@tanstack/react-router' {
       path: '/api-ingress'
       fullPath: '/api-ingress/'
       preLoaderRoute: typeof AuthenticatedApiIngressIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/announcements/': {
+      id: '/_authenticated/announcements/'
+      path: '/announcements'
+      fullPath: '/announcements/'
+      preLoaderRoute: typeof AuthenticatedAnnouncementsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/affiliate/': {
@@ -1563,6 +1603,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedModelsSectionRoute: typeof AuthenticatedModelsSectionRoute
   AuthenticatedUsageLogsSectionRoute: typeof AuthenticatedUsageLogsSectionRoute
   AuthenticatedAffiliateIndexRoute: typeof AuthenticatedAffiliateIndexRoute
+  AuthenticatedAnnouncementsIndexRoute: typeof AuthenticatedAnnouncementsIndexRoute
   AuthenticatedApiIngressIndexRoute: typeof AuthenticatedApiIngressIndexRoute
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
@@ -1578,6 +1619,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedRedemptionCodesIndexRoute: typeof AuthenticatedRedemptionCodesIndexRoute
   AuthenticatedSubscriptionPlansIndexRoute: typeof AuthenticatedSubscriptionPlansIndexRoute
   AuthenticatedSubscriptionsIndexRoute: typeof AuthenticatedSubscriptionsIndexRoute
+  AuthenticatedTopupCouponsIndexRoute: typeof AuthenticatedTopupCouponsIndexRoute
   AuthenticatedUsageLogsIndexRoute: typeof AuthenticatedUsageLogsIndexRoute
   AuthenticatedUsageStatisticsIndexRoute: typeof AuthenticatedUsageStatisticsIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
@@ -1597,6 +1639,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedModelsSectionRoute: AuthenticatedModelsSectionRoute,
   AuthenticatedUsageLogsSectionRoute: AuthenticatedUsageLogsSectionRoute,
   AuthenticatedAffiliateIndexRoute: AuthenticatedAffiliateIndexRoute,
+  AuthenticatedAnnouncementsIndexRoute: AuthenticatedAnnouncementsIndexRoute,
   AuthenticatedApiIngressIndexRoute: AuthenticatedApiIngressIndexRoute,
   AuthenticatedChannelsIndexRoute: AuthenticatedChannelsIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
@@ -1615,6 +1658,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSubscriptionPlansIndexRoute:
     AuthenticatedSubscriptionPlansIndexRoute,
   AuthenticatedSubscriptionsIndexRoute: AuthenticatedSubscriptionsIndexRoute,
+  AuthenticatedTopupCouponsIndexRoute: AuthenticatedTopupCouponsIndexRoute,
   AuthenticatedUsageLogsIndexRoute: AuthenticatedUsageLogsIndexRoute,
   AuthenticatedUsageStatisticsIndexRoute:
     AuthenticatedUsageStatisticsIndexRoute,
