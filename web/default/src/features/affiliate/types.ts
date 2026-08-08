@@ -37,11 +37,14 @@ export interface AffiliateSummary {
   rebate_withdrawable: boolean
 }
 
-// 脱敏下级用户(只暴露非隐私字段 + 为我产生的返利)。
+// 下级结算汇总（不包含邮箱和当前钱包余额等账户隐私字段）。
 export interface DownlineUser {
   id: number
   username: string
   created_at: number
+  recharge_cents: number // 真实支付金额，分
+  usage: number // 累计 API 用量(quota)
+  gross_profit: number // 已结算毛利(quota)
   rebate: number // 该下级为我产生的累计返利(quota)
 }
 
@@ -55,6 +58,9 @@ export interface RebateRecord {
   type: 1 | 2
   gross_profit: number
   amount: number
+  source_usage: number
+  source_recharge_cents: number
+  request_count: number
   created_at: number
 }
 

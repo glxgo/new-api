@@ -510,7 +510,7 @@ func PostConsumeQuota(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQu
 			if relayInfo.BillingSource == BillingSourceSubscription {
 				checkAndSendSubscriptionQuotaNotify(relayInfo)
 			} else {
-				checkAndSendQuotaNotify(relayInfo, quota, preConsumedQuota)
+				checkAndSendQuotaNotify(relayInfo)
 			}
 		}
 	}
@@ -518,10 +518,11 @@ func PostConsumeQuota(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQu
 	return nil
 }
 
-// quotaWarnLastSent 内存限流兜底(Redis 故障/未启用时生效), 每用户每小时最多1次余额预警.
+// quotaWarnLastSent 是订阅额度预警的内存限流兜底。钱包余额提醒改由数据库中的
+// 充值周期状态控制，不再复用这个小时级窗口。
 var quotaWarnLastSent sync.Map
 
-// shouldSkipQuotaWarn 余额预警限流: 订阅与钱包共享同一窗口, 每用户每小时最多1次.
+// shouldSkipQuotaWarn 订阅额度预警限流: 每用户每小时最多1次.
 // Redis SETNX 优先(跨实例一致), 故障/未启用时回退内存 map(单实例兜底).
 // 返回 true 表示本次应跳过(已被限流).
 func shouldSkipQuotaWarn(userId int) bool {
@@ -541,25 +542,24 @@ func shouldSkipQuotaWarn(userId int) bool {
 	return false
 }
 
-func checkAndSendQuotaNotify(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQuota int) {
+func checkAndSendQuotaNotify(relayInfo *relaycommon.RelayInfo) {
 	gopool.Go(func() {
-		userSetting := relayInfo.UserSetting
-		threshold := common.QuotaRemindThreshold
-		if userSetting.QuotaWarningThreshold != 0 {
-			threshold = int(userSetting.QuotaWarningThreshold)
+		if relayInfo == nil {
+			return
 		}
-
-		//noMoreQuota := userCache.Quota-(quota+preConsumedQuota) <= 0
-		quotaTooLow := false
-		consumeQuota := quota + preConsumedQuota
-		if relayInfo.UserQuota-consumeQuota < threshold {
-			quotaTooLow = true
+		// 固定为一个站内计费单位($1/“1元”口径)。从数据库读取本金+赠金，
+		// 避免使用请求开始时的缓存快照造成重复或滞后提醒。
+		threshold := int(common.QuotaPerUnit)
+		if threshold <= 0 {
+			threshold = 1
 		}
-		if quotaTooLow {
-			// 限频: 每用户每小时最多1次余额预警(订阅/钱包共享, Redis 故障走内存兜底)
-			if shouldSkipQuotaWarn(relayInfo.UserId) {
-				return
-			}
+		remaining, claimed, err := model.ClaimLowBalanceWarning(relayInfo.UserId, threshold)
+		if err != nil {
+			common.SysError(fmt.Sprintf("failed to claim low balance warning for user %d: %s", relayInfo.UserId, err.Error()))
+			return
+		}
+		if claimed {
+			userSetting := relayInfo.UserSetting
 			prompt := "您的额度即将用尽"
 			topUpLink := PaymentReturnURL("/console/topup")
 
@@ -575,19 +575,22 @@ func checkAndSendQuotaNotify(relayInfo *relaycommon.RelayInfo, quota int, preCon
 			if notifyType == dto.NotifyTypeBark {
 				// Bark推送使用简短文本，不支持HTML
 				content = "{{value}}，剩余额度：{{value}}，请及时充值"
-				values = []interface{}{prompt, logger.FormatQuota(relayInfo.UserQuota)}
+				values = []interface{}{prompt, logger.FormatQuota(remaining)}
 			} else if notifyType == dto.NotifyTypeGotify {
 				content = "{{value}}，当前剩余额度为 {{value}}，请及时充值。"
-				values = []interface{}{prompt, logger.FormatQuota(relayInfo.UserQuota)}
+				values = []interface{}{prompt, logger.FormatQuota(remaining)}
 			} else {
 				// 默认内容格式，适用于Email和Webhook（支持HTML）
 				content = "{{value}}，当前剩余额度为 {{value}}，为了不影响您的使用，请及时充值。<br/>充值链接：<a href='{{value}}'>{{value}}</a>"
-				values = []interface{}{prompt, logger.FormatQuota(relayInfo.UserQuota), topUpLink, topUpLink}
+				values = []interface{}{prompt, logger.FormatQuota(remaining), topUpLink, topUpLink}
 			}
 
-			err := NotifyUser(relayInfo.UserId, relayInfo.UserEmail, relayInfo.UserSetting, dto.NewNotify(dto.NotifyTypeQuotaExceed, prompt, content, values))
+			err = NotifyUser(relayInfo.UserId, relayInfo.UserEmail, relayInfo.UserSetting, dto.NewNotify(dto.NotifyTypeQuotaExceed, prompt, content, values))
 			if err != nil {
 				common.SysError(fmt.Sprintf("failed to send quota notify to user %d: %s", relayInfo.UserId, err.Error()))
+				if rearmErr := model.RearmLowBalanceWarning(relayInfo.UserId); rearmErr != nil {
+					common.SysError(fmt.Sprintf("failed to rearm low balance warning for user %d: %s", relayInfo.UserId, rearmErr.Error()))
+				}
 			}
 		}
 	})
@@ -613,7 +616,7 @@ func checkAndSendSubscriptionQuotaNotify(relayInfo *relaycommon.RelayInfo) {
 		if remaining >= int64(threshold) {
 			return
 		}
-		// 限频: 与钱包余额提醒共享, 每用户每小时最多1次
+		// 订阅额度仍按小时限频；钱包余额使用独立的充值周期状态。
 		if shouldSkipQuotaWarn(relayInfo.UserId) {
 			return
 		}

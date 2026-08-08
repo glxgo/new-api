@@ -16,9 +16,9 @@ const dailySettleLogBatchSize = 1000
 // RunDailySettle 执行某日的 T+1 分润结算(幂等, 可重跑)。
 // batchId 如 "2026-06-16", dayStart/dayEnd 为该日 [起, 止) 时间戳(秒)。
 //
-// 流程: 幂等检查 → 分批扫未结算消费日志 → 算每笔毛利(CalcGrossProfit)
+// 流程: 幂等检查 → 分批扫未结算消费日志 → 按消费用户汇总整日毛利(CalcGrossProfit)
 //
-//	→ 按规则累加分润(拉新进赠金池 / 管理员+超管进分红账户) → 批量标记日志 settled
+//	→ 每个用户每天只计算一次分润(拉新进赠金池 / 管理员+超管进分红账户) → 批量标记日志 settled
 //	→ 发放 → 写 DividendRecord 明细 → 标记批次完成。
 //
 // 安全性: 「先标记 settled 再发放」, 崩溃只会漏发(不凭空多发), 可用 AffiliateSettle.TotalGross
@@ -59,8 +59,17 @@ func RunDailySettle(batchId string, dayStart, dayEnd int64) error {
 
 	accumGift := map[int]int{}     // userId -> 普通用户赠金返利
 	accumDividend := map[int]int{} // userId -> 代理可提佣金 / 管理员与超管分红
-	var records []*model.DividendRecord
 	totalGross, logCount := 0, 0
+	type sourceDailyAggregate struct {
+		UserId         int
+		GrossProfit    int
+		Usage          int
+		RequestCount   int
+		InviterIdSnap  int
+		Inviter2IdSnap int
+		AffAdminIdSnap int
+	}
+	sources := map[int]*sourceDailyAggregate{}
 
 	userCache := map[int]*model.User{}
 	getUser := func(id int) *model.User {
@@ -83,64 +92,27 @@ func RunDailySettle(batchId string, dayStart, dayEnd int64) error {
 		if u := getUser(log.UserId); u != nil && u.Role >= common.RoleRootUser {
 			return
 		}
+		source := sources[log.UserId]
+		if source == nil {
+			source = &sourceDailyAggregate{
+				UserId: log.UserId, InviterIdSnap: log.InviterIdSnap,
+				Inviter2IdSnap: log.Inviter2IdSnap, AffAdminIdSnap: log.AffAdminIdSnap,
+			}
+			sources[log.UserId] = source
+		} else if source.InviterIdSnap != log.InviterIdSnap ||
+			source.Inviter2IdSnap != log.Inviter2IdSnap || source.AffAdminIdSnap != log.AffAdminIdSnap {
+			logger.LogInfo(ctx, fmt.Sprintf("daily settle %s source user %d has changed affiliate snapshot; using first snapshot", batchId, log.UserId))
+		}
+		source.Usage += log.Quota
+		source.RequestCount++
+
 		gross := CalcGrossProfit(log.PaidQuota, log.PaidGiftQuota, log.Cost)
 		if gross <= 0 {
 			return
 		}
+		source.GrossProfit += gross
 		totalGross += gross
 		logCount++
-		dGross := decimal.NewFromInt(int64(gross))
-
-		// 拉新返利 - 直接上级(普通用户才发; 上级是管理员则走分红, 不发返利)
-		if inv := getUser(log.InviterIdSnap); inv != nil && inv.Role < common.RoleAdminUser {
-			dDirect := decimal.NewFromFloat(common.AffiliateDirectRateForRole(inv.Role))
-			if amt := int(dGross.Mul(dDirect).Round(0).IntPart()); amt > 0 {
-				if common.AffiliateRewardIsWithdrawable(inv.Role) {
-					accumDividend[inv.Id] += amt
-				} else {
-					accumGift[inv.Id] += amt
-				}
-				records = append(records, &model.DividendRecord{BatchId: batchId, UserId: inv.Id, SourceUserId: log.UserId, LogId: log.Id, Type: model.DividendTypeDirect, GrossProfit: gross, Amount: amt, CreatedAt: common.GetTimestamp()})
-			}
-		}
-		// 拉新返利 - 间接上级
-		if inv2 := getUser(log.Inviter2IdSnap); inv2 != nil && inv2.Role < common.RoleAdminUser {
-			if amt := int(dGross.Mul(dIndirect).Round(0).IntPart()); amt > 0 {
-				if common.AffiliateRewardIsWithdrawable(inv2.Role) {
-					accumDividend[inv2.Id] += amt
-				} else {
-					accumGift[inv2.Id] += amt
-				}
-				records = append(records, &model.DividendRecord{BatchId: batchId, UserId: inv2.Id, SourceUserId: log.UserId, LogId: log.Id, Type: model.DividendTypeIndirect, GrossProfit: gross, Amount: amt, CreatedAt: common.GetTimestamp()})
-			}
-		}
-		// 管理员分红(树顶管理员, 按层级距离):
-		//   - 直接上级是管理员(InviterIdSnap==admin): 用全局 AffiliateAdminDirectRate(上限 MaxDividendRate)
-		//   - 间接/三层+(树顶但非直接上级): 用全局 AffiliateAdminIndirectRate(默认 22%)
-		if admin := getUser(log.AffAdminIdSnap); admin != nil && admin.Role >= common.RoleAdminUser {
-			var rate decimal.Decimal
-			if log.InviterIdSnap == admin.Id {
-				rate = dAdminDirect
-				if rate.GreaterThan(dMaxDiv) {
-					rate = dMaxDiv
-				}
-			} else {
-				rate = dAdminIndirect
-			}
-			if rate.GreaterThan(decimal.Zero) {
-				if amt := int(dGross.Mul(rate).Round(0).IntPart()); amt > 0 {
-					accumDividend[admin.Id] += amt
-					records = append(records, &model.DividendRecord{BatchId: batchId, UserId: admin.Id, SourceUserId: log.UserId, LogId: log.Id, Type: model.DividendTypeAdmin, GrossProfit: gross, Amount: amt, CreatedAt: common.GetTimestamp()})
-				}
-			}
-		}
-		// 超管分红(所有毛利 × RootDividendRate)
-		if root != nil {
-			if amt := int(dGross.Mul(dRoot).Round(0).IntPart()); amt > 0 {
-				accumDividend[root.Id] += amt
-				records = append(records, &model.DividendRecord{BatchId: batchId, UserId: root.Id, SourceUserId: log.UserId, LogId: log.Id, Type: model.DividendTypeRoot, GrossProfit: gross, Amount: amt, CreatedAt: common.GetTimestamp()})
-			}
-		}
 	}
 
 	// 2. 分批扫描未结算日志 → 算分润 → 标记 settled
@@ -170,7 +142,83 @@ func RunDailySettle(batchId string, dayStart, dayEnd int64) error {
 		}
 	}
 
-	// 3. 发放(普通返利进 gift_quota; 代理佣金和管理分红进 dividend_balance + dividend_total)
+	// 3. 每个消费用户先汇总整日毛利，再计算一次返利。这样小额请求不会因
+	// 逐笔四舍五入被拆成大量明细，审计行与实际结算口径保持一致。
+	sourceIds := make([]int, 0, len(sources))
+	for sourceUserId := range sources {
+		sourceIds = append(sourceIds, sourceUserId)
+	}
+	rechargeByUser, err := model.GetRechargeCentsByUsersBetween(sourceIds, dayStart, dayEnd)
+	if err != nil {
+		return err
+	}
+	records := make([]*model.DividendRecord, 0, len(sources)*2)
+	now := common.GetTimestamp()
+	appendRecord := func(source *sourceDailyAggregate, recipientId, dividendType, amount int) {
+		if source == nil || recipientId <= 0 || amount <= 0 {
+			return
+		}
+		records = append(records, &model.DividendRecord{
+			BatchId: batchId, UserId: recipientId, SourceUserId: source.UserId,
+			Type: dividendType, GrossProfit: source.GrossProfit, Amount: amount,
+			SourceUsage: source.Usage, SourceRechargeCents: rechargeByUser[source.UserId],
+			RequestCount: source.RequestCount,
+			SourceRef:    fmt.Sprintf("daily:%s:%d:%d:%d", batchId, recipientId, source.UserId, dividendType),
+			CreatedAt:    now,
+		})
+	}
+	for _, source := range sources {
+		if source.GrossProfit <= 0 {
+			continue
+		}
+		dGross := decimal.NewFromInt(int64(source.GrossProfit))
+		if inv := getUser(source.InviterIdSnap); inv != nil && inv.Role < common.RoleAdminUser {
+			dDirect := decimal.NewFromFloat(common.AffiliateDirectRateForRole(inv.Role))
+			if amt := int(dGross.Mul(dDirect).Round(0).IntPart()); amt > 0 {
+				if common.AffiliateRewardIsWithdrawable(inv.Role) {
+					accumDividend[inv.Id] += amt
+				} else {
+					accumGift[inv.Id] += amt
+				}
+				appendRecord(source, inv.Id, model.DividendTypeDirect, amt)
+			}
+		}
+		if inv2 := getUser(source.Inviter2IdSnap); inv2 != nil && inv2.Role < common.RoleAdminUser {
+			if amt := int(dGross.Mul(dIndirect).Round(0).IntPart()); amt > 0 {
+				if common.AffiliateRewardIsWithdrawable(inv2.Role) {
+					accumDividend[inv2.Id] += amt
+				} else {
+					accumGift[inv2.Id] += amt
+				}
+				appendRecord(source, inv2.Id, model.DividendTypeIndirect, amt)
+			}
+		}
+		if admin := getUser(source.AffAdminIdSnap); admin != nil && admin.Role >= common.RoleAdminUser {
+			var rate decimal.Decimal
+			if source.InviterIdSnap == admin.Id {
+				rate = dAdminDirect
+				if rate.GreaterThan(dMaxDiv) {
+					rate = dMaxDiv
+				}
+			} else {
+				rate = dAdminIndirect
+			}
+			if rate.GreaterThan(decimal.Zero) {
+				if amt := int(dGross.Mul(rate).Round(0).IntPart()); amt > 0 {
+					accumDividend[admin.Id] += amt
+					appendRecord(source, admin.Id, model.DividendTypeAdmin, amt)
+				}
+			}
+		}
+		if root != nil {
+			if amt := int(dGross.Mul(dRoot).Round(0).IntPart()); amt > 0 {
+				accumDividend[root.Id] += amt
+				appendRecord(source, root.Id, model.DividendTypeRoot, amt)
+			}
+		}
+	}
+
+	// 4. 发放(普通返利进 gift_quota; 代理佣金和管理分红进 dividend_balance + dividend_total)
 	for uid, amt := range accumGift {
 		if amt > 0 {
 			if err := model.IncreaseUserGiftQuota(uid, amt, false); err != nil {
@@ -186,12 +234,12 @@ func RunDailySettle(batchId string, dayStart, dayEnd int64) error {
 		}
 	}
 
-	// 4. 写明细
+	// 5. 写按用户、按日聚合后的明细
 	if err := model.BatchInsertDividendRecords(records); err != nil {
 		logger.LogError(ctx, fmt.Sprintf("daily settle %s insert records failed: %v", batchId, err))
 	}
 
-	// 5. 标记批次完成
+	// 6. 标记批次完成
 	if err := model.FinishAffiliateSettle(batchId, logCount, totalGross); err != nil {
 		logger.LogError(ctx, fmt.Sprintf("daily settle %s finish batch failed: %v", batchId, err))
 	}

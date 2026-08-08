@@ -36,6 +36,14 @@ import {
 
 const PAGE_SIZE = 10
 
+function formatRechargeCents(cents: number) {
+  return new Intl.NumberFormat('zh-CN', {
+    style: 'currency',
+    currency: 'CNY',
+    minimumFractionDigits: 2,
+  }).format((cents || 0) / 100)
+}
+
 // 邀新计划页(普通用户): 邀请规则 + 邀请链接 + 直邀/间邀人数 + 累计返利
 // + 下级两层列表(直接/间接切换) + 返利明细。
 export function Affiliate() {
@@ -204,21 +212,36 @@ export function Affiliate() {
                 </div>
               ) : (
                 (dl?.data?.data ?? []).map((u) => (
-                  <div
-                    key={u.id}
-                    className='flex items-center justify-between px-4 py-3 text-sm'
-                  >
-                    <div>
-                      <div className='font-medium'>{u.username}</div>
-                      <div className='text-muted-foreground text-xs'>
-                        {dayjs(u.created_at * 1000).format('YYYY-MM-DD HH:mm')}
+                  <div key={u.id} className='px-4 py-3.5 text-sm'>
+                    <div className='flex items-start justify-between gap-4'>
+                      <div>
+                        <div className='font-medium'>{u.username}</div>
+                        <div className='text-muted-foreground text-xs'>
+                          {dayjs(u.created_at * 1000).format(
+                            'YYYY-MM-DD HH:mm'
+                          )}
+                        </div>
                       </div>
+                      <Badge variant='outline'>#{u.id}</Badge>
                     </div>
-                    <div className='text-muted-foreground text-xs'>
-                      {t('Rebate')}:{' '}
-                      <span className='text-foreground font-mono'>
-                        {formatQuota(u.rebate)}
-                      </span>
+                    <div className='bg-border mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-lg border sm:grid-cols-4'>
+                      <FinancialMetric
+                        label={t('Recharge')}
+                        value={formatRechargeCents(u.recharge_cents)}
+                      />
+                      <FinancialMetric
+                        label={t('Usage')}
+                        value={formatQuota(u.usage)}
+                      />
+                      <FinancialMetric
+                        label={t('Gross Profit')}
+                        value={formatQuota(u.gross_profit)}
+                      />
+                      <FinancialMetric
+                        label={t('Total Rebate')}
+                        value={formatQuota(u.rebate)}
+                        accent
+                      />
                     </div>
                   </div>
                 ))
@@ -246,25 +269,41 @@ export function Affiliate() {
                 </div>
               ) : (
                 (rb?.data?.data ?? []).map((r) => (
-                  <div
-                    key={r.id}
-                    className='flex items-center justify-between px-4 py-3 text-sm'
-                  >
-                    <div className='flex items-center gap-2'>
-                      <Badge variant='secondary' className='text-xs'>
-                        {r.type === 1 ? t('Direct') : t('Indirect')}
-                      </Badge>
-                      <span className='text-muted-foreground text-xs'>
-                        {t('from user')} #{r.source_user_id}
-                      </span>
-                    </div>
-                    <div className='text-right'>
-                      <div className='text-success font-mono font-semibold'>
-                        +{formatQuota(r.amount)}
+                  <div key={r.id} className='px-4 py-3.5 text-sm'>
+                    <div className='flex items-center justify-between gap-3'>
+                      <div className='flex items-center gap-2'>
+                        <Badge variant='secondary' className='text-xs'>
+                          {r.type === 1 ? t('Direct') : t('Indirect')}
+                        </Badge>
+                        <span className='text-muted-foreground text-xs'>
+                          {t('from user')} #{r.source_user_id}
+                        </span>
                       </div>
                       <div className='text-muted-foreground text-xs'>
-                        {dayjs(r.created_at * 1000).format('YYYY-MM-DD HH:mm')}
+                        {r.batch_id ||
+                          dayjs(r.created_at * 1000).format('YYYY-MM-DD')}
                       </div>
+                    </div>
+                    <div className='mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4'>
+                      <CompactMetric
+                        label={t('Recharge')}
+                        value={formatRechargeCents(
+                          r.source_recharge_cents || 0
+                        )}
+                      />
+                      <CompactMetric
+                        label={t('Usage')}
+                        value={formatQuota(r.source_usage || 0)}
+                      />
+                      <CompactMetric
+                        label={t('Gross Profit')}
+                        value={formatQuota(r.gross_profit)}
+                      />
+                      <CompactMetric
+                        label={t('Dividend Amount')}
+                        value={`+${formatQuota(r.amount)}`}
+                        accent
+                      />
                     </div>
                   </div>
                 ))
@@ -280,6 +319,50 @@ export function Affiliate() {
         </div>
       </SectionPageLayout.Content>
     </SectionPageLayout>
+  )
+}
+
+function FinancialMetric({
+  label,
+  value,
+  accent = false,
+}: {
+  label: string
+  value: string
+  accent?: boolean
+}) {
+  return (
+    <div className='bg-background min-w-0 px-3 py-2.5'>
+      <div className='text-muted-foreground text-[11px]'>{label}</div>
+      <div
+        className={`mt-0.5 truncate font-mono text-sm font-semibold tabular-nums ${accent ? 'text-success' : ''}`}
+        title={value}
+      >
+        {value}
+      </div>
+    </div>
+  )
+}
+
+function CompactMetric({
+  label,
+  value,
+  accent = false,
+}: {
+  label: string
+  value: string
+  accent?: boolean
+}) {
+  return (
+    <div className='min-w-0'>
+      <div className='text-muted-foreground text-[11px]'>{label}</div>
+      <div
+        className={`truncate font-mono text-xs font-semibold tabular-nums ${accent ? 'text-success' : ''}`}
+        title={value}
+      >
+        {value}
+      </div>
+    </div>
   )
 }
 

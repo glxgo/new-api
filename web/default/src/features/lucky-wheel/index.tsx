@@ -132,6 +132,8 @@ export function LuckyWheel() {
   const [pendingNextCardId, setPendingNextCardId] = useState('')
   const [result, setResult] = useState<LuckyDraw | null>(null)
   const [rulesOpen, setRulesOpen] = useState(false)
+  const [poolPreviewType, setPoolPreviewType] =
+    useState<LuckyCard['pool_type']>('recharge')
   const [rechargeGuideOpen, setRechargeGuideOpen] = useState(false)
   const [subscriptionGuideOpen, setSubscriptionGuideOpen] = useState(false)
 
@@ -171,9 +173,23 @@ export function LuckyWheel() {
       visiblePool,
     ]
   )
-  const wheelLabelByCode = useMemo(
-    () => new Map(wheelSegments.map((prize) => [prize.code, prize.label])),
-    [wheelSegments]
+  const previewPool = useMemo(
+    () =>
+      poolPreviewType === 'recharge'
+        ? parsePool(activeRule?.recharge_pool)
+        : parsePool(activeRule?.subscription_pool),
+    [activeRule?.recharge_pool, activeRule?.subscription_pool, poolPreviewType]
+  )
+  const previewLabels = useMemo(
+    () =>
+      new Map(
+        buildWheelSegments(
+          previewPool,
+          poolPreviewType,
+          activeRule?.recharge_bonus_usd_micros || 0
+        ).map((prize) => [prize.code, prize.label])
+      ),
+    [activeRule?.recharge_bonus_usd_micros, poolPreviewType, previewPool]
   )
 
   async function refresh(preferredCardId = '', requestedDrawPage = 1) {
@@ -530,17 +546,45 @@ export function LuckyWheel() {
                         活动规则与奖池概率
                       </h3>
                       <p className='text-muted-foreground mt-1 text-sm dark:text-[#d6b4a6]'>
-                        当前所选幸运卡使用对应来源的独立奖池，概率不会在前端重新计算。
+                        两类幸运卡使用独立奖池。可主动切换查看，实际抽奖仍严格跟随所选卡片来源。
                       </p>
                     </div>
+                    <div className='mb-4 grid grid-cols-2 gap-1 rounded-xl border border-[#df744d]/20 bg-[#fff7ef] p-1 dark:border-[#f08a61]/25 dark:bg-black/20'>
+                      <button
+                        type='button'
+                        aria-pressed={poolPreviewType === 'recharge'}
+                        onClick={() => setPoolPreviewType('recharge')}
+                        className={cn(
+                          'rounded-lg px-3 py-2 text-sm font-semibold transition-[background-color,color,box-shadow]',
+                          poolPreviewType === 'recharge'
+                            ? 'bg-[#c94f2b] text-white shadow-sm'
+                            : 'text-[#8b513c] hover:bg-white/70 dark:text-[#e8b7a3] dark:hover:bg-white/5'
+                        )}
+                      >
+                        余额幸运卡
+                      </button>
+                      <button
+                        type='button'
+                        aria-pressed={poolPreviewType === 'subscription'}
+                        onClick={() => setPoolPreviewType('subscription')}
+                        className={cn(
+                          'rounded-lg px-3 py-2 text-sm font-semibold transition-[background-color,color,box-shadow]',
+                          poolPreviewType === 'subscription'
+                            ? 'bg-[#c94f2b] text-white shadow-sm'
+                            : 'text-[#8b513c] hover:bg-white/70 dark:text-[#e8b7a3] dark:hover:bg-white/5'
+                        )}
+                      >
+                        套餐幸运卡
+                      </button>
+                    </div>
                     <div className='grid gap-2 sm:grid-cols-2'>
-                      {visiblePool.map((prize) => (
+                      {previewPool.map((prize) => (
                         <div
                           key={prize.code}
                           className='flex items-center justify-between rounded-lg border px-3 py-2.5 text-[#512719] dark:border-[#f08a61]/25 dark:bg-[#3a2118]/70 dark:text-[#fff4ed]'
                         >
                           <span className='text-sm'>
-                            {wheelLabelByCode.get(prize.code) ||
+                            {previewLabels.get(prize.code) ||
                               PRIZE_NAMES[prize.code] ||
                               prize.code}
                           </span>
@@ -561,8 +605,10 @@ export function LuckyWheel() {
                         <strong className='text-foreground dark:text-[#fff4ed]'>
                           充值来源卡：
                         </strong>
-                        套餐额度奖在显示面额上额外增加 $60，有效期固定 30
-                        天；不会抽中套餐双倍卡或全额重置卡。
+                        套餐额度奖在显示面额上额外增加 $
+                        {(activeRule?.recharge_bonus_usd_micros || 0) /
+                          1_000_000}
+                        ，有效期固定 30 天；不会抽中套餐双倍卡或全额重置卡。
                       </p>
                       <p>
                         <strong className='text-foreground dark:text-[#fff4ed]'>

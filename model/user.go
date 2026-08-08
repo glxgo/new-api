@@ -68,6 +68,7 @@ type User struct {
 	RPMLimitOverride         bool           `json:"rpm_limit_override" gorm:"not null;default:false;column:rpm_limit_override"`
 	CurrentRPM               int            `json:"current_rpm" gorm:"-:all"`
 	RechargeTotalCents       int64          `json:"recharge_total_cents" gorm:"not null;default:0;column:recharge_total_cents"`
+	LowBalanceWarningArmed   bool           `json:"-" gorm:"not null;default:true;column:low_balance_warning_armed"`
 	SecurityStrikeCount      int            `json:"security_strike_count" gorm:"not null;default:0;column:security_strike_count"`
 	SecuritySuspendedUntil   int64          `json:"security_suspended_until" gorm:"not null;default:0;column:security_suspended_until;index"`
 	SecurityPermanentBan     bool           `json:"security_permanent_ban" gorm:"not null;default:false;column:security_permanent_ban;index"`

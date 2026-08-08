@@ -53,9 +53,13 @@ export type DividendRecordType =
 // same batch (one T+1 day) merged into one row. type filter is applied before aggregation.
 export interface DividendRecord {
   source_user_id: number // user whose consumption generated the profit
+  source_username: string
   batch_id: string // e.g. "2026-06-16"
+  source_recharge_cents: number // real paid recharge in the day
+  source_usage: number // settled wallet usage in the day
   gross_profit: number // sum of gross profit (quota)
   amount: number // sum of dividend amount (quota)
+  request_count: number
   record_count: number // how many dividend records merged into this row
   created_at: number
 }

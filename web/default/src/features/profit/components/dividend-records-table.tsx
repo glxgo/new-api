@@ -35,13 +35,21 @@ import { type DividendRecord } from '../types'
 
 const PAGE_SIZE = 20
 
+function formatRechargeCents(cents: number) {
+  return new Intl.NumberFormat('zh-CN', {
+    style: 'currency',
+    currency: 'CNY',
+    minimumFractionDigits: 2,
+  }).format((cents || 0) / 100)
+}
+
 export function DividendRecordsTable() {
   const { t } = useTranslation()
   const [page, setPage] = useState(0)
   const [typeFilter, setTypeFilter] = useState<number>(-1) // -1 = all
 
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['dividend-records', page, typeFilter],
+    queryKey: ['dividend-records', page, typeFilter, t],
     queryFn: async () => {
       const res = await getDividendRecords({
         page: page + 1,
@@ -63,7 +71,42 @@ export function DividendRecordsTable() {
   const columns = useMemo<ColumnDef<DividendRecord>[]>(
     () => [
       { accessorKey: 'batch_id', header: t('Date'), size: 120 },
-      { accessorKey: 'source_user_id', header: t('Source User'), size: 110 },
+      {
+        accessorKey: 'source_user_id',
+        header: t('Source User'),
+        size: 150,
+        cell: ({ row }) => (
+          <div className='min-w-0'>
+            <div className='truncate text-sm font-medium'>
+              {row.original.source_username ||
+                `#${row.original.source_user_id}`}
+            </div>
+            <div className='text-muted-foreground text-xs'>
+              #{row.original.source_user_id}
+            </div>
+          </div>
+        ),
+      },
+      {
+        accessorKey: 'source_recharge_cents',
+        header: t('Recharge'),
+        size: 120,
+        cell: ({ row }) => (
+          <span className='font-mono text-sm'>
+            {formatRechargeCents(row.original.source_recharge_cents)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'source_usage',
+        header: t('Usage'),
+        size: 120,
+        cell: ({ row }) => (
+          <span className='font-mono text-sm'>
+            {formatQuota(row.original.source_usage)}
+          </span>
+        ),
+      },
       {
         accessorKey: 'gross_profit',
         header: t('Gross Profit'),
@@ -85,12 +128,12 @@ export function DividendRecordsTable() {
         ),
       },
       {
-        accessorKey: 'record_count',
+        accessorKey: 'request_count',
         header: t('Records'),
         size: 90,
         cell: ({ row }) => (
           <span className='text-muted-foreground text-xs'>
-            {row.original.record_count}
+            {row.original.request_count || row.original.record_count}
           </span>
         ),
       },

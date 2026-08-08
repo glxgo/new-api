@@ -159,7 +159,10 @@ func RecordRechargeCreditTx(tx *gorm.DB, userId int, amountCents int64, sourceTy
 	}
 	update := tx.Model(&User{}).
 		Where("id = ?", userId).
-		Update("recharge_total_cents", gorm.Expr("recharge_total_cents + ?", amountCents))
+		Updates(map[string]interface{}{
+			"recharge_total_cents":      gorm.Expr("recharge_total_cents + ?", amountCents),
+			"low_balance_warning_armed": true,
+		})
 	if update.Error != nil {
 		return false, update.Error
 	}

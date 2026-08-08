@@ -123,20 +123,24 @@ func GetDividendRecords(c *gin.Context) {
 		}
 		return tx
 	}
-	const aggSelect = "source_user_id, batch_id, SUM(gross_profit) AS gross_profit, SUM(amount) AS amount, COUNT(*) AS record_count, MIN(created_at) AS created_at"
+	const aggSelect = "dividend_records.source_user_id, dividend_records.batch_id, MAX(users.username) AS source_username, CASE WHEN MAX(dividend_records.request_count) > 0 THEN MAX(dividend_records.gross_profit) ELSE SUM(dividend_records.gross_profit) END AS gross_profit, SUM(dividend_records.amount) AS amount, MAX(dividend_records.source_usage) AS source_usage, MAX(dividend_records.source_recharge_cents) AS source_recharge_cents, MAX(dividend_records.request_count) AS request_count, COUNT(*) AS record_count, MIN(dividend_records.created_at) AS created_at"
 	var total int64
-	applyFilters().Select(aggSelect).Group("source_user_id, batch_id").Count(&total)
+	applyFilters().Joins("LEFT JOIN users ON users.id = dividend_records.source_user_id").Select(aggSelect).Group("dividend_records.source_user_id, dividend_records.batch_id").Count(&total)
 	var records []dividendRecordAggregate
-	applyFilters().Select(aggSelect).Group("source_user_id, batch_id").Order("MIN(created_at) desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&records)
+	applyFilters().Joins("LEFT JOIN users ON users.id = dividend_records.source_user_id").Select(aggSelect).Group("dividend_records.source_user_id, dividend_records.batch_id").Order("MIN(dividend_records.created_at) desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&records)
 	common.ApiSuccess(c, gin.H{"data": records, "total": total})
 }
 
 // dividendRecordAggregate 分润明细按「消费用户 + 批次(天)」聚合后的行。
 type dividendRecordAggregate struct {
-	SourceUserId int    `json:"source_user_id"`
-	BatchId      string `json:"batch_id"`
-	GrossProfit  int64  `json:"gross_profit"`
-	Amount       int64  `json:"amount"`
-	RecordCount  int    `json:"record_count"`
-	CreatedAt    int64  `json:"created_at"`
+	SourceUserId        int    `json:"source_user_id"`
+	SourceUsername      string `json:"source_username"`
+	BatchId             string `json:"batch_id"`
+	SourceRechargeCents int64  `json:"source_recharge_cents"`
+	SourceUsage         int64  `json:"source_usage"`
+	GrossProfit         int64  `json:"gross_profit"`
+	Amount              int64  `json:"amount"`
+	RequestCount        int    `json:"request_count"`
+	RecordCount         int    `json:"record_count"`
+	CreatedAt           int64  `json:"created_at"`
 }

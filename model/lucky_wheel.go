@@ -79,7 +79,7 @@ type LuckyRuleSet struct {
 	SubscriptionPool           string `json:"subscription_pool" gorm:"type:text;not null"`
 	RechargePool               string `json:"recharge_pool" gorm:"type:text;not null"`
 	ThresholdConfig            string `json:"threshold_config" gorm:"type:text;not null"`
-	RechargeBonusUsdMicros     int64  `json:"recharge_bonus_usd_micros" gorm:"not null;default:60000000"`
+	RechargeBonusUsdMicros     int64  `json:"recharge_bonus_usd_micros" gorm:"not null;default:40000000"`
 	RechargeCardValidSeconds   int64  `json:"recharge_card_valid_seconds" gorm:"not null;default:2592000"`
 	RechargeRewardValidSeconds int64  `json:"recharge_reward_valid_seconds" gorm:"not null;default:2592000"`
 	CrazyCardValidSeconds      int64  `json:"crazy_card_valid_seconds" gorm:"not null;default:18000"`
@@ -496,7 +496,7 @@ func EnsureDefaultLuckyCampaign() error {
 		rule := LuckyRuleSet{
 			CampaignId: campaign.Id, Version: 1, Status: "active",
 			SubscriptionPool: string(subscriptionJSON), RechargePool: string(rechargeJSON),
-			ThresholdConfig: string(thresholdJSON), RechargeBonusUsdMicros: 60_000_000,
+			ThresholdConfig: string(thresholdJSON), RechargeBonusUsdMicros: 40_000_000,
 			RechargeCardValidSeconds: 30 * 24 * 3600, RechargeRewardValidSeconds: 30 * 24 * 3600,
 			CrazyCardValidSeconds: 5 * 3600, CrazyCardQuotaUsdMicros: 600_000_000,
 			ActivityGroup: "套餐专用分组", Checksum: checksum,
@@ -509,6 +509,36 @@ func EnsureDefaultLuckyCampaign() error {
 			"active_rule_set_id": rule.Id,
 			"updated_at":         common.GetTimestamp(),
 		}).Error
+	})
+}
+
+const luckyRechargeBonusFortyMigrationKey = "LuckyRechargeBonusFortyMigratedV1"
+
+// EnsureLuckyRechargeBonusForty 把本次策略调整前仍为 +$60 的历史规则一次性迁移为
+// +$40。迁移标记避免管理员未来主动创建其它加成时被启动流程反复覆盖。
+func EnsureLuckyRechargeBonusForty() error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var marker Option
+		if err := tx.Where(commonKeyCol+" = ?", luckyRechargeBonusFortyMigrationKey).First(&marker).Error; err == nil {
+			return nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		var rules []LuckyRuleSet
+		if err := tx.Where("recharge_bonus_usd_micros = ?", int64(60_000_000)).Find(&rules).Error; err != nil {
+			return err
+		}
+		for i := range rules {
+			rules[i].RechargeBonusUsdMicros = 40_000_000
+			RefreshLuckyRuleChecksum(&rules[i])
+			if err := tx.Model(&LuckyRuleSet{}).Where("id = ?", rules[i].Id).Updates(map[string]interface{}{
+				"recharge_bonus_usd_micros": rules[i].RechargeBonusUsdMicros,
+				"checksum":                  rules[i].Checksum,
+			}).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Create(&Option{Key: luckyRechargeBonusFortyMigrationKey, Value: "true"}).Error
 	})
 }
 

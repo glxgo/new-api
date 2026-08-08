@@ -58,7 +58,7 @@ func setupLuckyDrawTest(t *testing.T, prize model.LuckyPrizeConfig) (*gorm.DB, m
 	rule := model.LuckyRuleSet{
 		CampaignId: campaign.Id, Version: 1, Status: "active",
 		SubscriptionPool: string(poolJSON), RechargePool: string(poolJSON),
-		ThresholdConfig: "[]", RechargeBonusUsdMicros: 60_000_000,
+		ThresholdConfig: "[]", RechargeBonusUsdMicros: 40_000_000,
 		RechargeRewardValidSeconds: 30 * 24 * 3600,
 		RechargeCardValidSeconds:   30 * 24 * 3600,
 		CrazyCardValidSeconds:      5 * 3600, CrazyCardQuotaUsdMicros: 600_000_000,
@@ -106,17 +106,17 @@ func TestRechargeGiftDrawIsAtomicAndIdempotent(t *testing.T) {
 	require.EqualValues(t, quotaFromUsdMicros(5_000_000), stored.GiftQuota)
 }
 
-func TestRechargeFiveDollarQuotaDrawAddsSixtyDollars(t *testing.T) {
+func TestRechargeFiveDollarQuotaDrawAddsFortyDollars(t *testing.T) {
 	db, user, card := setupLuckyDrawTest(t, model.LuckyPrizeConfig{
 		Code: model.LuckyPrizeQuota5, DisplayUsdMicros: 5_000_000, Weight: model.LuckyWeightScale,
 	})
 	draw, err := drawLuckyCardWithSource(user.Id, card.Id, "quota-request", fixedLuckyRandom(0))
 	require.NoError(t, err)
-	require.EqualValues(t, 65_000_000, draw.ActualUsdMicros)
+	require.EqualValues(t, 45_000_000, draw.ActualUsdMicros)
 	require.NotZero(t, draw.RewardSubscriptionId)
 	var reward model.UserSubscription
 	require.NoError(t, db.First(&reward, draw.RewardSubscriptionId).Error)
-	require.EqualValues(t, quotaFromUsdMicros(65_000_000), reward.AmountTotal)
+	require.EqualValues(t, quotaFromUsdMicros(45_000_000), reward.AmountTotal)
 	require.True(t, reward.LuckyCardDisabled)
 	require.Equal(t, "never", model.NormalizeResetPeriod(""))
 }

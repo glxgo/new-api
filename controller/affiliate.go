@@ -14,12 +14,15 @@ import (
 // 邀新计划(普通用户): 展示自己的邀请码/链接、直接+间接两层下级、下级产生的返利。
 // 与分润两层(直接 AffiliateDirectRate / 间接 AffiliateIndirectRate)一致, 第 3 层+不产生返利故不展示。
 
-// downlineUser 脱敏的下级用户视图(只暴露非隐私字段 + 为我产生的返利)。
+// downlineUser 下级结算视图，按用户汇总充值、用量、毛利与返利。
 type downlineUser struct {
-	Id        int    `json:"id"`
-	Username  string `json:"username"`
-	CreatedAt int64  `json:"created_at"`
-	Rebate    int64  `json:"rebate"` // 该下级为我产生的累计返利(quota)
+	Id            int    `json:"id"`
+	Username      string `json:"username"`
+	CreatedAt     int64  `json:"created_at"`
+	RechargeCents int64  `json:"recharge_cents"` // 真实支付台账累计充值(分)
+	Usage         int64  `json:"usage"`          // 累计 API 用量(quota)
+	GrossProfit   int64  `json:"gross_profit"`   // 已结算毛利(quota)
+	Rebate        int64  `json:"rebate"`         // 该下级为我产生的累计返利(quota)
 }
 
 // GetAffiliateSummary 当前用户的邀新概览: 邀请码/链接、直邀+间邀人数、累计返利、当前返利率。
@@ -59,7 +62,7 @@ func GetAffiliateSummary(c *gin.Context) {
 }
 
 // GetAffiliateDownline 下级用户列表。layer=1 直接(我邀请的), layer=2 间接(我下级邀请的)。
-// 仅返回 id/username/created_at + 该下级为我产生的返利, 不泄露 email/quota/余额。
+// 不返回 email、当前钱包余额等账户隐私字段。
 func GetAffiliateDownline(c *gin.Context) {
 	userId := c.GetInt("id")
 	layer, _ := strconv.Atoi(c.DefaultQuery("layer", "1"))
@@ -87,13 +90,21 @@ func GetAffiliateDownline(c *gin.Context) {
 		return
 	}
 	data := make([]downlineUser, 0, len(users))
+	userIds := make([]int, 0, len(users))
 	for _, u := range users {
-		rebate, _ := model.SumDividendBySource(userId, u.Id)
+		userIds = append(userIds, u.Id)
+	}
+	summaries, err := model.GetAffiliateSourceSummaries(userId, userIds)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	for _, u := range users {
+		summary := summaries[u.Id]
 		data = append(data, downlineUser{
-			Id:        u.Id,
-			Username:  u.Username,
-			CreatedAt: u.CreatedAt,
-			Rebate:    rebate,
+			Id: u.Id, Username: u.Username, CreatedAt: u.CreatedAt,
+			RechargeCents: summary.RechargeCents, Usage: summary.Usage,
+			GrossProfit: summary.GrossProfit, Rebate: summary.Rebate,
 		})
 	}
 	common.ApiSuccess(c, gin.H{"data": data, "total": total})

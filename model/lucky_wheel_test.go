@@ -22,13 +22,29 @@ func setupLuckyWheelTestDB(t *testing.T) *gorm.DB {
 		&User{}, &TopUp{}, &SubscriptionPlan{}, &SubscriptionOrder{}, &UserSubscription{},
 		&LuckyCampaign{}, &LuckyRuleSet{}, &LuckyCard{}, &LuckyDraw{},
 		&LuckyRechargeEvent{}, &LuckyRechargeProgress{}, &LuckyRewardBucket{},
-		&LuckyPausePeriod{}, &SubscriptionConsumptionPriority{},
+		&LuckyPausePeriod{}, &SubscriptionConsumptionPriority{}, &Option{},
 	))
 	oldDB := DB
 	DB = db
 	t.Cleanup(func() { DB = oldDB })
 	require.NoError(t, EnsureDefaultLuckyCampaign())
 	return db
+}
+
+func TestLuckyRechargeBonusMigrationChangesSixtyToFortyOnce(t *testing.T) {
+	db := setupLuckyWheelTestDB(t)
+	var rule LuckyRuleSet
+	require.NoError(t, db.First(&rule).Error)
+	require.NoError(t, db.Model(&rule).Update("recharge_bonus_usd_micros", int64(60_000_000)).Error)
+
+	require.NoError(t, EnsureLuckyRechargeBonusForty())
+	require.NoError(t, db.First(&rule, rule.Id).Error)
+	require.EqualValues(t, 40_000_000, rule.RechargeBonusUsdMicros)
+
+	require.NoError(t, db.Model(&rule).Update("recharge_bonus_usd_micros", int64(55_000_000)).Error)
+	require.NoError(t, EnsureLuckyRechargeBonusForty())
+	require.NoError(t, db.First(&rule, rule.Id).Error)
+	require.EqualValues(t, 55_000_000, rule.RechargeBonusUsdMicros, "迁移完成后不得覆盖管理员后续配置")
 }
 
 func TestLuckyPrizePoolsTotalExactlyOneMillion(t *testing.T) {

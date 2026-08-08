@@ -329,6 +329,9 @@ func migrateDB() error {
 	if err := EnsureDefaultLuckyCampaign(); err != nil {
 		return err
 	}
+	if err := EnsureLuckyRechargeBonusForty(); err != nil {
+		return err
+	}
 	if err := EnsureDefaultAPIIngressProfiles(); err != nil {
 		return err
 	}
@@ -434,6 +437,9 @@ func migrateDBFast() error {
 		}
 	}
 	if err := EnsureDefaultLuckyCampaign(); err != nil {
+		return err
+	}
+	if err := EnsureLuckyRechargeBonusForty(); err != nil {
 		return err
 	}
 	if err := EnsureDefaultAPIIngressProfiles(); err != nil {
