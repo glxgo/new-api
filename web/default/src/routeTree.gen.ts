@@ -53,6 +53,7 @@ import { Route as AuthenticatedRedemptionCodesIndexRouteImport } from './routes/
 import { Route as AuthenticatedProfitIndexRouteImport } from './routes/_authenticated/profit/index'
 import { Route as AuthenticatedProfileIndexRouteImport } from './routes/_authenticated/profile/index'
 import { Route as AuthenticatedPlaygroundIndexRouteImport } from './routes/_authenticated/playground/index'
+import { Route as AuthenticatedPlatformUsageIndexRouteImport } from './routes/_authenticated/platform-usage/index'
 import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenticated/models/index'
 import { Route as AuthenticatedModelStatusIndexRouteImport } from './routes/_authenticated/model-status/index'
 import { Route as AuthenticatedLuckyWheelIndexRouteImport } from './routes/_authenticated/lucky-wheel/index'
@@ -318,6 +319,12 @@ const AuthenticatedPlaygroundIndexRoute =
     path: '/playground/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedPlatformUsageIndexRoute =
+  AuthenticatedPlatformUsageIndexRouteImport.update({
+    id: '/platform-usage/',
+    path: '/platform-usage/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedModelsIndexRoute =
   AuthenticatedModelsIndexRouteImport.update({
     id: '/models/',
@@ -546,6 +553,7 @@ export interface FileRoutesByFullPath {
   '/lucky-wheel/': typeof AuthenticatedLuckyWheelIndexRoute
   '/model-status/': typeof AuthenticatedModelStatusIndexRoute
   '/models/': typeof AuthenticatedModelsIndexRoute
+  '/platform-usage/': typeof AuthenticatedPlatformUsageIndexRoute
   '/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/profile/': typeof AuthenticatedProfileIndexRoute
   '/profit/': typeof AuthenticatedProfitIndexRoute
@@ -620,6 +628,7 @@ export interface FileRoutesByTo {
   '/lucky-wheel': typeof AuthenticatedLuckyWheelIndexRoute
   '/model-status': typeof AuthenticatedModelStatusIndexRoute
   '/models': typeof AuthenticatedModelsIndexRoute
+  '/platform-usage': typeof AuthenticatedPlatformUsageIndexRoute
   '/playground': typeof AuthenticatedPlaygroundIndexRoute
   '/profile': typeof AuthenticatedProfileIndexRoute
   '/profit': typeof AuthenticatedProfitIndexRoute
@@ -698,6 +707,7 @@ export interface FileRoutesById {
   '/_authenticated/lucky-wheel/': typeof AuthenticatedLuckyWheelIndexRoute
   '/_authenticated/model-status/': typeof AuthenticatedModelStatusIndexRoute
   '/_authenticated/models/': typeof AuthenticatedModelsIndexRoute
+  '/_authenticated/platform-usage/': typeof AuthenticatedPlatformUsageIndexRoute
   '/_authenticated/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/_authenticated/profile/': typeof AuthenticatedProfileIndexRoute
   '/_authenticated/profit/': typeof AuthenticatedProfitIndexRoute
@@ -775,6 +785,7 @@ export interface FileRouteTypes {
     | '/lucky-wheel/'
     | '/model-status/'
     | '/models/'
+    | '/platform-usage/'
     | '/playground/'
     | '/profile/'
     | '/profit/'
@@ -849,6 +860,7 @@ export interface FileRouteTypes {
     | '/lucky-wheel'
     | '/model-status'
     | '/models'
+    | '/platform-usage'
     | '/playground'
     | '/profile'
     | '/profit'
@@ -926,6 +938,7 @@ export interface FileRouteTypes {
     | '/_authenticated/lucky-wheel/'
     | '/_authenticated/model-status/'
     | '/_authenticated/models/'
+    | '/_authenticated/platform-usage/'
     | '/_authenticated/playground/'
     | '/_authenticated/profile/'
     | '/_authenticated/profit/'
@@ -1291,6 +1304,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPlaygroundIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/platform-usage/': {
+      id: '/_authenticated/platform-usage/'
+      path: '/platform-usage'
+      fullPath: '/platform-usage/'
+      preLoaderRoute: typeof AuthenticatedPlatformUsageIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/models/': {
       id: '/_authenticated/models/'
       path: '/models'
@@ -1613,6 +1633,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedLuckyWheelIndexRoute: typeof AuthenticatedLuckyWheelIndexRoute
   AuthenticatedModelStatusIndexRoute: typeof AuthenticatedModelStatusIndexRoute
   AuthenticatedModelsIndexRoute: typeof AuthenticatedModelsIndexRoute
+  AuthenticatedPlatformUsageIndexRoute: typeof AuthenticatedPlatformUsageIndexRoute
   AuthenticatedPlaygroundIndexRoute: typeof AuthenticatedPlaygroundIndexRoute
   AuthenticatedProfileIndexRoute: typeof AuthenticatedProfileIndexRoute
   AuthenticatedProfitIndexRoute: typeof AuthenticatedProfitIndexRoute
@@ -1650,6 +1671,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedLuckyWheelIndexRoute: AuthenticatedLuckyWheelIndexRoute,
   AuthenticatedModelStatusIndexRoute: AuthenticatedModelStatusIndexRoute,
   AuthenticatedModelsIndexRoute: AuthenticatedModelsIndexRoute,
+  AuthenticatedPlatformUsageIndexRoute: AuthenticatedPlatformUsageIndexRoute,
   AuthenticatedPlaygroundIndexRoute: AuthenticatedPlaygroundIndexRoute,
   AuthenticatedProfileIndexRoute: AuthenticatedProfileIndexRoute,
   AuthenticatedProfitIndexRoute: AuthenticatedProfitIndexRoute,

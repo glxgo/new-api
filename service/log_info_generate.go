@@ -100,6 +100,19 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	appendRequestConversionChain(relayInfo, other)
 	appendFinalRequestFormat(relayInfo, other)
 	appendBillingInfo(relayInfo, other)
+	// This public analytics baseline removes entrance and customer-group
+	// multipliers, but intentionally keeps model pricing and priority 2x.
+	if relayInfo.FinalConsumedQuota > 0 {
+		baseQuota, exact := common.PlatformBaseQuota(
+			int64(relayInfo.FinalConsumedQuota),
+			groupRatio,
+			int64(relayInfo.RestoreIngressMultiplier(relayInfo.FinalConsumedQuota)),
+		)
+		other[common.PlatformBaseQuotaKey()] = baseQuota
+		if !exact {
+			other["platform_base_quota_estimated"] = true
+		}
+	}
 	appendParamOverrideInfo(relayInfo, other)
 	appendStreamStatus(relayInfo, other)
 	if relayInfo.ServiceTier != "" {
