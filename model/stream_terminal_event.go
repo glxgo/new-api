@@ -55,6 +55,7 @@ type StreamTerminalEvent struct {
 	IntendedStatus           int    `json:"intended_status" gorm:"default:0"`
 	ResponseBytes            int64  `json:"response_bytes" gorm:"bigint;default:0"`
 	ReceivedEvents           int    `json:"received_events" gorm:"default:0"`
+	ForwardedEvents          int    `json:"forwarded_events" gorm:"default:0"`
 	SoftErrorCount           int    `json:"soft_error_count" gorm:"default:0"`
 	ResponseCompleted        bool   `json:"response_completed" gorm:"default:false;index"`
 	ClientGone               bool   `json:"client_gone" gorm:"default:false;index"`

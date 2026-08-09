@@ -101,12 +101,13 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 			return billingErr
 		}
 		if modelMapped || normalization.Count() > 0 {
-			body, size, closer, bodyErr := relaycommon.NewOutboundJSONBody(jsonData)
+			body, size, getBody, closer, bodyErr := relaycommon.NewOutboundJSONBody(jsonData)
 			if bodyErr != nil {
 				return types.NewError(bodyErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 			}
 			defer closer.Close()
 			info.UpstreamRequestBodySize = size
+			info.UpstreamRequestGetBody = getBody
 			requestBody = body
 		} else {
 			requestBody = responsesPassThroughBody(info, storage)
@@ -152,13 +153,14 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		}
 
 		logger.LogDebug(c, "requestBody: %s", jsonData)
-		body, size, closer, err := relaycommon.NewOutboundJSONBody(jsonData)
+		body, size, getBody, closer, err := relaycommon.NewOutboundJSONBody(jsonData)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 		}
 		defer closer.Close()
 		jsonData = nil
 		info.UpstreamRequestBodySize = size
+		info.UpstreamRequestGetBody = getBody
 		requestBody = body
 	}
 
@@ -217,6 +219,7 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 func responsesPassThroughBody(info *relaycommon.RelayInfo, storage common.BodyStorage) io.Reader {
 	if info != nil && storage != nil {
 		info.UpstreamRequestBodySize = storage.Size()
+		info.UpstreamRequestGetBody = storage.NewReader
 	}
 	return common.ReaderOnly(storage)
 }

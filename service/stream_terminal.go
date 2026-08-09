@@ -209,6 +209,7 @@ func buildResponsesStreamTerminalEvent(c *gin.Context, info *relaycommon.RelayIn
 		IntendedStatus:           intendedStatus,
 		ResponseBytes:            responseBytes,
 		ReceivedEvents:           info.ReceivedResponseCount,
+		ForwardedEvents:          info.ForwardedResponsesEventCount,
 		SoftErrorCount:           softErrorCount,
 		ResponseCompleted:        responseCompleted,
 		ClientGone:               clientGone,

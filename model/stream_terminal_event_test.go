@@ -38,6 +38,8 @@ func TestRecordStreamTerminalEventIsIdempotent(t *testing.T) {
 		UpstreamLastEventType: "response.output_text.delta",
 		UpstreamLastSequence:  42,
 		UpstreamEventBytes:    8192,
+		ReceivedEvents:        5,
+		ForwardedEvents:       3,
 	}
 	if err = RecordStreamTerminalEvent(first); err != nil {
 		t.Fatalf("record first event: %v", err)
@@ -80,7 +82,9 @@ func TestRecordStreamTerminalEventIsIdempotent(t *testing.T) {
 		got.EstimatedPromptTokens != first.EstimatedPromptTokens ||
 		got.UpstreamLastEventType != first.UpstreamLastEventType ||
 		got.UpstreamLastSequence != first.UpstreamLastSequence ||
-		got.UpstreamEventBytes != first.UpstreamEventBytes {
+		got.UpstreamEventBytes != first.UpstreamEventBytes ||
+		got.ReceivedEvents != first.ReceivedEvents ||
+		got.ForwardedEvents != first.ForwardedEvents {
 		t.Fatalf("transport diagnostics not persisted: %#v", got)
 	}
 }

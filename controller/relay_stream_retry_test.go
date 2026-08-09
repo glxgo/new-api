@@ -50,3 +50,26 @@ func TestShouldRetry_InvalidResponsesEncryptedContentStopsRetry(t *testing.T) {
 
 	require.False(t, shouldRetry(c, apiErr, 3))
 }
+
+func TestShouldRetry_ResponsesTransientBeforeOutput(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	apiErr := types.WithOpenAIError(types.OpenAIError{
+		Type: "server_error", Code: "server_is_overloaded", Message: "overloaded",
+	}, http.StatusBadGateway)
+
+	require.True(t, shouldRetry(c, apiErr, 3))
+}
+
+func TestShouldRetry_ResponsesAfterOutputDoesNotReplay(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	apiErr := types.NewErrorWithStatusCode(
+		errors.New("responses stream failed after output"),
+		types.ErrorCodeChannelIncompleteStream,
+		http.StatusBadGateway,
+		types.ErrOptionWithSkipRetry(),
+	)
+
+	require.False(t, shouldRetry(c, apiErr, 3))
+}

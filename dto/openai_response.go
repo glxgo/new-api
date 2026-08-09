@@ -391,12 +391,18 @@ const (
 
 // ResponsesStreamResponse 用于处理 /v1/responses 流式响应
 type ResponsesStreamResponse struct {
-	Type           string                   `json:"type"`
-	SequenceNumber *int                     `json:"sequence_number,omitempty"`
-	Response       *OpenAIResponsesResponse `json:"response,omitempty"`
-	Error          any                      `json:"error,omitempty"`
-	Delta          string                   `json:"delta,omitempty"`
-	Item           *ResponsesOutput         `json:"item,omitempty"`
+	Type           string `json:"type"`
+	SequenceNumber *int   `json:"sequence_number,omitempty"`
+	// ResponseErrorEvent uses code/message/param at the event top level. Keep
+	// these separate from Error, which is used by several compatible providers
+	// and by response.failed's nested response.error shape.
+	Code     any                      `json:"code,omitempty"`
+	Message  string                   `json:"message,omitempty"`
+	Param    string                   `json:"param,omitempty"`
+	Response *OpenAIResponsesResponse `json:"response,omitempty"`
+	Error    any                      `json:"error,omitempty"`
+	Delta    string                   `json:"delta,omitempty"`
+	Item     *ResponsesOutput         `json:"item,omitempty"`
 	// - response.function_call_arguments.delta
 	// - response.function_call_arguments.done
 	OutputIndex  *int                           `json:"output_index,omitempty"`
@@ -404,6 +410,35 @@ type ResponsesStreamResponse struct {
 	SummaryIndex *int                           `json:"summary_index,omitempty"`
 	ItemID       string                         `json:"item_id,omitempty"`
 	Part         *ResponsesReasoningSummaryPart `json:"part,omitempty"`
+}
+
+// GetOpenAIError normalizes all Responses terminal-error shapes used by the
+// OpenAI protocol and compatible providers:
+//   - response.failed / response.error: response.error
+//   - compatibility events: top-level error object
+//   - official ResponseErrorEvent: top-level code/message/param
+func (r *ResponsesStreamResponse) GetOpenAIError() *types.OpenAIError {
+	if r == nil {
+		return nil
+	}
+	if r.Response != nil {
+		if openAIError := r.Response.GetOpenAIError(); openAIError != nil {
+			return openAIError
+		}
+	}
+	if openAIError := GetOpenAIError(r.Error); openAIError != nil &&
+		(openAIError.Message != "" || openAIError.Code != nil || openAIError.Type != "") {
+		return openAIError
+	}
+	if r.Message == "" && r.Code == nil && r.Param == "" {
+		return nil
+	}
+	return &types.OpenAIError{
+		Message: r.Message,
+		Type:    "upstream_error",
+		Param:   r.Param,
+		Code:    r.Code,
+	}
 }
 
 // GetOpenAIError 从动态错误类型中提取OpenAIError结构

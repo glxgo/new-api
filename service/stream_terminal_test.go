@@ -44,24 +44,26 @@ func TestBuildResponsesStreamTerminalEventCompleted(t *testing.T) {
 	transportTrace := relaycommon.NewUpstreamTransportTrace(upstreamStarted)
 	transportTrace.RecordResponse(&http.Response{Proto: "HTTP/2.0"}, upstreamStarted.Add(350*time.Millisecond))
 	info := &relaycommon.RelayInfo{
-		RequestId:              "req-completed",
-		UserId:                 264,
-		TokenId:                9,
-		UsingGroup:             "default",
-		OriginModelName:        "gpt-5.6-sol",
-		IsStream:               true,
-		StreamStatus:           status,
-		BillingSource:          BillingSourceWallet,
-		ChannelMeta:            &relaycommon.ChannelMeta{ChannelId: 31},
-		FinalPreConsumedQuota:  123,
-		UpstreamStartTime:      upstreamStarted,
-		FirstResponseTime:      upstreamStarted.Add(900 * time.Millisecond),
-		UpstreamTransportTrace: transportTrace,
-		UpstreamHost:           "api.example.com",
-		UpstreamProxyUsed:      true,
-		UpstreamLastEventType:  "response.completed",
-		UpstreamLastSequence:   42,
-		UpstreamEventBytes:     8192,
+		RequestId:                    "req-completed",
+		UserId:                       264,
+		TokenId:                      9,
+		UsingGroup:                   "default",
+		OriginModelName:              "gpt-5.6-sol",
+		IsStream:                     true,
+		StreamStatus:                 status,
+		BillingSource:                BillingSourceWallet,
+		ChannelMeta:                  &relaycommon.ChannelMeta{ChannelId: 31},
+		FinalPreConsumedQuota:        123,
+		UpstreamStartTime:            upstreamStarted,
+		FirstResponseTime:            upstreamStarted.Add(900 * time.Millisecond),
+		UpstreamTransportTrace:       transportTrace,
+		UpstreamHost:                 "api.example.com",
+		UpstreamProxyUsed:            true,
+		UpstreamLastEventType:        "response.completed",
+		UpstreamLastSequence:         42,
+		UpstreamEventBytes:           8192,
+		ReceivedResponseCount:        5,
+		ForwardedResponsesEventCount: 3,
 	}
 	info.SetEstimatePromptTokens(12345)
 
@@ -89,6 +91,9 @@ func TestBuildResponsesStreamTerminalEventCompleted(t *testing.T) {
 	}
 	if event.UpstreamLastEventType != "response.completed" || event.UpstreamLastSequence != 42 || event.UpstreamEventBytes != 8192 {
 		t.Fatalf("unexpected upstream event diagnostics: %#v", event)
+	}
+	if event.ReceivedEvents != 5 || event.ForwardedEvents != 3 {
+		t.Fatalf("unexpected received/forwarded event diagnostics: %#v", event)
 	}
 }
 

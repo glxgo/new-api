@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestStreamStatus_SetEndReason_FirstWins(t *testing.T) {
+func TestStreamStatus_SetEndReason_HigherPriorityWins(t *testing.T) {
 	t.Parallel()
 	s := NewStreamStatus()
 
@@ -28,6 +28,29 @@ func TestStreamStatus_SetEndReason_WithError(t *testing.T) {
 	s.SetEndReason(StreamEndReasonScannerErr, expectedErr)
 
 	assert.Equal(t, StreamEndReasonScannerErr, s.EndReason)
+	assert.Equal(t, expectedErr, s.EndError)
+}
+
+func TestStreamStatus_ProtocolTerminalOverridesConcurrentClientGone(t *testing.T) {
+	t.Parallel()
+	s := NewStreamStatus()
+
+	s.SetEndReason(StreamEndReasonClientGone, fmt.Errorf("context canceled"))
+	s.SetEndReason(StreamEndReasonDone, nil)
+
+	assert.Equal(t, StreamEndReasonDone, s.EndReason)
+	assert.Nil(t, s.EndError)
+}
+
+func TestStreamStatus_HandlerTerminalOverridesEOF(t *testing.T) {
+	t.Parallel()
+	s := NewStreamStatus()
+	expectedErr := fmt.Errorf("upstream terminal error")
+
+	s.SetEndReason(StreamEndReasonEOF, nil)
+	s.SetEndReason(StreamEndReasonHandlerStop, expectedErr)
+
+	assert.Equal(t, StreamEndReasonHandlerStop, s.EndReason)
 	assert.Equal(t, expectedErr, s.EndError)
 }
 
@@ -62,7 +85,7 @@ func TestStreamStatus_SetEndReason_Concurrent(t *testing.T) {
 	}
 	wg.Wait()
 
-	assert.NotEqual(t, StreamEndReasonNone, s.EndReason)
+	assert.Equal(t, StreamEndReasonDone, s.EndReason)
 }
 
 func TestStreamStatus_RecordError_Basic(t *testing.T) {

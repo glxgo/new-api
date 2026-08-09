@@ -117,14 +117,17 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 			return billingErr
 		}
 		if modelMapped {
-			body, size, closer, bodyErr := relaycommon.NewOutboundJSONBody(jsonData)
+			body, size, getBody, closer, bodyErr := relaycommon.NewOutboundJSONBody(jsonData)
 			if bodyErr != nil {
 				return types.NewError(bodyErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 			}
 			defer closer.Close()
 			info.UpstreamRequestBodySize = size
+			info.UpstreamRequestGetBody = getBody
 			requestBody = body
 		} else {
+			info.UpstreamRequestBodySize = storage.Size()
+			info.UpstreamRequestGetBody = storage.NewReader
 			requestBody = common.ReaderOnly(storage)
 		}
 	} else {
@@ -200,13 +203,14 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 
 		logger.LogDebug(c, "text request body: %s", jsonData)
 
-		body, size, closer, err := relaycommon.NewOutboundJSONBody(jsonData)
+		body, size, getBody, closer, err := relaycommon.NewOutboundJSONBody(jsonData)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 		}
 		defer closer.Close()
 		jsonData = nil
 		info.UpstreamRequestBodySize = size
+		info.UpstreamRequestGetBody = getBody
 		requestBody = body
 	}
 

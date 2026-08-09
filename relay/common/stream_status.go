@@ -41,7 +41,6 @@ type UpstreamTerminal struct {
 type StreamStatus struct {
 	EndReason StreamEndReason
 	EndError  error
-	endOnce   sync.Once
 
 	mu               sync.Mutex
 	Errors           []StreamErrorEntry
@@ -84,10 +83,37 @@ func (s *StreamStatus) SetEndReason(reason StreamEndReason, err error) {
 	if s == nil {
 		return
 	}
-	s.endOnce.Do(func() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.EndReason == StreamEndReasonNone || streamEndReasonPriority(reason) > streamEndReasonPriority(s.EndReason) {
 		s.EndReason = reason
 		s.EndError = err
-	})
+	}
+}
+
+// Protocol terminal events can already be queued when the downstream context
+// is canceled. They are authoritative for the upstream stream and must be
+// allowed to replace a concurrently observed client_gone/EOF classification;
+// otherwise a completed response is persisted as a false stream failure.
+func streamEndReasonPriority(reason StreamEndReason) int {
+	switch reason {
+	case StreamEndReasonDone:
+		return 100
+	case StreamEndReasonHandlerStop:
+		return 90
+	case StreamEndReasonPanic, StreamEndReasonScannerErr:
+		return 80
+	case StreamEndReasonPingFail:
+		return 70
+	case StreamEndReasonClientGone:
+		return 60
+	case StreamEndReasonTimeout:
+		return 50
+	case StreamEndReasonEOF:
+		return 10
+	default:
+		return 0
+	}
 }
 
 func (s *StreamStatus) RecordError(msg string) {

@@ -84,6 +84,36 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	var usage = &dto.Usage{}
 	var responseTextBuilder strings.Builder
 	var streamErr *types.NewAPIError
+	var latestResponseSnapshot *responsesFailureSnapshot
+	lastSequenceNumber := 0
+	forwardedEventCount := 0
+	pendingPrelude := make([]responsesBufferedEvent, 0, 2)
+	info.ForwardedResponsesEventCount = 0
+
+	forwardEvent := func(streamResponse dto.ResponsesStreamResponse, data string, sr *helper.StreamResult) bool {
+		if err := sendResponsesStreamData(c, streamResponse, data); err != nil {
+			streamErr = types.NewErrorWithStatusCode(
+				err,
+				types.ErrorCodeChannelIncompleteStream,
+				http.StatusBadGateway,
+				types.ErrOptionWithSkipRetry(),
+			)
+			sr.Error(err)
+			return false
+		}
+		forwardedEventCount++
+		info.ForwardedResponsesEventCount = forwardedEventCount
+		return true
+	}
+	flushPrelude := func(sr *helper.StreamResult) bool {
+		for _, event := range pendingPrelude {
+			if !forwardEvent(event.Response, event.Data, sr) {
+				return false
+			}
+		}
+		pendingPrelude = pendingPrelude[:0]
+		return true
+	}
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 
@@ -98,13 +128,31 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		info.UpstreamLastEventType = streamResponse.Type
 		if streamResponse.SequenceNumber != nil {
 			info.UpstreamLastSequence = *streamResponse.SequenceNumber
+			if *streamResponse.SequenceNumber > lastSequenceNumber {
+				lastSequenceNumber = *streamResponse.SequenceNumber
+			}
 		}
 		if streamResponse.Response != nil && info.StreamStatus != nil {
 			info.StreamStatus.SetUpstreamResponseID(streamResponse.Response.ID)
+			latestResponseSnapshot = newResponsesFailureSnapshot(streamResponse.Response)
 		}
 		if streamResponse.Type == "error" || streamResponse.Type == "response.failed" || streamResponse.Type == "response.error" {
 			recordResponsesUpstreamTerminal(info, resp.StatusCode, streamResponse)
-			streamErr = responsesTerminalError(streamResponse, types.ErrorCodeUpstreamResponseFailed)
+			streamErr = responsesTerminalError(streamResponse, types.ErrorCodeUpstreamResponseFailed, false)
+			nonRetryableRequestError := isNonRetryableResponsesRequestError(streamErr)
+
+			// Prelude-only failures have not exposed a response ID or output to the
+			// downstream yet. Keep those control events buffered and let the outer
+			// channel loop retry transparently for transient provider/transport
+			// failures. Billing is outside that loop, so this does not pre-consume
+			// twice. Deterministic request errors must be surfaced instead.
+			if forwardedEventCount == 0 && !nonRetryableRequestError {
+				pendingPrelude = pendingPrelude[:0]
+				sr.Stop(streamErr)
+				return
+			}
+
+			types.ErrOptionWithSkipRetry()(streamErr)
 			if common.CyberPolicyInterceptionEnabled && service.IsCyberPolicyError(streamErr) {
 				if interceptedData, rewriteErr := cyberPolicyInterceptionStreamData(c, streamResponse); rewriteErr != nil {
 					logger.LogError(c, "failed to rewrite cyber policy stream response: "+rewriteErr.Error())
@@ -112,12 +160,58 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 					data = interceptedData
 				}
 			}
-			sendResponsesStreamData(c, streamResponse, data)
+
+			// Official Codex clients do not treat event:error as a Responses
+			// terminal event. Convert only deterministic request faults; transient
+			// provider failures remain reconnectable, matching CPA's compatibility
+			// policy and avoiding a hard failure where recovery is possible.
+			if (streamResponse.Type == "error" || streamResponse.Type == "response.error") &&
+				nonRetryableRequestError && isCodexResponsesClient(c) {
+				clientError := streamResponse.GetOpenAIError()
+				if clientError == nil || (common.CyberPolicyInterceptionEnabled && service.IsCyberPolicyError(streamErr)) {
+					safeError := streamErr.ToOpenAIError()
+					clientError = &safeError
+				}
+				sequenceNumber := streamResponse.SequenceNumber
+				if sequenceNumber == nil {
+					sequenceNumber = common.GetPointer(lastSequenceNumber + 1)
+				}
+				converted, convertedData, convertErr := buildResponsesFailedEvent(
+					c,
+					info,
+					latestResponseSnapshot,
+					sequenceNumber,
+					*clientError,
+				)
+				if convertErr != nil {
+					logger.LogError(c, "failed to convert Responses error event: "+convertErr.Error())
+				} else {
+					streamResponse = converted
+					data = convertedData
+				}
+			}
+
+			// Once semantic output was forwarded, never replay another channel.
+			// For a transient Codex error, close the typed stream cleanly and let
+			// the client perform its own recovery; forwarding event:error would be
+			// misread as a non-terminal event by Codex.
+			if !(forwardedEventCount > 0 && !nonRetryableRequestError && isCodexResponsesClient(c)) {
+				if !forwardEvent(streamResponse, data, sr) {
+					return
+				}
+			}
 			common.SetContextKey(c, constant.ContextKeyRelayErrorAlreadyStreamed, true)
 			sr.Stop(streamErr)
 			return
 		}
-		sendResponsesStreamData(c, streamResponse, data)
+
+		if isResponsesPreludeEvent(streamResponse.Type) {
+			pendingPrelude = append(pendingPrelude, responsesBufferedEvent{Response: streamResponse, Data: data})
+			return
+		}
+		if !flushPrelude(sr) || !forwardEvent(streamResponse, data, sr) {
+			return
+		}
 		switch streamResponse.Type {
 		case "response.completed":
 			if streamResponse.Response != nil {
@@ -145,7 +239,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			sr.Done()
 		case "response.incomplete":
 			recordResponsesUpstreamTerminal(info, resp.StatusCode, streamResponse)
-			streamErr = responsesTerminalError(streamResponse, types.ErrorCodeUpstreamResponseIncomplete)
+			streamErr = responsesTerminalError(streamResponse, types.ErrorCodeUpstreamResponseIncomplete, true)
 			common.SetContextKey(c, constant.ContextKeyRelayErrorAlreadyStreamed, true)
 			sr.Stop(streamErr)
 		case "response.output_text.delta":
@@ -183,11 +277,16 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		service.ClearCurrentChannelAffinityCache(c)
 
 		errorOptions := []types.NewAPIErrorOptions{}
-		if info.ReceivedResponseCount > 0 || c.Request.Context().Err() != nil {
+		if forwardedEventCount > 0 || c.Request.Context().Err() != nil {
 			// Retrying after forwarding upstream events can duplicate output. Let
 			// the client reconnect; the cleared affinity will route that retry away
 			// from the failed channel.
 			errorOptions = append(errorOptions, types.ErrOptionWithSkipRetry())
+		}
+		if forwardedEventCount > 0 {
+			// The downstream already received SSE data. Prevent the controller from
+			// corrupting that stream by appending a non-SSE JSON error document.
+			common.SetContextKey(c, constant.ContextKeyRelayErrorAlreadyStreamed, true)
 		}
 		return nil, types.NewErrorWithStatusCode(
 			streamErr,
@@ -216,6 +315,176 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	return usage, nil
 }
 
+type responsesBufferedEvent struct {
+	Response dto.ResponsesStreamResponse
+	Data     string
+}
+
+func isResponsesPreludeEvent(eventType string) bool {
+	switch strings.TrimSpace(eventType) {
+	case "response.created", "response.in_progress", "response.queued":
+		return true
+	default:
+		return false
+	}
+}
+
+func isNonRetryableResponsesRequestError(apiErr *types.NewAPIError) bool {
+	if apiErr == nil {
+		return false
+	}
+	if service.IsCyberPolicyError(apiErr) {
+		return true
+	}
+	openAIError := apiErr.ToOpenAIError()
+	errorType := strings.ToLower(strings.TrimSpace(openAIError.Type))
+	code := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", openAIError.Code)))
+	if errorType == "invalid_request_error" {
+		return true
+	}
+	if strings.HasPrefix(code, "invalid_") || strings.HasPrefix(code, "unsupported_") {
+		return true
+	}
+	switch code {
+	case "context_length_exceeded",
+		"context_window_exceeded",
+		"previous_response_not_found",
+		"item_not_found",
+		"invalid_encrypted_content",
+		"cyber_policy":
+		return true
+	default:
+		return false
+	}
+}
+
+func isCodexResponsesClient(c *gin.Context) bool {
+	if c == nil || c.Request == nil {
+		return false
+	}
+	userAgent := strings.ToLower(strings.TrimSpace(c.Request.UserAgent()))
+	originator := strings.ToLower(strings.TrimSpace(c.GetHeader("Originator")))
+	return hasAnyResponsesClientPrefix(userAgent, []string{
+		"codex desktop/",
+		"codex-tui/",
+		"codex_cli_rs/",
+		"cc-switch/",
+		"ccswitch/",
+	}) || hasAnyResponsesClientPrefix(originator, []string{
+		"codex desktop",
+		"codex-tui",
+		"codex_cli_rs",
+		"codex cli",
+		"cc-switch",
+		"ccswitch",
+	})
+}
+
+func hasAnyResponsesClientPrefix(value string, prefixes []string) bool {
+	if value == "" {
+		return false
+	}
+	for _, prefix := range prefixes {
+		if value == strings.TrimSuffix(prefix, "/") || strings.HasPrefix(value, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+type responsesFailureSnapshot struct {
+	ID        string
+	Object    string
+	CreatedAt int
+	Model     string
+	Store     bool
+}
+
+func newResponsesFailureSnapshot(response *dto.OpenAIResponsesResponse) *responsesFailureSnapshot {
+	if response == nil {
+		return nil
+	}
+	return &responsesFailureSnapshot{
+		ID:        response.ID,
+		Object:    response.Object,
+		CreatedAt: response.CreatedAt,
+		Model:     response.Model,
+		Store:     response.Store,
+	}
+}
+
+func buildResponsesFailedEvent(
+	c *gin.Context,
+	info *relaycommon.RelayInfo,
+	snapshot *responsesFailureSnapshot,
+	sequenceNumber *int,
+	openAIError types.OpenAIError,
+) (dto.ResponsesStreamResponse, string, error) {
+	responseID := "resp_gateway_failed"
+	if c != nil {
+		if requestID := c.GetString(common.RequestIdKey); requestID != "" {
+			responseID = "resp_gateway_" + requestID
+		}
+	}
+	object := "response"
+	createdAt := time.Now().Unix()
+	modelName := ""
+	store := false
+	if info != nil {
+		modelName = info.UpstreamModelName
+	}
+	if snapshot != nil {
+		if snapshot.ID != "" {
+			responseID = snapshot.ID
+		}
+		if snapshot.Object != "" {
+			object = snapshot.Object
+		}
+		if snapshot.CreatedAt > 0 {
+			createdAt = int64(snapshot.CreatedAt)
+		}
+		if snapshot.Model != "" {
+			modelName = snapshot.Model
+		}
+		store = snapshot.Store
+	}
+	if strings.TrimSpace(fmt.Sprintf("%v", openAIError.Code)) == "" {
+		openAIError.Code = types.ErrorCodeUpstreamResponseFailed
+	}
+	if openAIError.Message == "" {
+		openAIError.Message = "The upstream rejected the Responses request."
+	}
+
+	sequence := 0
+	if sequenceNumber != nil {
+		sequence = *sequenceNumber
+	}
+	event := map[string]any{
+		"type":            "response.failed",
+		"sequence_number": sequence,
+		"response": map[string]any{
+			"id":                 responseID,
+			"object":             object,
+			"created_at":         createdAt,
+			"status":             "failed",
+			"error":              openAIError,
+			"incomplete_details": nil,
+			"model":              modelName,
+			"output":             []any{},
+			"store":              store,
+			"usage":              nil,
+		},
+	}
+	data, err := common.Marshal(event)
+	if err != nil {
+		return dto.ResponsesStreamResponse{}, "", err
+	}
+	return dto.ResponsesStreamResponse{
+		Type:           "response.failed",
+		SequenceNumber: common.GetPointer(sequence),
+	}, string(data), nil
+}
+
 func logResponsesEOFTransportTrace(c *gin.Context, info *relaycommon.RelayInfo) {
 	if info == nil {
 		return
@@ -233,7 +502,7 @@ func logResponsesEOFTransportTrace(c *gin.Context, info *relaycommon.RelayInfo) 
 		durationMs = time.Since(info.UpstreamStartTime).Milliseconds()
 	}
 	logger.LogInfo(c, fmt.Sprintf(
-		"responses EOF transport trace: channel=%d protocol=%s proxy=%t header_ms=%d first_event_ms=%d duration_ms=%d conn_reused=%t conn_was_idle=%t conn_idle_ms=%d conn_fp=%s request_body_bytes=%d estimated_prompt_tokens=%d received_events=%d upstream_event_bytes=%d response_bytes=%d last_event=%s last_sequence=%d",
+		"responses EOF transport trace: channel=%d protocol=%s proxy=%t header_ms=%d first_event_ms=%d duration_ms=%d conn_reused=%t conn_was_idle=%t conn_idle_ms=%d conn_fp=%s request_body_bytes=%d estimated_prompt_tokens=%d received_events=%d forwarded_events=%d upstream_event_bytes=%d response_bytes=%d last_event=%s last_sequence=%d",
 		info.ChannelId,
 		trace.Protocol,
 		info.UpstreamProxyUsed,
@@ -247,6 +516,7 @@ func logResponsesEOFTransportTrace(c *gin.Context, info *relaycommon.RelayInfo) 
 		info.UpstreamRequestBodySize,
 		info.GetEstimatePromptTokens(),
 		info.ReceivedResponseCount,
+		info.ForwardedResponsesEventCount,
 		info.UpstreamEventBytes,
 		c.Writer.Size(),
 		info.UpstreamLastEventType,
@@ -265,10 +535,15 @@ func cyberPolicyInterceptionStreamData(c *gin.Context, streamResponse dto.Respon
 		Type:    "invalid_request_error",
 		Code:    model.UserSecurityErrorCodeContentPolicyBlocked,
 	}
-	if streamResponse.Response != nil {
+	if streamResponse.Type == "error" {
+		streamResponse.Code = safeError.Code
+		streamResponse.Message = safeError.Message
+		streamResponse.Param = ""
+		streamResponse.Error = nil
+	} else if streamResponse.Response != nil {
 		streamResponse.Response.Error = safeError
 	}
-	if streamResponse.Response == nil || streamResponse.Error != nil {
+	if streamResponse.Type != "error" && (streamResponse.Response == nil || streamResponse.Error != nil) {
 		streamResponse.Error = safeError
 	}
 	bytes, err := common.Marshal(streamResponse)
@@ -286,6 +561,7 @@ func recordResponsesUpstreamTerminal(info *relaycommon.RelayInfo, upstreamHTTPSt
 		EventType:  streamResponse.Type,
 		HTTPStatus: upstreamHTTPStatus,
 	}
+	terminal.ResponseID = info.StreamStatus.UpstreamTerminalSnapshot().ResponseID
 	if streamResponse.Response != nil {
 		terminal.ResponseID = streamResponse.Response.ID
 		terminal.ResponseStatus = jsonRawString(streamResponse.Response.Status)
@@ -301,7 +577,7 @@ func recordResponsesUpstreamTerminal(info *relaycommon.RelayInfo, upstreamHTTPSt
 		}
 	}
 	if terminal.ErrorCode == "" || terminal.ErrorMessage == "" {
-		if oaiErr := dto.GetOpenAIError(streamResponse.Error); oaiErr != nil {
+		if oaiErr := streamResponse.GetOpenAIError(); oaiErr != nil {
 			if terminal.ErrorCode == "" {
 				terminal.ErrorCode = fmt.Sprintf("%v", oaiErr.Code)
 			}
@@ -313,13 +589,11 @@ func recordResponsesUpstreamTerminal(info *relaycommon.RelayInfo, upstreamHTTPSt
 	info.StreamStatus.SetUpstreamTerminal(terminal)
 }
 
-func responsesTerminalError(streamResponse dto.ResponsesStreamResponse, fallbackCode types.ErrorCode) *types.NewAPIError {
-	var oaiErr *types.OpenAIError
-	if streamResponse.Response != nil {
-		oaiErr = streamResponse.Response.GetOpenAIError()
-	}
-	if oaiErr == nil {
-		oaiErr = dto.GetOpenAIError(streamResponse.Error)
+func responsesTerminalError(streamResponse dto.ResponsesStreamResponse, fallbackCode types.ErrorCode, skipRetry bool) *types.NewAPIError {
+	oaiErr := streamResponse.GetOpenAIError()
+	errorOptions := make([]types.NewAPIErrorOptions, 0, 1)
+	if skipRetry {
+		errorOptions = append(errorOptions, types.ErrOptionWithSkipRetry())
 	}
 	if oaiErr != nil {
 		if strings.TrimSpace(fmt.Sprintf("%v", oaiErr.Code)) == "" {
@@ -328,7 +602,7 @@ func responsesTerminalError(streamResponse dto.ResponsesStreamResponse, fallback
 		if oaiErr.Message == "" {
 			oaiErr.Message = fmt.Sprintf("upstream Responses terminal event: %s", streamResponse.Type)
 		}
-		return types.WithOpenAIError(*oaiErr, http.StatusBadGateway, types.ErrOptionWithSkipRetry())
+		return types.WithOpenAIError(*oaiErr, http.StatusBadGateway, errorOptions...)
 	}
 
 	code := fallbackCode
@@ -345,7 +619,7 @@ func responsesTerminalError(streamResponse dto.ResponsesStreamResponse, fallback
 			message += ", reason=" + reason
 		}
 	}
-	return types.NewOpenAIError(errors.New(message), code, http.StatusBadGateway, types.ErrOptionWithSkipRetry())
+	return types.NewOpenAIError(errors.New(message), code, http.StatusBadGateway, errorOptions...)
 }
 
 func jsonRawString(raw json.RawMessage) string {

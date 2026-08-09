@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -137,10 +138,15 @@ type RelayInfo struct {
 	RelayFormat            types.RelayFormat
 	SendResponseCount      int
 	ReceivedResponseCount  int
-	UpstreamEventBytes     int64
-	UpstreamLastEventType  string
-	UpstreamLastSequence   int
-	FinalPreConsumedQuota  int // 最终预消耗的配额
+	// ForwardedResponsesEventCount counts typed Responses SSE events actually
+	// exposed to the downstream for the current channel attempt. Upstream
+	// control events may be buffered, and ping comments do not increment it.
+	// Retrying is safe only while this remains zero.
+	ForwardedResponsesEventCount int
+	UpstreamEventBytes           int64
+	UpstreamLastEventType        string
+	UpstreamLastSequence         int
+	FinalPreConsumedQuota        int // 最终预消耗的配额
 	// ForcePreConsume 为 true 时禁用 BillingSession 的信任额度旁路，
 	// 强制预扣全额。用于异步任务（视频/音乐生成等），因为请求返回后任务仍在运行，
 	// 必须在提交前锁定全额。
@@ -193,8 +199,12 @@ type RelayInfo struct {
 	// http.Request.ContentLength manually (net/http only auto-detects it for
 	// *bytes.Reader/Buffer/strings.Reader). 0 means "let net/http decide".
 	UpstreamRequestBodySize int64
-	UpstreamHost            string
-	UpstreamProxyUsed       bool
+	// UpstreamRequestGetBody returns a fresh reader for the current channel
+	// attempt so net/http can transparently retry HTTP/2 REFUSED_STREAM or
+	// graceful GOAWAY failures without replaying an empty/partial body.
+	UpstreamRequestGetBody func() (io.ReadCloser, error)
+	UpstreamHost           string
+	UpstreamProxyUsed      bool
 
 	PriceData types.PriceData
 
@@ -231,6 +241,11 @@ type RelayInfo struct {
 }
 
 func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
+	// RelayInfo is reused across channel attempts. Never retain a callback that
+	// points at BodyStorage already closed by the previous attempt.
+	info.UpstreamRequestBodySize = 0
+	info.UpstreamRequestGetBody = nil
+
 	channelType := common.GetContextKeyInt(c, constant.ContextKeyChannelType)
 	paramOverride := common.GetContextKeyStringMap(c, constant.ContextKeyChannelParamOverride)
 	headerOverride := common.GetContextKeyStringMap(c, constant.ContextKeyChannelHeaderOverride)
