@@ -39,6 +39,7 @@ import { formatQuota } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useStatus } from '@/hooks/use-status'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -275,6 +276,17 @@ export function ApiKeysMutateDrawer({
   }, [groups, form])
 
   const onSubmit = async (data: ApiKeyFormValues) => {
+    if (hasVirtualMembershipStep && data.virtual_membership_id <= 0) {
+      form.setError('virtual_membership_id', {
+        type: 'manual',
+        message: '请选择虚拟会员额度',
+      })
+      toast.error('请选择虚拟会员额度')
+      if (!isUpdate) {
+        resetStepperTo(2)
+      }
+      return
+    }
     if (
       isUpdate &&
       initialBindingSignature &&
@@ -417,6 +429,8 @@ export function ApiKeysMutateDrawer({
   const allowSameGroup = form.watch('subscription_allow_same_group')
   const allowWallet = form.watch('subscription_allow_wallet')
   const hasSubscriptionStep = subscribedGroups.includes(selectedGroup)
+  const hasVirtualMembershipStep =
+    virtualMembershipGroups.includes(selectedGroup)
   const continuationEnabled = allowRenewal || allowSameGroup || allowWallet
   const currentBindingSignature = subscriptionBindingSignature(form.getValues())
   const bindingChanged =
@@ -463,22 +477,29 @@ export function ApiKeysMutateDrawer({
     const memberships = virtualMembershipQuery.data?.data?.memberships || []
     return memberships.filter(
       (membership): membership is UserVirtualMembership =>
-        membership.status === 'active'
+        membership.status === 'active' &&
+        (membership.allowed_group?.trim() || '') === selectedGroup
     )
-  }, [virtualMembershipQuery.data])
-  const hasSourceStep = hasSubscriptionStep || virtualMemberships.length > 0
+  }, [selectedGroup, virtualMembershipQuery.data])
+  const hasSourceStep = hasSubscriptionStep || hasVirtualMembershipStep
 
   useEffect(() => {
     if (!open || isUpdate) return
-    setSubscriptionChoiceConfirmed(false)
-  }, [selectedGroup, open, isUpdate])
+    setSubscriptionChoiceConfirmed(!hasSubscriptionStep)
+  }, [hasSubscriptionStep, selectedGroup, open, isUpdate])
 
   useEffect(() => {
     if (!open) return
-    if (!hasSubscriptionStep && virtualMemberships.length === 0 && !isUpdate) {
+    if (!hasSubscriptionStep) {
       form.setValue('subscription_mode', 'auto')
       form.setValue('subscription_id', 0)
-      return
+      form.setValue('subscription_allow_renewal', false)
+      form.setValue('subscription_allow_same_group', false)
+      form.setValue('subscription_allow_wallet', false)
+      form.setValue('subscription_wallet_limit_dollars', 0)
+    }
+    if (!hasVirtualMembershipStep) {
+      form.setValue('virtual_membership_id', 0)
     }
     if (
       subscriptionMode === 'instance' &&
@@ -492,12 +513,12 @@ export function ApiKeysMutateDrawer({
   }, [
     form,
     hasSubscriptionStep,
+    hasVirtualMembershipStep,
     isUpdate,
     open,
     selectedSubscriptionId,
     subscriptionInstances,
     subscriptionMode,
-    virtualMemberships.length,
   ])
 
   // Shared field groups — rendered both in the edit-mode one-shot form and the
@@ -658,81 +679,86 @@ export function ApiKeysMutateDrawer({
 
   const subscriptionFields = (
     <div className='space-y-5'>
-      <FormField
-        control={form.control}
-        name='subscription_mode'
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t('Quota source')}</FormLabel>
-            <FormControl>
-              <RadioGroup
-                value={
-                  subscriptionChoiceConfirmed || isUpdate ? field.value : ''
-                }
-                onValueChange={(value) => {
-                  field.onChange(value)
-                  setSubscriptionChoiceConfirmed(true)
-                  form.setValue('virtual_membership_id', 0)
-                  if (value === 'auto') {
-                    form.setValue('subscription_id', 0)
+      {hasSubscriptionStep && (
+        <FormField
+          control={form.control}
+          name='subscription_mode'
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('Quota source')}</FormLabel>
+              <FormControl>
+                <RadioGroup
+                  value={
+                    subscriptionChoiceConfirmed || isUpdate ? field.value : ''
                   }
-                }}
-                className='grid gap-3 sm:grid-cols-2'
-              >
-                <label
-                  className={cn(
-                    'border-border bg-card hover:border-primary/40 flex cursor-pointer gap-3 rounded-xl border p-4 transition-colors',
-                    field.value === 'auto' &&
-                      subscriptionChoiceConfirmed &&
-                      'border-primary bg-primary/5'
-                  )}
+                  onValueChange={(value) => {
+                    field.onChange(value)
+                    setSubscriptionChoiceConfirmed(true)
+                    form.setValue('virtual_membership_id', 0)
+                    if (value === 'auto') {
+                      form.setValue('subscription_id', 0)
+                    }
+                  }}
+                  className='grid gap-3 sm:grid-cols-2'
                 >
-                  <RadioGroupItem value='auto' className='mt-0.5' />
-                  <span className='space-y-1'>
-                    <span className='flex items-center gap-2 text-sm font-semibold'>
-                      <ShieldCheck className='text-primary size-4' />
-                      {t('System automatic allocation')}
+                  <label
+                    className={cn(
+                      'border-border bg-card hover:border-primary/40 flex cursor-pointer gap-3 rounded-xl border p-4 transition-colors',
+                      field.value === 'auto' &&
+                        subscriptionChoiceConfirmed &&
+                        'border-primary bg-primary/5'
+                    )}
+                  >
+                    <RadioGroupItem value='auto' className='mt-0.5' />
+                    <span className='space-y-1'>
+                      <span className='flex flex-wrap items-center gap-2 text-sm font-semibold'>
+                        <ShieldCheck className='text-primary size-4' />
+                        {t('System automatic allocation')}
+                        <Badge className='border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0 text-[10px] font-semibold text-emerald-700 shadow-none dark:text-emerald-300'>
+                          {t('Recommended')}
+                        </Badge>
+                      </span>
+                      <span className='text-muted-foreground block text-xs leading-5'>
+                        {t(
+                          'Keep the current allocation behavior and let the system choose an available funding source.'
+                        )}
+                      </span>
                     </span>
-                    <span className='text-muted-foreground block text-xs leading-5'>
-                      {t(
-                        'Keep the current allocation behavior and let the system choose an available funding source.'
-                      )}
+                  </label>
+                  <label
+                    className={cn(
+                      'border-border bg-card hover:border-primary/40 flex cursor-pointer gap-3 rounded-xl border p-4 transition-colors',
+                      field.value === 'instance' &&
+                        subscriptionChoiceConfirmed &&
+                        'border-primary bg-primary/5'
+                    )}
+                  >
+                    <RadioGroupItem value='instance' className='mt-0.5' />
+                    <span className='space-y-1'>
+                      <span className='flex items-center gap-2 text-sm font-semibold'>
+                        <Link2 className='text-primary size-4' />
+                        {t('Specify subscription instance')}
+                      </span>
+                      <span className='text-muted-foreground block text-xs leading-5'>
+                        {t(
+                          'Bind this API Key to one purchased subscription instance for project-level quota isolation.'
+                        )}
+                      </span>
                     </span>
-                  </span>
-                </label>
-                <label
-                  className={cn(
-                    'border-border bg-card hover:border-primary/40 flex cursor-pointer gap-3 rounded-xl border p-4 transition-colors',
-                    field.value === 'instance' &&
-                      subscriptionChoiceConfirmed &&
-                      'border-primary bg-primary/5'
-                  )}
-                >
-                  <RadioGroupItem value='instance' className='mt-0.5' />
-                  <span className='space-y-1'>
-                    <span className='flex items-center gap-2 text-sm font-semibold'>
-                      <Link2 className='text-primary size-4' />
-                      {t('Specify subscription instance')}
-                    </span>
-                    <span className='text-muted-foreground block text-xs leading-5'>
-                      {t(
-                        'Bind this API Key to one purchased subscription instance for project-level quota isolation.'
-                      )}
-                    </span>
-                  </span>
-                </label>
-              </RadioGroup>
-            </FormControl>
-            {!subscriptionChoiceConfirmed && !isUpdate && (
-              <FormDescription className='text-warning'>
-                {t('Please make this choice yourself before continuing.')}
-              </FormDescription>
-            )}
-          </FormItem>
-        )}
-      />
+                  </label>
+                </RadioGroup>
+              </FormControl>
+              {!subscriptionChoiceConfirmed && !isUpdate && (
+                <FormDescription className='text-warning'>
+                  {t('Please make this choice yourself before continuing.')}
+                </FormDescription>
+              )}
+            </FormItem>
+          )}
+        />
+      )}
 
-      {virtualMemberships.length > 0 && (
+      {hasVirtualMembershipStep && (
         <FormField
           control={form.control}
           name='virtual_membership_id'
@@ -749,6 +775,7 @@ export function ApiKeysMutateDrawer({
                     const membershipId = Number(value)
                     field.onChange(membershipId)
                     if (membershipId > 0) {
+                      form.clearErrors('virtual_membership_id')
                       form.setValue('subscription_mode', 'auto')
                       form.setValue('subscription_id', 0)
                       setSubscriptionChoiceConfirmed(true)
@@ -756,15 +783,6 @@ export function ApiKeysMutateDrawer({
                   }}
                   className='max-h-64 gap-2 overflow-y-auto pr-1'
                 >
-                  <label
-                    className={cn(
-                      'border-border bg-card flex cursor-pointer items-center gap-3 rounded-xl border p-3',
-                      field.value === 0 && 'border-primary bg-primary/5'
-                    )}
-                  >
-                    <RadioGroupItem value='0' />
-                    <span className='text-sm'>不绑定虚拟会员</span>
-                  </label>
                   {virtualMemberships.map((membership) => {
                     const incompatible =
                       !!membership.allowed_group &&
@@ -805,6 +823,16 @@ export function ApiKeysMutateDrawer({
                       </label>
                     )
                   })}
+                  {virtualMemberships.length === 0 && (
+                    <div className='border-border bg-muted/30 rounded-xl border border-dashed p-6 text-center'>
+                      <p className='text-sm font-medium'>
+                        暂无可绑定的虚拟会员额度
+                      </p>
+                      <p className='text-muted-foreground mt-1 text-xs'>
+                        请先购买或恢复该会员分组对应的有效额度。
+                      </p>
+                    </div>
+                  )}
                 </RadioGroup>
               </FormControl>
               <FormMessage />
@@ -813,7 +841,7 @@ export function ApiKeysMutateDrawer({
         />
       )}
 
-      {subscriptionMode === 'instance' && (
+      {hasSubscriptionStep && subscriptionMode === 'instance' && (
         <>
           <FormField
             control={form.control}
@@ -1114,7 +1142,8 @@ export function ApiKeysMutateDrawer({
         </>
       )}
 
-      {subscriptionMode === 'auto' &&
+      {hasSubscriptionStep &&
+        subscriptionMode === 'auto' &&
         isUpdate &&
         (currentRow?.planned_subscription_id || 0) > 0 && (
           <FormField
@@ -1293,13 +1322,19 @@ export function ApiKeysMutateDrawer({
                 {basicInfoFields}
               </SideDrawerSection>
 
-              {(isUpdate || hasSourceStep) && (
+              {hasSourceStep && (
                 <SideDrawerSection>
                   <SideDrawerSectionHeader
-                    title={t('Subscription ownership')}
-                    description={t(
-                      'Choose the quota source and continuation behavior'
-                    )}
+                    title={
+                      hasSubscriptionStep
+                        ? t('Subscription ownership')
+                        : '虚拟会员额度'
+                    }
+                    description={
+                      hasSubscriptionStep
+                        ? t('Choose the quota source and continuation behavior')
+                        : '为会员分组绑定对应的可用额度'
+                    }
                     icon={<Link2 className='size-4' />}
                   />
                   {subscriptionFields}
@@ -1388,7 +1423,7 @@ export function ApiKeysMutateDrawer({
                     return Boolean(okName && okGroup)
                   }
                   if (hasSourceStep && step === 2) {
-                    if (!subscriptionChoiceConfirmed) {
+                    if (hasSubscriptionStep && !subscriptionChoiceConfirmed) {
                       toast.error(t('Please choose the quota source yourself'))
                       return false
                     }
@@ -1397,12 +1432,32 @@ export function ApiKeysMutateDrawer({
                       | 'subscription_id'
                       | 'subscription_wallet_limit_dollars'
                       | 'virtual_membership_id'
-                    > = ['subscription_mode']
-                    if (form.getValues('subscription_mode') === 'instance') {
+                    > = []
+                    if (hasSubscriptionStep) {
+                      fields.push('subscription_mode')
+                    }
+                    if (
+                      hasSubscriptionStep &&
+                      form.getValues('subscription_mode') === 'instance'
+                    ) {
                       fields.push('subscription_id')
                       if (form.getValues('subscription_allow_wallet')) {
                         fields.push('subscription_wallet_limit_dollars')
                       }
+                    }
+                    if (
+                      hasVirtualMembershipStep &&
+                      form.getValues('virtual_membership_id') <= 0
+                    ) {
+                      form.setError('virtual_membership_id', {
+                        type: 'manual',
+                        message: '请选择虚拟会员额度',
+                      })
+                      toast.error('请选择虚拟会员额度')
+                      return false
+                    }
+                    if (hasVirtualMembershipStep) {
+                      fields.push('virtual_membership_id')
                     }
                     return form.trigger(fields)
                   }
@@ -1426,10 +1481,18 @@ export function ApiKeysMutateDrawer({
                   <Step>
                     <SideDrawerSection>
                       <SideDrawerSectionHeader
-                        title={t('Subscription ownership')}
-                        description={t(
-                          'Choose the instance and what happens after it is exhausted'
-                        )}
+                        title={
+                          hasSubscriptionStep
+                            ? t('Subscription ownership')
+                            : '虚拟会员额度'
+                        }
+                        description={
+                          hasSubscriptionStep
+                            ? t(
+                                'Choose the instance and what happens after it is exhausted'
+                              )
+                            : '为会员分组绑定对应的可用额度'
+                        }
                         icon={<Link2 className='size-4' />}
                       />
                       {subscriptionFields}

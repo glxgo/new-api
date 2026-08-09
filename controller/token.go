@@ -244,21 +244,13 @@ func AddToken(c *gin.Context) {
 	if !bindingProvided {
 		bindingInput.Mode = model.TokenSubscriptionModeAuto
 	}
-	if token.VirtualMembershipId > 0 {
-		if bindingInput.Mode != model.TokenSubscriptionModeAuto || token.SubscriptionId > 0 {
-			common.ApiErrorMsg(c, "虚拟会员不能与订阅实例同时绑定")
-			return
-		}
-		if err := model.ValidateVirtualMembershipForToken(c.GetInt("id"), strings.TrimSpace(token.Group), token.VirtualMembershipId, true); err != nil {
-			common.ApiError(c, err)
-			return
-		}
-	}
-	if err := model.ValidateTokenSubscriptionBindingInput(
+	bindingInput, virtualMembershipId, err := model.ResolveTokenFundingBindingForGroup(
 		c.GetInt("id"),
 		strings.TrimSpace(token.Group),
 		bindingInput,
-	); err != nil {
+		token.VirtualMembershipId,
+	)
+	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
@@ -284,7 +276,7 @@ func AddToken(c *gin.Context) {
 		CrossGroupRetry:    token.CrossGroupRetry,
 	}
 	model.ApplyTokenSubscriptionBindingInput(&cleanToken, bindingInput)
-	cleanToken.VirtualMembershipId = token.VirtualMembershipId
+	cleanToken.VirtualMembershipId = virtualMembershipId
 	err = cleanToken.Insert()
 	if err != nil {
 		common.ApiError(c, err)
@@ -364,24 +356,18 @@ func UpdateToken(c *gin.Context) {
 		}
 		bindingInput := tokenBindingInput(&token)
 		if bindingProvided {
-			if err := model.ValidateTokenSubscriptionBindingInput(
+			bindingInput, virtualMembershipId, resolveErr := model.ResolveTokenFundingBindingForGroup(
 				userId,
 				strings.TrimSpace(token.Group),
 				bindingInput,
-			); err != nil {
-				common.ApiError(c, err)
+				token.VirtualMembershipId,
+			)
+			if resolveErr != nil {
+				common.ApiError(c, resolveErr)
 				return
 			}
-			if token.VirtualMembershipId > 0 {
-				if bindingInput.Mode != model.TokenSubscriptionModeAuto || token.SubscriptionId > 0 {
-					common.ApiErrorMsg(c, "虚拟会员不能与订阅实例同时绑定")
-					return
-				}
-				if err := model.ValidateVirtualMembershipForToken(userId, strings.TrimSpace(token.Group), token.VirtualMembershipId, true); err != nil {
-					common.ApiError(c, err)
-					return
-				}
-			}
+			model.ApplyTokenSubscriptionBindingInput(&token, bindingInput)
+			token.VirtualMembershipId = virtualMembershipId
 		} else if model.NormalizeTokenSubscriptionMode(cleanToken.SubscriptionMode) == model.TokenSubscriptionModeInstance &&
 			cleanToken.SubscriptionId > 0 {
 			if _, err := model.ValidateSubscriptionForToken(

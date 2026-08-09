@@ -171,6 +171,64 @@ func ValidateTokenSubscriptionBindingInput(userId int, group string, input Token
 	return err
 }
 
+// ResolveTokenFundingBindingForGroup enforces that API Key funding fields
+// match the selected group type. Ordinary groups never retain subscription or
+// virtual-membership bindings, package groups may use subscription allocation,
+// and virtual-membership groups must bind one usable membership explicitly.
+func ResolveTokenFundingBindingForGroup(
+	userId int,
+	group string,
+	input TokenSubscriptionBindingInput,
+	virtualMembershipId int,
+) (TokenSubscriptionBindingInput, int, error) {
+	group = strings.TrimSpace(group)
+	virtualGroup, err := HasVirtualMembershipPlanByGroup(group)
+	if err != nil {
+		return input, virtualMembershipId, err
+	}
+	subscriptionGroup, err := HasSubscriptionPlanByGroup(group)
+	if err != nil {
+		return input, virtualMembershipId, err
+	}
+	if virtualGroup && subscriptionGroup {
+		return input, virtualMembershipId, errors.New("当前分组同时属于套餐与虚拟会员，请联系管理员修正分组配置")
+	}
+
+	if virtualGroup {
+		if virtualMembershipId <= 0 {
+			return input, 0, errors.New("会员分组必须绑定可用的虚拟会员额度")
+		}
+		if NormalizeTokenSubscriptionMode(input.Mode) != TokenSubscriptionModeAuto || input.SubscriptionId > 0 {
+			return input, 0, errors.New("虚拟会员不能与订阅实例同时绑定")
+		}
+		if err := ValidateVirtualMembershipForToken(userId, group, virtualMembershipId, true); err != nil {
+			return input, 0, err
+		}
+		return TokenSubscriptionBindingInput{
+			Mode:          TokenSubscriptionModeAuto,
+			CancelPlanned: true,
+			Reason:        input.Reason,
+		}, virtualMembershipId, nil
+	}
+
+	if subscriptionGroup {
+		if virtualMembershipId > 0 {
+			return input, 0, errors.New("套餐分组不能绑定虚拟会员额度")
+		}
+		input.Mode = NormalizeTokenSubscriptionMode(input.Mode)
+		if err := ValidateTokenSubscriptionBindingInput(userId, group, input); err != nil {
+			return input, 0, err
+		}
+		return input, 0, nil
+	}
+
+	return TokenSubscriptionBindingInput{
+		Mode:          TokenSubscriptionModeAuto,
+		CancelPlanned: true,
+		Reason:        input.Reason,
+	}, 0, nil
+}
+
 func applyBindingInput(token *Token, input TokenSubscriptionBindingInput) {
 	input.Mode = NormalizeTokenSubscriptionMode(input.Mode)
 	// Subscription and virtual-membership ledgers are mutually exclusive. The

@@ -82,7 +82,7 @@ function modelCacheTokens(model: CPAModelUsage) {
   )
 }
 
-function modelCacheRate(model: CPAModelUsage) {
+function modelCacheStats(model: CPAModelUsage) {
   const cached = modelCacheTokens(model)
   const cacheCreated = Math.max(0, model.cache_creation_tokens)
   const input = Math.max(0, model.input_tokens)
@@ -95,7 +95,25 @@ function modelCacheRate(model: CPAModelUsage) {
   const denominator = detailsAlreadyInInput
     ? Math.max(input, cached + cacheCreated)
     : input + cached + cacheCreated
+  return { cached, denominator }
+}
+
+function modelCacheRate(model: CPAModelUsage) {
+  const { cached, denominator } = modelCacheStats(model)
   return denominator > 0 ? (cached * 100) / denominator : 0
+}
+
+function aggregateCacheRate(models: CPAModelUsage[]) {
+  const totals = models.reduce(
+    (sum, model) => {
+      const stats = modelCacheStats(model)
+      sum.cached += stats.cached
+      sum.denominator += stats.denominator
+      return sum
+    },
+    { cached: 0, denominator: 0 }
+  )
+  return totals.denominator > 0 ? (totals.cached * 100) / totals.denominator : 0
 }
 
 function formatLatency(milliseconds: number) {
@@ -211,8 +229,10 @@ function AccountCard({ account }: { account: CPAAccountUsage }) {
             </div>
           </div>
         </div>
-        <span className='bg-muted rounded-full px-2 py-1 text-[10px] font-bold tracking-[0.08em] uppercase'>
-          {account.plan_type || t('Unknown plan')}
+        <span className='relative isolate overflow-hidden rounded-full border border-slate-300/90 bg-[linear-gradient(135deg,#f8fafc_0%,#cbd5e1_38%,#ffffff_58%,#94a3b8_100%)] px-2.5 py-1 text-[10px] font-extrabold tracking-[0.1em] text-slate-800 uppercase shadow-[inset_0_1px_0_rgba(255,255,255,.95),0_2px_8px_rgba(71,85,105,.18)] after:pointer-events-none after:absolute after:inset-y-[-35%] after:left-[-75%] after:w-1/2 after:skew-x-[-18deg] after:bg-[linear-gradient(90deg,transparent,rgba(255,255,255,.95),transparent)] after:transition-transform after:duration-700 group-hover:after:translate-x-[420%] motion-reduce:after:transition-none dark:border-slate-500/80 dark:bg-[linear-gradient(135deg,#475569_0%,#cbd5e1_42%,#f8fafc_58%,#64748b_100%)] dark:text-slate-950'>
+          <span className='relative z-10 drop-shadow-[0_1px_0_rgba(255,255,255,.75)]'>
+            {account.plan_type || t('Unknown plan')}
+          </span>
         </span>
       </header>
 
@@ -249,12 +269,13 @@ function MetricCard({
   return (
     <div
       className={cn(
-        'rounded-xl border p-4',
+        'group relative overflow-hidden rounded-xl border p-4 transition-[transform,border-color,box-shadow] duration-200 hover:-translate-y-1 hover:border-emerald-500/20 hover:shadow-[0_16px_34px_rgba(15,23,42,.08)] motion-reduce:transform-none',
         accent
           ? 'border-emerald-500/20 bg-[linear-gradient(145deg,rgba(16,185,129,.10),rgba(16,185,129,.025))]'
           : 'bg-card'
       )}
     >
+      <span className='pointer-events-none absolute inset-x-6 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(16,185,129,.55),transparent)] opacity-0 transition-opacity group-hover:opacity-100' />
       <div className='flex items-start justify-between gap-4'>
         <div>
           <p className='text-muted-foreground text-[11px] font-semibold tracking-[0.08em] uppercase'>
@@ -420,6 +441,7 @@ export function PlatformUsage() {
   const availableAccounts = accounts.filter(
     (account) => account.available
   ).length
+  const cacheHitRate = aggregateCacheRate(cpa?.models ?? [])
 
   return (
     <SectionPageLayout fixedContent variant='editorial'>
@@ -445,7 +467,7 @@ export function PlatformUsage() {
                 </h2>
                 <p className='text-muted-foreground mt-2 max-w-xl text-sm leading-6'>
                   {t(
-                    'Pre-discount usage removes entrance and group multipliers while retaining priority 2x. CPA data is synchronized in the background every 10 minutes.'
+                    'Pre-discount usage removes entrance and group multipliers. CPA data is synchronized in the background every 10 minutes.'
                   )}
                 </p>
               </div>
@@ -477,7 +499,7 @@ export function PlatformUsage() {
             </div>
           )}
 
-          <div className='mt-3 grid gap-3 @3xl/content:grid-cols-2 @6xl/content:grid-cols-4'>
+          <div className='mt-3 grid gap-3 @3xl/content:grid-cols-2 @6xl/content:grid-cols-5'>
             <MetricCard
               title={t('Pre-discount usage')}
               value={
@@ -485,7 +507,7 @@ export function PlatformUsage() {
                   ? '—'
                   : formatQuota(data?.site.pre_discount_quota ?? 0)
               }
-              description={t('All site channels · today · priority retained')}
+              description={t('All site channels · today')}
               icon={Coins}
               accent
             />
@@ -522,6 +544,12 @@ export function PlatformUsage() {
                 'Only active accounts with a fresh quota response'
               )}
               icon={Activity}
+            />
+            <MetricCard
+              title={t('Cache Hit Rate')}
+              value={query.isPending ? '—' : `${cacheHitRate.toFixed(1)}%`}
+              description={t('CPA input cache · weighted by tokens')}
+              icon={DatabaseZap}
             />
           </div>
 

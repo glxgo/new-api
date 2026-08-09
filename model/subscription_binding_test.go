@@ -26,6 +26,8 @@ func setupSubscriptionBindingTestDB(t *testing.T) *gorm.DB {
 		&UserSubscription{},
 		&SubscriptionPreConsumeRecord{},
 		&TokenSubscriptionBindingHistory{},
+		&VirtualMembershipPlan{},
+		&UserVirtualMembership{},
 	))
 	oldDB := DB
 	DB = db
@@ -61,6 +63,69 @@ func TestHasSubscriptionPlanByGroupReservesPackageGroup(t *testing.T) {
 	reserved, err = HasSubscriptionPlanByGroup("wallet-group")
 	require.NoError(t, err)
 	require.False(t, reserved)
+}
+
+func TestResolveTokenFundingBindingForGroup(t *testing.T) {
+	db := setupSubscriptionBindingTestDB(t)
+	now := common.GetTimestamp()
+
+	packagePlan := testSubscriptionPlan("package", "package-group")
+	require.NoError(t, db.Create(&packagePlan).Error)
+	virtualPlan := VirtualMembershipPlan{
+		Code:         "virtual-plan",
+		Title:        "virtual",
+		AllowedGroup: "member-group",
+		DurationDays: 30,
+		Enabled:      true,
+	}
+	require.NoError(t, db.Create(&virtualPlan).Error)
+	membership := UserVirtualMembership{
+		UserId:        19,
+		PlanId:        virtualPlan.Id,
+		Status:        VirtualMembershipStatusActive,
+		StartTime:     now - 60,
+		EndTime:       now + 3600,
+		AllowedGroup:  "member-group",
+		WeeklyQuota:   10_000,
+		WeeklyUsed:    100,
+		WeeklyResetAt: now + 1800,
+	}
+	require.NoError(t, db.Create(&membership).Error)
+
+	t.Run("ordinary group clears every funding binding", func(t *testing.T) {
+		resolved, membershipId, err := ResolveTokenFundingBindingForGroup(19, "default", TokenSubscriptionBindingInput{
+			Mode:           TokenSubscriptionModeInstance,
+			SubscriptionId: 99,
+			AllowWallet:    true,
+			WalletLimit:    500,
+		}, membership.Id)
+		require.NoError(t, err)
+		require.Equal(t, TokenSubscriptionModeAuto, resolved.Mode)
+		require.Zero(t, resolved.SubscriptionId)
+		require.True(t, resolved.CancelPlanned)
+		require.Zero(t, membershipId)
+	})
+
+	t.Run("package group rejects virtual membership", func(t *testing.T) {
+		_, _, err := ResolveTokenFundingBindingForGroup(19, "package-group", TokenSubscriptionBindingInput{
+			Mode: TokenSubscriptionModeAuto,
+		}, membership.Id)
+		require.EqualError(t, err, "套餐分组不能绑定虚拟会员额度")
+	})
+
+	t.Run("virtual membership group requires explicit usable membership", func(t *testing.T) {
+		_, _, err := ResolveTokenFundingBindingForGroup(19, "member-group", TokenSubscriptionBindingInput{
+			Mode: TokenSubscriptionModeAuto,
+		}, 0)
+		require.EqualError(t, err, "会员分组必须绑定可用的虚拟会员额度")
+
+		resolved, membershipId, err := ResolveTokenFundingBindingForGroup(19, "member-group", TokenSubscriptionBindingInput{
+			Mode: TokenSubscriptionModeAuto,
+		}, membership.Id)
+		require.NoError(t, err)
+		require.Equal(t, TokenSubscriptionModeAuto, resolved.Mode)
+		require.Equal(t, membership.Id, membershipId)
+	})
 }
 
 func TestSubscriptionOrderSnapshotDoesNotDriftAfterPlanEdit(t *testing.T) {
