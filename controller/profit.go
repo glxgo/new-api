@@ -57,8 +57,8 @@ func GetProfitSummary(c *gin.Context) {
 	var topUpReview, subscriptionReview, legacyLogReview int64
 	model.DB.Model(&model.TopUp{}).Where("commission_reconciliation_status = ?", "manual_review").Count(&topUpReview)
 	model.DB.Model(&model.SubscriptionOrder{}).Where("commission_reconciliation_status = ?", "manual_review").Count(&subscriptionReview)
-	if model.LOG_DB != nil {
-		model.LOG_DB.Model(&model.Log{}).Where("profit_reconciliation_status = ?", "unresolved_no_payment_mapping").Count(&legacyLogReview)
+	if count, err := model.CountPendingLegacyProfitReconciliations(); err == nil {
+		legacyLogReview = count
 	}
 
 	common.ApiSuccess(c, gin.H{

@@ -2,11 +2,13 @@ package model
 
 import (
 	"fmt"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -234,8 +236,17 @@ func TestRechargeCommissionMigrationClosesOnlyUnsettledLegacyProfitQueue(t *test
 	require.NoError(t, db.First(&legacyPending, legacyPending.Id).Error)
 	require.False(t, legacyPending.Settled, "unmapped consumption must not be disguised as settled")
 	require.Empty(t, legacyPending.SettleBatchId)
-	require.Equal(t, rechargeCommissionCutoverUnresolved, legacyPending.ProfitReconciliationStatus)
-	require.Contains(t, legacyPending.ProfitReconciliationReason, "no unambiguous real-payment mapping")
+	require.Empty(t, legacyPending.ProfitReconciliationStatus, "cutover must not rewrite the legacy log table")
+	require.Empty(t, legacyPending.ProfitReconciliationReason)
+	pendingCount, err := CountPendingLegacyProfitReconciliations()
+	require.NoError(t, err)
+	require.EqualValues(t, 1, pendingCount)
+
+	lateLegacy := Log{UserId: 1, Type: LogTypeConsume, Settled: false, CreatedAt: 12}
+	require.NoError(t, db.Create(&lateLegacy).Error)
+	pendingCount, err = CountPendingLegacyProfitReconciliations()
+	require.NoError(t, err)
+	require.EqualValues(t, 2, pendingCount, "old-version logs written during blue-green drain remain auditable")
 	require.NoError(t, db.First(&historicalDone, historicalDone.Id).Error)
 	require.Equal(t, "2026-08-01", historicalDone.SettleBatchId)
 	var running, done AffiliateSettle
@@ -244,6 +255,32 @@ func TestRechargeCommissionMigrationClosesOnlyUnsettledLegacyProfitQueue(t *test
 	require.Equal(t, AffiliateSettleStatusFailed, running.Status)
 	require.Equal(t, AffiliateSettleStatusDone, done.Status)
 	require.Equal(t, 123, done.TotalGross, "settled historical profit must remain immutable")
+}
+
+func TestRecordConsumeLogKeepsNewRequestsOutOfLegacyProfitQueue(t *testing.T) {
+	db := newRechargeCommissionTestDB(t)
+	require.NoError(t, db.AutoMigrate(&Log{}))
+	oldDB, oldLogDB := DB, LOG_DB
+	oldEnabled, oldExport := common.LogConsumeEnabled, common.DataExportEnabled
+	DB, LOG_DB = db, db
+	common.LogConsumeEnabled, common.DataExportEnabled = true, false
+	t.Cleanup(func() {
+		DB, LOG_DB = oldDB, oldLogDB
+		common.LogConsumeEnabled, common.DataExportEnabled = oldEnabled, oldExport
+	})
+
+	user := User{Username: "new-policy-log", Password: "hashed-password", AffCode: "new-policy-log"}
+	require.NoError(t, db.Create(&user).Error)
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("POST", "/v1/responses", nil)
+	c.Set("username", user.Username)
+	RecordConsumeLog(c, user.Id, RecordConsumeLogParams{ModelName: "gpt-test", Quota: 100})
+
+	var log Log
+	require.NoError(t, db.Where("user_id = ?", user.Id).First(&log).Error)
+	require.True(t, log.Settled)
+	require.Equal(t, rechargeCommissionLogBatchV1, log.SettleBatchId)
 }
 
 func TestRechargeCommissionMigrationPaysOnlyIdentifiablePendingEpayOrderOnce(t *testing.T) {

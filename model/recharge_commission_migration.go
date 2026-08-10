@@ -13,7 +13,9 @@ import (
 
 const (
 	rechargeCommissionMigrationKey      = "RechargeCommissionPolicyV1ReconciliationV2"
-	rechargeCommissionCutoverUnresolved = "unresolved_no_payment_mapping"
+	rechargeCommissionLegacyCountKey    = "RechargeCommissionPolicyV1LegacyPendingCount"
+	rechargeCommissionLegacyCutoffIDKey = "RechargeCommissionPolicyV1LegacyCutoffLogId"
+	rechargeCommissionLogBatchV1        = "recharge_policy_v1"
 )
 
 // MigrateRechargeCommissionPolicyV1 inventories the obsolete consumption-
@@ -30,13 +32,21 @@ func MigrateRechargeCommissionPolicyV1() error {
 	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
+	// Do not rewrite every historical consumption log. Large installations can
+	// have hundreds of thousands of unresolved rows; a bulk UPDATE would create
+	// avoidable locks, undo records and binlog pressure during a blue-green
+	// release. Snapshot the count and high-water ID instead. New-policy consume
+	// logs are born settled, while any old-version rows written during drain are
+	// counted cheaply above the high-water mark.
+	var legacySnapshot struct {
+		Count int64 `gorm:"column:pending_count"`
+		MaxID int64 `gorm:"column:max_id"`
+	}
 	if LOG_DB != nil {
 		if err := LOG_DB.Model(&Log{}).
+			Select("COUNT(*) AS pending_count, COALESCE(MAX(id), 0) AS max_id").
 			Where("type = ? AND settled = ?", LogTypeConsume, false).
-			Updates(map[string]interface{}{
-				"profit_reconciliation_status": rechargeCommissionCutoverUnresolved,
-				"profit_reconciliation_reason": "legacy consumption profit has no unambiguous real-payment mapping; no commission was issued",
-			}).Error; err != nil {
+			Scan(&legacySnapshot).Error; err != nil {
 			return err
 		}
 	}
@@ -49,11 +59,55 @@ func MigrateRechargeCommissionPolicyV1() error {
 			Update("status", AffiliateSettleStatusFailed).Error; err != nil {
 			return err
 		}
+		options := []Option{
+			{Key: rechargeCommissionMigrationKey, Value: "true"},
+			{Key: rechargeCommissionLegacyCountKey, Value: strconv.FormatInt(legacySnapshot.Count, 10)},
+			{Key: rechargeCommissionLegacyCutoffIDKey, Value: strconv.FormatInt(legacySnapshot.MaxID, 10)},
+		}
 		return tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "key"}},
 			DoUpdates: clause.AssignmentColumns([]string{"value"}),
-		}).Create(&Option{Key: rechargeCommissionMigrationKey, Value: "true"}).Error
+		}).Create(&options).Error
 	})
+}
+
+// CountPendingLegacyProfitReconciliations returns the immutable cutover count
+// plus only late old-version rows written while the previous container drains.
+// New recharge-policy logs are marked settled at creation and never enter this
+// legacy audit count.
+func CountPendingLegacyProfitReconciliations() (int64, error) {
+	if DB == nil || LOG_DB == nil {
+		return 0, nil
+	}
+	var options []Option
+	if err := DB.Where(commonKeyCol+" IN ?", []string{
+		rechargeCommissionLegacyCountKey,
+		rechargeCommissionLegacyCutoffIDKey,
+	}).Find(&options).Error; err != nil {
+		return 0, err
+	}
+	values := make(map[string]int64, len(options))
+	for _, option := range options {
+		value, err := strconv.ParseInt(strings.TrimSpace(option.Value), 10, 64)
+		if err != nil || value < 0 {
+			return 0, fmt.Errorf("invalid recharge commission cutover option %s", option.Key)
+		}
+		values[option.Key] = value
+	}
+	base, hasBase := values[rechargeCommissionLegacyCountKey]
+	cutoffID, hasCutoff := values[rechargeCommissionLegacyCutoffIDKey]
+	if !hasBase || !hasCutoff {
+		var count int64
+		err := LOG_DB.Model(&Log{}).Where("type = ? AND settled = ?", LogTypeConsume, false).Count(&count).Error
+		return count, err
+	}
+	var late int64
+	if err := LOG_DB.Model(&Log{}).
+		Where("type = ? AND settled = ? AND id > ?", LogTypeConsume, false, cutoffID).
+		Count(&late).Error; err != nil {
+		return 0, err
+	}
+	return base + late, nil
 }
 
 // reconcileIdentifiablePendingPaymentsTx promotes only payment events that

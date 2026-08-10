@@ -425,6 +425,11 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		SubscriptionId:       params.SubscriptionId,
 		CostRuleVersion:      params.CostRuleVersion,
 		ChannelCostRatioPPM:  params.ChannelCostRatioPPM,
+		// Consumption logs are no longer a profit-settlement queue. Mark new
+		// rows complete at creation so only pre-cutover rows remain visible in
+		// the legacy reconciliation audit.
+		Settled:       true,
+		SettleBatchId: rechargeCommissionLogBatchV1,
 	}
 	// 强制从主库单次读取两池余额，避免扣费后的 Redis 异步更新尚未完成时
 	// 把扣费前余额写入财务流水。
