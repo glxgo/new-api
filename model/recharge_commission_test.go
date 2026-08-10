@@ -322,3 +322,73 @@ func TestRechargeCommissionMigrationPaysOnlyIdentifiablePendingEpayOrderOnce(t *
 	require.NoError(t, db.Model(&RechargeCredit{}).Where("source_ref = ?", ambiguous.TradeNo).Count(&count).Error)
 	require.Zero(t, count)
 }
+
+func TestRechargeCommissionMigrationKeepsDeletedOwnersForManualReview(t *testing.T) {
+	db := newRechargeCommissionTestDB(t)
+	require.NoError(t, db.AutoMigrate(
+		&Log{}, &AffiliateSettle{}, &Option{}, &TopUp{},
+		&SubscriptionPlan{}, &SubscriptionOrder{}, &UserSubscription{},
+		&VirtualMembershipPlan{}, &VirtualMembershipOrder{}, &UserVirtualMembership{},
+	))
+	oldDB, oldLogDB, oldMaster, oldPrice, oldQuota := DB, LOG_DB, common.IsMasterNode, operation_setting.Price, common.QuotaPerUnit
+	DB, LOG_DB, common.IsMasterNode, operation_setting.Price, common.QuotaPerUnit = db, db, true, 7.3, 500_000
+	t.Cleanup(func() {
+		DB, LOG_DB, common.IsMasterNode, operation_setting.Price, common.QuotaPerUnit = oldDB, oldLogDB, oldMaster, oldPrice, oldQuota
+	})
+
+	deleted := User{Username: "deleted-payment-owner", Password: "hashed-password", AffCode: "deleted-payment-owner"}
+	require.NoError(t, db.Create(&deleted).Error)
+
+	subPlan := SubscriptionPlan{Title: "deleted-owner-sub", PriceAmount: 73, DurationValue: 30, DurationUnit: "day"}
+	require.NoError(t, db.Create(&subPlan).Error)
+	subOrder := SubscriptionOrder{
+		UserId: deleted.Id, PlanId: subPlan.Id, Money: 73, TradeNo: "deleted-owner-sub-order",
+		PaymentProvider: PaymentProviderEpay, Status: common.TopUpStatusSuccess, CompleteTime: 1_800_001_000,
+	}
+	require.NoError(t, db.Create(&subOrder).Error)
+	subscription := UserSubscription{
+		UserId: deleted.Id, PlanId: subPlan.Id, Source: "order", CreatedAt: subOrder.CompleteTime,
+		Status: "active", DividendState: SubscriptionDividendPending,
+	}
+	require.NoError(t, db.Create(&subscription).Error)
+
+	vmPlan := VirtualMembershipPlan{Code: "deleted-owner-vm", Title: "deleted-owner-vm", PriceAmount: 73, DurationDays: 30, Enabled: true}
+	require.NoError(t, db.Create(&vmPlan).Error)
+	vmOrder := VirtualMembershipOrder{
+		UserId: deleted.Id, PlanId: vmPlan.Id, GroupSize: 1, Money: 73, TradeNo: "deleted-owner-vm-order",
+		PaymentProvider: PaymentProviderEpay, Status: VirtualMembershipOrderSuccess,
+		DividendState: SubscriptionDividendPending, CompleteTime: 1_800_001_001,
+	}
+	require.NoError(t, db.Create(&vmOrder).Error)
+	vmOrderID := vmOrder.Id
+	require.NoError(t, db.Create(&UserVirtualMembership{
+		UserId: deleted.Id, PlanId: vmPlan.Id, OrderId: vmOrder.Id, OrderUniqueId: &vmOrderID,
+		Status: VirtualMembershipStatusActive,
+	}).Error)
+
+	topup := TopUp{
+		UserId: deleted.Id, Amount: 10, Money: 73, TradeNo: "deleted-owner-topup",
+		PaymentProvider: PaymentProviderEpay, Status: common.TopUpStatusSuccess, CompleteTime: 1_800_001_002,
+	}
+	snapshot, err := NewPaymentSnapshotFromMoney(topup.Money, "CNY")
+	require.NoError(t, err)
+	require.NoError(t, SetTopUpPaymentExpectation(&topup, snapshot))
+	topup.ActualPaymentAmountMinor = snapshot.AmountMinor
+	topup.ActualPaymentCurrency = snapshot.Currency
+	require.NoError(t, db.Create(&topup).Error)
+
+	require.NoError(t, db.Delete(&deleted).Error)
+	require.NoError(t, MigrateRechargeCommissionPolicyV1())
+
+	require.NoError(t, db.First(&subOrder, subOrder.Id).Error)
+	require.Equal(t, "manual_review", subOrder.CommissionReconciliationStatus)
+	require.NoError(t, db.First(&subscription, subscription.Id).Error)
+	require.Equal(t, SubscriptionDividendPending, subscription.DividendState)
+	require.NoError(t, db.First(&vmOrder, vmOrder.Id).Error)
+	require.Equal(t, SubscriptionDividendPending, vmOrder.DividendState)
+	require.NoError(t, db.First(&topup, topup.Id).Error)
+	require.Equal(t, "manual_review", topup.CommissionReconciliationStatus)
+	var creditCount int64
+	require.NoError(t, db.Model(&RechargeCredit{}).Where("source_ref IN ?", []string{subOrder.TradeNo, vmOrder.TradeNo, topup.TradeNo}).Count(&creditCount).Error)
+	require.Zero(t, creditCount)
+}

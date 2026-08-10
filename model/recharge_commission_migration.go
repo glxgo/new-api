@@ -18,6 +18,8 @@ const (
 	rechargeCommissionLogBatchV1        = "recharge_policy_v1"
 )
 
+var errHistoricalRechargeOwnerUnavailable = errors.New("historical recharge owner is unavailable")
+
 // MigrateRechargeCommissionPolicyV1 inventories the obsolete consumption-
 // profit queue without pretending unresolved rows were settled. Completed
 // historical batches and dividend records remain immutable. All new real
@@ -115,6 +117,13 @@ func CountPendingLegacyProfitReconciliations() (int64, error) {
 // remains explicitly marked for manual review.
 func reconcileIdentifiablePendingPaymentsTx(tx *gorm.DB) error {
 	promote := func(userId int, snapshot PaymentSnapshot, baseQuota int64, sourceType, tradeNo string, completedAt int64) error {
+		var activeOwnerCount int64
+		if err := tx.Model(&User{}).Where("id = ?", userId).Count(&activeOwnerCount).Error; err != nil {
+			return err
+		}
+		if activeOwnerCount != 1 {
+			return errHistoricalRechargeOwnerUnavailable
+		}
 		amountCents, err := RechargeCentsForPayment(snapshot)
 		if err != nil {
 			return err
@@ -170,6 +179,9 @@ func reconcileIdentifiablePendingPaymentsTx(tx *gorm.DB) error {
 					return snapshotErr
 				}
 				if err := promote(orders[i].UserId, snapshot, orders[i].CommissionBaseQuota, RechargeSourceVirtualMembership, orders[i].TradeNo, orders[i].CompleteTime); err != nil {
+					if errors.Is(err, errHistoricalRechargeOwnerUnavailable) {
+						continue
+					}
 					return err
 				}
 			}
@@ -206,6 +218,12 @@ func reconcileIdentifiablePendingPaymentsTx(tx *gorm.DB) error {
 					continue
 				}
 				if err := promote(orders[i].UserId, snapshot, orders[i].CommissionBaseQuota, RechargeSourceSubscription, orders[i].TradeNo, orders[i].CompleteTime); err != nil {
+					if errors.Is(err, errHistoricalRechargeOwnerUnavailable) {
+						if markErr := markSubscriptionReconciliationTx(tx, &orders[i], "manual_review", "historical paid subscription owner is unavailable"); markErr != nil {
+							return markErr
+						}
+						continue
+					}
 					return err
 				}
 				baseQuota := orders[i].CommissionBaseQuota
@@ -262,6 +280,15 @@ func reconcileIdentifiablePendingPaymentsTx(tx *gorm.DB) error {
 				continue
 			}
 			if err := promote(topups[i].UserId, snapshot, topups[i].CommissionBaseQuota, RechargeSourceWalletTopUp, topups[i].TradeNo, topups[i].CompleteTime); err != nil {
+				if errors.Is(err, errHistoricalRechargeOwnerUnavailable) {
+					if markErr := tx.Model(&topups[i]).Updates(map[string]interface{}{
+						"commission_reconciliation_status": "manual_review",
+						"commission_reconciliation_reason": "historical paid wallet order owner is unavailable",
+					}).Error; markErr != nil {
+						return markErr
+					}
+					continue
+				}
 				return err
 			}
 			if err := tx.Model(&topups[i]).Updates(map[string]interface{}{

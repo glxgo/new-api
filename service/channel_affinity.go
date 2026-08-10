@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/pkg/cachex"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -42,19 +43,85 @@ var (
 )
 
 type channelAffinityMeta struct {
-	CacheKey       string
-	TTLSeconds     int
-	RuleName       string
-	SkipRetry      bool
-	ParamTemplate  map[string]interface{}
-	KeySourceType  string
-	KeySourceKey   string
-	KeySourcePath  string
-	KeyHint        string
-	KeyFingerprint string
-	UsingGroup     string
-	ModelName      string
-	RequestPath    string
+	CacheKey          string
+	TTLSeconds        int
+	RuleName          string
+	SkipRetry         bool
+	ParamTemplate     map[string]interface{}
+	UpstreamSessionID string
+	KeySourceType     string
+	KeySourceKey      string
+	KeySourcePath     string
+	KeyHint           string
+	KeyFingerprint    string
+	UsingGroup        string
+	ModelName         string
+	RequestPath       string
+}
+
+func buildChannelAffinityUpstreamSessionID(c *gin.Context, ruleName, usingGroup, affinityValue string) string {
+	affinityValue = strings.TrimSpace(affinityValue)
+	if c == nil || affinityValue == "" {
+		return ""
+	}
+
+	userID := common.GetContextKeyInt(c, constant.ContextKeyUserId)
+	tokenID := common.GetContextKeyInt(c, constant.ContextKeyTokenId)
+	if userID <= 0 && tokenID <= 0 {
+		return ""
+	}
+
+	material := strings.Join([]string{
+		"new-api-cpa-session-v1",
+		strconv.Itoa(userID),
+		strconv.Itoa(tokenID),
+		strings.TrimSpace(ruleName),
+		strings.TrimSpace(usingGroup),
+		affinityValue,
+	}, "\x00")
+	digest := common.GenerateHMAC(material)
+	if len(digest) > 32 {
+		digest = digest[:32]
+	}
+	if digest == "" {
+		return ""
+	}
+	return "na1_" + digest
+}
+
+func isChannelAffinitySessionHeader(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "session-id", "session_id", "x-session-id", "x-session-affinity":
+		return true
+	default:
+		return false
+	}
+}
+
+// ApplyChannelAffinityHeaderOverride injects a stable, tenant-scoped opaque
+// Session_id for the selected upstream. The raw conversation key never leaves
+// this process or enters request logs. Existing explicit channel session
+// overrides remain authoritative.
+func ApplyChannelAffinityHeaderOverride(c *gin.Context, headerOverride map[string]interface{}) (map[string]interface{}, bool) {
+	if c == nil {
+		return headerOverride, false
+	}
+	meta, ok := getChannelAffinityMeta(c)
+	if !ok || strings.TrimSpace(meta.UpstreamSessionID) == "" {
+		return headerOverride, false
+	}
+	for key, value := range headerOverride {
+		if !isChannelAffinitySessionHeader(key) {
+			continue
+		}
+		if strings.TrimSpace(fmt.Sprintf("%v", value)) != "" {
+			return headerOverride, false
+		}
+	}
+
+	merged := cloneStringAnyMap(headerOverride)
+	merged["Session_id"] = meta.UpstreamSessionID
+	return merged, true
 }
 
 type ChannelAffinityStatsContext struct {
@@ -504,9 +571,10 @@ func appendChannelAffinityTemplateAdminInfo(c *gin.Context, meta channelAffinity
 	}
 
 	templateInfo := map[string]interface{}{
-		"applied":             true,
-		"rule_name":           meta.RuleName,
-		"param_override_keys": len(meta.ParamTemplate),
+		"applied":                  true,
+		"rule_name":                meta.RuleName,
+		"param_override_keys":      len(meta.ParamTemplate),
+		"upstream_session_derived": meta.UpstreamSessionID != "",
 	}
 	if anyInfo, ok := c.Get(ginKeyChannelAffinityLogInfo); ok {
 		if info, ok := anyInfo.(map[string]interface{}); ok {
@@ -595,19 +663,20 @@ func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup 
 		cacheKeySuffix := buildChannelAffinityCacheKeySuffix(rule, modelName, usingGroup, affinityValue)
 		cacheKeyFull := channelAffinityCacheNamespace + ":" + cacheKeySuffix
 		setChannelAffinityContext(c, channelAffinityMeta{
-			CacheKey:       cacheKeyFull,
-			TTLSeconds:     ttlSeconds,
-			RuleName:       rule.Name,
-			SkipRetry:      rule.SkipRetryOnFailure,
-			ParamTemplate:  cloneStringAnyMap(rule.ParamOverrideTemplate),
-			KeySourceType:  strings.TrimSpace(usedSource.Type),
-			KeySourceKey:   strings.TrimSpace(usedSource.Key),
-			KeySourcePath:  strings.TrimSpace(usedSource.Path),
-			KeyHint:        buildChannelAffinityKeyHint(affinityValue),
-			KeyFingerprint: affinityFingerprint(affinityValue),
-			UsingGroup:     usingGroup,
-			ModelName:      modelName,
-			RequestPath:    path,
+			CacheKey:          cacheKeyFull,
+			TTLSeconds:        ttlSeconds,
+			RuleName:          rule.Name,
+			SkipRetry:         rule.SkipRetryOnFailure,
+			ParamTemplate:     cloneStringAnyMap(rule.ParamOverrideTemplate),
+			UpstreamSessionID: buildChannelAffinityUpstreamSessionID(c, rule.Name, usingGroup, affinityValue),
+			KeySourceType:     strings.TrimSpace(usedSource.Type),
+			KeySourceKey:      strings.TrimSpace(usedSource.Key),
+			KeySourcePath:     strings.TrimSpace(usedSource.Path),
+			KeyHint:           buildChannelAffinityKeyHint(affinityValue),
+			KeyFingerprint:    affinityFingerprint(affinityValue),
+			UsingGroup:        usingGroup,
+			ModelName:         modelName,
+			RequestPath:       path,
 		})
 
 		cache := getChannelAffinityCache()

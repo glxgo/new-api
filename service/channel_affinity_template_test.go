@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
@@ -323,6 +325,8 @@ func TestChannelAffinityHitCodexTemplatePassHeadersEffective(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(rec)
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(fmt.Sprintf(`{"prompt_cache_key":"%s"}`, affinityValue)))
 	ctx.Request.Header.Set("Content-Type", "application/json")
+	common.SetContextKey(ctx, constant.ContextKeyUserId, 101)
+	common.SetContextKey(ctx, constant.ContextKeyTokenId, 202)
 
 	channelID, found := GetPreferredChannelByAffinity(ctx, "gpt-5", "default")
 	require.True(t, found)
@@ -334,18 +338,19 @@ func TestChannelAffinityHitCodexTemplatePassHeadersEffective(t *testing.T) {
 	mergedOverride, applied := ApplyChannelAffinityOverrideTemplate(ctx, baseOverride)
 	require.True(t, applied)
 	require.Equal(t, 0.2, mergedOverride["temperature"])
+	headerOverride, headerApplied := ApplyChannelAffinityHeaderOverride(ctx, map[string]interface{}{
+		"X-Static": "legacy-static",
+	})
+	require.True(t, headerApplied)
 
 	info := &relaycommon.RelayInfo{
 		RequestHeaders: map[string]string{
 			"Originator": "Codex CLI",
-			"Session_id": "sess-123",
 			"User-Agent": "codex-cli-test",
 		},
 		ChannelMeta: &relaycommon.ChannelMeta{
-			ParamOverride: mergedOverride,
-			HeadersOverride: map[string]interface{}{
-				"X-Static": "legacy-static",
-			},
+			ParamOverride:   mergedOverride,
+			HeadersOverride: headerOverride,
 		},
 	}
 
@@ -355,13 +360,52 @@ func TestChannelAffinityHitCodexTemplatePassHeadersEffective(t *testing.T) {
 
 	require.Equal(t, "legacy-static", info.RuntimeHeadersOverride["x-static"])
 	require.Equal(t, "Codex CLI", info.RuntimeHeadersOverride["originator"])
-	require.Equal(t, "sess-123", info.RuntimeHeadersOverride["session_id"])
+	upstreamSessionID, ok := info.RuntimeHeadersOverride["session_id"].(string)
+	require.True(t, ok)
+	require.True(t, strings.HasPrefix(upstreamSessionID, "na1_"))
+	require.NotContains(t, upstreamSessionID, affinityValue)
 	require.Equal(t, "codex-cli-test", info.RuntimeHeadersOverride["user-agent"])
 
 	_, exists := info.RuntimeHeadersOverride["x-codex-beta-features"]
 	require.False(t, exists)
 	_, exists = info.RuntimeHeadersOverride["x-codex-turn-metadata"]
 	require.False(t, exists)
+}
+
+func TestChannelAffinityUpstreamSessionIsolationAndStability(t *testing.T) {
+	buildContext := func(userID, tokenID int) *gin.Context {
+		rec := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(rec)
+		common.SetContextKey(ctx, constant.ContextKeyUserId, userID)
+		common.SetContextKey(ctx, constant.ContextKeyTokenId, tokenID)
+		return ctx
+	}
+
+	const rawConversationKey = "shared-prompt-cache-key"
+	first := buildChannelAffinityUpstreamSessionID(buildContext(101, 202), "codex cli trace", "default", rawConversationKey)
+	second := buildChannelAffinityUpstreamSessionID(buildContext(101, 202), "codex cli trace", "default", rawConversationKey)
+	otherToken := buildChannelAffinityUpstreamSessionID(buildContext(101, 303), "codex cli trace", "default", rawConversationKey)
+	otherUser := buildChannelAffinityUpstreamSessionID(buildContext(404, 202), "codex cli trace", "default", rawConversationKey)
+
+	require.Equal(t, first, second)
+	require.True(t, strings.HasPrefix(first, "na1_"))
+	require.Len(t, first, 36)
+	require.NotContains(t, first, rawConversationKey)
+	require.NotEqual(t, first, otherToken)
+	require.NotEqual(t, first, otherUser)
+	require.Empty(t, buildChannelAffinityUpstreamSessionID(buildContext(0, 0), "codex cli trace", "default", rawConversationKey))
+
+	ctx := buildChannelAffinityTemplateContextForTest(channelAffinityMeta{UpstreamSessionID: first})
+	base := map[string]interface{}{"X-Static": "legacy-static"}
+	merged, applied := ApplyChannelAffinityHeaderOverride(ctx, base)
+	require.True(t, applied)
+	require.Equal(t, first, merged["Session_id"])
+	require.NotContains(t, base, "Session_id")
+
+	explicit := map[string]interface{}{"Session-Id": "operator-defined"}
+	preserved, applied := ApplyChannelAffinityHeaderOverride(ctx, explicit)
+	require.False(t, applied)
+	require.Equal(t, explicit, preserved)
 }
 
 func TestDefaultChannelAffinityRulesUseConversationKeysOnly(t *testing.T) {
