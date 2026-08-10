@@ -99,9 +99,9 @@ func isChannelAffinitySessionHeader(name string) bool {
 }
 
 // ApplyChannelAffinityHeaderOverride injects a stable, tenant-scoped opaque
-// Session_id for the selected upstream. The raw conversation key never leaves
-// this process or enters request logs. Existing explicit channel session
-// overrides remain authoritative.
+// Session_id for the selected upstream. The derived header never contains the
+// raw conversation key. Existing explicit channel session overrides remain
+// authoritative.
 func ApplyChannelAffinityHeaderOverride(c *gin.Context, headerOverride map[string]interface{}) (map[string]interface{}, bool) {
 	if c == nil {
 		return headerOverride, false
