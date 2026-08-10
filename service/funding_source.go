@@ -92,7 +92,7 @@ func (w *WalletFunding) Settle(delta int) error {
 		return nil
 	}
 	// delta < 0: 退还多预扣的部分。按本次会话净消费的 gift:principal 比例退,
-	// 保证退款拆分与消费日志 PaidGift/PaidPrincipal 比例一致(T+1 对账才平)。
+	// 保证退款拆分与消费日志 PaidGift/PaidPrincipal 口径一致。
 	refund := -delta
 	net := w.consumedGift + w.consumedPrincipal
 	if net <= 0 {

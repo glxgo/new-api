@@ -18,6 +18,7 @@ import (
 	"github.com/samber/hot"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func applyExplicitLogTextFilter(tx *gorm.DB, column string, value string) (*gorm.DB, error) {
@@ -61,19 +62,22 @@ type Log struct {
 	UserRPM              int    `json:"user_rpm" gorm:"default:0;column:user_rpm"`
 	UserRPMLimit         int    `json:"user_rpm_limit" gorm:"default:0;column:user_rpm_limit"`
 	Other                string `json:"other"`
-	// 分润系统字段(T+1结算用)
-	Cost                int    `json:"cost" gorm:"default:0"`                                   // 该请求成本(quota单位,平台付上游)
-	PaidQuota           int    `json:"paid_quota" gorm:"default:0;column:paid_quota"`           // 本金分摊
-	PaidGiftQuota       int    `json:"paid_gift_quota" gorm:"default:0;column:paid_gift_quota"` // 赠金分摊
-	AffAdminIdSnap      int    `json:"aff_admin_id_snap" gorm:"default:0;column:aff_admin_id_snap;index:idx_logs_settle"`
-	InviterIdSnap       int    `json:"inviter_id_snap" gorm:"default:0;column:inviter_id_snap"`
-	Inviter2IdSnap      int    `json:"inviter2_id_snap" gorm:"default:0;column:inviter2_id_snap"`
-	Settled             bool   `json:"settled" gorm:"default:false;column:settled;index:idx_logs_settle"`
-	SettleBatchId       string `json:"settle_batch_id" gorm:"type:varchar(40);column:settle_batch_id;index:idx_logs_settle"`
-	BillingSource       string `json:"billing_source" gorm:"type:varchar(32);default:'';column:billing_source"` // wallet/subscription/virtual_membership，套餐类消费不计分润(购买时已分润)
-	SubscriptionId      int    `json:"subscription_id" gorm:"default:0;column:subscription_id;index"`
-	CostRuleVersion     int    `json:"cost_rule_version" gorm:"default:1;column:cost_rule_version;index"`
-	ChannelCostRatioPPM *int64 `json:"channel_cost_ratio_ppm" gorm:"column:channel_cost_ratio_ppm;default:null"`
+	// 历史利润结算兼容字段；新充值分润不读取这些字段。
+	Cost                       int     `json:"cost" gorm:"default:0"`                                   // 该请求成本(quota单位,平台付上游)
+	PaidQuota                  int     `json:"paid_quota" gorm:"default:0;column:paid_quota"`           // 本金分摊
+	PaidGiftQuota              int     `json:"paid_gift_quota" gorm:"default:0;column:paid_gift_quota"` // 赠金分摊
+	AffAdminIdSnap             int     `json:"aff_admin_id_snap" gorm:"default:0;column:aff_admin_id_snap;index:idx_logs_settle"`
+	InviterIdSnap              int     `json:"inviter_id_snap" gorm:"default:0;column:inviter_id_snap"`
+	Inviter2IdSnap             int     `json:"inviter2_id_snap" gorm:"default:0;column:inviter2_id_snap"`
+	Settled                    bool    `json:"settled" gorm:"default:false;column:settled;index:idx_logs_settle"`
+	SettleBatchId              string  `json:"settle_batch_id" gorm:"type:varchar(40);column:settle_batch_id;index:idx_logs_settle"`
+	ProfitReconciliationStatus string  `json:"profit_reconciliation_status" gorm:"type:varchar(32);not null;default:'';index"`
+	ProfitReconciliationReason string  `json:"profit_reconciliation_reason" gorm:"type:varchar(255);not null;default:''"`
+	BillingSource              string  `json:"billing_source" gorm:"type:varchar(32);default:'';column:billing_source"` // wallet/subscription/virtual_membership，套餐类消费不计分润(购买时已分润)
+	SubscriptionId             int     `json:"subscription_id" gorm:"default:0;column:subscription_id;index"`
+	CostRuleVersion            int     `json:"cost_rule_version" gorm:"default:1;column:cost_rule_version;index"`
+	ChannelCostRatioPPM        *int64  `json:"channel_cost_ratio_ppm" gorm:"column:channel_cost_ratio_ppm;default:null"`
+	FinancialEventKey          *string `json:"-" gorm:"type:varchar(160);uniqueIndex"`
 	// BalanceAfter 操作后余额快照(quota 单位, 本金+赠金)，仅供财务流水展示，
 	// 不参与计费/扣费。扣费走异步缓存/批量更新，此值为 best-effort 快照。
 	BalanceAfter *int64 `json:"balance_after" gorm:"column:balance_after"`
@@ -131,6 +135,42 @@ func RecordLog(userId int, logType int, content string) {
 	if err != nil {
 		common.SysLog("failed to record log: " + err.Error())
 	}
+}
+
+// EnsureTopupLog records one financial-flow row for a paid event. The nullable
+// unique key keeps legacy logs compatible while making webhook replay repair a
+// missing log without duplicating it.
+func EnsureTopupLog(userId int, eventKey, content string) error {
+	return ensureTopupLog(userId, eventKey, content, "", "", "")
+}
+
+// EnsureTopupPaymentLog is the provider-callback variant of EnsureTopupLog.
+// It preserves the payment audit metadata while the financial event key makes
+// webhook replay and manual-completion reconciliation idempotent.
+func EnsureTopupPaymentLog(userId int, eventKey, content, callerIp, paymentMethod, callbackPaymentMethod string) error {
+	return ensureTopupLog(userId, eventKey, content, callerIp, paymentMethod, callbackPaymentMethod)
+}
+
+func ensureTopupLog(userId int, eventKey, content, callerIp, paymentMethod, callbackPaymentMethod string) error {
+	if LOG_DB == nil || userId <= 0 || strings.TrimSpace(eventKey) == "" {
+		return errors.New("invalid topup log event")
+	}
+	username, _ := GetUsernameById(userId, false)
+	key := "topup:" + strings.TrimSpace(eventKey)
+	log := &Log{
+		UserId: userId, Username: username, CreatedAt: common.GetTimestamp(),
+		Type: LogTypeTopup, Content: content, Ip: callerIp, FinancialEventKey: &key,
+	}
+	if callerIp != "" || paymentMethod != "" || callbackPaymentMethod != "" {
+		log.Other = common.MapToJsonStr(map[string]interface{}{
+			"admin_info": map[string]interface{}{
+				"server_ip": common.GetIp(), "node_name": common.NodeName,
+				"caller_ip": callerIp, "payment_method": paymentMethod,
+				"callback_payment_method": callbackPaymentMethod, "version": common.Version,
+			},
+		})
+	}
+	return LOG_DB.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "financial_event_key"}}, DoNothing: true}).Create(log).Error
 }
 
 // RecordLogWithAdminInfo 记录操作日志，并将管理员相关信息存入 Other.admin_info，
@@ -311,7 +351,7 @@ type RecordConsumeLogParams struct {
 	ModelName           string                 `json:"model_name"`
 	TokenName           string                 `json:"token_name"`
 	Quota               int                    `json:"quota"`
-	Cost                int                    `json:"cost"`              // 平台成本(quota 单位, T+1 毛利计算用)
+	Cost                int                    `json:"cost"`              // 平台成本观测(quota 单位)
 	PaidQuota           int                    `json:"paid_quota"`        // 本金分摊
 	PaidGiftQuota       int                    `json:"paid_gift_quota"`   // 赠金分摊
 	AffAdminIdSnap      int                    `json:"aff_admin_id_snap"` // 树顶管理员快照
@@ -833,7 +873,7 @@ func DeleteOldLog(ctx context.Context, targetTimestamp int64, limit int) (int64,
 }
 
 // GetUnsettledConsumeLogs 扫描指定时间区间内未结算的消费日志(分批, 按 id 升序翻页)。
-// 用于 T+1 分润结算。走 LOG_DB(日志库)。
+// 历史结算兼容查询。新充值分润不读取消费日志。
 func GetUnsettledConsumeLogs(dayStart, dayEnd int64, afterLogId, limit int) ([]*Log, error) {
 	var logs []*Log
 	err := LOG_DB.Where("settled = ? AND type = ? AND created_at >= ? AND created_at < ? AND id > ? AND quota > 0 AND (billing_source = '' OR billing_source = 'wallet')",

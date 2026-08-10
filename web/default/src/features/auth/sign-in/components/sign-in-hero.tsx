@@ -97,7 +97,7 @@ export function SignInHero({ redirectTo, isAuthenticated }: SignInHeroProps) {
           >
             稳到让你忘了它存在的
             <br />
-            <span className='text-[#008AB7]'>Star API 中转站</span>
+            <span className='text-[#008AB7]'>飓星API 中转站</span>
           </h1>
 
           <p

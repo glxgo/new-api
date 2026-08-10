@@ -35,7 +35,7 @@ interface ProfitChartProps {
   loading?: boolean
 }
 
-// Pie chart showing how settled gross profit is split across rebate / dividends / net.
+// Distribution of amounts already issued by the current recharge policy.
 export function ProfitChart({ summary, loading }: ProfitChartProps) {
   const { t } = useTranslation()
   const { resolvedTheme } = useTheme()
@@ -73,17 +73,16 @@ export function ProfitChart({ summary, loading }: ProfitChartProps) {
   const values = useMemo(() => {
     if (!summary) return []
     return [
-      { name: t('Referral Rebate'), value: summary.affiliate_rebate },
-      { name: t('Admin Dividend'), value: summary.admin_dividend },
-      { name: t('Root Dividend'), value: summary.root_dividend },
-      { name: t('Net Profit'), value: summary.net_profit },
+      { name: t('邀新返利'), value: summary.affiliate_rebate },
+      { name: t('管理员分润'), value: summary.admin_dividend },
+      { name: t('超管分润'), value: summary.root_dividend },
     ].filter((d) => d.value > 0)
   }, [summary, t])
 
   const spec = useMemo(
     () => ({
       type: 'pie' as const,
-      data: [{ id: 'profit', values }],
+      data: [{ id: 'commission', values }],
       valueField: 'value',
       categoryField: 'name',
       outerRadius: 0.8,
@@ -103,9 +102,9 @@ export function ProfitChart({ summary, loading }: ProfitChartProps) {
     <div className='overflow-hidden rounded-lg border'>
       <div className='flex flex-wrap items-center gap-2 border-b px-3 py-2 sm:px-5 sm:py-3'>
         <PieChart className='text-muted-foreground/60 size-4' />
-        <div className='text-sm font-semibold'>{t('Profit Distribution')}</div>
+        <div className='text-sm font-semibold'>{t('分润构成')}</div>
         <span className='text-muted-foreground text-xs'>
-          {t('How settled gross profit is split')}
+          {t('按真实付款固定比例发放')}
         </span>
       </div>
       <div className='h-[300px] p-1.5 sm:h-96 sm:p-2'>
@@ -123,7 +122,7 @@ export function ProfitChart({ summary, loading }: ProfitChartProps) {
           />
         ) : (
           <div className='text-muted-foreground flex h-full items-center justify-center text-sm'>
-            {t('No settled profit data yet')}
+            {t('暂无新策略分润数据')}
           </div>
         )}
       </div>

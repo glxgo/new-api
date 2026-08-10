@@ -31,25 +31,25 @@ func TestVirtualMembershipVariantDividesQuotaByGroupSize(t *testing.T) {
 	}
 }
 
-func TestVirtualMembershipProfitDividesByGroupSize(t *testing.T) {
-	plan := &VirtualMembershipPlan{FixedProfitAmount: 200}
-	profit, err := VirtualMembershipProfitForDisplay(plan, 4)
-	if err != nil {
-		t.Fatalf("profit variant error: %v", err)
-	}
-	if profit != 50 {
-		t.Fatalf("profit = %v, want 50", profit)
-	}
-}
-
-func TestVirtualMembershipCompletionSettlesFixedProfitExactlyOnce(t *testing.T) {
+func TestVirtualMembershipExternalPaymentCreditsRechargeLuckyProgressAndCommissionExactlyOnce(t *testing.T) {
 	db := setupSubscriptionChannelCostTestDB(t)
-	useWalletDividendTestRates(t)
 	require.NoError(t, db.AutoMigrate(
 		&VirtualMembershipPlan{},
 		&VirtualMembershipOrder{},
 		&UserVirtualMembership{},
+		&RechargeCredit{},
+		&DividendRecord{},
+		&Log{},
+		&TopUp{},
+		&LuckyCampaign{}, &LuckyRuleSet{}, &LuckyCard{}, &LuckyDraw{},
+		&LuckyRechargeEvent{}, &LuckyRechargeProgress{}, &LuckyRewardBucket{},
+		&LuckyPausePeriod{}, &SubscriptionConsumptionPriority{}, &Option{},
 	))
+	oldLogDB := LOG_DB
+	LOG_DB = db
+	t.Cleanup(func() { LOG_DB = oldLogDB })
+	require.NoError(t, EnsureDefaultLuckyCampaign())
+	require.NoError(t, db.Model(&LuckyCampaign{}).Where("code = ?", LuckyCampaignCode).Updates(map[string]interface{}{"issuance_paused": false, "draw_paused": false}).Error)
 	root := User{Username: "vm-profit-root", Role: common.RoleRootUser, AffCode: "vmpr01"}
 	inviter := User{Username: "vm-profit-inviter", Role: common.RoleCommonUser, AffCode: "vmpi01"}
 	require.NoError(t, db.Create(&root).Error)
@@ -61,26 +61,44 @@ func TestVirtualMembershipCompletionSettlesFixedProfitExactlyOnce(t *testing.T) 
 	require.NoError(t, db.Create(&buyer).Error)
 	plan := VirtualMembershipPlan{
 		Code: "plus", Title: "GPT Plus", PriceAmount: 129, TwoGroupPrice: 70,
-		FixedProfitAmount: 60, DurationDays: 30, WeeklyQuota: 100,
+		DurationDays: 30, WeeklyQuota: 100,
 		AllowedGroup: VirtualMembershipDefaultAllowedGroup, Enabled: true,
 	}
 	require.NoError(t, db.Create(&plan).Error)
 	order, err := CreateVirtualMembershipEpayOrder(buyer.Id, plan.Id, 2, "vm-profit-order", "alipay")
 	require.NoError(t, err)
-	expectedProfit := int64(30 * common.QuotaPerUnit)
-	require.Equal(t, expectedProfit, order.ProfitQuota)
+	require.True(t, order.LuckyEligible)
+	require.Positive(t, order.LuckyRuleSetId)
 
-	require.NoError(t, CompleteVirtualMembershipOrder(order.TradeNo, "paid", PaymentProviderEpay, "alipay"))
-	require.NoError(t, CompleteVirtualMembershipOrder(order.TradeNo, "paid-again", PaymentProviderEpay, "alipay"))
+	actual, err := NewPaymentSnapshotFromMoney(order.Money, "CNY")
+	require.NoError(t, err)
+	require.NoError(t, CompleteVirtualMembershipOrder(order.TradeNo, "paid", PaymentProviderEpay, "alipay", actual))
+	require.NoError(t, CompleteVirtualMembershipOrder(order.TradeNo, "paid-again", PaymentProviderEpay, "alipay", actual))
 
 	require.NoError(t, db.First(order, order.Id).Error)
 	require.Equal(t, SubscriptionDividendDone, order.DividendState)
 	var records []DividendRecord
-	require.NoError(t, db.Where("source_ref = ?", fmt.Sprintf("vm-order-%d", order.Id)).Find(&records).Error)
+	require.NoError(t, db.Where("source_ref = ?", RechargeCommissionSourceRef(RechargeSourceVirtualMembership, order.TradeNo)).Find(&records).Error)
 	require.Len(t, records, 2)
 	var refreshedInviter User
 	require.NoError(t, db.First(&refreshedInviter, inviter.Id).Error)
-	require.Equal(t, int(expectedProfit/10), refreshedInviter.GiftQuota)
+	expectedBase, err := CNYCentsToCommissionBaseQuota(7_000)
+	require.NoError(t, err)
+	require.Equal(t, int(expectedBase*5/100), refreshedInviter.GiftQuota)
+
+	var credit RechargeCredit
+	require.NoError(t, db.Where("source_type = ? AND source_ref = ?", RechargeSourceVirtualMembership, order.TradeNo).First(&credit).Error)
+	require.EqualValues(t, 7_000, credit.AmountCents)
+	require.Equal(t, RechargeCommissionDone, credit.CommissionState)
+	var progress LuckyRechargeProgress
+	require.NoError(t, db.First(&progress, buyer.Id).Error)
+	require.EqualValues(t, 7_000, progress.EligibleCents)
+	require.EqualValues(t, 1, progress.HighestAwardedStage)
+	var topUpCount, rechargeLogCount int64
+	require.NoError(t, db.Model(&TopUp{}).Count(&topUpCount).Error)
+	require.Zero(t, topUpCount, "a membership payment must not fabricate wallet credit")
+	require.NoError(t, db.Model(&Log{}).Where("user_id = ? AND type = ?", buyer.Id, LogTypeTopup).Count(&rechargeLogCount).Error)
+	require.EqualValues(t, 1, rechargeLogCount, "payment callback replay must not duplicate the recharge log")
 }
 
 func TestVirtualMembershipVariantFallsBackToBasePrice(t *testing.T) {
@@ -170,7 +188,7 @@ func setupVirtualMembershipTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open test database: %v", err)
 	}
-	if err := db.AutoMigrate(&User{}, &Option{}, &VirtualMembershipPlan{}, &UserVirtualMembership{}); err != nil {
+	if err := db.AutoMigrate(&User{}, &Option{}, &VirtualMembershipPlan{}, &UserVirtualMembership{}, &VirtualMembershipPreConsumeRecord{}); err != nil {
 		t.Fatalf("migrate test database: %v", err)
 	}
 	previousDB := DB
@@ -183,6 +201,32 @@ func setupVirtualMembershipTestDB(t *testing.T) *gorm.DB {
 		common.OptionMapRWMutex.Unlock()
 	})
 	return db
+}
+
+func TestListUserVirtualMembershipsIncludesSettledLifetimeUsage(t *testing.T) {
+	db := setupVirtualMembershipTestDB(t)
+	now := common.GetTimestamp()
+	memberships := []UserVirtualMembership{
+		{UserId: 61, PlanId: 1, PlanTitle: "current", Status: VirtualMembershipStatusActive, StartTime: now - 3600, EndTime: now + 3600, WeeklyUsed: 7},
+		{UserId: 61, PlanId: 2, PlanTitle: "other", Status: VirtualMembershipStatusActive, StartTime: now - 3600, EndTime: now + 3600},
+	}
+	require.NoError(t, db.Create(&memberships).Error)
+	records := []VirtualMembershipPreConsumeRecord{
+		{RequestId: "settled-1", MembershipId: memberships[0].Id, UserId: 61, PreConsumed: 100, FinalQuota: 90, Status: VirtualMembershipRecordSettled},
+		{RequestId: "settled-2", MembershipId: memberships[0].Id, UserId: 61, PreConsumed: 60, FinalQuota: 60, Status: VirtualMembershipRecordSettled},
+		{RequestId: "pending", MembershipId: memberships[0].Id, UserId: 61, PreConsumed: 999, Status: VirtualMembershipRecordPending},
+		{RequestId: "refunded", MembershipId: memberships[0].Id, UserId: 61, PreConsumed: 999, FinalQuota: 999, Status: VirtualMembershipRecordRefunded},
+		{RequestId: "other-member", MembershipId: memberships[1].Id, UserId: 61, PreConsumed: 33, FinalQuota: 33, Status: VirtualMembershipRecordSettled},
+	}
+	require.NoError(t, db.Create(&records).Error)
+
+	got, err := ListUserVirtualMemberships(61)
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	byTitle := map[string]*UserVirtualMembership{got[0].PlanTitle: got[0], got[1].PlanTitle: got[1]}
+	require.EqualValues(t, 150, byTitle["current"].LifetimeUsed)
+	require.EqualValues(t, 33, byTitle["other"].LifetimeUsed)
+	require.EqualValues(t, 7, byTitle["current"].WeeklyUsed, "lifetime aggregation must not alter current-cycle usage")
 }
 
 func TestListUserVirtualMembershipsReturnsOnlyCurrentActiveInstances(t *testing.T) {
@@ -304,6 +348,54 @@ func TestAdminGrantVirtualMembershipCreatesZeroMoneyAuditOrder(t *testing.T) {
 	if membership.ConcurrencyLimit != 5 || membership.RPMLimit != 30 {
 		t.Fatalf("membership limits = %d/%d", membership.ConcurrencyLimit, membership.RPMLimit)
 	}
+}
+
+func TestVirtualMembershipBalanceAndAdminGrantDoNotCreateCashRecharge(t *testing.T) {
+	db := setupVirtualMembershipTestDB(t)
+	require.NoError(t, db.AutoMigrate(
+		&VirtualMembershipOrder{}, &RechargeCredit{}, &DividendRecord{}, &Log{},
+	))
+	oldLogDB := LOG_DB
+	LOG_DB = db
+	t.Cleanup(func() { LOG_DB = oldLogDB })
+	root := User{Username: "vm-source-root", Role: common.RoleRootUser, AffCode: "vm-source-root"}
+	inviter := User{Username: "vm-source-inviter", Role: common.RoleCommonUser, AffCode: "vm-source-inviter"}
+	require.NoError(t, db.Create(&root).Error)
+	require.NoError(t, db.Create(&inviter).Error)
+	buyer := User{
+		Username: "vm-source-buyer", Status: common.UserStatusEnabled,
+		Role: common.RoleCommonUser, AffCode: "vm-source-buyer", InviterId: inviter.Id,
+		Quota: int(500 * common.QuotaPerUnit),
+	}
+	require.NoError(t, db.Create(&buyer).Error)
+	plan := VirtualMembershipPlan{
+		Code: "vm-source-plan", Title: "VM source plan", PriceAmount: 10,
+		DurationDays: 30, WeeklyQuota: 100, Enabled: true,
+	}
+	require.NoError(t, db.Create(&plan).Error)
+
+	order, _, err := PurchaseVirtualMembershipWithBalance(buyer.Id, plan.Id, 1)
+	require.NoError(t, err)
+	require.Equal(t, SubscriptionDividendSkippedSource, order.DividendState)
+	var creditCount, dividendCount, topupLogCount int64
+	require.NoError(t, db.Model(&RechargeCredit{}).Count(&creditCount).Error)
+	require.NoError(t, db.Model(&DividendRecord{}).Count(&dividendCount).Error)
+	require.NoError(t, db.Model(&Log{}).Where("user_id = ? AND type = ?", buyer.Id, LogTypeTopup).Count(&topupLogCount).Error)
+	require.Zero(t, creditCount, "balance purchase is spending an earlier recharge")
+	require.Zero(t, dividendCount)
+	require.EqualValues(t, 1, topupLogCount, "the purchase remains visible in recharge logs")
+
+	grantee := User{Username: "vm-source-grantee", Status: common.UserStatusEnabled, AffCode: "vm-source-grantee", InviterId: inviter.Id}
+	require.NoError(t, db.Create(&grantee).Error)
+	grantedOrder, _, err := AdminGrantVirtualMembership(grantee.Id, plan.Id, 1)
+	require.NoError(t, err)
+	require.Equal(t, SubscriptionDividendSkippedSource, grantedOrder.DividendState)
+	require.NoError(t, db.Model(&RechargeCredit{}).Count(&creditCount).Error)
+	require.NoError(t, db.Model(&DividendRecord{}).Count(&dividendCount).Error)
+	require.NoError(t, db.Model(&Log{}).Where("user_id = ? AND type = ?", grantee.Id, LogTypeTopup).Count(&topupLogCount).Error)
+	require.Zero(t, creditCount)
+	require.Zero(t, dividendCount)
+	require.Zero(t, topupLogCount, "free administrator grants must not appear as paid recharge")
 }
 
 func TestEnsureVirtualMembershipGroupRegisteredAddsNonSelectableRoutingGroup(t *testing.T) {

@@ -218,14 +218,14 @@ function AccountCard({ account }: { account: CPAAccountUsage }) {
             <CircleGauge className='size-4' />
           </span>
           <div className='min-w-0'>
+            <div className='text-muted-foreground text-[10px] font-medium tracking-[0.08em] uppercase'>
+              {t('Account identifier')}
+            </div>
             <div
-              className='truncate font-mono text-sm font-semibold'
+              className='mt-0.5 truncate font-mono text-sm font-semibold'
               title={account.code}
             >
               {account.code}
-            </div>
-            <div className='text-muted-foreground mt-0.5 truncate font-mono text-[11px]'>
-              {account.masked_email}
             </div>
           </div>
         </div>
@@ -561,7 +561,7 @@ export function PlatformUsage() {
                 </h3>
                 <p className='text-muted-foreground mt-1 text-xs'>
                   {t(
-                    'Email addresses and account identifiers are masked before leaving the server'
+                    'Account identifiers are anonymized before leaving the server; email addresses are never displayed'
                   )}
                 </p>
               </div>
@@ -570,7 +570,7 @@ export function PlatformUsage() {
               </span>
             </div>
             {query.isPending ? (
-              <div className='grid gap-3 @3xl/content:grid-cols-2 @6xl/content:grid-cols-3'>
+              <div className='grid gap-3 @3xl/content:grid-cols-2 @6xl/content:grid-cols-4'>
                 {Array.from({ length: 6 }).map((_, index) => (
                   <Skeleton key={index} className='h-44 rounded-xl' />
                 ))}
@@ -582,7 +582,7 @@ export function PlatformUsage() {
                   : t('CPA usage integration is not configured')}
               </div>
             ) : (
-              <div className='grid gap-3 @3xl/content:grid-cols-2 @6xl/content:grid-cols-3'>
+              <div className='grid gap-3 @3xl/content:grid-cols-2 @6xl/content:grid-cols-4'>
                 {accounts.map((account) => (
                   <AccountCard key={account.code} account={account} />
                 ))}

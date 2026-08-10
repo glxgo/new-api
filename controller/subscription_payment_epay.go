@@ -96,6 +96,11 @@ func SubscriptionRequestEpay(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	epaySnapshot, err := model.NewPaymentSnapshotFromMoney(plan.PriceAmount, "CNY")
+	if err != nil || model.SetSubscriptionOrderPaymentExpectation(order, epaySnapshot) != nil {
+		common.ApiErrorMsg(c, "支付金额快照失败")
+		return
+	}
 	if err := order.Insert(); err != nil {
 		common.ApiErrorMsg(c, "创建订单失败")
 		return
@@ -162,7 +167,12 @@ func SubscriptionEpayNotify(c *gin.Context) {
 	LockOrder(verifyInfo.ServiceTradeNo)
 	defer UnlockOrder(verifyInfo.ServiceTradeNo)
 
-	if err := model.CompleteSubscriptionOrder(verifyInfo.ServiceTradeNo, common.GetJsonString(verifyInfo), model.PaymentProviderEpay, verifyInfo.Type); err != nil {
+	actual, snapshotErr := model.NewPaymentSnapshotFromDisplayAmount(verifyInfo.Money, "CNY")
+	if snapshotErr != nil {
+		_, _ = c.Writer.Write([]byte("fail"))
+		return
+	}
+	if err := model.CompleteSubscriptionOrder(verifyInfo.ServiceTradeNo, common.GetJsonString(verifyInfo), model.PaymentProviderEpay, verifyInfo.Type, actual); err != nil {
 		_, _ = c.Writer.Write([]byte("fail"))
 		return
 	}
@@ -211,7 +221,12 @@ func SubscriptionEpayReturn(c *gin.Context) {
 	if verifyInfo.TradeStatus == epay.StatusTradeSuccess {
 		LockOrder(verifyInfo.ServiceTradeNo)
 		defer UnlockOrder(verifyInfo.ServiceTradeNo)
-		if err := model.CompleteSubscriptionOrder(verifyInfo.ServiceTradeNo, common.GetJsonString(verifyInfo), model.PaymentProviderEpay, verifyInfo.Type); err != nil {
+		actual, snapshotErr := model.NewPaymentSnapshotFromDisplayAmount(verifyInfo.Money, "CNY")
+		if snapshotErr != nil {
+			c.Redirect(http.StatusFound, paymentReturnPath("/console/topup?pay=fail"))
+			return
+		}
+		if err := model.CompleteSubscriptionOrder(verifyInfo.ServiceTradeNo, common.GetJsonString(verifyInfo), model.PaymentProviderEpay, verifyInfo.Type, actual); err != nil {
 			c.Redirect(http.StatusFound, paymentReturnPath("/console/topup?pay=fail"))
 			return
 		}

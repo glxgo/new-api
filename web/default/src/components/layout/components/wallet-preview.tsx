@@ -18,13 +18,14 @@ import { Link } from '@tanstack/react-router'
 import { WalletCards } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
-import type { CurrencyConfig } from '@/stores/system-config-store'
+import { normalizeCurrencyConfig } from '@/stores/system-config-store'
 import { getUserAvailableBalance } from '@/lib/user-balance'
 import { cn } from '@/lib/utils'
 import { useSystemConfig } from '@/hooks/use-system-config'
 
-function formatPreviewBalance(quota: number, currency: CurrencyConfig) {
-  if (currency.quotaDisplayType === 'TOKENS') {
+function formatPreviewBalance(quota: number, currency: unknown) {
+  const safeCurrency = normalizeCurrencyConfig(currency)
+  if (safeCurrency.quotaDisplayType === 'TOKENS') {
     return new Intl.NumberFormat(undefined, {
       notation: 'compact',
       maximumFractionDigits: 1,
@@ -32,17 +33,17 @@ function formatPreviewBalance(quota: number, currency: CurrencyConfig) {
   }
 
   const amount =
-    (quota / currency.quotaPerUnit) *
-    (currency.quotaDisplayType === 'CNY'
-      ? currency.usdExchangeRate
-      : currency.quotaDisplayType === 'CUSTOM'
-        ? currency.customCurrencyExchangeRate
+    (quota / safeCurrency.quotaPerUnit) *
+    (safeCurrency.quotaDisplayType === 'CNY'
+      ? safeCurrency.usdExchangeRate
+      : safeCurrency.quotaDisplayType === 'CUSTOM'
+        ? safeCurrency.customCurrencyExchangeRate
         : 1)
   const formattedAmount = amount.toFixed(2)
 
-  if (currency.quotaDisplayType === 'CNY') return `¥${formattedAmount}`
-  if (currency.quotaDisplayType === 'CUSTOM') {
-    return `${currency.customCurrencySymbol}${formattedAmount}`
+  if (safeCurrency.quotaDisplayType === 'CNY') return `¥${formattedAmount}`
+  if (safeCurrency.quotaDisplayType === 'CUSTOM') {
+    return `${safeCurrency.customCurrencySymbol}${formattedAmount}`
   }
   return `$${formattedAmount}`
 }

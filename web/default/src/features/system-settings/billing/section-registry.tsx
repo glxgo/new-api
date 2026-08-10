@@ -207,21 +207,7 @@ const BILLING_SECTIONS = [
   {
     id: 'dividend',
     titleKey: 'Dividend & Rebate',
-    build: (settings: BillingSettings) => (
-      <DividendSettingsSection
-        defaultValues={{
-          directRate: settings.AffiliateDirectRate,
-          indirectRate: settings.AffiliateIndirectRate,
-          agentConsumptionRate: settings.AgentAffiliateDirectRate,
-          agentOrderRate: settings.AgentOrderAffiliateDirectRate,
-          rootDividendRate: settings.RootDividendRate,
-          adminDirectRate: settings.AffiliateAdminDirectRate,
-          adminIndirectRate: settings.AffiliateAdminIndirectRate,
-          settleEnabled: settings['affiliate_settle_setting.enabled'],
-          settleHour: settings['affiliate_settle_setting.settle_hour'],
-        }}
-      />
-    ),
+    build: () => <DividendSettingsSection />,
   },
 ] as const
 

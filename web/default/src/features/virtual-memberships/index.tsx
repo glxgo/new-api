@@ -59,7 +59,6 @@ const emptyPlan: Partial<VirtualMembershipPlan> = {
   three_group_price: 0,
   four_group_original_price: 0,
   four_group_price: 0,
-  fixed_profit_amount: 0,
   currency: 'USD',
   duration_days: 30,
   weekly_quota: 0,
@@ -278,8 +277,6 @@ export function VirtualMemberships() {
                             : '不限'}
                           {' · RPM '}
                           {plan.rpm_limit > 0 ? plan.rpm_limit : '不限'}
-                          {' · 固定利润 $'}
-                          {plan.fixed_profit_amount}
                         </p>
                       </div>
                       <span className='text-emerald-600'>编辑</span>
@@ -327,7 +324,6 @@ export function VirtualMemberships() {
                     ['three_group_price', '3 人团现价'],
                     ['four_group_original_price', '4 人团原价'],
                     ['four_group_price', '4 人团现价'],
-                    ['fixed_profit_amount', '单账号固定利润（美元）'],
                     ['weekly_quota', '周额度（美元）'],
                     ['duration_days', '有效天数'],
                     ['concurrency_limit', '会员并发上限'],

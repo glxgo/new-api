@@ -93,8 +93,10 @@ export function mapStatusDataToConfig(
   }
 
   return {
-    systemName: data.system_name || DEFAULT_SYSTEM_NAME,
-    logo: data.logo || DEFAULT_LOGO,
+    // Product branding is bundled with the frontend. Do not let an old status
+    // cache or a remote logo URL flash the upstream/default identity first.
+    systemName: DEFAULT_SYSTEM_NAME,
+    logo: DEFAULT_LOGO,
     footerHtml: data.footer_html,
     demoSiteEnabled: data.demo_site_enabled,
     displayTokenStatEnabled: data.display_token_stat_enabled,

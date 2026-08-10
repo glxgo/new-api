@@ -275,16 +275,6 @@ export type BillingSettings = {
   'checkin_setting.enabled': boolean
   'checkin_setting.min_quota': number
   'checkin_setting.max_quota': number
-  // Rebate/dividend system: referral rates + T+1 settlement (super-admin configurable)
-  AffiliateDirectRate: number
-  AffiliateIndirectRate: number
-  AgentAffiliateDirectRate: number
-  AgentOrderAffiliateDirectRate: number
-  RootDividendRate: number
-  AffiliateAdminDirectRate: number
-  AffiliateAdminIndirectRate: number
-  'affiliate_settle_setting.enabled': boolean
-  'affiliate_settle_setting.settle_hour': number
 }
 
 export type OperationsSettings = {

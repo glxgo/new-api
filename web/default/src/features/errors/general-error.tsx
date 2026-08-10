@@ -20,6 +20,7 @@ import { useNavigate, useRouter } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { clearRecoverableAppCache } from './recovery-cache'
 
 const FEEDBACK_URL = 'https://github.com/QuantumNous/new-api/issues'
 
@@ -45,8 +46,7 @@ export function GeneralError({
 }: GeneralErrorProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const router = useRouter()
-  const { history } = router
+  const { history } = useRouter()
   const status = getHttpStatus(error)
   const isRateLimited = status === 429
   const title = isRateLimited
@@ -54,15 +54,17 @@ export function GeneralError({
     : `${t('Oops! Something went wrong')} ${`:')`}`
   const description = isRateLimited
     ? t('Please wait a moment before trying again.')
-    : t('Please try again later.')
+    : t('Click retry to clear the local configuration cache and reload.')
 
-  const handleRetry = async () => {
+  const handleRetry = () => {
     reset?.()
     try {
-      await router.invalidate()
+      clearRecoverableAppCache(window.localStorage)
     } catch {
-      window.location.reload()
+      // Access to localStorage itself can be blocked by the browser. Reloading
+      // remains the safest recovery action in that case.
     }
+    window.location.reload()
   }
 
   return (
@@ -84,7 +86,7 @@ export function GeneralError({
         )}
         {!minimal && (
           <div className='mt-6 flex flex-wrap justify-center gap-4'>
-            <Button onClick={handleRetry}>{t('Try again')}</Button>
+            <Button onClick={handleRetry}>{t('Click to retry')}</Button>
             <Button variant='outline' onClick={() => history.go(-1)}>
               {t('Go Back')}
             </Button>

@@ -2636,8 +2636,8 @@ export function ChannelMutateDrawer({
                                   />
                                 </FormControl>
                                 <FormDescription>
-                                  按本渠道实际售价计算平台成本；0
-                                  表示零成本，留空表示尚未配置。
+                                  仅用于成本观测；0
+                                  表示零成本，留空不会阻断渠道启用或计费。
                                 </FormDescription>
                                 <FormMessage />
                               </FormItem>

@@ -99,7 +99,7 @@ const modelJsonFields: Array<{
     name: 'ModelCost',
     labelKey: 'Model cost',
     descriptionKey:
-      'JSON map of model → { input_cost_per_m, output_cost_per_m, cache_cost_per_m } in USD per 1M tokens. Platform buy price from upstream (e.g. krill). Super admin only; used for profit / dividend calculation, independent from sale price.',
+      'JSON map of model → { input_cost_per_m, output_cost_per_m, cache_cost_per_m } in USD per 1M tokens. Platform buy price from upstream (e.g. krill). Super admin only; used for operational cost analysis and independent from sale price or recharge commission.',
   },
   {
     name: 'ModelPricingSource',

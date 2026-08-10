@@ -219,3 +219,17 @@ func UsageStatisticsRateLimit() func(c *gin.Context) {
 		"US",
 	)
 }
+
+// TokenUsageRateLimit protects the read-only token usage polling endpoint
+// without consuming the public-IP bucket shared by login and payment.
+// It must run after TokenAuthReadOnly so the authenticated user ID is present.
+func TokenUsageRateLimit() func(c *gin.Context) {
+	if !common.TokenUsageRateLimitEnable {
+		return defNext
+	}
+	return userRateLimitFactory(
+		common.TokenUsageRateLimitNum,
+		common.TokenUsageRateLimitDuration,
+		"TU",
+	)
+}

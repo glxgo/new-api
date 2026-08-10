@@ -1580,15 +1580,6 @@ const EditChannelModal = (props) => {
     let localInputs = { ...formValues };
     localInputs.param_override = inputs.param_override;
     if (
-      localInputs.status === 1 &&
-      (localInputs.cost_ratio === null ||
-        localInputs.cost_ratio === undefined ||
-        localInputs.cost_ratio === '')
-    ) {
-      showInfo(t('启用渠道前必须配置成本倍率'));
-      return;
-    }
-    if (
       localInputs.cost_ratio !== null &&
       localInputs.cost_ratio !== undefined &&
       localInputs.cost_ratio !== ''

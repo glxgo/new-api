@@ -56,7 +56,6 @@ func (s *BillingSession) Settle(actualQuota int) error {
 	}
 	delta := actualQuota - s.preConsumedQuota
 	isSubscription := s.funding.Source() == BillingSourceSubscription
-	var costErr error
 	// 1) 调整资金来源（仅在尚未提交时执行，防止重复调用）。
 	// 订阅用量差额与渠道成本在同一事务内提交，减少热路径事务数。
 	if isSubscription && !s.fundingSettled {
@@ -76,13 +75,10 @@ func (s *BillingSession) Settle(actualQuota int) error {
 				!s.relayInfo.PriceData.UsePrice &&
 				!common.StringsContains(constant.TaskPricePatches, s.relayInfo.OriginModelName),
 		)
-		if settleErr != nil && !errors.Is(settleErr, model.ErrChannelCostRatioMissing) {
+		if settleErr != nil {
 			return settleErr
 		}
-		// ErrChannelCostRatioMissing is returned after the usage change and
-		// repairable final sale/channel evidence have committed.
 		s.fundingSettled = true
-		costErr = settleErr
 	} else if delta != 0 && !s.fundingSettled {
 		if err := s.funding.Settle(delta); err != nil {
 			return err
@@ -110,7 +106,7 @@ func (s *BillingSession) Settle(actualQuota int) error {
 		s.relayInfo.VirtualMembershipPostDelta += int64(delta)
 	}
 	s.settled = true
-	return errors.Join(tokenErr, costErr)
+	return tokenErr
 }
 
 // Refund 退还所有预扣费，幂等安全，异步执行。

@@ -108,15 +108,6 @@ const defaultBillingSettings: BillingSettings = {
   'checkin_setting.enabled': false,
   'checkin_setting.min_quota': 1000,
   'checkin_setting.max_quota': 10000,
-  AffiliateDirectRate: 0.1,
-  AffiliateIndirectRate: 0.05,
-  AgentAffiliateDirectRate: 0.2,
-  AgentOrderAffiliateDirectRate: 0.2,
-  RootDividendRate: 0.1,
-  AffiliateAdminDirectRate: 0.75,
-  AffiliateAdminIndirectRate: 0.22,
-  'affiliate_settle_setting.enabled': false,
-  'affiliate_settle_setting.settle_hour': 2,
 }
 
 export function BillingSettings() {

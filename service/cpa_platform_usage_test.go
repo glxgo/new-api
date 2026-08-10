@@ -24,12 +24,6 @@ func TestReadCPAUsageSecretFromFile(t *testing.T) {
 	}
 }
 
-func TestMaskCPAEmail(t *testing.T) {
-	if got := maskCPAEmail("duyenv729@gmail.com"); got != "d***9@g***l.com" {
-		t.Fatalf("maskCPAEmail() = %q", got)
-	}
-}
-
 func TestStableCPAAccountCodeIsKeyedAndStable(t *testing.T) {
 	first := stableCPAAccountCode("account.json", "secret-one")
 	if first != stableCPAAccountCode("account.json", "secret-one") {
@@ -90,8 +84,15 @@ func TestFetchCPAAccountsSanitizesIdentityAndReadsQuotaViaFixedProxy(t *testing.
 	if !apiCallSeen || len(accounts) != 1 || !accounts[0].Available {
 		t.Fatalf("unexpected accounts: %+v", accounts)
 	}
-	if strings.Contains(accounts[0].MaskedEmail, "user@example.com") || strings.Contains(accounts[0].Code, "user") {
+	if strings.Contains(accounts[0].Code, "user") {
 		t.Fatalf("raw identity escaped sanitization: %+v", accounts[0])
+	}
+	payload, err := common.Marshal(accounts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(payload), "email") || strings.Contains(string(payload), "user@example.com") {
+		t.Fatalf("email identity must not be serialized: %s", payload)
 	}
 	if got := *accounts[0].Windows[0].RemainingPercent; got != 97 {
 		t.Fatalf("remaining percent = %v, want 97", got)

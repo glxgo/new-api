@@ -40,12 +40,11 @@ type CPAQuotaWindow struct {
 }
 
 type CPAAccountUsage struct {
-	Code        string           `json:"code"`
-	MaskedEmail string           `json:"masked_email"`
-	PlanType    string           `json:"plan_type"`
-	Available   bool             `json:"available"`
-	Enabled     bool             `json:"enabled"`
-	Windows     []CPAQuotaWindow `json:"windows"`
+	Code      string           `json:"code"`
+	PlanType  string           `json:"plan_type"`
+	Available bool             `json:"available"`
+	Enabled   bool             `json:"enabled"`
+	Windows   []CPAQuotaWindow `json:"windows"`
 }
 
 type CPAModelUsage struct {
@@ -89,7 +88,6 @@ type cpaAuthFile struct {
 	Name        string      `json:"name"`
 	Type        string      `json:"type"`
 	Provider    string      `json:"provider"`
-	Email       string      `json:"email"`
 	AuthIndex   interface{} `json:"auth_index"`
 	Disabled    bool        `json:"disabled"`
 	Unavailable bool        `json:"unavailable"`
@@ -319,8 +317,7 @@ func fetchCPAAccounts(ctx context.Context, client *http.Client, config cpaUsageC
 			defer wg.Done()
 			file := files[index]
 			account := CPAAccountUsage{
-				Code:        stableCPAAccountCode(file.Name, config.anonymizeKey),
-				MaskedEmail: maskCPAEmail(file.Email), PlanType: strings.ToLower(file.PlanType),
+				Code: stableCPAAccountCode(file.Name, config.anonymizeKey), PlanType: strings.ToLower(file.PlanType),
 				Available: false, Enabled: !file.Disabled, Windows: []CPAQuotaWindow{},
 			}
 			if file.Disabled || file.Unavailable {
@@ -523,25 +520,4 @@ func numberFromInterface(value interface{}) (float64, bool) {
 	default:
 		return 0, false
 	}
-}
-
-func maskCPAEmail(email string) string {
-	email = strings.TrimSpace(email)
-	parts := strings.Split(email, "@")
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return "***"
-	}
-	maskPart := func(value string) string {
-		runes := []rune(value)
-		if len(runes) == 0 {
-			return "***"
-		}
-		if len(runes) <= 1 {
-			return string(runes[0]) + "***"
-		}
-		return string(runes[0]) + "***" + string(runes[len(runes)-1])
-	}
-	domainParts := strings.Split(parts[1], ".")
-	domainParts[0] = maskPart(domainParts[0])
-	return maskPart(parts[0]) + "@" + strings.Join(domainParts, ".")
 }

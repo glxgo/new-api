@@ -487,9 +487,6 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 	if channel.RPMLimit < 0 || channel.RPMLimit > 10000000 {
 		return fmt.Errorf("渠道 RPM 上限必须在 0-10000000 之间，0 表示不限制")
 	}
-	if channel.Status == common.ChannelStatusEnabled && channel.CostRatioPPM == nil {
-		return fmt.Errorf("启用渠道前必须配置成本倍率")
-	}
 	if channel.CostRatioPPM != nil && (*channel.CostRatioPPM < 0 || *channel.CostRatioPPM > model.MaxChannelCostRatioPPM) {
 		return fmt.Errorf("渠道成本倍率必须在 0-%g 之间", float64(model.MaxChannelCostRatioPPM)/float64(model.ChannelCostRatioScale))
 	}

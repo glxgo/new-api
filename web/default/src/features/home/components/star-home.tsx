@@ -31,7 +31,7 @@ import { Aurora } from './reactbits/aurora'
 import { DotGrid } from './reactbits/dot-grid'
 import { LightRays } from './reactbits/lightrays'
 
-// Star API 品牌主页（纯展示 Landing，参考 sui-xiang / shuaiapi）：
+// 飓星API 品牌主页（纯展示 Landing，参考 sui-xiang / shuaiapi）：
 // 极简白底 + 衬线大标题 + 点阵网格底纹 + Aurora/LightRays 氛围层。
 // 点「即刻开始」跳 /sign-in 登录页（左文案 + 右登录卡）。
 interface StarHomeProps {
@@ -175,8 +175,11 @@ export function StarHome({ isAuthenticated }: StarHomeProps) {
 
         {/* 衬线大标题 */}
         <h1 className='font-serif text-[clamp(46px,8vw,88px)] leading-[1.04] font-bold tracking-tight'>
-          Star <span className='text-[#008AB7]'>API</span>
+          飓星<span className='text-[#008AB7]'>API</span>
         </h1>
+        <p className='text-muted-foreground/75 mt-2 text-sm font-medium tracking-[0.12em]'>
+          （原 Star API）
+        </p>
 
         <p className='text-muted-foreground mx-auto mt-6 max-w-[640px] text-[clamp(17px,2.4vw,22px)] leading-relaxed'>
           稳到让你忘了它存在的 AI 中转平台。
@@ -221,7 +224,7 @@ export function StarHome({ isAuthenticated }: StarHomeProps) {
             <span className='text-[#008AB7]'>都经得起核对</span>
           </h2>
           <p className='text-muted-foreground mx-auto mt-6 max-w-[680px] text-[15px] leading-relaxed'>
-            Star API
+            飓星API
             网关只做一件事——把你的请求按官方协议稳稳送到上游模型，响应原样回到你手里。
             不超售、不滥用、不静默切换替代模型，你收到的每一个 token
             都来自你声明的那个模型。

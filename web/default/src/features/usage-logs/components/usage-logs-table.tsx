@@ -154,7 +154,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   const isCommon = logCategory === 'common'
 
   return (
-    <div className='flex h-full min-h-0 flex-col gap-3'>
+    <div className='flex h-full min-h-0 flex-col gap-2'>
       {isCommon && (
         <CommonLogsStats
           enabled={!isLoading && !isFetching}

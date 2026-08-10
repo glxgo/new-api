@@ -17,13 +17,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import {
-  ArrowDownRight,
-  ArrowUpRight,
+  BadgeDollarSign,
   Coins,
   Crown,
   HandCoins,
   Receipt,
-  TrendingUp,
   Wallet,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -41,7 +39,7 @@ type StatItem = {
   value: string
   description: string
   icon: typeof Wallet
-  tone: 'default' | 'positive' | 'negative' | 'accent'
+  tone: 'default' | 'accent'
 }
 
 export function ProfitStatCards({ summary, loading }: ProfitStatCardsProps) {
@@ -51,7 +49,7 @@ export function ProfitStatCards({ summary, loading }: ProfitStatCardsProps) {
     return (
       <div className='overflow-hidden rounded-lg border'>
         <div className='divide-border/60 grid grid-cols-2 divide-x sm:grid-cols-3 lg:grid-cols-4'>
-          {Array.from({ length: 7 }).map((_, i) => (
+          {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className='px-3 py-3 sm:px-5 sm:py-4'>
               <Skeleton className='h-3.5 w-20' />
               <Skeleton className='mt-2 h-7 w-24' />
@@ -64,60 +62,54 @@ export function ProfitStatCards({ summary, loading }: ProfitStatCardsProps) {
 
   const stats: StatItem[] = [
     {
-      label: t('Total Consumption'),
-      value: formatQuota(summary.total_consume),
-      description: t('Real-time, all logs'),
+      label: t('实付充值'),
+      value: new Intl.NumberFormat('zh-CN', {
+        style: 'currency',
+        currency: 'CNY',
+      }).format(summary.paid_recharge_cents / 100),
+      description: t('仅统计真实外部付款'),
       icon: Receipt,
       tone: 'default',
     },
     {
-      label: t('Total Cost'),
-      value: formatQuota(summary.total_cost),
-      description: t('Real-time, all logs'),
+      label: t('实付订单'),
+      value: String(summary.paid_order_count),
+      description: t('钱包余额购买不重复计入'),
       icon: Coins,
       tone: 'default',
     },
     {
-      label: t('Settled Gross Profit'),
-      value: formatQuota(summary.settled_gross),
-      description: t('T+1 settled'),
-      icon: TrendingUp,
+      label: t('邀新返利'),
+      value: formatQuota(summary.affiliate_rebate),
+      description: t('普通用户 5%/2%，代理 8%/4%'),
+      icon: HandCoins,
       tone: 'accent',
     },
     {
-      label: t('Referral Rebate'),
-      value: formatQuota(summary.affiliate_rebate),
-      description: t('Paid to referrers'),
-      icon: HandCoins,
-      tone: 'negative',
-    },
-    {
-      label: t('Admin Dividend'),
+      label: t('管理员分润'),
       value: formatQuota(summary.admin_dividend),
-      description: t('Paid to admins'),
+      description: t('直属 15%，二级 5%'),
       icon: Wallet,
-      tone: 'negative',
+      tone: 'accent',
     },
     {
-      label: t('Root Dividend'),
+      label: t('超管分润'),
       value: formatQuota(summary.root_dividend),
-      description: t('10% of gross profit'),
+      description: t('全部真实付款固定 5%'),
       icon: Crown,
-      tone: 'negative',
+      tone: 'accent',
     },
     {
-      label: t('Net Profit'),
-      value: formatQuota(summary.net_profit),
-      description: t('Platform net = gross - all dividends'),
-      icon: summary.net_profit >= 0 ? ArrowUpRight : ArrowDownRight,
-      tone: summary.net_profit >= 0 ? 'positive' : 'negative',
+      label: t('本期分润合计'),
+      value: formatQuota(summary.total_commission),
+      description: t('历史策略记录单独标识且不重算'),
+      icon: BadgeDollarSign,
+      tone: 'accent',
     },
   ]
 
   const toneClass: Record<StatItem['tone'], string> = {
     default: 'text-foreground',
-    positive: 'text-emerald-600 dark:text-emerald-400',
-    negative: 'text-rose-600 dark:text-rose-400',
     accent: 'text-primary',
   }
 

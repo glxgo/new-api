@@ -8,8 +8,8 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// 成本 / 双池 / 毛利 / 分润快照 —— 分润系统计费侧核心计算
-// 详见 plan: mellow-growing-waterfall.md 业务规则②③
+// Cost observations and dual-pool billing helpers. Cost data is analytics only
+// and never participates in the fixed recharge commission policy.
 // ---------------------------------------------------------------------------
 
 // CalcCostFromSaleQuota 从【售价扣费】反推平台成本(quota 单位)。
@@ -20,7 +20,7 @@ import (
 //
 // 这样成本自动覆盖与售价完全相同的 token 口径(含 cache/image/audio/tool 附加费等),
 // 后台预览与实际结算不会漂移。旧 ModelCost/GroupModelCost 不再参与新日志成本;
-// 历史 log.Cost 快照不重算(T+1 结算只读快照)。
+// 历史 log.Cost 快照不重算。
 //
 //   - saleQuota       本次请求实际售价扣费(quota)
 //   - saleGroupRatio  售价所用分组倍率(GroupRatio[实际 UsingGroup], 新规则下不再恒 1)
@@ -73,27 +73,8 @@ func SplitPayment(totalQuota, giftBalance, principalBalance int) (paidGift, paid
 	return paidGift, paidPrincipal
 }
 
-// CalcGrossProfit 计算单笔毛利(quota 单位)。
-// 跨池分摊规则: 成本只按「本金占比」计入利润, 赠金部分对应的成本由平台自负(不进分润)。
-//
-//	grossProfit = paidPrincipal − cost × paidPrincipal / (paidPrincipal + paidGift)
-func CalcGrossProfit(paidPrincipal, paidGift, cost int) int {
-	total := paidPrincipal + paidGift
-	if total <= 0 {
-		return 0
-	}
-	dCost := decimal.NewFromInt(int64(cost))
-	dPrincipal := decimal.NewFromInt(int64(paidPrincipal))
-	dTotal := decimal.NewFromInt(int64(total))
-	gross := dPrincipal.Sub(dCost.Mul(dPrincipal).Div(dTotal))
-	return int(gross.Round(0).IntPart())
-}
-
-// GetAffiliateSnapshot 读取消费用户的分润快照。
-// 这些关系在注册时已固化(见 model/user.go calcAffAdminId), 消费时直接读当前值写日志, 不事后回溯。
-//   - affAdminId: 树顶管理员(管理员分红归属, 0 表示无主用户)
-//   - inviterId:  直接上级(拉新返利直接率 10%; 若该级是管理员则 T+1 不发返利)
-//   - inviter2Id: 间接上级/上上级(拉新返利间接率 5%)
+// GetAffiliateSnapshot preserves relationship metadata in consumption logs for
+// historical audit. New commission reads relationships at the paid event.
 func GetAffiliateSnapshot(userId int) (affAdminId, inviterId, inviter2Id int) {
 	user, err := model.GetUserById(userId, false)
 	if err != nil || user == nil {

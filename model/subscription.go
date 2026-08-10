@@ -45,7 +45,6 @@ const (
 var (
 	ErrSubscriptionOrderNotFound      = errors.New("subscription order not found")
 	ErrSubscriptionOrderStatusInvalid = errors.New("subscription order status invalid")
-	ErrChannelCostRatioMissing        = errors.New("channel cost ratio is not configured")
 )
 
 const (
@@ -309,14 +308,82 @@ type SubscriptionOrder struct {
 	CreateTime      int64  `json:"create_time"`
 	CompleteTime    int64  `json:"complete_time"`
 
-	ProviderPayload         string `json:"provider_payload" gorm:"type:text"`
-	PlanSnapshot            string `json:"plan_snapshot" gorm:"type:text"`
-	RenewFromSubscriptionId *int   `json:"renew_from_subscription_id" gorm:"default:null;index"`
-	RenewalBindingSnapshot  string `json:"renewal_binding_snapshot" gorm:"type:text"`
-	LuckyRuleSetId          int64  `json:"lucky_rule_set_id" gorm:"index;not null;default:0"`
-	LuckyGrantEligible      bool   `json:"lucky_grant_eligible" gorm:"not null;default:false"`
-	LuckyGrantCount         int    `json:"lucky_grant_count" gorm:"not null;default:0"`
-	LuckyGrantOnReset       bool   `json:"lucky_grant_on_reset" gorm:"not null;default:false"`
+	ProviderPayload                string `json:"provider_payload" gorm:"type:text"`
+	PlanSnapshot                   string `json:"plan_snapshot" gorm:"type:text"`
+	RenewFromSubscriptionId        *int   `json:"renew_from_subscription_id" gorm:"default:null;index"`
+	RenewalBindingSnapshot         string `json:"renewal_binding_snapshot" gorm:"type:text"`
+	LuckyRuleSetId                 int64  `json:"lucky_rule_set_id" gorm:"index;not null;default:0"`
+	LuckyGrantEligible             bool   `json:"lucky_grant_eligible" gorm:"not null;default:false"`
+	LuckyGrantCount                int    `json:"lucky_grant_count" gorm:"not null;default:0"`
+	LuckyGrantOnReset              bool   `json:"lucky_grant_on_reset" gorm:"not null;default:false"`
+	ExpectedPaymentAmountMinor     int64  `json:"expected_payment_amount_minor" gorm:"not null;default:0"`
+	ExpectedPaymentCurrency        string `json:"expected_payment_currency" gorm:"type:varchar(8);not null;default:''"`
+	CommissionBaseQuota            int64  `json:"commission_base_quota" gorm:"not null;default:0"`
+	ActualPaymentAmountMinor       int64  `json:"actual_payment_amount_minor" gorm:"not null;default:0"`
+	ActualPaymentCurrency          string `json:"actual_payment_currency" gorm:"type:varchar(8);not null;default:''"`
+	CommissionReconciliationStatus string `json:"commission_reconciliation_status" gorm:"type:varchar(32);not null;default:'';index"`
+	CommissionReconciliationReason string `json:"commission_reconciliation_reason" gorm:"type:varchar(255);not null;default:''"`
+}
+
+func SetSubscriptionOrderPaymentExpectation(order *SubscriptionOrder, snapshot PaymentSnapshot) error {
+	if order == nil {
+		return errors.New("subscription order is nil")
+	}
+	baseQuota, err := CommissionBaseQuotaForPayment(snapshot)
+	if err != nil {
+		return err
+	}
+	order.ExpectedPaymentAmountMinor = snapshot.AmountMinor
+	order.ExpectedPaymentCurrency = snapshot.Currency
+	order.CommissionBaseQuota = baseQuota
+	return nil
+}
+
+func UpdateSubscriptionOrderPaymentExpectation(orderId int, snapshot PaymentSnapshot) error {
+	if orderId <= 0 {
+		return errors.New("invalid subscription order")
+	}
+	baseQuota, err := CommissionBaseQuotaForPayment(snapshot)
+	if err != nil {
+		return err
+	}
+	result := DB.Model(&SubscriptionOrder{}).Where("id = ? AND status = ?", orderId, common.TopUpStatusPending).Updates(map[string]interface{}{
+		"expected_payment_amount_minor": snapshot.AmountMinor,
+		"expected_payment_currency":     snapshot.Currency,
+		"commission_base_quota":         baseQuota,
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errors.New("subscription order is no longer pending")
+	}
+	return nil
+}
+
+func applyVerifiedSubscriptionPayment(order *SubscriptionOrder, actual PaymentSnapshot) error {
+	actual, err := NewPaymentSnapshotFromMinor(actual.AmountMinor, actual.Currency)
+	if err != nil {
+		return err
+	}
+	if order.ExpectedPaymentAmountMinor <= 0 || strings.TrimSpace(order.ExpectedPaymentCurrency) == "" {
+		if order.PaymentProvider != PaymentProviderStripe && order.PaymentProvider != PaymentProviderCreem {
+			return ErrPaymentSnapshotMismatch
+		}
+		if err := SetSubscriptionOrderPaymentExpectation(order, actual); err != nil {
+			return err
+		}
+	}
+	if err := ValidatePaymentSnapshot(order.ExpectedPaymentAmountMinor, order.ExpectedPaymentCurrency, actual); err != nil {
+		return err
+	}
+	if order.ActualPaymentAmountMinor > 0 &&
+		(order.ActualPaymentAmountMinor != actual.AmountMinor || !strings.EqualFold(order.ActualPaymentCurrency, actual.Currency)) {
+		return ErrPaymentSnapshotMismatch
+	}
+	order.ActualPaymentAmountMinor = actual.AmountMinor
+	order.ActualPaymentCurrency = actual.Currency
+	return nil
 }
 
 func (o *SubscriptionOrder) Insert() error {
@@ -388,6 +455,15 @@ func NewSubscriptionOrderFromPlan(userId int, plan *SubscriptionPlan, tradeNo, p
 		Status:          common.TopUpStatusPending,
 		CreateTime:      common.GetTimestamp(),
 		PlanSnapshot:    snapshot,
+	}
+	if paymentProvider == PaymentProviderEpay {
+		paymentSnapshot, snapshotErr := NewPaymentSnapshotFromMoney(plan.PriceAmount, "CNY")
+		if snapshotErr != nil {
+			return nil, snapshotErr
+		}
+		if snapshotErr = SetSubscriptionOrderPaymentExpectation(order, paymentSnapshot); snapshotErr != nil {
+			return nil, snapshotErr
+		}
 	}
 	if campaign, rule, lookupErr := GetLuckyCampaignTx(nil, false); lookupErr == nil && !campaign.IssuancePaused {
 		order.LuckyRuleSetId = rule.Id
@@ -883,7 +959,7 @@ func ActivateDueSubscriptionGroups(limit int) (int, error) {
 // Complete a subscription order (idempotent). Creates a UserSubscription snapshot from the plan.
 // expectedPaymentProvider guards against cross-gateway callback attacks (empty skips the check).
 // actualPaymentMethod updates the order's PaymentMethod to reflect the real payment type used (empty skips update).
-func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedPaymentProvider string, actualPaymentMethod string) error {
+func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedPaymentProvider string, actualPaymentMethod string, paymentSnapshots ...PaymentSnapshot) error {
 	if tradeNo == "" {
 		return errors.New("tradeNo is empty")
 	}
@@ -904,6 +980,14 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		}
 		if expectedPaymentProvider != "" && order.PaymentProvider != expectedPaymentProvider {
 			return ErrPaymentMethodMismatch
+		}
+		if order.PaymentProvider != PaymentProviderBalance {
+			if len(paymentSnapshots) != 1 {
+				return errors.New("verified payment snapshot is required")
+			}
+			if err := applyVerifiedSubscriptionPayment(&order, paymentSnapshots[0]); err != nil {
+				return err
+			}
 		}
 		if order.Status == common.TopUpStatusSuccess {
 			return nil
@@ -959,14 +1043,22 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if err := upsertSubscriptionTopUpTx(tx, &order); err != nil {
 			return err
 		}
-		if _, err := RecordRechargeCreditTx(
-			tx,
-			order.UserId,
-			MoneyToRechargeCents(order.Money),
-			"topup",
-			order.TradeNo,
-			common.GetTimestamp(),
-		); err != nil {
+		actual := PaymentSnapshot{AmountMinor: order.ActualPaymentAmountMinor, Currency: order.ActualPaymentCurrency}
+		amountCents, paymentErr := RechargeCentsForPayment(actual)
+		if paymentErr != nil {
+			return paymentErr
+		}
+		if order.CommissionBaseQuota <= 0 {
+			return errors.New("subscription commission base snapshot is missing")
+		}
+		if _, err := RecordPaidRechargeCreditTx(tx, order.UserId, amountCents, order.CommissionBaseQuota, actual.Currency, RechargeSourceSubscription, order.TradeNo, common.GetTimestamp()); err != nil {
+			return err
+		}
+		// External payment commission is settled atomically with the recharge
+		// credit. The subscription must never enter the legacy expiry-profit path.
+		dividendState := SubscriptionDividendDone
+		if err := tx.Model(&UserSubscription{}).Where("id = ?", createdSub.Id).
+			Update("dividend_state", dividendState).Error; err != nil {
 			return err
 		}
 		order.Status = common.TopUpStatusSuccess
@@ -1001,6 +1093,7 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		}
 		msg := fmt.Sprintf("订阅购买成功，套餐: %s，支付金额: %.2f，支付方式: %s", logPlanTitle, logMoney, logPaymentMethod)
 		RecordLog(logUserId, LogTypeTopup, msg)
+		InvalidateRechargeCommissionRecipientCaches(RechargeSourceSubscription, tradeNo)
 	}
 	return nil
 }
@@ -1014,14 +1107,20 @@ func upsertSubscriptionTopUpTx(tx *gorm.DB, order *SubscriptionOrder) error {
 	if err := tx.Where("trade_no = ?", order.TradeNo).First(&topup).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			topup = TopUp{
-				UserId:        order.UserId,
-				Amount:        0,
-				Money:         order.Money,
-				TradeNo:       order.TradeNo,
-				PaymentMethod: order.PaymentMethod,
-				CreateTime:    order.CreateTime,
-				CompleteTime:  now,
-				Status:        common.TopUpStatusSuccess,
+				UserId:                     order.UserId,
+				Amount:                     0,
+				Money:                      order.Money,
+				TradeNo:                    order.TradeNo,
+				PaymentMethod:              order.PaymentMethod,
+				PaymentProvider:            order.PaymentProvider,
+				ExpectedPaymentAmountMinor: order.ExpectedPaymentAmountMinor,
+				ExpectedPaymentCurrency:    order.ExpectedPaymentCurrency,
+				CommissionBaseQuota:        order.CommissionBaseQuota,
+				ActualPaymentAmountMinor:   order.ActualPaymentAmountMinor,
+				ActualPaymentCurrency:      order.ActualPaymentCurrency,
+				CreateTime:                 order.CreateTime,
+				CompleteTime:               now,
+				Status:                     common.TopUpStatusSuccess,
 			}
 			// 订阅购买不改 user.quota（额度走订阅系统），故快照 quotaToAdd=0，
 			// 仅记录完成时刻的 (quota+gift_quota) 余额，保持充值记录字段一致。
@@ -1031,6 +1130,12 @@ func upsertSubscriptionTopUpTx(tx *gorm.DB, order *SubscriptionOrder) error {
 		return err
 	}
 	topup.Money = order.Money
+	topup.PaymentProvider = order.PaymentProvider
+	topup.ExpectedPaymentAmountMinor = order.ExpectedPaymentAmountMinor
+	topup.ExpectedPaymentCurrency = order.ExpectedPaymentCurrency
+	topup.CommissionBaseQuota = order.CommissionBaseQuota
+	topup.ActualPaymentAmountMinor = order.ActualPaymentAmountMinor
+	topup.ActualPaymentCurrency = order.ActualPaymentCurrency
 	if topup.PaymentMethod == "" {
 		topup.PaymentMethod = order.PaymentMethod
 	} else if topup.PaymentMethod != order.PaymentMethod {
@@ -1241,6 +1346,12 @@ func PurchaseSubscriptionWithBalanceRenewal(userId int, planId int, renewFromSub
 				return err
 			}
 		}
+		// Balance purchase spends previously recharged principal and is not a
+		// second cash event. Mark it explicitly so expiry cannot pay commission.
+		if err := tx.Model(&UserSubscription{}).Where("id = ?", createdSub.Id).
+			Update("dividend_state", SubscriptionDividendSkippedSource).Error; err != nil {
+			return err
+		}
 		if _, err := GrantSubscriptionPurchaseLuckyCardsTx(tx, order, createdSub); err != nil {
 			return err
 		}
@@ -1283,6 +1394,26 @@ func GetAllActiveUserSubscriptions(userId int) ([]SubscriptionSummary, error) {
 	now := common.GetTimestamp()
 	var subs []UserSubscription
 	err := DB.Where("user_id = ? AND status = ? AND start_time <= ? AND end_time > ?", userId, "active", now, now).
+		Order("end_time desc, id desc").
+		Find(&subs).Error
+	if err != nil {
+		return nil, err
+	}
+	return buildSubscriptionSummaries(subs), nil
+}
+
+// GetVisibleUserSubscriptions returns current and scheduled subscription
+// instances for user-facing balance cards. It deliberately excludes elapsed
+// and invalidated instances without treating a future start_time as expired.
+// Billing and API-key authorization must continue to use the active helpers,
+// which enforce start_time <= now.
+func GetVisibleUserSubscriptions(userId int) ([]SubscriptionSummary, error) {
+	if userId <= 0 {
+		return nil, errors.New("invalid userId")
+	}
+	now := common.GetTimestamp()
+	var subs []UserSubscription
+	err := DB.Where("user_id = ? AND status = ? AND end_time > ?", userId, "active", now).
 		Order("end_time desc, id desc").
 		Find(&subs).Error
 	if err != nil {
@@ -1494,8 +1625,6 @@ func AdminInvalidateUserSubscription(userSubscriptionId int) (string, error) {
 	if cacheGroup != "" && userId > 0 {
 		_ = UpdateUserGroupCache(userId, cacheGroup)
 	}
-	// 失效分润(post-commit): 按实际利润结算(利润≤0不分润)
-	settleSubscriptionEndForSub(&sub)
 	if downgradeGroup != "" {
 		return fmt.Sprintf("用户分组将回退到 %s", downgradeGroup), nil
 	}
@@ -1562,15 +1691,6 @@ func AdminDeleteUserSubscription(userSubscriptionId int) (string, error) {
 		return fmt.Sprintf("用户分组将回退到 %s", downgradeGroup), nil
 	}
 	return "", nil
-}
-
-// settleSubscriptionEndForSub 套餐结束时按实际利润分润。
-// 管理员硬删除表示订阅作废，删除路径不得调用本函数。
-func settleSubscriptionEndForSub(sub *UserSubscription) {
-	if sub == nil || sub.UserId <= 0 {
-		return
-	}
-	SettleSubscriptionEndDividend(sub.UserId, sub.Id)
 }
 
 type SubscriptionPreConsumeResult struct {
@@ -1752,56 +1872,8 @@ func ExpireDueSubscriptions(limit int) (int, error) {
 		}
 	}
 
-	// 到期不立即分润: 交给 SettleDelayedSubscriptionDividend 在到期 24h 后扫描
-	// (等 Codex 异步任务结算完写 log, 避免 log 不完整→成本漏算→利润虚高)
+	// 到期只处理权益状态。固定分润已在可验证的外部付款事件完成时结算。
 	return expiredCount, nil
-}
-
-// SettleDelayedSubscriptionDividend 扫描已到期超过 delaySeconds(默认24h) 的订阅, 触发结束分润。
-// 延迟目的: 等 Codex 异步任务结算完(写 log), 避免 log 不完整→成本漏算→利润虚高。
-// 幂等: SettleSubscriptionEndDividend 内部 sourceRef 去重, 已分的秒跳过。
-// Order end_time desc 优先扫新到期的, 由 subscription quota reset task 每分钟调用。
-func SettleDelayedSubscriptionDividend(delaySeconds int64, limit int) (int, error) {
-	if delaySeconds <= 0 {
-		delaySeconds = 24 * 3600
-	}
-	if limit <= 0 {
-		limit = 200
-	}
-	now := GetDBTimestamp()
-	cutoff := now - delaySeconds
-	query := DB.Where("status IN ? AND ((dividend_ready_at > 0 AND dividend_ready_at <= ?) OR (dividend_ready_at = 0 AND end_time > 0 AND end_time <= ?))",
-		[]string{"expired", "cancelled"}, cutoff, cutoff).
-		Where("dividend_state = ? OR dividend_state = ''", SubscriptionDividendPending)
-	// 部署时间分界: 只扫部署后到期的, 排除历史(历史由人工/追回处理, 不走新机制扫描)
-	// 避免给旧机制漏分的套餐补发分润
-	if deployCutoff := getSubEndDividendCutoff(); deployCutoff > 0 {
-		query = query.Where("end_time > ?", deployCutoff)
-	}
-	var subs []UserSubscription
-	if err := query.Order("end_time desc, id desc").Limit(limit).Find(&subs).Error; err != nil {
-		return 0, err
-	}
-	for _, sub := range subs {
-		if sub.UserId <= 0 {
-			continue
-		}
-		SettleSubscriptionEndDividend(sub.UserId, sub.Id)
-	}
-	return len(subs), nil
-}
-
-// getSubEndDividendCutoff 读取 option 'SubEndDividendCutoff'(部署时间戳, 秒, 0=不限)。
-// 用于排除部署前的历史套餐, 避免新机制扫描给旧漏分套餐补发分润。
-// 部署后由超管设此 option = 部署时刻, 即可把所有历史套餐挡在扫描之外。
-func getSubEndDividendCutoff() int64 {
-	var opt Option
-	if err := DB.Where("`key` = ?", "SubEndDividendCutoff").First(&opt).Error; err != nil {
-		return 0
-	}
-	var n int64
-	fmt.Sscanf(opt.Value, "%d", &n)
-	return n
 }
 
 // SubscriptionPreConsumeRecord stores idempotent pre-consume operations per request.
@@ -2075,17 +2147,13 @@ func channelCostNumerator(saleQuota, ratioPPM int64) (int64, error) {
 	return saleQuota * ratioPPM, nil
 }
 
-// SettleSubscriptionPreConsume applies the final usage delta and channel-cost
-// snapshot in one transaction. This is the hot-path entry used by synchronous
-// subscription billing, avoiding two separate row-lock transactions.
+// SettleSubscriptionPreConsume applies the final usage delta and, when
+// available, a channel-cost observation. Missing cost metadata never reserves
+// or rejects billable usage and has no relationship to recharge commission.
 func SettleSubscriptionPreConsume(requestId string, usageDelta, finalSaleQuota int64, channelId int, ratioPPM *int64, provisional bool) error {
 	if strings.TrimSpace(requestId) == "" {
 		return errors.New("requestId is empty")
 	}
-	// Zero final sale has zero accounting cost regardless of the ratio. This
-	// matters for full refunds: they must not stay pending only because a
-	// channel was missing configuration.
-	missingRatio := ratioPPM == nil && finalSaleQuota > 0
 	costNumerator := int64(0)
 	if ratioPPM != nil {
 		var err error
@@ -2104,27 +2172,17 @@ func SettleSubscriptionPreConsume(requestId string, usageDelta, finalSaleQuota i
 			return nil
 		}
 		var sub UserSubscription
-		needsSubscription := usageDelta != 0 || !missingRatio
-		if needsSubscription {
-			if err := tx.Set("gorm:query_option", "FOR UPDATE").
-				Where("id = ?", record.UserSubscriptionId).First(&sub).Error; err != nil {
-				return err
-			}
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").
+			Where("id = ?", record.UserSubscriptionId).First(&sub).Error; err != nil {
+			return err
 		}
 		if usageDelta != 0 {
 			if err := applySubscriptionUsageDeltaTx(tx, &sub, usageDelta); err != nil {
 				return err
 			}
 		}
-		// Keep enough evidence to repair a missing channel ratio later. Returning
-		// ErrChannelCostRatioMissing from inside this transaction would roll this
-		// snapshot back and make the real final sale/channel unrecoverable.
-		if missingRatio {
-			record.FinalSaleQuota = finalSaleQuota
-			record.ChannelId = channelId
-			record.Status = SubscriptionCostStatusReserved
-			return tx.Save(&record).Error
-		}
+		// A final channel without a configured ratio contributes no observed
+		// cost. Remove any provisional cost from a prior attempt.
 		delta := costNumerator - record.CostNumerator
 		if delta > 0 && sub.CostAccumulator > (1<<63-1)-delta {
 			return errors.New("subscription cost accumulator overflow")
@@ -2153,9 +2211,6 @@ func SettleSubscriptionPreConsume(requestId string, usageDelta, finalSaleQuota i
 	})
 	if err != nil {
 		return err
-	}
-	if missingRatio {
-		return ErrChannelCostRatioMissing
 	}
 	return nil
 }

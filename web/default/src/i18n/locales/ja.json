@@ -846,6 +846,8 @@
     "Click save when you're done.": "完了したら「保存」をクリックしてください。",
     "Click save when you&apos;re done.": "完了したら保存をクリックしてください。",
     "Click the button below to bind your Telegram account": "下のボタンをクリックしてTelegramアカウントをバインドしてください",
+    "Click retry to clear the local configuration cache and reload.": "再試行をクリックすると、ローカル設定キャッシュを消去してページを再読み込みします。",
+    "Click to retry": "クリックして再試行",
     "Click to open deployment": "クリックして展開を開く",
     "Click to preview audio": "クリックして音声をプレビュー",
     "Click to preview video": "クリックして動画をプレビュー",

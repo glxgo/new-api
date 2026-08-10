@@ -123,9 +123,6 @@ func main() {
 	// Subscription quota reset task (daily/weekly/monthly/custom)
 	service.StartSubscriptionQuotaResetTask()
 
-	// T+1 affiliate rebate/dividend settlement task (daily at SettleHour, settles yesterday)
-	service.StartDailySettleTask()
-
 	// Wire task polling adaptor factory (breaks service -> relay import cycle)
 	service.GetTaskAdaptorFunc = func(platform constant.TaskPlatform) service.TaskPollingAdaptor {
 		a := relay.GetTaskAdaptor(platform)
@@ -308,6 +305,9 @@ func InitResources() error {
 		return err
 	}
 	if err = model.MigrateRechargeCapacityCreditsV3(); err != nil {
+		return err
+	}
+	if err = model.MigrateRechargeCommissionPolicyV1(); err != nil {
 		return err
 	}
 

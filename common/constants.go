@@ -172,57 +172,6 @@ func GetDefaultUserRPMLimit() int {
 	return 12
 }
 
-// 分润系统比例(超管后台「运营设置」可配,见 plan mellow-growing-waterfall.md)
-var AffiliateDirectRate = 0.10      // 拉新返利:直接上级占毛利比例
-var AffiliateIndirectRate = 0.05    // 拉新返利:间接(上上级)占毛利比例
-var AgentAffiliateDirectRate = 0.20 // 代理直接邀新:占 API 消费毛利比例
-
-var RootDividendRate = 0.15           // 超管分红:占所有用户毛利比例(全站利润 15%)
-var AffiliateAdminDirectRate = 0.75   // 管理员分红:直接拉新占毛利比例
-var AffiliateAdminIndirectRate = 0.22 // 管理员分红:间接/三层+拉新占毛利比例
-
-// 订单分润比例(订阅购买订单金额分润, 与毛利比例独立配置, 默认较低留平台利润)
-var OrderAffiliateDirectRate = 0.05      // 拉新返利:直接上级占订单金额比例
-var OrderAffiliateIndirectRate = 0.02    // 拉新返利:间接上级占订单金额比例
-var AgentOrderAffiliateDirectRate = 0.20 // 代理直接邀新:占订阅套餐实际利润比例
-
-var OrderRootDividendRate = 0.05           // 超管分红:占订单金额比例
-var OrderAffiliateAdminDirectRate = 0.20   // 管理员分红:直接拉新占订单金额比例
-var OrderAffiliateAdminIndirectRate = 0.08 // 管理员分红:间接拉新占订单金额比例
-
-// MaxOrderDividendRate 订单管理员分红上限 = 1 - 超管 - 直接 - 间接
-func MaxOrderDividendRate() float64 {
-	max := 1.0 - OrderRootDividendRate - OrderAffiliateDirectRate - OrderAffiliateIndirectRate
-	if max < 0 {
-		return 0
-	}
-	return max
-}
-
-// MaxDividendRate 管理员分红比例硬上限 = 1 - 超管率 - 直接率 - 间接率。
-// 保证任何场景(含两层拉新)毛利分出之和 ≤ 100%, 平台不倒贴。下限 0。
-func MaxDividendRate() float64 {
-	max := 1.0 - RootDividendRate - AffiliateDirectRate - AffiliateIndirectRate
-	if max < 0 {
-		return 0
-	}
-	return max
-}
-
-func AffiliateDirectRateForRole(role int) float64 {
-	if role == RoleAgentUser {
-		return AgentAffiliateDirectRate
-	}
-	return AffiliateDirectRate
-}
-
-func OrderAffiliateDirectRateForRole(role int) float64 {
-	if role == RoleAgentUser {
-		return AgentOrderAffiliateDirectRate
-	}
-	return OrderAffiliateDirectRate
-}
-
 // AffiliateRewardIsWithdrawable reports whether referral rewards should enter
 // dividend_balance rather than gift_quota. Agents have no admin permissions,
 // but their commission is withdrawable by business policy.
@@ -328,6 +277,12 @@ var (
 	UsageStatisticsRateLimitEnable         = true
 	UsageStatisticsRateLimitNum            = 60
 	UsageStatisticsRateLimitDuration int64 = 60
+
+	// Token usage is read-only and polled by clients. Keep it out of the
+	// critical login/payment IP bucket and scope it to the authenticated user.
+	TokenUsageRateLimitEnable         = true
+	TokenUsageRateLimitNum            = 120
+	TokenUsageRateLimitDuration int64 = 60
 )
 
 var RateLimitKeyExpirationDuration = 20 * time.Minute

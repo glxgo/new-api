@@ -141,17 +141,6 @@ func InitOptionMap() {
 	common.OptionMap["DefaultUserConcurrencyLimit"] = strconv.Itoa(common.DefaultUserConcurrencyLimit)
 	common.OptionMap["DefaultUserRPMLimit"] = strconv.Itoa(common.DefaultUserRPMLimit)
 	common.OptionMap["RechargeCapacityEnabled"] = strconv.FormatBool(common.RechargeCapacityEnabled)
-	common.OptionMap["AffiliateDirectRate"] = strconv.FormatFloat(common.AffiliateDirectRate, 'f', -1, 64)
-	common.OptionMap["AffiliateIndirectRate"] = strconv.FormatFloat(common.AffiliateIndirectRate, 'f', -1, 64)
-	common.OptionMap["RootDividendRate"] = strconv.FormatFloat(common.RootDividendRate, 'f', -1, 64)
-	common.OptionMap["AffiliateAdminDirectRate"] = strconv.FormatFloat(common.AffiliateAdminDirectRate, 'f', -1, 64)
-	common.OptionMap["AffiliateAdminIndirectRate"] = strconv.FormatFloat(common.AffiliateAdminIndirectRate, 'f', -1, 64)
-	common.OptionMap["OrderAffiliateDirectRate"] = strconv.FormatFloat(common.OrderAffiliateDirectRate, 'f', -1, 64)
-	common.OptionMap["OrderAffiliateIndirectRate"] = strconv.FormatFloat(common.OrderAffiliateIndirectRate, 'f', -1, 64)
-	initAgentCommissionOptionMap()
-	common.OptionMap["OrderRootDividendRate"] = strconv.FormatFloat(common.OrderRootDividendRate, 'f', -1, 64)
-	common.OptionMap["OrderAffiliateAdminDirectRate"] = strconv.FormatFloat(common.OrderAffiliateAdminDirectRate, 'f', -1, 64)
-	common.OptionMap["OrderAffiliateAdminIndirectRate"] = strconv.FormatFloat(common.OrderAffiliateAdminIndirectRate, 'f', -1, 64)
 	common.OptionMap["QuotaRemindThreshold"] = strconv.Itoa(common.QuotaRemindThreshold)
 	common.OptionMap["PreConsumedQuota"] = strconv.Itoa(common.PreConsumedQuota)
 	common.OptionMap["ModelRequestRateLimitCount"] = strconv.Itoa(setting.ModelRequestRateLimitCount)
@@ -211,11 +200,6 @@ func InitOptionMap() {
 	loadOptionsFromDatabase()
 	migrateLegacySensitiveWords()
 	migrateGroupModelPricingV1()
-}
-
-func initAgentCommissionOptionMap() {
-	common.OptionMap["AgentAffiliateDirectRate"] = strconv.FormatFloat(common.AgentAffiliateDirectRate, 'f', -1, 64)
-	common.OptionMap["AgentOrderAffiliateDirectRate"] = strconv.FormatFloat(common.AgentOrderAffiliateDirectRate, 'f', -1, 64)
 }
 
 func loadOptionsFromDatabase() {
@@ -288,7 +272,7 @@ func UpdateOptionsBulk(values map[string]string) error {
 // migrateGroupModelPricingV1 一次性迁移(2026-06-22, plan mellow-growing-waterfall.md):
 // 清空废弃的分组独立模型价 GroupModelRatio/Price/Cost。本次重构改为「全局官方价 × 分组
 // 售价倍率(GroupRatio) × 分组成本倍率(GroupCostRatio)」模式, 旧的按分组逐模型覆盖价不再生效。
-// 哨兵 option 保证只执行一次; 历史 log.Cost 快照不受影响(T+1 只读快照)。
+// 哨兵 option 保证只执行一次；历史 log.Cost 快照不受影响。
 func migrateGroupModelPricingV1() {
 	const sentinel = "group_model_pricing_migration_v1"
 	var existing Option
@@ -607,30 +591,6 @@ func updateOptionMap(key string, value string) (err error) {
 			return fmt.Errorf("invalid default user RPM limit")
 		}
 		common.DefaultUserRPMLimit = parsed
-	case "AffiliateDirectRate":
-		common.AffiliateDirectRate, _ = strconv.ParseFloat(value, 64)
-	case "AffiliateIndirectRate":
-		common.AffiliateIndirectRate, _ = strconv.ParseFloat(value, 64)
-	case "AgentAffiliateDirectRate":
-		common.AgentAffiliateDirectRate, _ = strconv.ParseFloat(value, 64)
-	case "RootDividendRate":
-		common.RootDividendRate, _ = strconv.ParseFloat(value, 64)
-	case "AffiliateAdminDirectRate":
-		common.AffiliateAdminDirectRate, _ = strconv.ParseFloat(value, 64)
-	case "AffiliateAdminIndirectRate":
-		common.AffiliateAdminIndirectRate, _ = strconv.ParseFloat(value, 64)
-	case "OrderAffiliateDirectRate":
-		common.OrderAffiliateDirectRate, _ = strconv.ParseFloat(value, 64)
-	case "OrderAffiliateIndirectRate":
-		common.OrderAffiliateIndirectRate, _ = strconv.ParseFloat(value, 64)
-	case "AgentOrderAffiliateDirectRate":
-		common.AgentOrderAffiliateDirectRate, _ = strconv.ParseFloat(value, 64)
-	case "OrderRootDividendRate":
-		common.OrderRootDividendRate, _ = strconv.ParseFloat(value, 64)
-	case "OrderAffiliateAdminDirectRate":
-		common.OrderAffiliateAdminDirectRate, _ = strconv.ParseFloat(value, 64)
-	case "OrderAffiliateAdminIndirectRate":
-		common.OrderAffiliateAdminIndirectRate, _ = strconv.ParseFloat(value, 64)
 	case "QuotaRemindThreshold":
 		common.QuotaRemindThreshold, _ = strconv.Atoi(value)
 	case "PreConsumedQuota":

@@ -206,13 +206,6 @@ export const channelFormSchema = z
     upstream_model_update_ignored_models: z.string().optional(),
   })
   .superRefine((data, ctx) => {
-    if (data.status === CHANNEL_STATUS.ENABLED && data.cost_ratio == null) {
-      addRequiredIssue(
-        ctx,
-        'cost_ratio',
-        'Cost ratio is required before enabling a channel'
-      )
-    }
     if ([3, 8, 36, 45].includes(data.type) && !data.base_url?.trim()) {
       addRequiredIssue(
         ctx,

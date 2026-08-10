@@ -856,6 +856,8 @@
     "Click save when you're done.": "Click save when you're done.",
     "Click save when you&apos;re done.": "Click save when you&apos;re done.",
     "Click the button below to bind your Telegram account": "Click the button below to bind your Telegram account",
+    "Click retry to clear the local configuration cache and reload.": "Click retry to clear the local configuration cache and reload.",
+    "Click to retry": "Click to retry",
     "Click to open deployment": "Click to open deployment",
     "Click to preview audio": "Click to preview audio",
     "Click to preview video": "Click to preview video",
@@ -5019,6 +5021,7 @@
     "Syncing": "Syncing",
     "resets": "resets",
     "Unknown plan": "Unknown plan",
+    "Account identifier": "Account identifier",
     "Account disabled": "Account disabled",
     "Quota temporarily unavailable": "Quota temporarily unavailable",
     "No CPA model usage today": "No CPA model usage today",
@@ -5035,7 +5038,7 @@
     "CPA accounts available": "CPA accounts available",
     "Only active accounts with a fresh quota response": "Only active accounts with a fresh quota response",
     "CPA account capacity": "CPA account capacity",
-    "Email addresses and account identifiers are masked before leaving the server": "Email addresses and account identifiers are masked before leaving the server",
+    "Account identifiers are anonymized before leaving the server; email addresses are never displayed": "Account identifiers are anonymized before leaving the server; email addresses are never displayed",
     "No manual refresh · background snapshot only": "No manual refresh · background snapshot only",
     "Account snapshot is syncing": "Account snapshot is syncing",
     "CPA usage integration is not configured": "CPA usage integration is not configured",
@@ -5044,6 +5047,7 @@
     "Requests": "Requests",
     "Alias": "Alias",
     "TTFT": "TTFT",
+    "There are {{count}} historical payment records awaiting manual reconciliation. No commission has been issued for them.": "There are {{count}} historical payment records awaiting manual reconciliation. No commission has been issued for them.",
     "failed": "failed"
   }
 }

@@ -153,8 +153,10 @@ export function MySubscriptionsDetail() {
               capTotal > 0 ? Math.max(0, 100 - capPercent) : 0
             const now = subscriptionReferenceTime
             const isExpired = (subscription?.end_time || 0) < now
+            const isUpcoming = (subscription?.start_time || 0) > now
             const isCancelled = subscription?.status === 'cancelled'
-            const isActive = subscription?.status === 'active' && !isExpired
+            const isActive =
+              subscription?.status === 'active' && !isExpired && !isUpcoming
 
             const planVersionStyle =
               planVersion && PLAN_VERSION_STYLES[planVersion]
@@ -206,7 +208,11 @@ export function MySubscriptionsDetail() {
                         </span>
                       ) : (
                         <span className='bg-muted text-muted-foreground shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium'>
-                          {isCancelled ? t('Cancelled') : t('Expired')}
+                          {isCancelled
+                            ? t('Cancelled')
+                            : isUpcoming
+                              ? t('Upcoming')
+                              : t('Expired')}
                         </span>
                       )}
                     </div>
@@ -225,7 +231,7 @@ export function MySubscriptionsDetail() {
                       </div>
                       <div>
                         <div className='text-muted-foreground text-[10px]'>
-                          {isActive
+                          {isActive || isUpcoming
                             ? t('Until')
                             : isCancelled
                               ? t('Cancelled at')

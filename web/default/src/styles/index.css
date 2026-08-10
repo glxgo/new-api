@@ -657,7 +657,7 @@ For commercial licensing, please contact support@quantumnous.com
   }
 }
 
-/* ── Star API · 动效地基 + 克制点缀（保留原版配色，只升级质感）──
+/* ── 飓星API · 动效地基 + 克制点缀（保留原版配色，只升级质感）──
  * (1) 统一全站过渡曲线为 smooth（ColorOS 级）：覆盖 Tailwind 默认 ease。
  * (2) 提供克制招牌工具类 .star-glow（CTA/高亮卡悬停描边光带，中性光）。
  * 不改任何颜色变量；全部尊重 prefers-reduced-motion。 */

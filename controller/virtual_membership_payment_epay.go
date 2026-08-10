@@ -125,7 +125,12 @@ func VirtualMembershipEpayNotify(c *gin.Context) {
 	}
 	LockOrder(verifyInfo.ServiceTradeNo)
 	defer UnlockOrder(verifyInfo.ServiceTradeNo)
-	if err := model.CompleteVirtualMembershipOrder(verifyInfo.ServiceTradeNo, common.GetJsonString(verifyInfo), model.PaymentProviderEpay, verifyInfo.Type); err != nil {
+	actual, snapshotErr := model.NewPaymentSnapshotFromDisplayAmount(verifyInfo.Money, "CNY")
+	if snapshotErr != nil {
+		_, _ = c.Writer.Write([]byte("fail"))
+		return
+	}
+	if err := model.CompleteVirtualMembershipOrder(verifyInfo.ServiceTradeNo, common.GetJsonString(verifyInfo), model.PaymentProviderEpay, verifyInfo.Type, actual); err != nil {
 		_, _ = c.Writer.Write([]byte("fail"))
 		return
 	}
@@ -157,7 +162,12 @@ func VirtualMembershipEpayReturn(c *gin.Context) {
 	}
 	LockOrder(verifyInfo.ServiceTradeNo)
 	defer UnlockOrder(verifyInfo.ServiceTradeNo)
-	if err := model.CompleteVirtualMembershipOrder(verifyInfo.ServiceTradeNo, common.GetJsonString(verifyInfo), model.PaymentProviderEpay, verifyInfo.Type); err != nil {
+	actual, snapshotErr := model.NewPaymentSnapshotFromDisplayAmount(verifyInfo.Money, "CNY")
+	if snapshotErr != nil {
+		c.Redirect(http.StatusFound, paymentReturnPath("/console/virtual-membership?pay=fail"))
+		return
+	}
+	if err := model.CompleteVirtualMembershipOrder(verifyInfo.ServiceTradeNo, common.GetJsonString(verifyInfo), model.PaymentProviderEpay, verifyInfo.Type, actual); err != nil {
 		c.Redirect(http.StatusFound, failURL)
 		return
 	}

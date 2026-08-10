@@ -115,7 +115,8 @@ describe('lucky wheel model', () => {
   })
 
   test('formats disclosed probabilities without meaningless trailing zeros', () => {
-    assert.equal(formatPrizeProbability(360_000), '36')
+    assert.equal(formatPrizeProbability(430_000), '43')
+    assert.equal(formatPrizeProbability(260_000), '26')
     assert.equal(formatPrizeProbability(47_000), '4.7')
     assert.equal(formatPrizeProbability(250), '0.025')
     assert.equal(formatPrizeProbability(1_500), '0.150')

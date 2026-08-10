@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { AlertTriangle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import dayjs from '@/lib/dayjs'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -80,13 +81,13 @@ export function Profit() {
 
   return (
     <SectionPageLayout>
-      <SectionPageLayout.Title>{t('Profit Dashboard')}</SectionPageLayout.Title>
+      <SectionPageLayout.Title>{t('充值分润审计')}</SectionPageLayout.Title>
       <SectionPageLayout.Content>
         <div className='mx-auto flex w-full max-w-7xl flex-col gap-4'>
           <div className='flex flex-wrap items-center justify-between gap-2'>
             <p className='text-muted-foreground text-sm'>
               {t(
-                'Consumption and cost are real-time; gross profit, dividends and net profit are T+1-settled figures.'
+                '仅按真实外部付款固定比例分润；余额购买和管理员发放不重复计入。'
               )}
             </p>
             <div className='bg-muted inline-flex rounded-lg p-0.5'>
@@ -107,6 +108,19 @@ export function Profit() {
             </div>
           </div>
           <ProfitStatCards summary={summary ?? null} loading={isLoading} />
+          {(summary?.pending_reconciliation_count ?? 0) > 0 && (
+            <div className='flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/8 px-4 py-3 text-sm text-amber-900 dark:text-amber-100'>
+              <AlertTriangle className='mt-0.5 size-4 shrink-0' />
+              <p>
+                {t(
+                  'There are {{count}} historical payment records awaiting manual reconciliation. No commission has been issued for them.',
+                  {
+                    count: summary?.pending_reconciliation_count ?? 0,
+                  }
+                )}
+              </p>
+            </div>
+          )}
           <Suspense
             fallback={<Skeleton className='h-[320px] w-full rounded-lg' />}
           >
@@ -114,7 +128,7 @@ export function Profit() {
           </Suspense>
           <div className='overflow-hidden rounded-lg border'>
             <div className='border-b px-4 py-3 text-sm font-semibold'>
-              {t('Dividend Records')}
+              {t('分润记录')}
             </div>
             <div className='p-3'>
               <DividendRecordsTable />

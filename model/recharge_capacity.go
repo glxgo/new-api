@@ -48,12 +48,17 @@ type RechargeCapacityProgress struct {
 // paid orders and administrator recharge actions auditable without treating
 // gifts, redemptions, check-ins, refunds, or balance overrides as recharge.
 type RechargeCredit struct {
-	Id          int64  `json:"id" gorm:"primaryKey"`
-	UserId      int    `json:"user_id" gorm:"not null;index"`
-	AmountCents int64  `json:"amount_cents" gorm:"not null"`
-	SourceType  string `json:"source_type" gorm:"type:varchar(32);not null;uniqueIndex:idx_recharge_credit_source,priority:1"`
-	SourceRef   string `json:"source_ref" gorm:"type:varchar(255);not null;uniqueIndex:idx_recharge_credit_source,priority:2"`
-	CreatedAt   int64  `json:"created_at" gorm:"bigint;not null;index"`
+	Id                      int64  `json:"id" gorm:"primaryKey"`
+	UserId                  int    `json:"user_id" gorm:"not null;index"`
+	AmountCents             int64  `json:"amount_cents" gorm:"not null"`
+	CommissionBaseQuota     int64  `json:"commission_base_quota" gorm:"not null;default:0"`
+	PaymentCurrency         string `json:"payment_currency" gorm:"type:varchar(8);not null;default:'CNY'"`
+	SourceType              string `json:"source_type" gorm:"type:varchar(32);not null;uniqueIndex:idx_recharge_credit_source,priority:1"`
+	SourceRef               string `json:"source_ref" gorm:"type:varchar(255);not null;uniqueIndex:idx_recharge_credit_source,priority:2"`
+	CommissionState         string `json:"commission_state" gorm:"type:varchar(32);not null;default:'legacy';index"`
+	CommissionPolicyVersion int    `json:"commission_policy_version" gorm:"not null;default:0"`
+	CommissionSettledAt     int64  `json:"commission_settled_at" gorm:"bigint;not null;default:0"`
+	CreatedAt               int64  `json:"created_at" gorm:"bigint;not null;index"`
 }
 
 func (RechargeCredit) TableName() string {
@@ -129,6 +134,34 @@ func MoneyToRechargeCents(money float64) int64 {
 }
 
 func RecordRechargeCreditTx(tx *gorm.DB, userId int, amountCents int64, sourceType string, sourceRef string, createdAt int64) (bool, error) {
+	// Administrative grants are retained as auditable ledger events, but they
+	// are not real payments: they must not depend on payment conversion,
+	// increase cumulative recharge, or enter cash commission settlement.
+	if !rechargeSourcePaysCommission(sourceType) {
+		return recordRechargeCreditTx(tx, userId, amountCents, 0, "CNY", sourceType, sourceRef, createdAt, RechargeCommissionPending)
+	}
+	baseQuota, err := CNYCentsToCommissionBaseQuota(amountCents)
+	if err != nil {
+		return false, err
+	}
+	return RecordPaidRechargeCreditTx(tx, userId, amountCents, baseQuota, "CNY", sourceType, sourceRef, createdAt)
+}
+
+func RecordPaidRechargeCreditTx(tx *gorm.DB, userId int, amountCents, commissionBaseQuota int64, currency, sourceType, sourceRef string, createdAt int64) (bool, error) {
+	if commissionBaseQuota <= 0 {
+		return false, errors.New("invalid recharge commission base")
+	}
+	return recordRechargeCreditTx(tx, userId, amountCents, commissionBaseQuota, currency, sourceType, sourceRef, createdAt, RechargeCommissionPending)
+}
+
+// RecordLegacyRechargeCreditTx is reserved for historical backfills. It
+// restores cumulative recharge qualification but never retroactively pays the
+// fixed recharge commission.
+func RecordLegacyRechargeCreditTx(tx *gorm.DB, userId int, amountCents int64, sourceType string, sourceRef string, createdAt int64) (bool, error) {
+	return recordRechargeCreditTx(tx, userId, amountCents, 0, "CNY", sourceType, sourceRef, createdAt, RechargeCommissionLegacy)
+}
+
+func recordRechargeCreditTx(tx *gorm.DB, userId int, amountCents, commissionBaseQuota int64, currency, sourceType, sourceRef string, createdAt int64, commissionState string) (bool, error) {
 	if tx == nil || userId <= 0 || amountCents <= 0 {
 		return false, errors.New("invalid recharge credit")
 	}
@@ -141,11 +174,15 @@ func RecordRechargeCreditTx(tx *gorm.DB, userId int, amountCents int64, sourceTy
 		createdAt = common.GetTimestamp()
 	}
 	credit := RechargeCredit{
-		UserId:      userId,
-		AmountCents: amountCents,
-		SourceType:  sourceType,
-		SourceRef:   sourceRef,
-		CreatedAt:   createdAt,
+		UserId:                  userId,
+		AmountCents:             amountCents,
+		CommissionBaseQuota:     commissionBaseQuota,
+		PaymentCurrency:         strings.ToUpper(strings.TrimSpace(currency)),
+		SourceType:              sourceType,
+		SourceRef:               sourceRef,
+		CommissionState:         commissionState,
+		CommissionPolicyVersion: 0,
+		CreatedAt:               createdAt,
 	}
 	result := tx.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "source_type"}, {Name: "source_ref"}},
@@ -157,23 +194,30 @@ func RecordRechargeCreditTx(tx *gorm.DB, userId int, amountCents int64, sourceTy
 	if result.RowsAffected == 0 {
 		return false, nil
 	}
-	update := tx.Model(&User{}).
-		Where("id = ?", userId).
-		Updates(map[string]interface{}{
-			"recharge_total_cents":      gorm.Expr("recharge_total_cents + ?", amountCents),
-			"low_balance_warning_armed": true,
-		})
-	if update.Error != nil {
-		return false, update.Error
-	}
-	if update.RowsAffected == 0 {
+	if rechargeSourcePaysCommission(sourceType) {
+		update := tx.Model(&User{}).
+			Where("id = ?", userId).
+			Updates(map[string]interface{}{
+				"recharge_total_cents":      gorm.Expr("recharge_total_cents + ?", amountCents),
+				"low_balance_warning_armed": true,
+			})
+		if update.Error != nil {
+			return false, update.Error
+		}
+		if update.RowsAffected != 0 {
+			goto settle
+		}
 		var user User
 		if err := tx.Select("id", "recharge_total_cents").Where("id = ?", userId).First(&user).Error; err != nil {
 			return false, fmt.Errorf("user %d not found for recharge credit: %w", userId, err)
 		}
 		var ledgerTotal int64
 		if err := tx.Model(&RechargeCredit{}).
-			Where("user_id = ?", userId).
+			Where("user_id = ? AND source_type IN ?", userId, []string{
+				RechargeSourceWalletTopUp,
+				RechargeSourceSubscription,
+				RechargeSourceVirtualMembership,
+			}).
 			Select("COALESCE(SUM(amount_cents), 0)").
 			Scan(&ledgerTotal).Error; err != nil {
 			return false, err
@@ -185,6 +229,21 @@ func RecordRechargeCreditTx(tx *gorm.DB, userId int, amountCents int64, sourceTy
 				return false, err
 			}
 		}
+	} else {
+		var userCount int64
+		if err := tx.Model(&User{}).Where("id = ?", userId).Count(&userCount).Error; err != nil {
+			return false, err
+		}
+		if userCount != 1 {
+			return false, fmt.Errorf("user %d not found for recharge credit", userId)
+		}
+	}
+
+settle:
+	if commissionState == RechargeCommissionPending {
+		if _, err := SettleRechargeCreditCommissionTx(tx, &credit); err != nil {
+			return false, err
+		}
 	}
 	return true, nil
 }
@@ -193,10 +252,27 @@ func RecordTopUpRechargeCreditTx(tx *gorm.DB, topUp *TopUp) (bool, error) {
 	if topUp == nil || topUp.TradeNo == "" || topUp.Status != common.TopUpStatusSuccess {
 		return false, nil
 	}
-	return RecordRechargeCreditTx(
+	actual, err := NewPaymentSnapshotFromMinor(topUp.ActualPaymentAmountMinor, topUp.ActualPaymentCurrency)
+	if err != nil {
+		return false, err
+	}
+	if err := ValidatePaymentSnapshot(topUp.ExpectedPaymentAmountMinor, topUp.ExpectedPaymentCurrency, actual); err != nil {
+		return false, err
+	}
+	amountCents, err := RechargeCentsForPayment(actual)
+	if err != nil {
+		return false, err
+	}
+	baseQuota := topUp.CommissionBaseQuota
+	if baseQuota <= 0 {
+		return false, errors.New("topup commission base snapshot is missing")
+	}
+	return RecordPaidRechargeCreditTx(
 		tx,
 		topUp.UserId,
-		MoneyToRechargeCents(topUp.Money),
+		amountCents,
+		baseQuota,
+		actual.Currency,
 		"topup",
 		topUp.TradeNo,
 		topUp.CompleteTime,
@@ -343,17 +419,20 @@ func MigrateRechargeCapacityCreditsV3() error {
 			if userCount == 0 {
 				continue
 			}
-			if _, err := RecordTopUpRechargeCreditTx(tx, &topUps[i]); err != nil {
+			if _, err := RecordLegacyRechargeCreditTx(
+				tx, topUps[i].UserId, MoneyToRechargeCents(topUps[i].Money),
+				RechargeSourceWalletTopUp, topUps[i].TradeNo, topUps[i].CompleteTime,
+			); err != nil {
 				return err
 			}
 		}
 		for i := range missingSubscriptions {
 			order := &missingSubscriptions[i]
-			if _, err := RecordRechargeCreditTx(
+			if _, err := RecordLegacyRechargeCreditTx(
 				tx,
 				order.UserId,
 				MoneyToRechargeCents(order.Money),
-				"topup",
+				RechargeSourceWalletTopUp,
 				order.TradeNo,
 				order.CompleteTime,
 			); err != nil {
@@ -372,7 +451,7 @@ func MigrateRechargeCapacityCreditsV3() error {
 			if userCount == 0 {
 				continue
 			}
-			if _, err := RecordRechargeCreditTx(
+			if _, err := RecordLegacyRechargeCreditTx(
 				tx,
 				log.UserId,
 				amountCents,

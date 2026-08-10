@@ -11,85 +11,70 @@ import (
 	"gorm.io/gorm"
 )
 
-// GetProfitSummary 超管利润看板: 汇总指定时间区间的消费/成本/已结算毛利/各项分润/净利。
-// 时间范围: query start/end(秒时间戳), 默认本月(本地时区)。
-//
-// 数据来源:
-//   - 总消费/总成本: logs 全量(type=consume, 含未结算)
-//   - 已结算毛利/分润/净利: affiliate_settles + dividend_records(已 T+1 发放, 有滞后)
-//
-// 注: 全站消费成本是「实时」的, 毛利分润是「T+1 已结算」的, 二者口径不同(净利基于已结算)。
+// GetProfitSummary keeps the historical route name for API compatibility, but
+// now exposes a recharge-commission audit. It deliberately does not calculate
+// sale price, channel cost, gross profit or platform net profit.
 func GetProfitSummary(c *gin.Context) {
 	start, end := parseProfitTimeRange(c)
 
-	// 1. 全站消费/成本(logs 全量)
-	var consume struct {
-		TotalQuota int64
-		TotalCost  int64
+	var paid struct {
+		Amount int64
+		Count  int64
 	}
-	// 1. 全站消费/成本(logs 全量, 排除超管自身消费 —— 超管不计入任何利润)
-	logQuery := model.LOG_DB.Table("logs").
-		Select("COALESCE(SUM(quota),0) AS total_quota, COALESCE(SUM(cost),0) AS total_cost").
-		Where("type = ? AND created_at >= ? AND created_at < ?", model.LogTypeConsume, start, end)
-	if rootUser := model.GetRootUser(); rootUser != nil {
-		logQuery = logQuery.Where("user_id != ?", rootUser.Id)
-	}
-	logQuery.Scan(&consume)
+	model.DB.Model(&model.RechargeCredit{}).
+		Select("COALESCE(SUM(amount_cents),0) AS amount, COUNT(*) AS count").
+		Where("commission_state = ? AND created_at >= ? AND created_at < ?", model.RechargeCommissionDone, start, end).
+		Scan(&paid)
 
-	// 2. 已结算总毛利(affiliate_settles 已完成批次)
-	var settledGross int64
-	model.DB.Table("affiliate_settles").
-		Select("COALESCE(SUM(total_gross),0)").
-		Where("status = ? AND created_at >= ? AND created_at < ?", model.AffiliateSettleStatusDone, start, end).
-		Scan(&settledGross)
-	var virtualMembershipGross int64
-	model.DB.Model(&model.VirtualMembershipOrder{}).
-		Select("COALESCE(SUM(profit_quota),0)").
-		Where("status = ? AND dividend_state = ? AND payment_provider != ? AND complete_time >= ? AND complete_time < ?",
-			model.VirtualMembershipOrderSuccess, model.SubscriptionDividendDone,
-			model.VirtualMembershipAdminGrant, start, end).
-		Scan(&virtualMembershipGross)
-	settledGross += virtualMembershipGross
-
-	// 3. 各项分润(dividend_records 按 type 汇总)
-	type typeAmt struct {
+	type typeAmount struct {
 		Type   int
 		Amount int64
 	}
-	var amts []typeAmt
-	model.DB.Table("dividend_records").
+	var amounts []typeAmount
+	model.DB.Model(&model.DividendRecord{}).
 		Select("type, COALESCE(SUM(amount),0) AS amount").
-		Where("created_at >= ? AND created_at < ?", start, end).
-		Group("type").Scan(&amts)
-	var rebate, adminDiv, rootDiv int64
-	for _, a := range amts {
-		switch a.Type {
+		Where("policy_version = ? AND created_at >= ? AND created_at < ?", model.RechargeCommissionPolicyV1, start, end).
+		Group("type").Scan(&amounts)
+	var affiliate, admin, root int64
+	for _, item := range amounts {
+		switch item.Type {
 		case model.DividendTypeDirect, model.DividendTypeIndirect:
-			rebate += a.Amount
+			affiliate += item.Amount
 		case model.DividendTypeAdmin:
-			adminDiv += a.Amount
+			admin += item.Amount
 		case model.DividendTypeRoot:
-			rootDiv += a.Amount
+			root += item.Amount
 		}
 	}
 
-	netProfit := settledGross - rebate - adminDiv - rootDiv
+	// Historical rows remain immutable and visible as a separately labelled
+	// audit total. They are never mixed into the current recharge policy.
+	var legacyCommission int64
+	model.DB.Model(&model.DividendRecord{}).
+		Where("policy_version = 0 AND created_at >= ? AND created_at < ?", start, end).
+		Select("COALESCE(SUM(amount),0)").Scan(&legacyCommission)
+
+	var topUpReview, subscriptionReview, legacyLogReview int64
+	model.DB.Model(&model.TopUp{}).Where("commission_reconciliation_status = ?", "manual_review").Count(&topUpReview)
+	model.DB.Model(&model.SubscriptionOrder{}).Where("commission_reconciliation_status = ?", "manual_review").Count(&subscriptionReview)
+	if model.LOG_DB != nil {
+		model.LOG_DB.Model(&model.Log{}).Where("profit_reconciliation_status = ?", "unresolved_no_payment_mapping").Count(&legacyLogReview)
+	}
 
 	common.ApiSuccess(c, gin.H{
-		"start":                    start,
-		"end":                      end,
-		"total_consume":            consume.TotalQuota, // 全站消费(quota)
-		"total_cost":               consume.TotalCost,  // 全站成本(quota)
-		"settled_gross":            settledGross,       // 已结算总毛利
-		"virtual_membership_gross": virtualMembershipGross,
-		"affiliate_rebate":         rebate,    // 已发拉新返利
-		"admin_dividend":           adminDiv,  // 已发管理员分红
-		"root_dividend":            rootDiv,   // 已发超管分红
-		"net_profit":               netProfit, // 净利润 = 毛利 - 拉新 - 管理员 - 超管
+		"start":                        start,
+		"end":                          end,
+		"paid_recharge_cents":          paid.Amount,
+		"paid_order_count":             paid.Count,
+		"affiliate_rebate":             affiliate,
+		"admin_dividend":               admin,
+		"root_dividend":                root,
+		"total_commission":             affiliate + admin + root,
+		"legacy_commission_paid":       legacyCommission,
+		"pending_reconciliation_count": topUpReview + subscriptionReview + legacyLogReview,
 	})
 }
 
-// parseProfitTimeRange 解析看板时间范围: query start/end(秒), 默认本月。
 func parseProfitTimeRange(c *gin.Context) (start, end int64) {
 	now := time.Now()
 	start = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).Unix()
@@ -107,8 +92,9 @@ func parseProfitTimeRange(c *gin.Context) (start, end int64) {
 	return start, end
 }
 
-// GetDividendRecords 超管/管理员查看分润明细(审计)。按「消费用户 + 批次(天)」聚合,
-// 同一消费用户同一批次(一天)的所有分润合成一条(支持 source_user_id/type 过滤后再聚合)。
+// GetDividendRecords returns current recharge commissions and immutable legacy
+// settlement rows through the existing endpoint. policy_version makes the
+// historical boundary explicit to administrators.
 func GetDividendRecords(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
@@ -126,32 +112,33 @@ func GetDividendRecords(c *gin.Context) {
 			}
 		}
 		if v := c.Query("type"); v != "" {
-			if t, err := strconv.Atoi(v); err == nil {
-				tx = tx.Where("type = ?", t)
+			if recordType, err := strconv.Atoi(v); err == nil {
+				tx = tx.Where("type = ?", recordType)
 			}
 		}
 		return tx
 	}
-	// Daily rows and order rows both repeat the same gross-profit base for each
-	// recipient. Legacy per-request rows are the only rows that must be summed.
-	const aggSelect = "dividend_records.source_user_id, dividend_records.batch_id, MAX(users.username) AS source_username, CASE WHEN MAX(dividend_records.request_count) > 0 OR dividend_records.batch_id LIKE 'order-%' THEN MAX(dividend_records.gross_profit) ELSE SUM(dividend_records.gross_profit) END AS gross_profit, SUM(dividend_records.amount) AS amount, MAX(dividend_records.source_usage) AS source_usage, MAX(dividend_records.source_recharge_cents) AS source_recharge_cents, MAX(dividend_records.request_count) AS request_count, COUNT(*) AS record_count, MIN(dividend_records.created_at) AS created_at"
+	const groupBy = "dividend_records.source_user_id, dividend_records.batch_id, dividend_records.source_ref, dividend_records.policy_version"
+	const selectFields = "dividend_records.source_user_id, dividend_records.batch_id, dividend_records.source_ref, dividend_records.policy_version, MAX(users.username) AS source_username, MAX(dividend_records.source_recharge_cents) AS source_recharge_cents, SUM(dividend_records.amount) AS amount, COUNT(*) AS record_count, MIN(dividend_records.created_at) AS created_at"
 	var total int64
-	applyFilters().Joins("LEFT JOIN users ON users.id = dividend_records.source_user_id").Select(aggSelect).Group("dividend_records.source_user_id, dividend_records.batch_id").Count(&total)
+	applyFilters().Joins("LEFT JOIN users ON users.id = dividend_records.source_user_id").
+		Select(selectFields).Group(groupBy).Count(&total)
 	var records []dividendRecordAggregate
-	applyFilters().Joins("LEFT JOIN users ON users.id = dividend_records.source_user_id").Select(aggSelect).Group("dividend_records.source_user_id, dividend_records.batch_id").Order("MIN(dividend_records.created_at) desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&records)
+	applyFilters().Joins("LEFT JOIN users ON users.id = dividend_records.source_user_id").
+		Select(selectFields).Group(groupBy).
+		Order("MIN(dividend_records.created_at) desc").
+		Offset((page - 1) * pageSize).Limit(pageSize).Find(&records)
 	common.ApiSuccess(c, gin.H{"data": records, "total": total})
 }
 
-// dividendRecordAggregate 分润明细按「消费用户 + 批次(天)」聚合后的行。
 type dividendRecordAggregate struct {
 	SourceUserId        int    `json:"source_user_id"`
 	SourceUsername      string `json:"source_username"`
 	BatchId             string `json:"batch_id"`
+	SourceRef           string `json:"source_ref"`
+	PolicyVersion       int    `json:"policy_version"`
 	SourceRechargeCents int64  `json:"source_recharge_cents"`
-	SourceUsage         int64  `json:"source_usage"`
-	GrossProfit         int64  `json:"gross_profit"`
 	Amount              int64  `json:"amount"`
-	RequestCount        int    `json:"request_count"`
 	RecordCount         int    `json:"record_count"`
 	CreatedAt           int64  `json:"created_at"`
 }

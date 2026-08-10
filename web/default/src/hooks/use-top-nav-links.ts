@@ -110,6 +110,16 @@ export function useTopNavLinks(): TopNavLink[] {
     // FAQ (常见问题, 从概览迁出)
     arr.push({ navKey: 'faq', title: t('FAQ'), href: '/faq' })
 
+    // Announcements live in the global header so they remain reachable on
+    // desktop and in the compact mobile navigation without duplicating the
+    // entry in the sidebar.
+    arr.push({
+      navKey: 'announcements',
+      title: t('Announcements'),
+      href: '/announcements',
+      requiresAuth: !isAuthed,
+    })
+
     return arr
   }, [t, modules, docsLink, isAuthed])
 

@@ -9,7 +9,7 @@ import (
 //   平台成本 = 官方基础扣费 × GroupCostRatio[group]
 // 未配置 GroupCostRatio[group] 时【继承】该分组的售价倍率 GroupRatio[group],
 // 均未配置则默认 1。这样运营只需维护「一套官方售价 + 分组售价倍率 + 分组成本倍率」,
-// 即可同时得出用户实际售价、平台成本、毛利, 且成本与售价同源(不漂移)。
+// 用于运营侧对照实际售价与平台成本，不参与充值分润。
 
 var groupCostRatioMap = types.NewRWMap[string, float64]()
 

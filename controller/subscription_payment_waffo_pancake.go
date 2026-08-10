@@ -91,6 +91,11 @@ func SubscriptionRequestWaffoPancakePay(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	pancakeSnapshot, err := model.NewPaymentSnapshotFromMoney(plan.PriceAmount, "USD")
+	if err != nil || model.SetSubscriptionOrderPaymentExpectation(order, pancakeSnapshot) != nil {
+		common.ApiErrorMsg(c, "支付金额快照失败")
+		return
+	}
 	if err := order.Insert(); err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Waffo Pancake 订阅订单创建失败 user_id=%d plan_id=%d trade_no=%s error=%q", userId, plan.Id, tradeNo, err.Error()))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})

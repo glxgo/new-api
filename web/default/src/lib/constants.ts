@@ -21,8 +21,8 @@ For commercial licensing, please contact support@quantumnous.com
  */
 
 // System Configuration Defaults
-export const DEFAULT_SYSTEM_NAME = 'New API'
-export const DEFAULT_LOGO = '/logo.png?v=star-api-20260730'
+export const DEFAULT_SYSTEM_NAME = '飓星API'
+export const DEFAULT_LOGO = '/logo.png?v=hurricane-api-20260811'
 
 // LocalStorage Keys
 export const STORAGE_KEYS = {

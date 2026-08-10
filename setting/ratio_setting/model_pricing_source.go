@@ -30,7 +30,7 @@ func GetModelPricingSourceMap() map[string]ModelPricingSource {
 }
 
 // PublicPricingSource 是对外公开的视图结构(模型广场 /api/pricing), 绝不含 CostMultiplier。
-// 权限红线: 成本倍率是利润核心, 泄露即暴露成本结构, 此结构是唯一安全闸门。
+// 权限红线：成本倍率属于敏感运营数据，不能向普通管理员泄露。
 type PublicPricingSource struct {
 	OfficialInput        float64 `json:"official_input"`
 	OfficialOutput       float64 `json:"official_output"`

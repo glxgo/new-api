@@ -11,17 +11,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// 邀新计划(普通用户): 展示自己的邀请码/链接、直接+间接两层下级、下级产生的返利。
-// 与分润两层(直接 AffiliateDirectRate / 间接 AffiliateIndirectRate)一致, 第 3 层+不产生返利故不展示。
+// 邀新计划: 展示自己的邀请码/链接、直接+间接两层下级及充值返利。
+// 第 3 层及更深层级不产生返利，固定政策不受后台定价设置影响。
 
-// downlineUser 下级结算视图，按用户汇总充值、用量、毛利与返利。
+// downlineUser 下级结算视图，按用户汇总真实付款与返利。
 type downlineUser struct {
 	Id            int    `json:"id"`
 	Username      string `json:"username"`
 	CreatedAt     int64  `json:"created_at"`
 	RechargeCents int64  `json:"recharge_cents"` // 真实支付台账累计充值(分)
-	Usage         int64  `json:"usage"`          // 累计 API 用量(quota)
-	GrossProfit   int64  `json:"gross_profit"`   // 已结算毛利(quota)
 	Rebate        int64  `json:"rebate"`         // 该下级为我产生的累计返利(quota)
 }
 
@@ -41,6 +39,7 @@ func GetAffiliateSummary(c *gin.Context) {
 		indirectCount, _ = model.CountDownline(directIds)
 	}
 	totalRebate, _ := model.SumDividendByRecipient(userId)
+	directRate, indirectRate := model.RechargeCommissionReferralRates(user.Role)
 
 	affLink := ""
 	serverAddress := system_setting.ServerAddress
@@ -54,9 +53,9 @@ func GetAffiliateSummary(c *gin.Context) {
 		"direct_count":        directCount,
 		"indirect_count":      indirectCount,
 		"total_rebate":        totalRebate,
-		"direct_rate":         common.AffiliateDirectRateForRole(user.Role),
-		"indirect_rate":       common.AffiliateIndirectRate,
-		"order_direct_rate":   common.OrderAffiliateDirectRateForRole(user.Role),
+		"direct_rate":         directRate,
+		"indirect_rate":       indirectRate,
+		"order_direct_rate":   directRate, // API compatibility: all paid sources use one rate.
 		"rebate_withdrawable": common.AffiliateRewardIsWithdrawable(user.Role),
 	})
 }
@@ -103,8 +102,7 @@ func GetAffiliateDownline(c *gin.Context) {
 		summary := summaries[u.Id]
 		data = append(data, downlineUser{
 			Id: u.Id, Username: u.Username, CreatedAt: u.CreatedAt,
-			RechargeCents: summary.RechargeCents, Usage: summary.Usage,
-			GrossProfit: summary.GrossProfit, Rebate: summary.Rebate,
+			RechargeCents: summary.RechargeCents, Rebate: summary.Rebate,
 		})
 	}
 	common.ApiSuccess(c, gin.H{"data": data, "total": total})

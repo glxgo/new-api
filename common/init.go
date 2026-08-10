@@ -134,6 +134,10 @@ func InitEnv() {
 	UsageStatisticsRateLimitEnable = GetEnvOrDefaultBool("USAGE_STATISTICS_RATE_LIMIT_ENABLE", true)
 	UsageStatisticsRateLimitNum = GetEnvOrDefault("USAGE_STATISTICS_RATE_LIMIT", 60)
 	UsageStatisticsRateLimitDuration = int64(GetEnvOrDefault("USAGE_STATISTICS_RATE_LIMIT_DURATION", 60))
+
+	TokenUsageRateLimitEnable = GetEnvOrDefaultBool("TOKEN_USAGE_RATE_LIMIT_ENABLE", true)
+	TokenUsageRateLimitNum = GetEnvOrDefault("TOKEN_USAGE_RATE_LIMIT", 120)
+	TokenUsageRateLimitDuration = int64(GetEnvOrDefault("TOKEN_USAGE_RATE_LIMIT_DURATION", 60))
 	initConstantEnv()
 }
 

@@ -52,14 +52,13 @@ func TestLuckyPrizePoolsTotalExactlyOneMillion(t *testing.T) {
 	require.NoError(t, validateLuckyPool(subscription, true))
 	require.NoError(t, validateLuckyPool(recharge, false))
 	require.Equal(t, []LuckyPrizeConfig{
-		{LuckyPrizeQuota5, 5_000_000, 360_000},
-		{LuckyPrizeQuota10, 10_000_000, 320_000},
-		{LuckyPrizeQuota20, 20_000_000, 200_000},
+		{LuckyPrizeQuota10, 10_000_000, 430_000},
+		{LuckyPrizeQuota20, 20_000_000, 260_000},
+		{LuckyPrizeQuota30, 30_000_000, 200_000},
 		{LuckyPrizeQuota50, 50_000_000, 30_000},
 		{LuckyPrizeQuota100, 100_000_000, 10_000},
 		{LuckyPrizeGift5, 5_000_000, 47_000},
 		{LuckyPrizeGift10, 10_000_000, 20_000},
-		{LuckyPrizeGift20, 20_000_000, 10_000},
 		{LuckyPrizeDouble, 0, 250},
 		{LuckyPrizeFullReset, 0, 1_500},
 		{LuckyPrizeCrazy5H, 0, 1_250},
@@ -87,6 +86,61 @@ func TestLuckyPrizePoolsTotalExactlyOneMillion(t *testing.T) {
 	}
 	require.EqualValues(t, LuckyWeightScale, subWeight)
 	require.EqualValues(t, LuckyWeightScale, rechargeWeight)
+}
+
+func TestLuckyPrizeProbabilityMigrationPublishesNewRuleWithoutRewritingHistory(t *testing.T) {
+	db := setupLuckyWheelTestDB(t)
+	var campaign LuckyCampaign
+	require.NoError(t, db.Where("code = ?", LuckyCampaignCode).First(&campaign).Error)
+	var previous LuckyRuleSet
+	require.NoError(t, db.First(&previous, campaign.ActiveRuleSetId).Error)
+	previousRechargePool := previous.RechargePool
+
+	legacyPool := []LuckyPrizeConfig{
+		{LuckyPrizeQuota5, 5_000_000, 360_000},
+		{LuckyPrizeQuota10, 10_000_000, 320_000},
+		{LuckyPrizeQuota20, 20_000_000, 200_000},
+		{LuckyPrizeQuota50, 50_000_000, 30_000},
+		{LuckyPrizeQuota100, 100_000_000, 10_000},
+		{LuckyPrizeGift5, 5_000_000, 47_000},
+		{LuckyPrizeGift10, 10_000_000, 20_000},
+		{LuckyPrizeGift20, 20_000_000, 10_000},
+		{LuckyPrizeDouble, 0, 250},
+		{LuckyPrizeFullReset, 0, 1_500},
+		{LuckyPrizeCrazy5H, 0, 1_250},
+	}
+	legacyJSON, err := common.Marshal(legacyPool)
+	require.NoError(t, err)
+	require.NoError(t, db.Model(&previous).Update("subscription_pool", string(legacyJSON)).Error)
+	historicalCard := LuckyCard{
+		UserId: 9, CampaignId: campaign.Id, RuleSetId: previous.Id,
+		PoolType: LuckyPoolSubscription, SourceType: "test", SourceRef: "legacy",
+		GrantKey: "legacy-card", Status: LuckyCardAvailable, ExpiresAt: common.GetTimestamp() + 3600,
+	}
+	require.NoError(t, db.Create(&historicalCard).Error)
+
+	require.NoError(t, EnsureLuckyPrizeProbability20260811())
+	require.NoError(t, db.Where("code = ?", LuckyCampaignCode).First(&campaign).Error)
+	require.NotEqual(t, previous.Id, campaign.ActiveRuleSetId)
+	var active LuckyRuleSet
+	require.NoError(t, db.First(&active, campaign.ActiveRuleSetId).Error)
+	wantSubscription, _ := defaultLuckyPools()
+	wantJSON, err := common.Marshal(wantSubscription)
+	require.NoError(t, err)
+	require.Equal(t, string(wantJSON), active.SubscriptionPool)
+	require.Equal(t, previousRechargePool, active.RechargePool)
+	require.Equal(t, "active", active.Status)
+	require.NoError(t, db.First(&previous, previous.Id).Error)
+	require.Equal(t, "retired", previous.Status)
+	require.NoError(t, db.First(&historicalCard, historicalCard.Id).Error)
+	require.Equal(t, previous.Id, historicalCard.RuleSetId, "issued cards keep their immutable rule version")
+
+	var ruleCount int64
+	require.NoError(t, db.Model(&LuckyRuleSet{}).Count(&ruleCount).Error)
+	require.NoError(t, EnsureLuckyPrizeProbability20260811())
+	var repeatedCount int64
+	require.NoError(t, db.Model(&LuckyRuleSet{}).Count(&repeatedCount).Error)
+	require.Equal(t, ruleCount, repeatedCount, "startup migration must be idempotent")
 }
 
 func TestLuckyThresholdProgressAndRechargeIdempotency(t *testing.T) {

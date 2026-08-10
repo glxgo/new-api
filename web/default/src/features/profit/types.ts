@@ -16,7 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-// Profit dashboard + dividend audit type definitions (root only).
+// Recharge commission audit type definitions (root only). Historical route
+// names are retained for compatibility.
 
 export interface ApiResponse<T = unknown> {
   success?: boolean
@@ -24,19 +25,17 @@ export interface ApiResponse<T = unknown> {
   data?: T
 }
 
-// Profit summary over a time range (all amounts in quota units).
-// Note: total_consume/total_cost are real-time (all logs incl. unsettled);
-// settled_gross/rebate/dividend/net_profit are T+1-settled figures (lagged).
 export interface ProfitSummary {
   start: number
   end: number
-  total_consume: number // all-site consumption
-  total_cost: number // all-site cost
-  settled_gross: number // settled gross profit
-  affiliate_rebate: number // settled referral rebate (direct + indirect)
-  admin_dividend: number // settled admin dividend
-  root_dividend: number // settled root dividend
-  net_profit: number // = settled_gross - rebate - admin - root
+  paid_recharge_cents: number
+  paid_order_count: number
+  affiliate_rebate: number
+  admin_dividend: number
+  root_dividend: number
+  total_commission: number
+  legacy_commission_paid: number
+  pending_reconciliation_count: number
 }
 
 // Dividend record type: 1=direct rebate, 2=indirect rebate, 3=admin, 4=root.
@@ -49,18 +48,17 @@ export const DIVIDEND_TYPE = {
 export type DividendRecordType =
   (typeof DIVIDEND_TYPE)[keyof typeof DIVIDEND_TYPE]
 
-// Dividend record aggregated by source_user + batch(day): same consuming user in the
-// same batch (one T+1 day) merged into one row. type filter is applied before aggregation.
+// Commission records aggregate recipients for the same paid source. Version 0
+// rows are immutable legacy settlements; version 1 rows use paid recharge.
 export interface DividendRecord {
-  source_user_id: number // user whose consumption generated the profit
+  source_user_id: number
   source_username: string
-  batch_id: string // e.g. "2026-06-16"
-  source_recharge_cents: number // real paid recharge in the day
-  source_usage: number // settled wallet usage in the day
-  gross_profit: number // sum of gross profit (quota)
-  amount: number // sum of dividend amount (quota)
-  request_count: number
-  record_count: number // how many dividend records merged into this row
+  batch_id: string
+  source_ref: string
+  policy_version: number
+  source_recharge_cents: number
+  amount: number
+  record_count: number
   created_at: number
 }
 

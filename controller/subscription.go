@@ -72,16 +72,17 @@ func GetSubscriptionSelf(c *gin.Context) {
 		allSubscriptions = []model.SubscriptionSummary{}
 	}
 
-	// Get active subscriptions for backward compatibility
-	activeSubscriptions, err := model.GetAllActiveUserSubscriptions(userId)
+	// User-facing cards include scheduled instances, while expired/cancelled
+	// history remains available only through all_subscriptions.
+	visibleSubscriptions, err := model.GetVisibleUserSubscriptions(userId)
 	if err != nil {
-		activeSubscriptions = []model.SubscriptionSummary{}
+		visibleSubscriptions = []model.SubscriptionSummary{}
 	}
 
 	common.ApiSuccess(c, gin.H{
 		"billing_preference": pref,
-		"subscriptions":      activeSubscriptions, // all active subscriptions
-		"all_subscriptions":  allSubscriptions,    // all subscriptions including expired
+		"subscriptions":      visibleSubscriptions, // current and scheduled subscriptions
+		"all_subscriptions":  allSubscriptions,     // all subscriptions including expired
 	})
 }
 

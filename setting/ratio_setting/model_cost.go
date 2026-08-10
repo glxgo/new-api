@@ -3,7 +3,7 @@ package ratio_setting
 import "github.com/QuantumNous/new-api/types"
 
 // ModelCostInfo 单个模型的成本价($/1M tokens), 与售价(ModelRatio/ModelPrice/billing_expr)完全分离。
-// 成本 = 平台付给上游(如 krill)的买入价, 仅超管可写、管理员只读。用于利润/分红/返利计算。
+// 成本 = 平台付给上游的买入价，仅用于运营分析，不参与充值分润。
 type ModelCostInfo struct {
 	InputCostPerM  float64 `json:"input_cost_per_m"`  // 成本输入 $/1M tokens (per-token 模式)
 	OutputCostPerM float64 `json:"output_cost_per_m"` // 成本输出 $/1M tokens (per-token 模式)
@@ -27,7 +27,7 @@ func UpdateModelCostByJSONString(jsonStr string) error {
 	return types.LoadFromJsonStringWithCallback(modelCostMap, jsonStr, InvalidateExposedDataCache)
 }
 
-// GetModelCost 返回模型的成本价。第二返回值表示是否配置了该模型的成本(未配置则利润无法计算, 该笔按成本0或跳过)。
+// GetModelCost 返回模型成本观测值；第二返回值表示是否已配置。
 func GetModelCost(name string) (ModelCostInfo, bool) {
 	name = FormatMatchingModelName(name)
 	cost, ok := modelCostMap.Get(name)

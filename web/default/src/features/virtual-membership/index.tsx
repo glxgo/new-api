@@ -115,6 +115,12 @@ function MembershipCard({ membership }: { membership: UserVirtualMembership }) {
             </p>
           </div>
         )}
+        <div className='border-border/70 bg-muted/30 flex items-center justify-between rounded-lg border px-2.5 py-2 text-xs'>
+          <span className='text-muted-foreground'>购买后累计已使用</span>
+          <span className='font-semibold tabular-nums'>
+            {membershipQuotaLabel(membership.lifetime_used || 0)}
+          </span>
+        </div>
         <div className='grid grid-cols-2 gap-2 text-xs'>
           <div className='bg-muted/40 rounded-lg px-2.5 py-2'>
             <p className='text-muted-foreground text-[10px]'>会员并发</p>

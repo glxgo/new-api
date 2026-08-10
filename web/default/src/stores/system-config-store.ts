@@ -19,41 +19,24 @@ For commercial licensing, please contact support@quantumnous.com
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { DEFAULT_SYSTEM_NAME, DEFAULT_LOGO } from '@/lib/constants'
+import {
+  DEFAULT_CURRENCY_CONFIG,
+  SYSTEM_CONFIG_STORAGE_VERSION,
+  mergePersistedSystemConfigState,
+  migratePersistedSystemConfigState,
+  normalizeCurrencyConfig,
+  type SystemConfig,
+} from './system-config-persistence'
 
-export type CurrencyDisplayType = 'USD' | 'CNY' | 'TOKENS' | 'CUSTOM'
-
-export interface CurrencyConfig {
-  /** Whether to render quota values as currency instead of raw units */
-  displayInCurrency: boolean
-  /** Currency presentation strategy configured by the admin */
-  quotaDisplayType: CurrencyDisplayType
-  /** Number of quota units that equal one USD */
-  quotaPerUnit: number
-  /** Exchange rate from USD to the configured local currency */
-  usdExchangeRate: number
-  /** Custom currency symbol configured by the admin (used when type === CUSTOM) */
-  customCurrencySymbol: string
-  /** Exchange rate from USD to the custom currency (used when type === CUSTOM) */
-  customCurrencyExchangeRate: number
-}
-
-export interface SystemConfig {
-  systemName: string
-  logo: string
-  footerHtml?: string
-  demoSiteEnabled?: boolean
-  displayTokenStatEnabled?: boolean
-  currency: CurrencyConfig
-}
-
-export const DEFAULT_CURRENCY_CONFIG: CurrencyConfig = {
-  displayInCurrency: true,
-  quotaDisplayType: 'USD',
-  quotaPerUnit: 500000,
-  usdExchangeRate: 1,
-  customCurrencySymbol: '¤',
-  customCurrencyExchangeRate: 1,
-}
+export {
+  DEFAULT_CURRENCY_CONFIG,
+  normalizeCurrencyConfig,
+} from './system-config-persistence'
+export type {
+  CurrencyConfig,
+  CurrencyDisplayType,
+  SystemConfig,
+} from './system-config-persistence'
 
 interface SystemConfigState {
   config: SystemConfig
@@ -83,10 +66,10 @@ export const useSystemConfigStore = create<SystemConfigState>()(
           config: {
             ...state.config,
             ...newConfig,
-            currency: {
+            currency: normalizeCurrencyConfig({
               ...state.config.currency,
               ...(newConfig.currency ?? {}),
-            },
+            }),
           },
         })),
       setLoadedLogoUrl: (url) => set({ loadedLogoUrl: url }),
@@ -94,6 +77,11 @@ export const useSystemConfigStore = create<SystemConfigState>()(
     }),
     {
       name: 'system-config-storage',
+      version: SYSTEM_CONFIG_STORAGE_VERSION,
+      migrate: (persistedState) =>
+        migratePersistedSystemConfigState(persistedState),
+      merge: (persistedState, currentState) =>
+        mergePersistedSystemConfigState(persistedState, currentState),
       partialize: (state) => ({
         config: state.config,
         loadedLogoUrl: state.loadedLogoUrl,

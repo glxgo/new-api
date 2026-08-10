@@ -63,6 +63,7 @@ export type SectionPageLayoutProps = {
   children: ReactNode
   fixedContent?: boolean
   variant?: 'default' | 'editorial'
+  density?: 'default' | 'compact'
 }
 
 export function SectionPageLayout(props: SectionPageLayoutProps) {
@@ -94,6 +95,7 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
   })
 
   const editorial = props.variant === 'editorial'
+  const compact = props.density === 'compact'
 
   return (
     <PageFooterProvider container={footerContainer}>
@@ -101,9 +103,11 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
         <div
           className={cn(
             'border-border/80 shrink-0 border-b px-[var(--app-page-gutter)]',
-            editorial
-              ? 'pt-5 pb-4 sm:pt-7 sm:pb-5'
-              : 'pt-4 pb-3.5 sm:pt-6 sm:pb-4'
+            compact
+              ? 'pt-3 pb-2.5 sm:pt-4 sm:pb-3'
+              : editorial
+                ? 'pt-5 pb-4 sm:pt-7 sm:pb-5'
+                : 'pt-4 pb-3.5 sm:pt-6 sm:pb-4'
           )}
         >
           {breadcrumb != null && (
@@ -118,7 +122,8 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
             <div className='min-w-0 flex-1'>
               <h2
                 className={cn(
-                  'font-serif text-2xl font-semibold tracking-[-0.025em] sm:text-3xl',
+                  'font-serif font-semibold tracking-[-0.025em]',
+                  compact ? 'text-xl sm:text-2xl' : 'text-2xl sm:text-3xl',
                   !editorial && 'truncate'
                 )}
               >
@@ -145,11 +150,15 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
         </div>
 
         <div
-          className={
+          className={cn(
+            'min-h-0 flex-none overflow-visible px-[var(--app-page-gutter)]',
+            compact
+              ? 'pt-2 pb-2.5 sm:pt-2.5 sm:pb-3'
+              : 'pt-3 pb-3 sm:pt-4 sm:pb-5',
             props.fixedContent
-              ? 'min-h-0 flex-none overflow-visible px-[var(--app-page-gutter)] pt-3 pb-3 sm:flex-1 sm:overflow-hidden sm:pt-4 sm:pb-5'
-              : 'min-h-0 flex-none overflow-visible px-[var(--app-page-gutter)] pt-3 pb-3 sm:flex-1 sm:overflow-auto sm:pt-4 sm:pb-5'
-          }
+              ? 'sm:flex-1 sm:overflow-hidden'
+              : 'sm:flex-1 sm:overflow-auto'
+          )}
         >
           {content}
         </div>

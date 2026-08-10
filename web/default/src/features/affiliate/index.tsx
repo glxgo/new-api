@@ -91,32 +91,27 @@ export function Affiliate() {
               <h2 className='text-lg font-semibold'>{t('Invitation Rules')}</h2>
             </div>
             <p className='text-muted-foreground mt-2 text-sm leading-relaxed'>
-              {s?.rebate_withdrawable
-                ? t(
-                    'Agent commission: direct invitee API consumption pays {{rate}}% of gross profit; subscriptions pay {{orderRate}}% of actual plan profit after expiry. Indirect referral commission follows the platform standard rates.',
-                    {
-                      rate: Math.round((s?.direct_rate ?? 0.2) * 100),
-                      orderRate: Math.round(
-                        (s?.order_direct_rate ?? 0.2) * 100
-                      ),
-                    }
-                  )
-                : t(
-                    'You earn rebates from invitees consumption. Direct invitee: {{rate}}% of gross profit; indirect (their invitee): {{irate}}%.',
-                    {
-                      rate: Math.round((s?.direct_rate ?? 0.1) * 100),
-                      irate: Math.round((s?.indirect_rate ?? 0.05) * 100),
-                    }
-                  )}
+              {t(
+                'Real external payments from direct invitees earn {{rate}}%; payments from second-level invitees earn {{irate}}%.',
+                {
+                  rate: Math.round((s?.direct_rate ?? 0.05) * 100),
+                  irate: Math.round((s?.indirect_rate ?? 0.02) * 100),
+                }
+              )}
             </p>
             <p className='text-muted-foreground mt-1 text-sm'>
               {s?.rebate_withdrawable
                 ? t(
-                    'Agent commission enters your withdrawable commission account. API consumption is settled T+1; subscription commission is credited after the plan expires and its actual profit is calculated.'
+                    'Commission is credited to your withdrawable account when the payment succeeds.'
                   )
                 : t(
-                    'Rebates go to your gift balance (usable, not withdrawable). Settled T+1 daily.'
+                    'Rebates are credited to your gift balance when the payment succeeds and cannot be withdrawn.'
                   )}
+            </p>
+            <p className='text-muted-foreground mt-1 text-xs'>
+              {t(
+                'Balance purchases and administrator grants do not trigger another commission.'
+              )}
             </p>
             {s?.rebate_withdrawable && (
               <div className='border-border/70 bg-muted/20 mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2.5'>
@@ -224,18 +219,10 @@ export function Affiliate() {
                       </div>
                       <Badge variant='outline'>#{u.id}</Badge>
                     </div>
-                    <div className='bg-border mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-lg border sm:grid-cols-4'>
+                    <div className='bg-border mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-lg border'>
                       <FinancialMetric
                         label={t('Recharge')}
                         value={formatRechargeCents(u.recharge_cents)}
-                      />
-                      <FinancialMetric
-                        label={t('Usage')}
-                        value={formatQuota(u.usage)}
-                      />
-                      <FinancialMetric
-                        label={t('Gross Profit')}
-                        value={formatQuota(u.gross_profit)}
                       />
                       <FinancialMetric
                         label={t('Total Rebate')}
@@ -284,20 +271,12 @@ export function Affiliate() {
                           dayjs(r.created_at * 1000).format('YYYY-MM-DD')}
                       </div>
                     </div>
-                    <div className='mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4'>
+                    <div className='mt-3 grid grid-cols-2 gap-3'>
                       <CompactMetric
                         label={t('Recharge')}
                         value={formatRechargeCents(
                           r.source_recharge_cents || 0
                         )}
-                      />
-                      <CompactMetric
-                        label={t('Usage')}
-                        value={formatQuota(r.source_usage || 0)}
-                      />
-                      <CompactMetric
-                        label={t('Gross Profit')}
-                        value={formatQuota(r.gross_profit)}
                       />
                       <CompactMetric
                         label={t('Dividend Amount')}

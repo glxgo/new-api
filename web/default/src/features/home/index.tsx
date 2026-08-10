@@ -60,7 +60,7 @@ export function Home() {
     )
   }
 
-  // 默认 Landing：StarHome（复刻自 home.html，Star API 品牌主页）
+  // 默认 Landing：StarHome（飓星API 品牌主页）
   return (
     <PublicLayout showMainContainer={false}>
       <StarHome isAuthenticated={isAuthenticated} />

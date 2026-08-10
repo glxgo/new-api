@@ -98,28 +98,20 @@ export function DividendRecordsTable() {
         ),
       },
       {
-        accessorKey: 'source_usage',
-        header: t('Usage'),
+        accessorKey: 'policy_version',
+        header: t('结算策略'),
         size: 120,
         cell: ({ row }) => (
-          <span className='font-mono text-sm'>
-            {formatQuota(row.original.source_usage)}
-          </span>
-        ),
-      },
-      {
-        accessorKey: 'gross_profit',
-        header: t('Gross Profit'),
-        size: 120,
-        cell: ({ row }) => (
-          <span className='text-muted-foreground font-mono text-sm'>
-            {formatQuota(row.original.gross_profit)}
+          <span className='text-muted-foreground text-sm'>
+            {row.original.policy_version === 1
+              ? t('充值固定比例')
+              : t('历史已结算')}
           </span>
         ),
       },
       {
         accessorKey: 'amount',
-        header: t('Dividend Amount'),
+        header: t('分润金额'),
         size: 120,
         cell: ({ row }) => (
           <span className='font-mono font-semibold'>
@@ -128,12 +120,12 @@ export function DividendRecordsTable() {
         ),
       },
       {
-        accessorKey: 'request_count',
-        header: t('Records'),
+        accessorKey: 'record_count',
+        header: t('记录数'),
         size: 90,
         cell: ({ row }) => (
           <span className='text-muted-foreground text-xs'>
-            {row.original.request_count || row.original.record_count}
+            {row.original.record_count}
           </span>
         ),
       },

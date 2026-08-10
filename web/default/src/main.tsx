@@ -29,11 +29,11 @@ import i18next from 'i18next'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/auth-store'
 import { installBuildMetadata } from '@/lib/build-metadata'
+import { DEFAULT_LOGO, DEFAULT_SYSTEM_NAME } from '@/lib/constants'
 import '@/lib/dayjs'
 import { applyFaviconToDom } from '@/lib/dom-utils'
 import { initializeFrontendCache } from '@/lib/frontend-cache'
 import { handleServerError } from '@/lib/handle-server-error'
-import { getSharedStatus, readCachedStatus } from '@/lib/status-resource'
 import { DirectionProvider } from './context/direction-provider'
 import { FontProvider } from './context/font-provider'
 import { ThemeProvider } from './context/theme-provider'
@@ -115,7 +115,9 @@ declare module '@tanstack/react-router' {
 
 // Render the app
 const rootElement = document.getElementById('root')!
-// Set document.title and favicon from cached status, then refresh from network
+// Apply bundled branding before React mounts. Branding intentionally does not
+// depend on the status cache or a remote logo URL, preventing an upstream logo
+// flash on first paint and when an older browser cache is restored.
 ;(function initSystemBranding() {
   try {
     if (typeof window === 'undefined' || typeof document === 'undefined') return
@@ -126,27 +128,8 @@ const rootElement = document.getElementById('root')!
       ) as HTMLMetaElement | null
       if (metaTitle) metaTitle.setAttribute('content', name)
     }
-    // Cache-first
-    try {
-      const s = readCachedStatus()
-      if (s) {
-        if (typeof s.system_name === 'string') apply(s.system_name)
-        if (typeof s.logo === 'string') applyFaviconToDom(s.logo)
-      }
-    } catch {
-      /* empty */
-    }
-    // Background refresh
-    getSharedStatus()
-      .then((s) => {
-        if (s?.system_name) {
-          apply(s.system_name as string)
-        }
-        if (s?.logo) applyFaviconToDom(s.logo as string)
-      })
-      .catch(() => {
-        /* empty */
-      })
+    apply(DEFAULT_SYSTEM_NAME)
+    applyFaviconToDom(DEFAULT_LOGO)
   } catch {
     /* empty */
   }

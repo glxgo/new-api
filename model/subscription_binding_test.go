@@ -51,6 +51,30 @@ func testSubscriptionPlan(title, group string) SubscriptionPlan {
 	}
 }
 
+func TestGetVisibleUserSubscriptionsIncludesFutureAndExcludesExpired(t *testing.T) {
+	db := setupSubscriptionBindingTestDB(t)
+	now := common.GetTimestamp()
+	subscriptions := []UserSubscription{
+		{UserId: 27, PlanId: 1, PlanTitle: "current", Status: "active", StartTime: now - 60, EndTime: now + 3600},
+		{UserId: 27, PlanId: 2, PlanTitle: "future", Status: "active", StartTime: now + 3600, EndTime: now + 7200},
+		{UserId: 27, PlanId: 3, PlanTitle: "elapsed", Status: "active", StartTime: now - 7200, EndTime: now - 3600},
+		{UserId: 27, PlanId: 4, PlanTitle: "expired", Status: "expired", StartTime: now - 7200, EndTime: now - 3600},
+		{UserId: 28, PlanId: 5, PlanTitle: "other-user", Status: "active", StartTime: now - 60, EndTime: now + 3600},
+	}
+	require.NoError(t, db.Create(&subscriptions).Error)
+
+	visible, err := GetVisibleUserSubscriptions(27)
+	require.NoError(t, err)
+	require.Len(t, visible, 2)
+	require.Equal(t, "future", visible[0].Subscription.PlanTitle)
+	require.Equal(t, "current", visible[1].Subscription.PlanTitle)
+
+	active, err := GetAllActiveUserSubscriptions(27)
+	require.NoError(t, err)
+	require.Len(t, active, 1, "future subscriptions must be visible but not usable before start_time")
+	require.Equal(t, "current", active[0].Subscription.PlanTitle)
+}
+
 func TestHasSubscriptionPlanByGroupReservesPackageGroup(t *testing.T) {
 	db := setupSubscriptionBindingTestDB(t)
 	plan := testSubscriptionPlan("package group", "package-only")

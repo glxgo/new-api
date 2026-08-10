@@ -1,21 +1,24 @@
 package model
 
-// DividendRecord 分润发放明细(T+1 结算审计用)。钱包消费按
-// 「收款人 + 消费用户 + 结算日 + 类型」聚合为一条，订单分润仍按订单记录。
+// DividendRecord is the commission audit ledger. PolicyVersion=0 rows are
+// immutable historical profit settlements; PolicyVersion=1 rows are generated
+// from real paid recharge credits and always leave legacy profit fields at 0.
 type DividendRecord struct {
-	Id                  int    `json:"id" gorm:"primaryKey;autoIncrement"`
-	BatchId             string `json:"batch_id" gorm:"type:varchar(40);index;not null"`              // 结算批次, 如 "2026-06-16"
-	UserId              int    `json:"user_id" gorm:"index;not null"`                                // 收款用户(分润归属)
-	SourceUserId        int    `json:"source_user_id" gorm:"index;not null"`                         // 产生消费的用户
-	LogId               int    `json:"log_id" gorm:"index;not null"`                                 // 兼容旧记录；按日聚合记录为 0
-	Type                int    `json:"type" gorm:"not null"`                                         // 见 DividendType* 常量
-	GrossProfit         int    `json:"gross_profit" gorm:"not null"`                                 // 当日该用户产生的毛利(quota 单位)
-	Amount              int    `json:"amount" gorm:"not null"`                                       // 当日该用户产生的返利(quota 单位)
-	SourceUsage         int    `json:"source_usage" gorm:"not null;default:0"`                       // 当日该用户总用量(quota 单位)
-	SourceRechargeCents int64  `json:"source_recharge_cents" gorm:"not null;default:0"`              // 当日该用户实际充值金额(分)
-	RequestCount        int    `json:"request_count" gorm:"not null;default:0"`                      // 聚合的消费请求数
-	SourceRef           string `json:"source_ref" gorm:"type:varchar(64);index;not null;default:''"` // 幂等/聚合键
-	CreatedAt           int64  `json:"created_at" gorm:"bigint"`
+	Id                  int     `json:"id" gorm:"primaryKey;autoIncrement"`
+	BatchId             string  `json:"batch_id" gorm:"type:varchar(40);index;not null"`              // 结算批次, 如 "2026-06-16"
+	UserId              int     `json:"user_id" gorm:"index;not null"`                                // 收款用户(分润归属)
+	SourceUserId        int     `json:"source_user_id" gorm:"index;not null"`                         // 产生消费的用户
+	LogId               int     `json:"log_id" gorm:"index;not null"`                                 // 兼容旧记录；按日聚合记录为 0
+	Type                int     `json:"type" gorm:"not null"`                                         // 见 DividendType* 常量
+	GrossProfit         int     `json:"gross_profit" gorm:"not null"`                                 // 历史兼容字段；新策略固定为 0
+	Amount              int     `json:"amount" gorm:"not null"`                                       // 发放返利/分红(quota 单位)
+	SourceUsage         int     `json:"source_usage" gorm:"not null;default:0"`                       // 历史兼容字段；新策略固定为 0
+	SourceRechargeCents int64   `json:"source_recharge_cents" gorm:"not null;default:0"`              // 当日该用户实际充值金额(分)
+	RequestCount        int     `json:"request_count" gorm:"not null;default:0"`                      // 聚合的消费请求数
+	SourceRef           string  `json:"source_ref" gorm:"type:varchar(64);index;not null;default:''"` // 幂等/聚合键
+	CommissionKey       *string `json:"-" gorm:"type:varchar(160);uniqueIndex"`                       // 新策略幂等键；历史记录为 NULL
+	PolicyVersion       int     `json:"policy_version" gorm:"not null;default:0;index"`               // 0=历史利润结算, 1=固定充值比例
+	CreatedAt           int64   `json:"created_at" gorm:"bigint"`
 }
 
 func (DividendRecord) TableName() string {
@@ -24,10 +27,10 @@ func (DividendRecord) TableName() string {
 
 // 分润类型常量
 const (
-	DividendTypeDirect   = 1 // 拉新返利 - 直接上级(毛利 × AffiliateDirectRate)
-	DividendTypeIndirect = 2 // 拉新返利 - 间接上级(毛利 × AffiliateIndirectRate)
-	DividendTypeAdmin    = 3 // 管理员分红(树顶管理员, 毛利 × DividendRate, 上限 MaxDividendRate)
-	DividendTypeRoot     = 4 // 超管分红(毛利 × RootDividendRate)
+	DividendTypeDirect   = 1 // 普通用户直属 5%；代理直属 8%
+	DividendTypeIndirect = 2 // 普通用户二级 2%；代理二级 4%
+	DividendTypeAdmin    = 3 // 管理员直属 15%；管理员二级 5%
+	DividendTypeRoot     = 4 // 超级管理员固定 5%
 )
 
 // BatchInsertDividendRecords 批量插入分润明细。
@@ -52,7 +55,7 @@ func HasDividendRecordBySourceRef(sourceRef string) (bool, error) {
 func GetDividendRecordsByRecipient(userId int, page, pageSize int) ([]*DividendRecord, int64, error) {
 	var records []*DividendRecord
 	var total int64
-	tx := DB.Model(&DividendRecord{}).Where("user_id = ? AND type IN ?", userId, []int{DividendTypeDirect, DividendTypeIndirect})
+	tx := DB.Model(&DividendRecord{}).Where("user_id = ? AND type IN ? AND policy_version = ?", userId, []int{DividendTypeDirect, DividendTypeIndirect}, RechargeCommissionPolicyV1)
 	tx.Count(&total)
 	err := tx.Order("id desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&records).Error
 	return records, total, err
@@ -61,13 +64,10 @@ func GetDividendRecordsByRecipient(userId int, page, pageSize int) ([]*DividendR
 type AffiliateSourceSummary struct {
 	SourceUserId  int
 	RechargeCents int64
-	Usage         int64
-	GrossProfit   int64
 	Rebate        int64
 }
 
-// GetAffiliateSourceSummaries 返回指定下级为某个收款用户累计产生的充值、用量、
-// 已结算毛利和返利。充值取真实支付台账，用量取消费日志，毛利/返利取分润审计表。
+// GetAffiliateSourceSummaries 返回指定下级为某个收款用户累计产生的真实付款与返利。
 func GetAffiliateSourceSummaries(recipientId int, sourceUserIds []int) (map[int]AffiliateSourceSummary, error) {
 	result := make(map[int]AffiliateSourceSummary, len(sourceUserIds))
 	if recipientId <= 0 || len(sourceUserIds) == 0 {
@@ -84,7 +84,7 @@ func GetAffiliateSourceSummaries(recipientId int, sourceUserIds []int) (map[int]
 	var recharges []rechargeRow
 	if err := DB.Model(&RechargeCredit{}).
 		Select("user_id, COALESCE(SUM(amount_cents), 0) AS amount").
-		Where("user_id IN ?", sourceUserIds).
+		Where("user_id IN ? AND source_type IN ?", sourceUserIds, []string{RechargeSourceWalletTopUp, RechargeSourceSubscription, RechargeSourceVirtualMembership}).
 		Group("user_id").Scan(&recharges).Error; err != nil {
 		return nil, err
 	}
@@ -94,40 +94,19 @@ func GetAffiliateSourceSummaries(recipientId int, sourceUserIds []int) (map[int]
 		result[row.UserId] = summary
 	}
 
-	type usageRow struct {
-		UserId int
-		Amount int64
-	}
-	var usages []usageRow
-	if LOG_DB != nil {
-		if err := LOG_DB.Model(&Log{}).
-			Select("user_id, COALESCE(SUM(quota), 0) AS amount").
-			Where("user_id IN ? AND type = ?", sourceUserIds, LogTypeConsume).
-			Group("user_id").Scan(&usages).Error; err != nil {
-			return nil, err
-		}
-	}
-	for _, row := range usages {
-		summary := result[row.UserId]
-		summary.Usage = row.Amount
-		result[row.UserId] = summary
-	}
-
 	type dividendRow struct {
 		SourceUserId int
-		GrossProfit  int64
 		Rebate       int64
 	}
 	var dividends []dividendRow
 	if err := DB.Model(&DividendRecord{}).
-		Select("source_user_id, COALESCE(SUM(gross_profit), 0) AS gross_profit, COALESCE(SUM(amount), 0) AS rebate").
-		Where("user_id = ? AND source_user_id IN ? AND type IN ?", recipientId, sourceUserIds, []int{DividendTypeDirect, DividendTypeIndirect}).
+		Select("source_user_id, COALESCE(SUM(amount), 0) AS rebate").
+		Where("user_id = ? AND source_user_id IN ? AND type IN ? AND policy_version = ?", recipientId, sourceUserIds, []int{DividendTypeDirect, DividendTypeIndirect}, RechargeCommissionPolicyV1).
 		Group("source_user_id").Scan(&dividends).Error; err != nil {
 		return nil, err
 	}
 	for _, row := range dividends {
 		summary := result[row.SourceUserId]
-		summary.GrossProfit = row.GrossProfit
 		summary.Rebate = row.Rebate
 		result[row.SourceUserId] = summary
 	}
@@ -147,7 +126,7 @@ func GetRechargeCentsByUsersBetween(userIds []int, start, end int64) (map[int]in
 	var rows []row
 	err := DB.Model(&RechargeCredit{}).
 		Select("user_id, COALESCE(SUM(amount_cents), 0) AS amount").
-		Where("user_id IN ? AND created_at >= ? AND created_at < ?", userIds, start, end).
+		Where("user_id IN ? AND source_type IN ? AND created_at >= ? AND created_at < ?", userIds, []string{RechargeSourceWalletTopUp, RechargeSourceSubscription, RechargeSourceVirtualMembership}, start, end).
 		Group("user_id").Scan(&rows).Error
 	if err != nil {
 		return nil, err
@@ -162,7 +141,7 @@ func GetRechargeCentsByUsersBetween(userIds []int, start, end int64) (map[int]in
 func SumDividendByRecipient(userId int) (int64, error) {
 	var sum int64
 	err := DB.Model(&DividendRecord{}).
-		Where("user_id = ? AND type IN ?", userId, []int{DividendTypeDirect, DividendTypeIndirect}).
+		Where("user_id = ? AND type IN ? AND policy_version = ?", userId, []int{DividendTypeDirect, DividendTypeIndirect}, RechargeCommissionPolicyV1).
 		Select("COALESCE(SUM(amount),0)").Scan(&sum).Error
 	return sum, err
 }
@@ -171,7 +150,7 @@ func SumDividendByRecipient(userId int) (int64, error) {
 func SumDividendBySource(recipientId, sourceUserId int) (int64, error) {
 	var sum int64
 	err := DB.Model(&DividendRecord{}).
-		Where("user_id = ? AND source_user_id = ? AND type IN ?", recipientId, sourceUserId, []int{DividendTypeDirect, DividendTypeIndirect}).
+		Where("user_id = ? AND source_user_id = ? AND type IN ? AND policy_version = ?", recipientId, sourceUserId, []int{DividendTypeDirect, DividendTypeIndirect}, RechargeCommissionPolicyV1).
 		Select("COALESCE(SUM(amount),0)").Scan(&sum).Error
 	return sum, err
 }

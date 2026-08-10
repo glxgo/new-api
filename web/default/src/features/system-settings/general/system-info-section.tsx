@@ -20,7 +20,7 @@ import * as z from 'zod'
 import type { Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useTranslation } from 'react-i18next'
-import { DEFAULT_LOGO } from '@/lib/constants'
+import { DEFAULT_LOGO, DEFAULT_SYSTEM_NAME } from '@/lib/constants'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -221,7 +221,7 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
                   <FormItem>
                     <FormLabel>{t('System Name')}</FormLabel>
                     <FormControl>
-                      <Input placeholder={t('New API')} {...field} />
+                      <Input placeholder={DEFAULT_SYSTEM_NAME} {...field} />
                     </FormControl>
                     <FormDescription>
                       {t('The name displayed across the application')}

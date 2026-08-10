@@ -23,7 +23,6 @@ export interface VirtualMembershipVariant {
   label: string
   original_price_amount: number
   price_amount: number
-  fixed_profit_amount: number
   weekly_quota: number
   five_hour_quota: number
   concurrency_limit: number
@@ -44,7 +43,6 @@ export interface VirtualMembershipPlan {
   three_group_price: number
   four_group_original_price: number
   four_group_price: number
-  fixed_profit_amount: number
   currency: string
   duration_days: number
   weekly_quota: number
@@ -76,6 +74,7 @@ export interface UserVirtualMembership {
   five_hour_used: number
   five_hour_remaining: number
   five_hour_percent: number
+  lifetime_used: number
   concurrency_limit: number
   rpm_limit: number
   weekly_reset_at: number

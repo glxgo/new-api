@@ -31,9 +31,8 @@ export interface AffiliateSummary {
   direct_count: number
   indirect_count: number
   total_rebate: number // quota 单位
-  direct_rate: number // 小数, 0.10 = 10%
+  direct_rate: number // 小数, 0.05 = 5%
   indirect_rate: number
-  order_direct_rate: number
   rebate_withdrawable: boolean
 }
 
@@ -43,8 +42,6 @@ export interface DownlineUser {
   username: string
   created_at: number
   recharge_cents: number // 真实支付金额，分
-  usage: number // 累计 API 用量(quota)
-  gross_profit: number // 已结算毛利(quota)
   rebate: number // 该下级为我产生的累计返利(quota)
 }
 
@@ -56,11 +53,10 @@ export interface RebateRecord {
   source_user_id: number
   log_id: number
   type: 1 | 2
-  gross_profit: number
   amount: number
-  source_usage: number
   source_recharge_cents: number
-  request_count: number
+  source_ref: string
+  policy_version: number
   created_at: number
 }
 

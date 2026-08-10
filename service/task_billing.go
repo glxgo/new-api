@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -68,7 +67,7 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 		TokenName: tokenName,
 		Quota:     info.PriceData.Quota,
 		// 异步任务(图片/视频)通常按次计费, ModelCost($/1M tokens) 不适用, 成本暂记 0。
-		// 后续可扩展按次成本(ModelCost 增加 per-call 字段); 快照仍填写供 T+1 分润用。
+		// 成本快照仅供运营分析，不参与充值分润。
 		Cost:                calcTaskCost(info.PriceData.Quota, info.ChannelCostRatioPPM),
 		PaidQuota:           paidPrincipal,
 		PaidGiftQuota:       paidGift,
@@ -329,10 +328,6 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 		}
 	} else {
 		paidGift, paidPrincipal, err = taskAdjustFunding(task, quotaDelta)
-	}
-	if errors.Is(err, model.ErrChannelCostRatioMissing) {
-		logger.LogWarn(ctx, fmt.Sprintf("任务 %s 渠道成本倍率缺失，已保留补账证据", task.TaskID))
-		err = nil
 	}
 	if err != nil {
 		logger.LogError(ctx, fmt.Sprintf("差额结算资金调整失败 task %s: %s", task.TaskID, err.Error()))

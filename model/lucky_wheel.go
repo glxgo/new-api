@@ -338,14 +338,13 @@ type SubscriptionConsumptionPriority struct {
 
 func defaultLuckyPools() ([]LuckyPrizeConfig, []LuckyPrizeConfig) {
 	subscription := []LuckyPrizeConfig{
-		{LuckyPrizeQuota5, 5_000_000, 360_000},
-		{LuckyPrizeQuota10, 10_000_000, 320_000},
-		{LuckyPrizeQuota20, 20_000_000, 200_000},
+		{LuckyPrizeQuota10, 10_000_000, 430_000},
+		{LuckyPrizeQuota20, 20_000_000, 260_000},
+		{LuckyPrizeQuota30, 30_000_000, 200_000},
 		{LuckyPrizeQuota50, 50_000_000, 30_000},
 		{LuckyPrizeQuota100, 100_000_000, 10_000},
 		{LuckyPrizeGift5, 5_000_000, 47_000},
 		{LuckyPrizeGift10, 10_000_000, 20_000},
-		{LuckyPrizeGift20, 20_000_000, 10_000},
 		{LuckyPrizeDouble, 0, 250},
 		{LuckyPrizeFullReset, 0, 1_500},
 		{LuckyPrizeCrazy5H, 0, 1_250},
@@ -542,6 +541,71 @@ func EnsureLuckyRechargeBonusForty() error {
 	})
 }
 
+const luckyPrizeProbability20260811MigrationKey = "LuckyPrizeProbability20260811MigratedV1"
+
+// EnsureLuckyPrizeProbability20260811 publishes the owner-selected
+// subscription-card probability table as a new immutable rule version. Cards
+// already issued keep their original RuleSetId, while newly eligible orders
+// and newly issued cards use the new active rule. The recharge-card pool is
+// intentionally copied unchanged because it cannot award subscription-only
+// double/reset prizes.
+func EnsureLuckyPrizeProbability20260811() error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var marker Option
+		if err := tx.Where(commonKeyCol+" = ?", luckyPrizeProbability20260811MigrationKey).First(&marker).Error; err == nil {
+			return nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
+		campaign, active, err := GetLuckyCampaignTx(tx, true)
+		if err != nil {
+			return err
+		}
+		desiredSubscription, _ := defaultLuckyPools()
+		desiredJSON, err := common.Marshal(desiredSubscription)
+		if err != nil {
+			return err
+		}
+		if active.SubscriptionPool != string(desiredJSON) {
+			var maxVersion int
+			if err := tx.Model(&LuckyRuleSet{}).Where("campaign_id = ?", campaign.Id).
+				Select("COALESCE(MAX(version), 0)").Scan(&maxVersion).Error; err != nil {
+				return err
+			}
+			now := GetDBTimestamp()
+			next := *active
+			next.Id = 0
+			next.Version = maxVersion + 1
+			next.Status = "active"
+			next.SubscriptionPool = string(desiredJSON)
+			next.PublishedAt = now
+			next.EffectiveAt = now
+			next.CreatedBy = 0
+			next.CreatedAt = now
+			RefreshLuckyRuleChecksum(&next)
+			if err := ValidateLuckyRuleSet(&next); err != nil {
+				return err
+			}
+			if err := tx.Model(&LuckyRuleSet{}).
+				Where("campaign_id = ? AND status = ?", campaign.Id, "active").
+				Update("status", "retired").Error; err != nil {
+				return err
+			}
+			if err := tx.Create(&next).Error; err != nil {
+				return err
+			}
+			campaign.ActiveRuleSetId = next.Id
+			campaign.SettingsVersion++
+			if err := tx.Save(campaign).Error; err != nil {
+				return err
+			}
+		}
+
+		return tx.Create(&Option{Key: luckyPrizeProbability20260811MigrationKey, Value: "true"}).Error
+	})
+}
+
 func GetLuckyCampaignTx(tx *gorm.DB, lock bool) (*LuckyCampaign, *LuckyRuleSet, error) {
 	if tx == nil {
 		tx = DB
@@ -654,9 +718,12 @@ func RecordLuckyRechargeTx(tx *gorm.DB, topUp *TopUp) ([]LuckyCard, error) {
 	if err := tx.First(&rule, topUp.LuckyRuleSetId).Error; err != nil {
 		return nil, err
 	}
-	// Money is the actual cash charged after discounts. Amount is the wallet
-	// face value and must not inflate activity progress.
-	amountCents := MoneyToRechargeCents(topUp.Money)
+	// New payment flows persist the authenticated provider amount/currency.
+	// Historical rows fall back to Money for reversal compatibility only.
+	amountCents, snapshotErr := RechargeCentsForPayment(PaymentSnapshot{AmountMinor: topUp.ActualPaymentAmountMinor, Currency: topUp.ActualPaymentCurrency})
+	if snapshotErr != nil {
+		amountCents = MoneyToRechargeCents(topUp.Money)
+	}
 	if amountCents <= 0 {
 		return nil, nil
 	}
@@ -690,6 +757,84 @@ func RecordLuckyRechargeTx(tx *gorm.DB, topUp *TopUp) ([]LuckyCard, error) {
 			SourceRef: topUp.TradeNo, SourceCycleKey: fmt.Sprintf("%d", stage),
 			ExpiresAt:      event.OccurredAt + rule.RechargeCardValidSeconds,
 			GrantKeyPrefix: fmt.Sprintf("recharge:%d:stage:%d", event.Id, stage), Count: 1,
+			HonorEligibilitySnapshot: true,
+		})
+		if grantErr != nil {
+			return nil, grantErr
+		}
+		cards = append(cards, issued...)
+		progress.HighestAwardedStage = stage
+	}
+	progress.NextThresholdCents = LuckyThresholdCents(progress.HighestAwardedStage + 1)
+	progress.UpdatedAt = common.GetTimestamp()
+	if err := tx.Save(&progress).Error; err != nil {
+		return nil, err
+	}
+	return cards, nil
+}
+
+// RecordLuckyPaidOrderRechargeTx adds a non-wallet, externally paid order to
+// the same cumulative recharge progress. It deliberately does not create a
+// TopUp row or wallet quota: the payment bought a product, not wallet balance.
+func RecordLuckyPaidOrderRechargeTx(tx *gorm.DB, userId int, amountCents int64, sourceType, sourceRef string, occurredAt int64) ([]LuckyCard, error) {
+	if tx == nil || userId <= 0 || amountCents <= 0 || strings.TrimSpace(sourceType) == "" || strings.TrimSpace(sourceRef) == "" {
+		return nil, errors.New("invalid lucky paid-order recharge")
+	}
+	campaign, rule, err := GetLuckyCampaignTx(tx, true)
+	if err != nil {
+		return nil, err
+	}
+	if campaign.IssuancePaused {
+		return nil, nil
+	}
+	return RecordLuckyPaidOrderRechargeSnapshotTx(tx, userId, amountCents, sourceType, sourceRef, occurredAt, rule.Id, true)
+}
+
+func RecordLuckyPaidOrderRechargeSnapshotTx(tx *gorm.DB, userId int, amountCents int64, sourceType, sourceRef string, occurredAt, ruleSetId int64, eligible bool) ([]LuckyCard, error) {
+	if !eligible || ruleSetId <= 0 {
+		return nil, nil
+	}
+	campaign, _, err := GetLuckyCampaignTx(tx, true)
+	if err != nil {
+		return nil, err
+	}
+	var rule LuckyRuleSet
+	if err := tx.First(&rule, ruleSetId).Error; err != nil {
+		return nil, err
+	}
+	if occurredAt <= 0 {
+		occurredAt = GetDBTimestamp()
+	}
+	event := LuckyRechargeEvent{
+		UserId: userId, SourceType: sourceType, SourceRef: sourceRef,
+		Direction: 1, AmountCents: amountCents, RuleSetId: ruleSetId,
+		OccurredAt: occurredAt, CreatedAt: common.GetTimestamp(),
+	}
+	result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&event)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+	var progress LuckyRechargeProgress
+	err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&progress, "user_id = ?", userId).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		progress = LuckyRechargeProgress{UserId: userId, NextThresholdCents: LuckyThresholdCents(1)}
+		if err = tx.Create(&progress).Error; err != nil {
+			return nil, err
+		}
+	} else if err != nil {
+		return nil, err
+	}
+	progress.EligibleCents += amountCents
+	cards := make([]LuckyCard, 0)
+	for stage := progress.HighestAwardedStage + 1; LuckyThresholdCents(stage) <= progress.EligibleCents; stage++ {
+		issued, grantErr := GrantLuckyCardsTx(tx, campaign, &rule, LuckyCardGrant{
+			UserId: userId, PoolType: LuckyPoolRecharge, SourceType: "recharge_threshold",
+			SourceRef: sourceRef, SourceCycleKey: fmt.Sprintf("%d", stage),
+			ExpiresAt:      event.OccurredAt + rule.RechargeCardValidSeconds,
+			GrantKeyPrefix: fmt.Sprintf("paid-recharge:%d:stage:%d", event.Id, stage), Count: 1,
 			HonorEligibilitySnapshot: true,
 		})
 		if grantErr != nil {
@@ -764,7 +909,10 @@ func ReverseLuckyRechargeTx(tx *gorm.DB, topUp *TopUp, reason string) (LuckySour
 	if !topUp.LuckyRechargeEligible || topUp.LuckyRuleSetId <= 0 {
 		return result, nil
 	}
-	amountCents := MoneyToRechargeCents(topUp.Money)
+	amountCents, snapshotErr := RechargeCentsForPayment(PaymentSnapshot{AmountMinor: topUp.ActualPaymentAmountMinor, Currency: topUp.ActualPaymentCurrency})
+	if snapshotErr != nil {
+		amountCents = MoneyToRechargeCents(topUp.Money)
+	}
 	if amountCents <= 0 {
 		return result, nil
 	}

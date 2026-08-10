@@ -118,17 +118,17 @@ function UsageLogsContent() {
 
   return (
     <>
-      <SectionPageLayout fixedContent variant='editorial'>
+      <SectionPageLayout fixedContent variant='editorial' density='compact'>
         <SectionPageLayout.Title>
           {activeCategory === 'common' ? t('Usage Logs') : t(pageMeta.titleKey)}
         </SectionPageLayout.Title>
-        <SectionPageLayout.Description>
-          {activeCategory === 'common'
-            ? t('API usage records')
-            : t('Task Logs')}
-        </SectionPageLayout.Description>
+        {activeCategory !== 'common' && (
+          <SectionPageLayout.Description>
+            {t('Task Logs')}
+          </SectionPageLayout.Description>
+        )}
         <SectionPageLayout.Content>
-          <div className='flex h-full min-h-0 flex-col gap-4'>
+          <div className='flex h-full min-h-0 flex-col gap-2.5'>
             {showTaskSwitcher && (
               <Tabs value={activeCategory} onValueChange={handleSectionChange}>
                 <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>

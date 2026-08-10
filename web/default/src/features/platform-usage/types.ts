@@ -38,7 +38,6 @@ export interface CPAQuotaWindow {
 
 export interface CPAAccountUsage {
   code: string
-  masked_email: string
   plan_type: string
   available: boolean
   enabled: boolean

@@ -27,20 +27,94 @@ type TopUp struct {
 	CompleteTime    int64   `json:"complete_time"`
 	// BalanceAfter 充值完成后用户余额快照(quota 单位, 本金+赠金)，
 	// 仅供财务流水展示，不参与计费/扣费/退款逻辑。历史订单为 0。
-	BalanceAfter          *int64 `json:"balance_after" gorm:"column:balance_after"`
-	Status                string `json:"status"`
-	LuckyRuleSetId        int64  `json:"lucky_rule_set_id" gorm:"index;not null;default:0"`
-	LuckyRechargeEligible bool   `json:"lucky_recharge_eligible" gorm:"not null;default:false"`
+	BalanceAfter                   *int64 `json:"balance_after" gorm:"column:balance_after"`
+	Status                         string `json:"status"`
+	LuckyRuleSetId                 int64  `json:"lucky_rule_set_id" gorm:"index;not null;default:0"`
+	LuckyRechargeEligible          bool   `json:"lucky_recharge_eligible" gorm:"not null;default:false"`
+	ExpectedPaymentAmountMinor     int64  `json:"expected_payment_amount_minor" gorm:"not null;default:0"`
+	ExpectedPaymentCurrency        string `json:"expected_payment_currency" gorm:"type:varchar(8);not null;default:''"`
+	CommissionBaseQuota            int64  `json:"commission_base_quota" gorm:"not null;default:0"`
+	ActualPaymentAmountMinor       int64  `json:"actual_payment_amount_minor" gorm:"not null;default:0"`
+	ActualPaymentCurrency          string `json:"actual_payment_currency" gorm:"type:varchar(8);not null;default:''"`
+	CommissionReconciliationStatus string `json:"commission_reconciliation_status" gorm:"type:varchar(32);not null;default:'';index"`
+	CommissionReconciliationReason string `json:"commission_reconciliation_reason" gorm:"type:varchar(255);not null;default:''"`
+}
+
+func SetTopUpPaymentExpectation(topUp *TopUp, snapshot PaymentSnapshot) error {
+	if topUp == nil {
+		return errors.New("topup is nil")
+	}
+	baseQuota, err := CommissionBaseQuotaForPayment(snapshot)
+	if err != nil {
+		return err
+	}
+	topUp.ExpectedPaymentAmountMinor = snapshot.AmountMinor
+	topUp.ExpectedPaymentCurrency = snapshot.Currency
+	topUp.CommissionBaseQuota = baseQuota
+	return nil
+}
+
+func applyVerifiedTopUpPayment(topUp *TopUp, actual PaymentSnapshot) error {
+	if topUp == nil {
+		return errors.New("topup is nil")
+	}
+	actual, err := NewPaymentSnapshotFromMinor(actual.AmountMinor, actual.Currency)
+	if err != nil {
+		return err
+	}
+	if topUp.ExpectedPaymentAmountMinor <= 0 || strings.TrimSpace(topUp.ExpectedPaymentCurrency) == "" {
+		// Stripe promotion codes and Creem provider products can change the
+		// amount independently of local display prices. Their authenticated
+		// webhook becomes the first immutable expectation.
+		if topUp.PaymentProvider != PaymentProviderStripe && topUp.PaymentProvider != PaymentProviderCreem {
+			return ErrPaymentSnapshotMismatch
+		}
+		if err := SetTopUpPaymentExpectation(topUp, actual); err != nil {
+			return err
+		}
+	}
+	if err := ValidatePaymentSnapshot(topUp.ExpectedPaymentAmountMinor, topUp.ExpectedPaymentCurrency, actual); err != nil {
+		return err
+	}
+	if topUp.ActualPaymentAmountMinor > 0 &&
+		(topUp.ActualPaymentAmountMinor != actual.AmountMinor || !strings.EqualFold(topUp.ActualPaymentCurrency, actual.Currency)) {
+		return ErrPaymentSnapshotMismatch
+	}
+	topUp.ActualPaymentAmountMinor = actual.AmountMinor
+	topUp.ActualPaymentCurrency = actual.Currency
+	topUp.CommissionReconciliationStatus = ""
+	topUp.CommissionReconciliationReason = ""
+	return nil
+}
+
+func reconcileVerifiedSuccessfulTopUpTx(tx *gorm.DB, topUp *TopUp) error {
+	if tx == nil || topUp == nil || topUp.Status != common.TopUpStatusSuccess {
+		return errors.New("invalid successful topup reconciliation")
+	}
+	if err := tx.Save(topUp).Error; err != nil {
+		return err
+	}
+	if _, err := RecordTopUpRechargeCreditTx(tx, topUp); err != nil {
+		return err
+	}
+	_, err := RecordLuckyRechargeTx(tx, topUp)
+	return err
 }
 
 func (topUp *TopUp) BeforeCreate(tx *gorm.DB) error {
-	if topUp.LuckyRuleSetId != 0 || topUp.LuckyRechargeEligible {
-		return nil
+	if topUp.LuckyRuleSetId == 0 && !topUp.LuckyRechargeEligible {
+		campaign, rule, err := GetLuckyCampaignTx(tx, false)
+		if err == nil && !campaign.IssuancePaused {
+			topUp.LuckyRuleSetId = rule.Id
+			topUp.LuckyRechargeEligible = true
+		}
 	}
-	campaign, rule, err := GetLuckyCampaignTx(tx, false)
-	if err == nil && !campaign.IssuancePaused {
-		topUp.LuckyRuleSetId = rule.Id
-		topUp.LuckyRechargeEligible = true
+	if topUp.PaymentProvider == PaymentProviderEpay && topUp.ExpectedPaymentAmountMinor == 0 && topUp.Money > 0 {
+		snapshot, err := NewPaymentSnapshotFromMoney(topUp.Money, "CNY")
+		if err != nil {
+			return err
+		}
+		return SetTopUpPaymentExpectation(topUp, snapshot)
 	}
 	return nil
 }
@@ -140,7 +214,7 @@ func snapshotBalanceAfterRecharge(tx *gorm.DB, userId int, quotaToAdd int) *int6
 	return &balance
 }
 
-func Recharge(referenceId string, customerId string, callerIp string) (err error) {
+func Recharge(referenceId string, customerId string, callerIp string, actual PaymentSnapshot) (err error) {
 	if referenceId == "" {
 		return errors.New("未提供支付单号")
 	}
@@ -162,7 +236,13 @@ func Recharge(referenceId string, customerId string, callerIp string) (err error
 		if topUp.PaymentProvider != PaymentProviderStripe {
 			return ErrPaymentMethodMismatch
 		}
+		if err := applyVerifiedTopUpPayment(topUp, actual); err != nil {
+			return err
+		}
 
+		if topUp.Status == common.TopUpStatusSuccess {
+			return reconcileVerifiedSuccessfulTopUpTx(tx, topUp)
+		}
 		if topUp.Status != common.TopUpStatusPending {
 			return errors.New("充值订单状态错误")
 		}
@@ -193,13 +273,22 @@ func Recharge(referenceId string, customerId string, callerIp string) (err error
 		return errors.New("充值失败，请稍后重试")
 	}
 
-	RecordTopupLog(topUp.UserId, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%d", logger.FormatQuota(int(quota)), topUp.Amount), callerIp, topUp.PaymentMethod, PaymentMethodStripe)
+	verifiedQuota := int(decimal.NewFromFloat(topUp.Money).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).IntPart())
+	if logErr := EnsureTopupPaymentLog(
+		topUp.UserId,
+		"wallet_topup:stripe:"+topUp.TradeNo,
+		fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%d", logger.FormatQuota(verifiedQuota), topUp.Amount),
+		callerIp, topUp.PaymentMethod, PaymentMethodStripe,
+	); logErr != nil {
+		common.SysLog("failed to ensure stripe topup log: " + logErr.Error())
+	}
 	_ = InvalidateUserCache(topUp.UserId)
+	InvalidateRechargeCommissionRecipientCaches(RechargeSourceWalletTopUp, topUp.TradeNo)
 
 	return nil
 }
 
-func CompleteEpayTopUp(tradeNo string, actualPaymentMethod string) (*TopUp, int, error) {
+func CompleteEpayTopUp(tradeNo string, actualPaymentMethod string, actual PaymentSnapshot) (*TopUp, int, error) {
 	if strings.TrimSpace(tradeNo) == "" {
 		return nil, 0, errors.New("未提供支付单号")
 	}
@@ -216,8 +305,11 @@ func CompleteEpayTopUp(tradeNo string, actualPaymentMethod string) (*TopUp, int,
 		if completed.PaymentProvider != PaymentProviderEpay {
 			return ErrPaymentMethodMismatch
 		}
+		if err := applyVerifiedTopUpPayment(&completed, actual); err != nil {
+			return err
+		}
 		if completed.Status == common.TopUpStatusSuccess {
-			return nil
+			return reconcileVerifiedSuccessfulTopUpTx(tx, &completed)
 		}
 		if completed.Status != common.TopUpStatusPending {
 			return ErrTopUpStatusInvalid
@@ -261,6 +353,7 @@ func CompleteEpayTopUp(tradeNo string, actualPaymentMethod string) (*TopUp, int,
 	if quotaToAdd > 0 {
 		_ = InvalidateUserCache(completed.UserId)
 	}
+	InvalidateRechargeCommissionRecipientCaches(RechargeSourceWalletTopUp, completed.TradeNo)
 	return &completed, quotaToAdd, nil
 }
 
@@ -454,11 +547,14 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 		}
 
 		// 计算应充值额度：
-		// - Stripe 订单：Money 代表经分组倍率换算后的美元数量，直接 * QuotaPerUnit
-		// - 其他订单（如易支付）：Amount 为美元数量，* QuotaPerUnit
+		// - Creem 订单：Amount 在下单时已经是内部 quota，不得再乘 QuotaPerUnit。
+		// - Stripe 订单：Money 代表经分组倍率换算后的美元数量，直接 * QuotaPerUnit。
+		// - 其他订单（如易支付）：Amount 为美元数量，* QuotaPerUnit。
 		if topUp.PaymentProvider == PaymentProviderStripe {
 			dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
 			quotaToAdd = int(decimal.NewFromFloat(topUp.Money).Mul(dQuotaPerUnit).IntPart())
+		} else if topUp.PaymentProvider == PaymentProviderCreem {
+			quotaToAdd = int(topUp.Amount)
 		} else {
 			dAmount := decimal.NewFromInt(topUp.Amount)
 			dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
@@ -467,6 +563,13 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 		if quotaToAdd <= 0 {
 			return errors.New("无效的充值额度")
 		}
+		// Manual completion proves only that an administrator wants to grant the
+		// purchased quota. Even when the order has an expected payment snapshot,
+		// it does not prove that the provider received money. Cash-only effects
+		// (cumulative recharge, commission and lucky-wheel progress) are deferred
+		// until an authenticated provider callback supplies the actual snapshot.
+		topUp.CommissionReconciliationStatus = "manual_review"
+		topUp.CommissionReconciliationReason = "manual completion has no verified provider payment snapshot; cumulative recharge, commission and lucky progress were withheld"
 
 		// 标记完成
 		topUp.CompleteTime = common.GetTimestamp()
@@ -480,13 +583,6 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 		if err := tx.Model(&User{}).Where("id = ?", topUp.UserId).Update("quota", gorm.Expr("quota + ?", quotaToAdd)).Error; err != nil {
 			return err
 		}
-		if _, err := RecordTopUpRechargeCreditTx(tx, topUp); err != nil {
-			return err
-		}
-		if _, err := RecordLuckyRechargeTx(tx, topUp); err != nil {
-			return err
-		}
-
 		userId = topUp.UserId
 		payMoney = topUp.Money
 		paymentMethod = topUp.PaymentMethod
@@ -500,9 +596,10 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 	// 事务外记录日志，避免阻塞
 	RecordTopupLog(userId, fmt.Sprintf("管理员补单成功，充值金额: %v，支付金额：%f", logger.FormatQuota(quotaToAdd), payMoney), callerIp, paymentMethod, "admin")
 	_ = InvalidateUserCache(userId)
+	InvalidateRechargeCommissionRecipientCaches(RechargeSourceWalletTopUp, tradeNo)
 	return nil
 }
-func RechargeCreem(referenceId string, customerEmail string, customerName string, callerIp string) (err error) {
+func RechargeCreem(referenceId string, customerEmail string, customerName string, callerIp string, actual PaymentSnapshot) (err error) {
 	if referenceId == "" {
 		return errors.New("未提供支付单号")
 	}
@@ -524,7 +621,13 @@ func RechargeCreem(referenceId string, customerEmail string, customerName string
 		if topUp.PaymentProvider != PaymentProviderCreem {
 			return ErrPaymentMethodMismatch
 		}
+		if err := applyVerifiedTopUpPayment(topUp, actual); err != nil {
+			return err
+		}
 
+		if topUp.Status == common.TopUpStatusSuccess {
+			return reconcileVerifiedSuccessfulTopUpTx(tx, topUp)
+		}
 		if topUp.Status != common.TopUpStatusPending {
 			return errors.New("充值订单状态错误")
 		}
@@ -576,13 +679,21 @@ func RechargeCreem(referenceId string, customerEmail string, customerName string
 		return errors.New("充值失败，请稍后重试")
 	}
 
-	RecordTopupLog(topUp.UserId, fmt.Sprintf("使用Creem充值成功，充值额度: %v，支付金额：%.2f", quota, topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodCreem)
+	if logErr := EnsureTopupPaymentLog(
+		topUp.UserId,
+		"wallet_topup:creem:"+topUp.TradeNo,
+		fmt.Sprintf("使用Creem充值成功，充值额度: %v，支付金额：%.2f", topUp.Amount, topUp.Money),
+		callerIp, topUp.PaymentMethod, PaymentMethodCreem,
+	); logErr != nil {
+		common.SysLog("failed to ensure creem topup log: " + logErr.Error())
+	}
 	_ = InvalidateUserCache(topUp.UserId)
+	InvalidateRechargeCommissionRecipientCaches(RechargeSourceWalletTopUp, topUp.TradeNo)
 
 	return nil
 }
 
-func RechargeWaffo(tradeNo string, callerIp string) (err error) {
+func RechargeWaffo(tradeNo string, callerIp string, actual PaymentSnapshot) (err error) {
 	if tradeNo == "" {
 		return errors.New("未提供支付单号")
 	}
@@ -604,9 +715,12 @@ func RechargeWaffo(tradeNo string, callerIp string) (err error) {
 		if topUp.PaymentProvider != PaymentProviderWaffo {
 			return ErrPaymentMethodMismatch
 		}
+		if err := applyVerifiedTopUpPayment(topUp, actual); err != nil {
+			return err
+		}
 
 		if topUp.Status == common.TopUpStatusSuccess {
-			return nil // 幂等：已成功直接返回
+			return reconcileVerifiedSuccessfulTopUpTx(tx, topUp)
 		}
 
 		if topUp.Status != common.TopUpStatusPending {
@@ -647,11 +761,12 @@ func RechargeWaffo(tradeNo string, callerIp string) (err error) {
 		RecordTopupLog(topUp.UserId, fmt.Sprintf("Waffo充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodWaffo)
 		_ = InvalidateUserCache(topUp.UserId)
 	}
+	InvalidateRechargeCommissionRecipientCaches(RechargeSourceWalletTopUp, topUp.TradeNo)
 
 	return nil
 }
 
-func RechargeWaffoPancake(tradeNo string) (err error) {
+func RechargeWaffoPancake(tradeNo string, actual PaymentSnapshot) (err error) {
 	if tradeNo == "" {
 		return errors.New("未提供支付单号")
 	}
@@ -673,9 +788,12 @@ func RechargeWaffoPancake(tradeNo string) (err error) {
 		if topUp.PaymentProvider != PaymentProviderWaffoPancake {
 			return ErrPaymentMethodMismatch
 		}
+		if err := applyVerifiedTopUpPayment(topUp, actual); err != nil {
+			return err
+		}
 
 		if topUp.Status == common.TopUpStatusSuccess {
-			return nil
+			return reconcileVerifiedSuccessfulTopUpTx(tx, topUp)
 		}
 
 		if topUp.Status != common.TopUpStatusPending {
@@ -714,6 +832,7 @@ func RechargeWaffoPancake(tradeNo string) (err error) {
 		RecordLog(topUp.UserId, LogTypeTopup, fmt.Sprintf("Waffo Pancake充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money))
 		_ = InvalidateUserCache(topUp.UserId)
 	}
+	InvalidateRechargeCommissionRecipientCaches(RechargeSourceWalletTopUp, topUp.TradeNo)
 
 	return nil
 }

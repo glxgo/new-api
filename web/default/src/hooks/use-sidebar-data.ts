@@ -40,7 +40,6 @@ import {
   Wallet,
   Dices,
   Sparkles,
-  Bell,
   Gauge,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -63,11 +62,6 @@ export function useSidebarData(): SidebarData {
 
   // Withdrawable commission/dividend account (agent and admin+).
   const personalItems: NavItem[] = [
-    {
-      title: '公告',
-      url: '/announcements',
-      icon: Bell,
-    },
     {
       title: t('Wallet'),
       url: '/wallet',
@@ -159,7 +153,7 @@ export function useSidebarData(): SidebarData {
         icon: HandCoins,
       },
       {
-        title: t('Profit Dashboard'),
+        title: t('充值分润审计'),
         url: '/profit',
         icon: BarChart3,
       },

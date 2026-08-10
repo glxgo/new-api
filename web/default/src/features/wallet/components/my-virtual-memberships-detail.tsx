@@ -82,6 +82,14 @@ export function MyVirtualMembershipsDetail() {
                   resetAt={membership.five_hour_reset_at}
                 />
               )}
+              <div className='border-border/70 bg-muted/30 flex items-center justify-between rounded-lg border px-2.5 py-2'>
+                <span className='text-muted-foreground text-[10px]'>
+                  购买后累计已使用
+                </span>
+                <span className='text-xs font-semibold tabular-nums'>
+                  {formatQuotaAsUSD(membership.lifetime_used || 0)}
+                </span>
+              </div>
             </div>
             <div className='text-muted-foreground mt-3 text-[10px]'>
               有效期至 {formatTimestampToDate(membership.end_time)} · 会员 #

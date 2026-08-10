@@ -242,6 +242,17 @@ func RequestWaffoPay(c *gin.Context) {
 	}
 
 	currency := getWaffoCurrency()
+	waffoSnapshot, err := model.NewPaymentSnapshotFromMoney(payMoney, currency)
+	if err != nil || model.SetTopUpPaymentExpectation(topUp, waffoSnapshot) != nil {
+		topUp.Status = common.TopUpStatusFailed
+		_ = topUp.Update()
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "支付金额快照失败"})
+		return
+	}
+	if err := topUp.Update(); err != nil {
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "保存支付金额快照失败"})
+		return
+	}
 	createParams := &order.CreateOrderParams{
 		PaymentRequestID: paymentRequestId,
 		MerchantOrderID:  merchantOrderId,
@@ -394,7 +405,13 @@ func handleWaffoPayment(c *gin.Context, wh *core.WebhookHandler, result *core.Pa
 	LockOrder(merchantOrderId)
 	defer UnlockOrder(merchantOrderId)
 
-	if err := model.RechargeWaffo(merchantOrderId, c.ClientIP()); err != nil {
+	actual, snapshotErr := model.NewPaymentSnapshotFromDisplayAmount(result.OrderAmount, result.OrderCurrency)
+	if snapshotErr != nil {
+		logger.LogError(c.Request.Context(), fmt.Sprintf("Waffo 回调金额快照无效 trade_no=%s amount=%q currency=%q error=%q", merchantOrderId, result.OrderAmount, result.OrderCurrency, snapshotErr.Error()))
+		sendWaffoWebhookResponse(c, wh, false, "invalid payment snapshot")
+		return
+	}
+	if err := model.RechargeWaffo(merchantOrderId, c.ClientIP(), actual); err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Waffo 充值处理失败 trade_no=%s client_ip=%s error=%q", merchantOrderId, c.ClientIP(), err.Error()))
 		sendWaffoWebhookResponse(c, wh, false, err.Error())
 		return

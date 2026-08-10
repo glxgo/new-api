@@ -179,6 +179,15 @@ func CreateTopUpWithCoupon(topUp *TopUp, couponCode string, originalMoney float6
 			topUp.CouponDiscount = quote.Coupon.Discount
 			topUp.Money = quote.DiscountedMoney
 		}
+		if topUp.PaymentProvider == PaymentProviderEpay {
+			snapshot, snapshotErr := NewPaymentSnapshotFromMoney(topUp.Money, "CNY")
+			if snapshotErr != nil {
+				return snapshotErr
+			}
+			if snapshotErr = SetTopUpPaymentExpectation(topUp, snapshot); snapshotErr != nil {
+				return snapshotErr
+			}
+		}
 		if err := tx.Create(topUp).Error; err != nil {
 			return err
 		}
