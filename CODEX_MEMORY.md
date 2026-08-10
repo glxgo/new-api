@@ -16,6 +16,166 @@
 
 ## Current handoff
 
+### 2026-08-11 — 控制台旧缓存 500 与登录共享限流 429 已在本地正式修复
+
+- `system-config-storage` 持久化状态现在使用版本 1；旧版本或损坏状态会先迁移，配置对象按字段深合并，货币字段逐项校验并补齐默认值，运行中的 store action 始终取当前实现而不接受持久化覆盖。顶部钱包余额渲染还会再次规范化货币配置，避免旧缓存缺字段时直接抛出 500。
+- 之前的通用 500 页“点击重试”恢复入口继续保留，只清除 `system-config-storage` 与 `status` 后刷新，不清除登录、主题、语言或公告已读状态。持久化修复负责自动兼容，重试按钮作为用户自助恢复兜底。
+- `/api/usage/token/` 不再消耗登录、注册和支付共用的 `CriticalRateLimit` 公网 IP 桶；Token 只读鉴权后改用独立的按用户 `TU` 桶，默认 120 次/60 秒，可用 `TOKEN_USAGE_RATE_LIMIT_ENABLE`、`TOKEN_USAGE_RATE_LIMIT`、`TOKEN_USAGE_RATE_LIMIT_DURATION` 配置。登录及其他关键写操作仍保留原 `CriticalRateLimit`。
+- 新增前端迁移/损坏值/深合并与缓存清理回归共 5 项；新增后端限流隔离回归并连续运行 10 轮。Default TypeScript、目标 ESLint/Prettier、性能导入守卫、语言 JSON、Rsbuild 正式构建，Go common/middleware/router 测试和完整 `go build -p=1 ./...` 均通过；`git diff --check` 通过。仓库级版权检查只报告既有无关文件，本轮新增和修改文件未在报告中。
+- 本轮改动保持未提交、未推送、未上传、未部署；生产仍运行旧逻辑，等待单独上线授权。
+
+### 2026-08-10 — Generic 500 page local cache recovery is implemented locally
+
+- The Default `GeneralError` action now says `Click to retry` (`点击重试` in Chinese), explains that it clears local configuration cache, removes only `system-config-storage` and `status`, and then performs a full reload so stale in-memory Zustand state is rebuilt. It deliberately preserves `user`, `uid`, theme/language preferences and `notification-storage`, so recovery does not sign the user out or reset announcement read state.
+- `recovery-cache.test.ts` covers the exact key boundary and partial-storage failures. The focused Node test, Prettier, targeted ESLint, TypeScript, performance import guard, locale JSON parsing, `git diff --check`, and the Default production Rsbuild all pass. The repository-wide copyright gate still reports unrelated pre-existing header drift, while both new files pass its header check.
+- This change is local only: it is uncommitted, unpushed and not deployed. Production still serves the previous error-page behavior until separately authorized for release.
+
+### 2026-08-08 — Virtual-member profit, scoped reset, top-up coupons, and announcement inbox deployed
+
+- Commit `62ed827f1` is pushed to `origin/main` on top of the same-day `1fc7165a6` referral/lucky/balance-alert release. Virtual-member orders now snapshot a fixed profit base: seeded/current defaults are Plus `$60`, Pro 5x `$200`, and Pro 20x `$100`; 2/3/4-person tiers divide that base by the group size. Paid Epay/balance orders settle the existing wallet-profit recipient policy atomically and exactly once, admin grants are excluded, and the profit dashboard includes the virtual-member gross without multiplying repeated recipient rows.
+- Virtual-member administration can reset one membership instance or all active instances of one plan type, while retaining the all-member reset. The plan editor exposes the fixed profit for later owner changes. No production member was reset and no payment/order was created during acceptance.
+- Balance top-up coupons are implemented for the existing Epay online-payment path. Admins can create/edit/disable/delete unused codes with content, multiplier and per-user limit. Server-side quoting applies the coupon after existing amount/group pricing, stores immutable coupon snapshots on the top-up, reserves a use under a row lock, and marks it successful in the same payment-completion transaction. Stripe/Waffo paths do not claim or apply the coupon. Production starts with zero coupon rows.
+- Announcements retain independent history entries with stable IDs. Authenticated users receive all unread announcements in one automatic dialog, can mark them read per account, and can browse newest-first history at `/announcements`; deleting an old announcement does not allow a new one to reuse its read ID. Existing administrator add/edit/delete behavior remains.
+- Validation passed complete `model` tests, router compilation, native `go build -p=1 ./...`, focused lint with zero errors, TypeScript, performance-import guard, Default production build, `gofmt`, `git diff --check`, static Linux/amd64 inspection and production candidate schema/route/asset checks. The complete controller package retains the pre-existing isolated tiered-model test failure; the release build is clean.
+- Production `site-builder` runs `/opt/newapi/releases/new-api-20260808-vm-coupon-announcements-linux-amd64`, SHA-256 `5e890d0bf4627eaf167011af9b6b0b4cbcb9568862e7d4d07143f3f415437525`, runtime version `20260808-vm-coupon-announcements`. Candidate 3010 passed health/version/schema/auth and exact frontend-asset hashes; public traffic and formal 3000 each switched only after the previous target had zero container connections. The candidate is removed, only 3000 listens, formal is healthy with zero restarts/OOM, and all three public domains returned the version 5/5. Backup and MySQL dump are in `/opt/new-api-backups/release-20260808-vm-coupon-announcements-20260808-103501/`; the prior artifact remains for rollback. MySQL/Redis were not recreated and DNS, Epay credentials, channels, multipliers and line routing were unchanged.
+- Deployment detail: the live Compose project label is `newapi` even though its external network is named `new-api-final_default`; formal recreation must use `docker compose -p newapi`. `/etc/nginx/sites-available/*.conf` and `/etc/nginx/sites-enabled/*.conf` are separate regular files on this host, so a cutover must update and verify both copies.
+
+### 2026-08-07 — Virtual-membership usage logs and statistics fixed and deployed
+
+- Production evidence showed virtual-membership quota settlement succeeded while `RecordConsumeLog` failed with MySQL `Error 1406: Data too long for column 'billing_source'`: `logs.billing_source` was `varchar(16)`, but `virtual_membership` is 18 characters. Commit `3dd31181f` widens the column to `varchar(32)` and adds a schema regression.
+- Virtual-membership consumption now keeps its own billing-source details in ordinary and initial async-task logs, including membership instance/title, pre-consume, settlement delta and final consumed quota. The usage-statistics summary separates wallet, subscription and virtual-membership deductions; Default log cost badges/details and Chinese/English copy expose the same classification. No historical log rows were fabricated or backfilled.
+- Focused and complete model tests, isolated service billing-info regression, controller/router compile checks, full Go build, Default TypeScript, targeted ESLint/Prettier and production Rsbuild passed. The complete service test baseline still contains the pre-existing deleted `CalcModelCostQuota` reference and was not rewritten.
+- Production `site-builder` runs `/opt/newapi/releases/new-api-20260807-vm-usage-logs-linux-amd64`, SHA-256 `21d2be708119f70e574b0b1ea1a7a257161714fbde94ad15caeb0194e216e5b8`, version `20260807-vm-usage-logs`. Candidate 3010 passed health/version/auth/schema checks; both cutovers waited for existing connections to drain naturally, formal 3000 is healthy with zero restarts, only 3000 listens, and the candidate is removed. All three public hosts returned the version 5/5 and `/usage-logs` returned 200. A production transaction inserted `virtual_membership` and rolled it back successfully, leaving zero probe rows; post-release logs contain no new billing-source 1406, panic, fatal or migration failure. MySQL/Redis were not recreated. Rollback evidence and checksums are in `/opt/newapi/backups/vm-usage-logs-20260807-pre/`; DNS, Epay, channels and routing were unchanged.
+
+### 2026-08-06 — Virtual-membership routing group registration and administrator deletion deployed
+
+- Commit `65bf7aa38` registers every virtual-membership plan's `allowed_group` in `GroupRatio` at `1x` when missing, both during startup migration and when saving a plan. It deliberately leaves `UserUsableGroups` unchanged, so the group appears in administrator group/channel settings while ordinary users still receive it only through an active membership. Existing group ratios are never overwritten.
+- The virtual-membership holder drawer now includes a destructive confirmation flow. Deleting a membership is transactional: an in-flight pre-consumption blocks deletion, related API keys are unbound, settled usage and purchase-order audit rows remain, and Redis token cache entries are invalidated. The key's membership-only group is retained, so it fails closed instead of falling back to wallet billing.
+- The first candidate exposed that startup migrations can update an option before `InitOptionMap`; `updateOptionMap` now safely allocates the map on that path, with a regression that begins from a nil runtime map. Full model tests, Default TypeScript/targeted ESLint/Prettier, Default/Classic production builds, controller/router compile checks, native Go build and Linux/amd64 static build passed.
+- Production `site-builder` runs `/opt/newapi/releases/new-api-vm-group-delete-20260806-linux-amd64`, SHA-256 `88d994b364bc53eba4a67c12888559b5e4f472d3dc2332495b6f810a7a11e027`, version `20260806-vm-group-delete`. The corrected 3010 candidate passed health/version/auth-boundary and database checks; Nginx cut over, both old instances drained naturally, formal 3000 was recreated and the candidate was removed. `GroupRatio` contains `gpt会员分组=1`, `UserUsableGroups` does not contain it, and no production membership was deleted during acceptance. The scoped option/Compose/Nginx backup is `/opt/newapi/backups/20260806-vm-group-delete/`; DNS, Epay, channels and routing were unchanged.
+
+### 2026-08-06 — Virtual-membership holder management and manual grants deployed
+
+- Commit `377ae519e` adds administrator membership-instance management. The virtual-membership admin page now opens an “已购会员” drawer with user identity, plan/tier, weekly and optional five-hour remaining quota, reset times, expiry, concurrency/RPM, status filters, search, aggregate counts and live refresh.
+- Administrators can search an enabled user and manually grant any enabled virtual-membership plan (including configured Plus, Pro 5x and Pro 20x plans) at the 1/2/3/4-person tier. The grant charges no wallet balance and invokes no payment provider; it creates a zero-money successful `admin_grant` order as an audit record and uses the same tier quota/concurrency/RPM split as normal checkout.
+- New model regressions cover current-period refresh/user joins and zero-money grants with tier-split quota/capacity. The complete model package, Default TypeScript, targeted ESLint/Prettier, Default/Classic production builds, controller/router compile checks, native `go build -p=1 ./...` and Linux/amd64 static build passed. The pre-existing isolated controller model-list test still panics because its Redis client is not initialized; production compilation is clean and this change does not touch that test path.
+- Production `site-builder` runs `/opt/newapi/releases/new-api-vm-admin-members-20260806-linux-amd64`, SHA-256 `e734b495d7a85368008f29e49b2df0af3acc8ef7c0c0490fa045b337f06e6884`, version `20260806-vm-admin-members`. A 3010 candidate passed health/version/page and new-route auth-boundary checks; Nginx cut over, both old instances drained to zero connections, formal 3000 was recreated, Nginx normalized, and the candidate was removed. `token.stellaisle.com` and `api.stellaisle.com` return the new version; formal is healthy and only 3000 listens. Compose/Nginx rollback files are in `/opt/newapi/backups/vm-admin-members-20260806T123216Z-before/`; no membership was manually granted during acceptance and DNS, Epay, channels and routing were unchanged.
+
+### 2026-08-06 — Compact virtual-membership quota cards and fixed USD units deployed
+
+- Commit `a324cc121` reduces the purchased virtual-membership card density: desktop layouts can use three columns, while card padding, typography, progress bars, capacity cells and spacing are smaller without changing the purchase-plan cards.
+- Active membership weekly and optional five-hour remaining/total quotas now use one explicit raw-quota-to-USD formatter in both the virtual-membership page and dashboard. The result always includes `$` and no longer changes with the site's general quota display mode.
+- Targeted Prettier/ESLint, Default TypeScript, Default/Classic Rsbuild, native Go build and Linux/amd64 static build passed. Production runs `/opt/newapi/releases/new-api-vm-quota-card-20260806-linux-amd64`, SHA-256 `0b5221ce5c34438536b8a92690be1643c21bd9d80985de924bd02da331d9e92d`, version `20260806-vm-quota-card`.
+- Site-builder accepted the 3010 candidate, switched traffic, recreated formal 3000 and normalized Nginx. One real long request on the candidate was allowed to complete before removal. Formal is healthy with zero restarts and only 3000 listening; MySQL/Redis container IDs did not change. All three public hosts returned the new version 5/5, the virtual-membership page returns 200, and the live membership chunk SHA matches local. The Compose/Nginx rollback backup is `/opt/newapi/backups/vm-quota-card-20260806T1105Z-before/`; DNS, database data, Epay, channels and routing were unchanged.
+
+### 2026-08-06 — Virtual-membership live 5-hour policy, quota units, checkout layout and 500 guard deployed
+
+- Commit `ff2f7e16b` makes the virtual-membership plan's 5-hour switch and quota live for existing active memberships. Enabling starts a fresh five-hour window, changing the quota preserves current-window usage/reset time, disabling clears and hides the window, and group variants continue to divide the limit by 2/3/4. A SQLite regression covers enable, resize, disable, group split and expired-member isolation.
+- The quota mismatch was a backend data-unit defect, not merely a dashboard display defect: virtual-membership admin saved dollar-like inputs directly as raw quota units. Admin editing now uses the same dollar-to-quota conversion as subscriptions, and the virtual-membership page, checkout and dashboard consistently format raw quota. Production's three plans, three orders (including one pending snapshot) and two active memberships were conditionally converted at `QuotaPerUnit=500000`; used quota stayed unchanged at zero.
+- The checkout now matches the subscription purchase layout: balance requirement/availability and balance action are grouped separately, while Epay is selected at bottom-left and paid from the bottom-right button. A background React Query HTTP 500 now raises a toast without navigating the whole application to `/500`; route/render errors still retain the generic error boundary.
+- Default TypeScript, targeted ESLint/Prettier, Default/Classic Rsbuild, focused model/middleware/relay tests, native build and Linux/amd64 static build passed. Production runs `/opt/newapi/releases/new-api-vm-quota-5h-20260806-linux-amd64`, SHA-256 `ebdec54f7af09fdd9d2e319cfe7aad7eefdc24293f8723f26f8f3b31bd3bae4d`, version `20260806-vm-quota-5h`.
+- Site-builder completed candidate 3010 acceptance, public cutover, natural drain, formal 3000 recreation and Nginx normalization. The candidate is removed; formal is healthy with zero restarts and only 3000 listening. All three public hosts returned the new version 5/5 and the virtual-membership page returns 200; live main/virtual/admin asset hashes match the local build, recent non-relay 5xx count is zero and startup logs contain no panic/fatal/migration failure. The scoped database/Compose/Nginx backup is `/opt/newapi/backups/vm-quota-5h-20260806T102214Z-before/`; MySQL/Redis, DNS, Epay settings, channels and routing were not restarted or changed.
+
+### 2026-08-06 — Virtual-membership purchase dialog and benefit copy fixed and deployed
+
+- Commit `83a60a528` moves `VirtualMembershipPurchaseDialog` outside the slot-filtering `SectionPageLayout`, matching the working subscriptions-page pattern. An isolated browser regression verified one purchase button, one mounted dialog and one `确认支付` action without creating an order or submitting payment.
+- The Default virtual-membership introduction now uses four responsive cards for managed member benefits, automatic quota/concurrency/RPM splitting, official-cycle resets and site-assumed account risk. Default TypeScript, targeted ESLint, Default/Classic Rsbuild, native `go build ./...` and the Linux/amd64 static build passed.
+- Production runs `/opt/newapi/releases/new-api-vm-purchase-ui-20260806-linux-amd64`, SHA-256 `b26bde148a17f22e432bdd1f6050f7af317608681cadbbe68f6fe1d17429f42c`, version `20260806-vm-purchase-ui`. The live virtual-membership chunk `static/js/async/3685.67f44f9212.js` exactly matches the local SHA and contains the new copy.
+- Site-builder completed candidate 3010 acceptance, Nginx cutover, natural old-3000 drain, formal 3000 recreation and Nginx normalization. Long connections from the line machine were allowed to finish naturally at both transitions. The candidate is removed; formal is healthy with zero restarts and only 3000 listening. MySQL/Redis, DNS, Epay settings, orders and business data were not changed. Backups are in `/opt/newapi/backups/vm-purchase-ui-20260806T091542Z-before/`.
+
+### 2026-08-06 — Virtual-membership purchase no-op root cause confirmed
+
+- Read-only production logs and a logged-in browser reproduction showed that clicking `立即购买` sends no payment request. A local instrumented reproduction proved `PlanCard` invokes `openPurchase` with the expected plan/group and updates parent state, but `VirtualMembershipPurchaseDialog` is never rendered.
+- The dialog is currently passed as an unrecognized direct child of `SectionPageLayout`. That layout extracts only its declared Title/Actions/Description/FeatureStrip/Content/Breadcrumb slots and drops every other child, so React never mounts the dialog. A local-only hypothesis test moving the dialog to a fragment sibling outside `SectionPageLayout` produced one dialog and the `确认支付` button immediately.
+- All diagnostic source changes were reverted; no commit, push, production deployment, database write, order or payment was created. The proper repair is to keep the page layout and dialog as siblings (matching the existing subscriptions-page pattern), then rebuild and verify the modal and Epay initiation without completing a real payment.
+
+### 2026-08-06 — Virtual-membership purchase flow and capacity limits deployed
+
+- Local `main` is at `e314417a5` (`feat: add virtual membership capacity limits`), parent `10de24e26`; neither this feature commit nor the prior payment fix was pushed to `origin/main`. The Default purchase card now uses an explicit non-submit button with `preventDefault`, the modal preselects an available Epay method, and confirmation continues through the subscription Epay order/return path; balance payment remains selectable in the modal.
+- `VirtualMembershipPlan`, order snapshots and user-membership snapshots now carry `concurrency_limit` and `rpm_limit`. The 2/3/4-person variants split quota, concurrency and RPM by group size (positive limits floor-divide with a minimum of 1; zero means unlimited). Requests bound to an active matching virtual membership use a separate membership concurrency/RPM pool, while other groups retain the user-global pool; expired or mismatched bindings use the global limits.
+- Local Default TypeScript, Default/Classic Rsbuild, `go build ./...`, focused `common`/`middleware`/`model`/`relay/common` tests, and the new capacity-pool regressions passed. The complete `service` package remains blocked by the repository's pre-existing `service/cost_test.go` reference to removed `CalcModelCostQuota`; unrelated baseline code was not changed.
+- Production used a 3010 candidate, Nginx cutover, natural old-3000 drain, formal 3000 recreation and Nginx normalization. The candidate was removed after its connections reached zero. Formal `new-api` is healthy with zero restarts and only 3000 listening; MySQL/Redis were not recreated. The mounted artifact is `/opt/newapi/releases/new-api-vm-capacity-20260806-linux-amd64`, SHA-256 `44cc843f76ecbef9681352c072e3731b5f9c4f15e11697996957a8d4fcff18b4`, runtime version `20260806-vm-capacity`.
+- Public status on `token.stellaisle.com`, `direct-token.stellaisle.com` and `api.stellaisle.com` returned the new version repeatedly; the virtual-membership page returned 200 and protected virtual-membership/admin/ingress routes returned the expected 401. Production schema contains all six new limit columns and post-start logs contain no panic/fatal/migration failure. Pre-cutover and MySQL backups are in `/opt/newapi/backups/vm-capacity-20260806-pre-cutover/`; the prior artifact remains available for rollback. DNS, Epay settings, business data, channels and line routing were unchanged.
+
+### 2026-08-06 — SMTP timeout and virtual-membership payment fixes merged and deployed
+
+- Commits `c15f5d021` and `10de24e26` are now both in the local `main` HEAD (`10de24e26`); neither was pushed by this task. The first bounds SMTP connection/command operations at 15 seconds and adds a hung-server regression; the second preselects Epay, normalizes its URL fallback and makes the payment confirmation button non-submit.
+- Default and Classic frontend builds plus `go test -vet=off ./common ./middleware ./model ./relay/common -count=1` passed. The combined static Linux/amd64 artifact is `/opt/newapi/releases/new-api-email-vm-merge-20260806-linux-amd64`, SHA-256 `95effcf10675be7ea9be574f5ba25aa58178a8c951d8ec5868dc38f13d332b6d`, runtime version `20260806-email-vm`.
+- Production SMTP uses the source-restricted dmit-line relay on port 24465 and keeps `smtp.qiye.aliyun.com` as the TLS SNI/server name. Only the database SMTP port changed from 465 to 24465; SSL stayed enabled and account/from/token were untouched. Canonical Compose now persists `extra_hosts` for the SMTP hostname, so the route survives container recreation.
+- Blue-green deployment used loopback 3020 because another window had occupied 3010: the merged candidate passed health and version checks, public traffic was switched to it, old connections drained naturally, formal 3000 was recreated with the merged artifact, and Nginx was normalized back to 3000. The candidate was removed after its connections reached zero; formal is healthy with zero restarts and MySQL/Redis were not recreated.
+- Public status on `token.stellaisle.com`, `api.stellaisle.com` and `direct-token.stellaisle.com` returned `20260806-email-vm` three consecutive times each. The real public `/api/verification` request returned HTTP 200 in about 4.79 seconds; no verification code was recorded. Release backup is `/opt/newapi/backups/smtp-emailfix-20260806T062956Z-pre-current/`; old artifacts remain available for rollback.
+
+### 2026-08-06 — Global subscription-package group wallet fallback guard deployed
+
+- A review found that checking only whether the current user already owned a matching group subscription still allowed a user without that subscription to fall through to wallet billing. Commit `08b3f357d` adds a global reserved-group check: whenever any subscription plan uses `allowed_group`, requests for that group are subscription-only. The model regression passes. The commit was not pushed to `origin/main`; the unrelated dirty `relay/channel/openai/relay_responses_test.go` was preserved.
+- The new artifact SHA-256 is `ffe9f28fd1392ed88eac1547895ac7cb4bd5061221a2a92fe8895622da23c0c9`, runtime version `20260806d`. It re-embeds the already-built Default/Classic frontend dist from this task and does not remove the prior UI features.
+- Site-builder repeated the 3010 candidate, Nginx cutover, natural old-3000 drain, formal 3000 start and Nginx normalization. Formal `new-api` is healthy with zero restarts and only 3000 listening; the candidate is removed. Canonical Compose mounts `new-api-ingress-billing-lucky-fix-20260806d-linux-amd64`; pre-cutover evidence is in `/opt/newapi/backups/release-20260806d-pre-cutover/`.
+- All three public status endpoints return `20260806d`; the token/api Lucky pages and ingress probes return HTTP 200. DNS, database, payment/Epay, channel and line-routing settings were unchanged.
+
+### 2026-08-06 — Ingress description, warm-up speed test, subscription-only group billing, Lucky 500 and virtual group selector deployed
+
+- Local `main` now contains commit `0f1aad00` (not pushed to `origin/main`). Default API ingress cards render the saved description; the speed test sends one untimed DNS/TLS/connection warm-up request before measuring the reused connection, preventing a cold-start direct-ingress latency spike from being treated as the steady-state latency. Lucky Wheel loading now keeps failures local with retry UI, and malformed legacy subscription plan metadata is skipped for auxiliary Lucky progress instead of turning the whole page into HTTP 500.
+- Requests matching a subscription plan's `allowed_group` now force subscription funding and cannot fall back to wallet balance. Virtual-membership admin reuses the subscription plan group list, keeps the five-hour quota editor visible, and validates a positive value when the switch is enabled.
+- Local Default `tsc -b`/Rsbuild, Classic Rsbuild, `model` tests and Linux/amd64 static build passed. The complete `service` test package remains blocked by the pre-existing `service/cost_test.go` reference to removed `CalcModelCostQuota`; that unrelated baseline was not changed. Release artifact SHA-256 is `b6c96cc5ed91dcef7cdd431dd1e0fc2d588ff15bd6c4024a5d37430752965414`.
+- Site-builder accepted the artifact in a 3010 candidate, switched Nginx to 3010 while old 3000 connections drained, started the new formal 3000, switched Nginx back, and removed the candidate. Formal `new-api` is healthy and only 3000 is listening; MySQL/Redis were not recreated. Canonical Compose now mounts `/opt/newapi/releases/new-api-ingress-billing-lucky-fix-20260806c-linux-amd64`; pre-cutover backups and evidence are in `/opt/newapi/backups/release-20260806c-pre-cutover/`.
+- Public `/api/status` on `token.stellaisle.com`, `api.stellaisle.com` and `direct-token.stellaisle.com` returns `20260806c`; Lucky page and ingress probe return HTTP 200. DNS, database data, payment/Epay settings, channels and line routing were unchanged; the previous artifact remains available for rollback.
+
+### 2026-08-06 — Virtual-membership presentation, five-hour editor and purchase flow fixed and deployed
+
+- Local `main` now contains commit `1efaa9a4` (isolated implementation `cfb1f7088`, not pushed to `origin/main`). Default/Classic virtual-membership pages now render announcements and plan descriptions with Markdown or preserved line breaks; plan cards are portrait-oriented with price/group rows on the left and weekly quota on the right, with optional five-hour quota shown per row.
+- The Default admin editor now exposes `five_hour_quota` clearly after enabling the five-hour switch; the existing backend validation still rejects an enabled plan whose quota is not positive.
+- The two direct card actions “钱包余额购买” and “支付宝支付” were replaced by “立即购买”. The purchase dialog lets the user choose wallet balance or the existing Epay method, reusing the subscription Epay order/return path and Safari handling. No payment or database schema change was made.
+- Default `tsc -b`/Rsbuild, Classic Rsbuild, targeted ESLint for all changed frontend files, focused `model`/`middleware`/`relay/common` Go tests, and Linux/amd64 build passed. Artifact `/opt/newapi/releases/new-api-vm-purchase-fix-20260806b-linux-amd64` has SHA-256 `3b7d425a1345d2982a42b71be0a43023e13fb32ad10f040966f0592e62039f4c`, runtime version `20260806b`.
+- Site-builder accepted the release on isolated loopback 3010, then normalized formal `new-api` back to 3000. Formal health is green; only 3000 is listening; all three Nginx upstreams target 3000; MySQL/Redis were not recreated and the candidate was removed. All three public hosts passed 5/5 version checks, and the protected virtual-membership/admin/ingress routes retained HTTP 401 without authentication.
+- Release evidence is in `/opt/newapi/backups/vm-purchase-fix-20260806b-before/`, including before/after Compose/Nginx configs and artifact SHA. DNS, payment settings, database data and line routing were unchanged.
+
+### 2026-08-06 — API ingress and virtual-membership frontend rebuilt and deployed
+
+- Fixed the root cause by rebuilding both Default and Classic frontend from the current source before embedding them into the backend binary; the ignored stale `dist` is no longer reused. The new Default main asset is `static/js/index.5930b919cd.js`, with speed-test async asset `static/js/async/6510.b8fb324252.js`.
+- Local Default `tsc -b`/Rsbuild, Classic Rsbuild, `model`/`middleware`/`relay/common` Go tests, Linux/amd64 static build and embedded-binary content checks passed. Production artifact `/opt/newapi/releases/new-api-frontend-repair-20260806a-linux-amd64` has SHA-256 `a35d121e5ea55ffd58295015bd0babd8239b752d08c25b4d7259ba5f051b2423`.
+- Site-builder first accepted the artifact in an isolated Compose project on 3010, then normalized production to 3000. Formal `new-api` mounts the new artifact, is healthy with zero restarts; MySQL/Redis were not recreated; stopped `new-api-old-frontend-repair` remains for rollback. All three production Nginx upstreams target 3000.
+- All three public hosts passed five version checks for `20260806a`; the live main asset SHA matches the local build and contains `virtual-memberships`, `api-ingress`, and the speed-test label. Ingress and virtual-membership APIs retain the expected unauthenticated `401` boundary, proving backend and frontend are restored. Release manifest and before/after configs are in `/opt/newapi/backups/frontend-repair-20260805T161645Z/`; DNS, database, payment and line routing were unchanged.
+
+### 2026-08-06 — Root cause confirmed for missing API ingress and virtual-membership UI
+
+- The public `/api/ingress/profiles`, `/api/virtual-membership/page`, and virtual-membership admin endpoints on all three active hosts return the expected `401 Unauthorized`, proving the backend routes and feature code remain present; this is not a database deletion.
+- The live `ingresscors` frontend assets `static/js/index.e0c42aa91d.js` and `static/js/9592.7fbf210b3f.js` exactly match the local `web/default/dist` SHA, but contain no “虚拟会员管理”, “API 入口与倍率”, `api-ingress`, or `一键测速` markers.
+- Source commit `3b19cad27` contains the API-ingress, virtual-membership, and route code. The failure is that `web/default/dist` is ignored by Git; the later speed-test CORS binary rebuild reused stale dist instead of rebuilding Default/Classic frontend from the current source, packaging new backend code with an old frontend.
+- Production `new-api` remains `ingresscors`, healthy with zero restarts; Nginx and database checks are normal. This turn made no production changes. Recovery must rebuild Default/Classic dist locally before rebuilding and accepting a complete binary; stale dist must not be reused.
+
+### 2026-08-05 — Browser ingress probe CORS response fixed and deployed
+
+- A user retest showed the direct-ingress speed test still failed. Read-only comparison found `OPTIONS /api/ingress/ping` returned 204, but the real 200 GET response had no `Access-Control-Allow-Origin`; the browser therefore rejected an otherwise reachable probe. This was not a direct-route connectivity failure.
+- Commit `7ad6168d2` is merged into local `main` (not pushed to `origin/main`). It adds a probe-only `PublicProbeCORS` middleware and explicit GET/OPTIONS routing for `/api/ingress/ping`; login APIs, billing, ingress multipliers and unrelated CORS behavior are unchanged.
+- Focused `middleware`/`router` Go tests, `gofmt`, `git diff --check` and the Linux/amd64 static build passed. The verified production artifact is `/opt/newapi/releases/new-api-api-key-speed-test-ingresscors-linux-amd64`, SHA-256 `943a4e53c494c3f631c0a2573f1d78604bc93e6e89b95fb428f61d738404a970`, runtime version `ingresscors`.
+- Site-builder first verified GET/OPTIONS CORS on a 3010 candidate, then normalized production back to loopback 3000. Formal `new-api` is healthy; MySQL and Redis were not recreated. The canonical `docker-compose.final.yml` now persists the new binary mount, and stopped `new-api-old-speed-test` remains as a rollback point.
+- Public verification showed the real GET on `api.stellaisle.com` now includes `Access-Control-Allow-Origin: *` and resolves to `direct`; `token.stellaisle.com` resolves to `optimized`; `direct-token.stellaisle.com` remains healthy. Release evidence is in `/opt/newapi/backups/speed-test-cors-20260805T160103Z/`; DNS, database, payment settings and line-machine routing were not changed.
+
+### 2026-08-05 — API Key ingress selector, speed test and CC Switch import released
+
+- Local `main` now includes commit `15a4bb576` (not pushed to `origin/main`). The Default API Key page moves the optimized/direct ingress cards into the toolbar slot that previously showed the duplicate API Base URL, removes the per-key duplicate, and places a horizontal one-click speed test outside the address cards.
+- The speed test probes both public ingress URLs anonymously in parallel, times out after 8 seconds, automatically selects the fastest available ingress, and persists the selected ingress code in the browser. CC Switch import reads the same selected ingress, so its endpoint changes after a speed test or manual card selection. The direct probe failure was a browser CORS mismatch: the direct endpoint returned HTTP 200 with `Access-Control-Allow-Origin: *`, while the old fetch used `credentials: include`; the probe now uses `credentials: omit`.
+- Default `tsc -b`/Rsbuild, Classic Rsbuild, focused Go tests (`model`, `middleware`, `relay/common`) and Linux/amd64 static build passed. The verified production binary is `/opt/newapi/releases/new-api-api-key-ingress-15a4bb57-linux-amd64`, SHA-256 `5c8557fd4c976b15f248ad7db0ee25b95a53cb7834687af6e9a53b48f84945b1`, runtime version `15a4bb57` on healthy formal `new-api:20260805b`; MySQL and Redis were not recreated.
+- Public `token.stellaisle.com`, `api.stellaisle.com`, and `direct-token.stellaisle.com` passed 5/5 version checks and ingress routing checks; the unauthenticated ingress profile boundary remains 401. Public async asset `static/js/async/6510.b8fb324252.js` matches the local SHA-256 and contains `一键测速`. Nginx is normalized to loopback 3000 after natural draining of old 3000 and candidate 3010; stopped `new-api-old-15a4bb57` remains for rollback.
+- Release evidence is in `/opt/newapi/backups/api-key-ingress-20260805T151945Z/`. Public DNS for `token.glxgo.xin` still points to the old address and was not changed.
+
+### 2026-08-05 — Ingress, virtual membership and Epay restored on current main
+
+- The isolated feature commits were applied on top of current main `28ece18d0` and committed locally as `3b19cad27fd66aec9b1d9fc21e68921f2dc22a98`. The merge preserves the later Responses affinity/retry, owner-aware concurrency lease and resource-limit changes. Local `main` is fast-forwarded; this task did not push `origin/main`.
+- Default typecheck/Rsbuild, Classic Rsbuild, focused Go tests, full `go build -p=1 ./...`, and a Linux/amd64 static build passed. The production artifact is `/opt/newapi/releases/new-api-virtual-membership-3b19cad2-linux-amd64`, SHA-256 `eed5cc5ff702ae54a85b7f5462c607d39131d287382302436c903b1f6611d5fc`, runtime version `3b19cad2`.
+- Production `new-api:20260805b` is healthy with zero restarts and mounts the verified artifact on loopback port 3000. MySQL/Redis were not recreated. The blue-green candidate on 3010 was verified against the real database, then both old 3000 and candidate connections drained naturally before the final Nginx normalization.
+- `api.stellaisle.com`, `token.stellaisle.com`, and `direct-token.stellaisle.com` each passed five public version checks. Their ingress and virtual-membership endpoints returned the expected unauthenticated 401 boundary. The four site-builder server blocks were checked locally; public `token.glxgo.xin` still resolves to `192.227.176.124` and was not changed in this task.
+- Existing `api_ingress_profiles` and `virtual_membership_plans` data remain present (2 rows each). The virtual-membership Epay flow continues to reuse the existing subscription payment configuration; no external Alipay/Epay settings were changed.
+- Final release evidence and the 18-file manifest are in `/opt/newapi/backups/virtual-membership-release-20260805T115856Z/`; final manifest SHA-256 is `a92aa9c4e1591df031da767e54ce17b1125791b0ceeb05c1983b224df4199027`. The previous artifact remains retained for rollback.
+
+### 2026-08-05 — Redis concurrency leases are owner-aware and deployed
+
+- Commit `aa0eda57a` adds process-owned concurrency members (`owner_id|request_id`), a 90-second Redis owner TTL with a 30-second heartbeat, owner-aware acquire/renew/snapshot cleanup, and request-body-error lease release in `controller/relay.go` and `RelayTask`. This prevents a stopped process from keeping channel/user concurrency counted for the old 30-minute lease TTL.
+- Local production compilation `go build -p=1 ./...`, focused local concurrency tests, and real Redis 8.8 integration tests over an SSH tunnel passed. The complete service test package retains the pre-existing `cost_test.go` reference to removed `CalcModelCostQuota`.
+- The verified Linux/amd64 artifact SHA-256 is `6dc6a32a38b1ec30d9e13ccc8933302eb38365d49c555ce3c1cca6473aa29e54`. Production is based on `new-api:20260805b` with the external artifact mounted at `/opt/newapi/releases/new-api-concurrency-owner-20260805-linux-amd64`, runtime version `20260805c`; MySQL and Redis containers were not recreated.
+- The blue-green release used loopback 3010, then normalized Nginx back to 3000 after natural connection drain. All four public API hosts passed 5/5 HTTP 200/version checks. Formal `new-api` is healthy, restart count 0, and not OOM-killed; rollback container `new-api-old-20260805c` remains stopped. Release evidence and the pre-repair Redis snapshot are in `/opt/newapi/backups/concurrency-owner-fix-20260805T074423Z/`.
+- A scoped repair removed one legacy-format member at or before the stopped old container's finish time; post-repair scans found no legacy members in `concurrency:channel:*` or `concurrency:user:*`. No channel limits, user data, MySQL records, line-machine settings, or URL/DNS settings were changed in this repair.
+
 ### 2026-08-05 — Multi-ingress billing and virtual-membership planning completed
 
 - Planning only: `docs/product/multi-ingress-and-virtual-membership-prd.md` defines the user/admin product rules, and `docs/architecture/multi-ingress-and-virtual-membership-technical-plan.md` maps them to the current routing, billing, subscription, payment, API Key, frontend and release boundaries. No feature code, database, Nginx, DNS, payment, push or deployment change was made.
@@ -1142,3 +1302,97 @@
 - Default/Classic 前端构建、Linux/amd64 交叉编译和安全/Responses/渠道定向测试通过。全仓 Go 测试仍保留既有基线失败：缺失 `CalcModelCostQuota`、Claude/OpenAI 图片旧断言和模型列表测试隔离问题；没有为了发布改写这些无关基线。
 - 已在生产以 `new-api:20260805a` 完成 3010 绿实例→自然排空→3000 归一的两阶段蓝绿发布。最终生产仅监听 3000，Nginx 三入口均指向 3000，容器 healthy、0 重启；旧 `new-api:20260804a` 保留回滚。最终二进制 SHA-256 为 `257536a2a4cae129c0bc5aeb75ef44b156ba0850539b212b6ff98c55ca73249f`。
 - 发布备份位于 `/opt/newapi/backups/release-20260805a-20260804T165609Z`，含 MySQL 一致性转储和前后配置/哈希清单。生产自然流量验收有 127 条成功 Responses、1 条客户端取消、无 panic/fatal；3010 最后一条长流自然完成后才移除候选。Secure Cookie 环境变量仍未开启，代码保持可选启用。
+
+### 2026-08-05 — Responses 上游粘性与加密 400 修复已发布
+
+- 提交 `62d36c8f8` 为带 `prompt_cache_key` 的 `/v1/responses` 会话增加上游凭据粘性，并加入精确的 `invalid_encrypted_content`/加密历史校验 400 不可重试分类；`28ece18d` 随后修正默认 affinity 模板，普通 502/EOF/提供方不可用仍允许既有回退重试，只有确定性加密历史错误禁止跨凭据重试。两次提交均已推送到 `glxgo/new-api` `main`。
+- 本地 Linux/amd64 静态产物完成构建；最终部署二进制 SHA-256 为 `07f6aa815c847642a7bb351fb72723e4ba8e7bbc579edd2c5fccefb4f6d899bc`。controller 定向重试测试通过；service 测试仍被既有 `service/cost_test.go` 对已删除 `CalcModelCostQuota` 的引用阻塞，未改写该无关基线。
+- 生产使用候选 3011 验证后归一到 3000，最终容器 `new-api:20260805b` healthy、0 重启、无 OOM，内存上限及 memswap 硬上限均为 8 GiB，Nginx 三入口和公网 `/api/status` 均通过。切换后日志没有新的 EOF、`unknown provider` 或 OOM，仅见 1 条渠道 24 已收到 11 个事件后的 `Upstream request failed`，属于单个上游失败。CPA 已升级至 `v7.2.119` / `6e92e3e6`；升级候选 18097 启动与未授权 `/v1/models` 边界验证通过，正式 18096 active，备份与回滚路径记在运营工作区交接文件。
+- 现场发现将 `SkipRetryOnFailure=true` 绑定到默认 affinity 会把 CPA 渠道 28 的 `unknown provider` 锁死；已改回 false 并保留错误分类拦截，避免普通渠道故障失去回退。当前边界受控诊断继续脱敏记录，不开启 CPA 全量请求日志。
+
+### 2026-08-06 — Responses plain `error` 终态本地修复，自动压缩暂不隐式启用
+
+- 本地在当前 `main` 工作树把 Responses SSE 的普通 `type=error` 与 `response.failed`/`response.error` 一样识别为上游终态；Responses 直通、Responses→Chat 转换和 `stream_terminal_events` 的终态分类均已覆盖。这样上游明确发出错误后不会再落入“未收到 response.completed”的 generic EOF 分支，保留脱敏上游 code/message 和既有退款/重试语义。
+- 新增 `TestOaiResponsesStreamHandler_TopLevelErrorEventIsTerminal`，服务终态回归改用 plain `error`。定向 Responses 测试通过，`go build ./service` 与 Docker Go 1.26.1 `go build -p=1 ./...` 通过；OpenAI 整包仍有既有图片错误翻译断言失败，service 测试仍被既有 `CalcModelCostQuota` 缺失符号阻塞。
+- 代码尚未提交、推送或上线；生产仍是上一版。自动上下文压缩没有直接加入普通 `/v1/responses`：项目已有 `/v1/responses/compact` 转发，但只支持显式 compaction 请求且需上游/渠道支持。网关静默删历史会破坏 `store=false` 加密 reasoning、`previous_response_id` 和工具调用链，也可能额外产生付费请求。
+- 后续安全方案是按渠道声明的上下文上限和 compaction 能力做受控单次压缩/重试，并保留失败回退；在能力和计费边界未验证前，不对所有渠道自动改写请求。
+
+### 2026-08-06 — Responses `resp_*_msg` 兼容与 plain `error` 终态已发布
+
+- 生产证据显示同一 user 114 的 `input[5].id=resp_..._msg` 在渠道 43、38 重复得到相同 400；现有 `item_` 兼容层没有覆盖该供应商消息 ID 格式。提交 `424df554` 增加严格的 `message` 项 `resp_[A-Za-z0-9]+_msg`→`msg_...` 归一化，保留后缀并拒绝改写 reasoning、function call、合法/未知 ID。
+- 同一提交把 Responses 直通、Responses→Chat 与终态表的顶层 SSE `type=error` 统一识别为上游失败，避免明确上游错误在连接关闭后被归类为 generic EOF。
+- `relay/common`、OpenAI Responses 定向测试，`go build ./service` 和 Docker Go 1.26.1 `go build -p=1 ./...` 通过；整包既有图片文案断言与 `CalcModelCostQuota` 测试符号阻塞仍未改写。
+- 已推送 `origin/main` 并以 `20260806e` 完成蓝绿发布。远端二进制 SHA-256 `836321608ee82c7412400367018812da07b485b0b66ec0e31887cd10239c5588`；正式 `new-api` healthy、0 重启、无 OOM、仅监听 3000，Nginx 四入口已归一，MySQL/Redis 未重建。发布前后配置与旧产物备份见 `/opt/newapi/backups/responses-id-terminal-fix-20260806e-pre/`。
+- 正式归一后 180 秒内 63 条 Responses 没有新的该 ID 400、EOF 或 plain-error 记录；这是发布生效快照，不代表长周期所有 EOF 已根治。候选自动探针的上下文超限 502 属于独立上游容量问题。
+
+### 2026-08-06 — 使用统计 429、入口计费日志与虚拟会员分组修复已发布
+
+- `/api/usage-statistics/self` 已从共享的按公网 IP `CriticalRateLimit` 改为独立按用户限流，默认 60 次/分钟，环境变量为 `USAGE_STATISTICS_RATE_LIMIT_ENABLE`、`USAGE_STATISTICS_RATE_LIMIT` 和 `USAGE_STATISTICS_RATE_LIMIT_DURATION`；Default 使用统计页关闭自动重试并提供手动 Retry，避免一个 IP 的其它操作把页面拖成 429/骨架屏。
+- `RelayInfo` 在结算后保留入口编码/名称/倍率和最终客户计费额度；消费日志 `other` 新增 `ingress_code`、`ingress_display_name`、`ingress_multiplier`、`ingress_billed_quota`、`ingress_original_quota`，Default 日志详情显示路线、折后价格与恢复的原价。
+- 虚拟会员方案和历史空限定分组兼容默认为 `gpt会员分组`；有有效会员时 API Key 分组选择置顶并显示会员标记。虚拟会员限定分组现在是硬边界：会员绑定额度耗尽或未绑定会员时直接返回额度不足，不进入钱包回退。
+- 代码提交为 `dfc29401e`（未推送）。Default/Classic 构建、Default `tsc -b`、目标 ESLint/Prettier、`go build -p=1 ./...`、model/relay/common/middleware/router 测试通过；完整 service 测试仍受仓库既有 `service/cost_test.go` 缺失 `CalcModelCostQuota` 阻塞。
+- 生产已用 Linux/amd64 产物 `/opt/newapi/releases/new-api-route-membership-20260806f-linux-amd64` 完成候选 3010→自然排空→正式 3000 归一，产物 SHA-256 `66c0a52a9bb1ee6738c7a24e8a9fecf5b591f7c0f2b310fe544d2ffe1bf98543`。正式容器 healthy、0 重启，公网三个域名连续 5/5 为 `20260806f`，页面 200，保护接口按预期 401；备份在 `/opt/newapi/backups/release-20260806f-pre-cutover/`。
+
+### 2026-08-07 — 虚拟会员价格与过期余量、API Key 页面调整已发布
+
+- 提交 `4d538efc7` 在不删除历史数据的前提下收紧用户侧余量展示：虚拟会员接口先更新到期状态并只返回当前有效实例；数据看板与订阅套餐余量卡只使用当前 active 实例。后台会员管理、订单历史和套餐购买次数统计仍保留完整历史。
+- 虚拟会员方案新增单人、2/3/4 人档各自的原价字段，原价仅用于展示且只有高于现价时才以删除线显示，结账仍严格使用现价。自动迁移新增 `original_price_amount`、`two_group_original_price`、`three_group_original_price`、`four_group_original_price` 四列。
+- API Key 页删除功能卖点条和账号并发/RPM 展示；入口测速移入原右侧容量区域，两条 URL 纵向排列，移动端保留在密钥列表上方。新建/编辑密钥的分组下拉改用 Base UI `--anchor-width`，与触发框等宽。
+- 本地虚拟会员定向 model 测试、Default TypeScript、目标 ESLint、Default 生产构建、Linux/amd64 静态编译和二进制 `--version` 通过。controller/model/service 扩大测试仍只保留仓库既有基线：service 测试引用已删除的 `CalcModelCostQuota`，controller 有共享测试状态隔离失败；本次定向测试与构建均通过。
+- 生产版本为 `20260807-membership-ui`，正式挂载 `/opt/newapi/releases/new-api-20260807-membership-ui-linux-amd64`，SHA-256 `b16c84ba2e562a928d0e7c1cb9259ef074d222340393b3bdcf6d24a468c33c53`。3010 候选与 3000 正式切换均等待最后一条真实流自然完成；候选、3010 和临时环境文件已清理。正式容器 healthy、0 重启、无 OOM，Codex2API 四项接线变量保留。
+- `token.stellaisle.com`、`api.stellaisle.com`、`direct-token.stellaisle.com` 各 5/5 返回新版本，优化/直链 ping 均 200；公网主 JS 与本地构建 SHA-256 一致。回滚备份为 root-only `/opt/new-api-backups/release-20260807-membership-ui-20260807-144506/`。历史域名 `token.glxgo.xin` 的权威 A 记录仍指向 `192.227.176.124`，不经过建站机，本次未越权修改 DNS。
+
+### 2026-08-09 — Responses 顶层 error 字段与 Codex 终态兼容缺陷（只读诊断）
+
+- `dto.ResponsesStreamResponse` 当前只声明 `Type/SequenceNumber/Response/Error/...`。OpenAI 官方 `ResponseErrorEvent` 和 CLIProxyAPI `v7.2.119` 的 `BuildOpenAIResponsesStreamErrorChunk` 都把 `code`、`message`、`param` 放在事件顶层；因此标准 `{"type":"error","code":"...","message":"..."}` 经当前 DTO 反序列化后丢失详情，`responsesTerminalError` 只能返回泛化的 `upstream Responses terminal event: error`。现有 `TestOaiResponsesStreamHandler_TopLevelErrorEventIsTerminal` 使用的是嵌套 `error`，没有覆盖官方顶层结构。
+- `OaiResponsesStreamHandler` 虽会把 `type=error` 识别成失败、记录终态、退款并停止 handler，但 `sendResponsesStreamData` 会按原 `streamResponse.Type` 重建并下发 `event: error`。CLIProxyAPI issue #4854 已证明 Codex Desktop 不识别这种事件为正式终态，会报未收到 `response.completed` 并最多自动重试 5 次；官方提交 `3522e481` 对 Codex User-Agent/Originator 改发 `response.failed`，发布于 CPA `v7.2.125`，生产 CPA 仍是 `v7.2.119`。
+- New API 自身在收到已输出数据后的终态错误时设置 `SkipRetry` 是正确的：服务器端重放会重复已经发给客户端的内容。安全修复应补齐顶层 `code/message/param` DTO 与官方形状回归，并对官方 Codex 客户端把需要暴露的确定性请求错误转换为协议有效的 `response.failed`；可恢复的提供方/传输错误应保留真实分类并由客户端重新发起，不能在已发首字节后盲目跨渠道重放。
+- 本轮只完成源码和生产证据审查，没有修改、提交、推送或部署代码。运营侧 cyclone 样本、渠道分布和诊断查询造成的 MySQL 自动恢复事件记录在上级 `CODEX_MEMORY.md`。
+
+### 2026-08-09 — 平台用量页与 Responses 重连修复已发布
+
+- `6006ffcc0` 将隔离分支的 Responses 终态恢复修复合入 `main`：补齐官方顶层 error、Codex/CC Switch `response.failed` 兼容、首个语义输出前的安全跨渠道重试、请求体 `GetBody` 重放、流协程回收和终态竞态观测；已经输出语义内容后仍禁止服务器端重放。`44deabb8a` 新增登录后 `/platform-usage` 页面和 `/api/usage-statistics/platform` 用户鉴权接口；两提交均已推送 `origin/main`。
+- 站点今日消耗按北京时间成功日志汇总；显式记录 `platform_base_quota`，去除入口倍率和用户分组倍率但保留模型价格、补全倍率及 `priority` 2x。历史日志采用原始额度、入口倍率、分组倍率反推的兼容路径。页面同时展示总 Token、CPA 账号匿名余量和 token-usage 插件按模型的请求、Token、费用、延迟、首包、吞吐、输入、输出、缓存及命中率。
+- CPA 只通过固定私网 `http://172.20.0.1:18096/v0/management` 读取；管理密钥从只读文件加载，页面请求不直连 CPA，后台启动后立即刷新并每 10 分钟刷新。账号只输出掩码邮箱和 HMAC 短码，不输出原始文件名、账号 ID、上游错误或密钥；管理 URL 必须是回环或私网明文 HTTP，固定 quota 目标和插件路径不可由用户输入覆盖。
+- 平台计费、历史兼容、时区、脱敏/HMAC、密钥文件、CPA 固定代理和插件嵌套摘要测试通过；Responses DTO/重试/HTTP2 请求体/终态/扫描器定向测试通过；Default TypeScript、目标 ESLint/Prettier、生产构建、完整 `go build -p=1 ./...` 和 Linux/amd64 静态编译通过。扩大测试仍只命中既有的 OpenAI 图片中文翻译断言、动态 `fmt.Errorf` vet 和 service `CalcModelCostQuota` 缺失基线，未为本次发布改写无关测试。
+- 生产发布、哈希、自然排空和回滚证据记录在上级 `../CODEX_MEMORY.md`。
+
+### 2026-08-09 — 号池公开与 API Key 分组绑定收口（本地待发布）
+
+- 当前工作树把用户侧“平台用量”展示名改为“号池公开”；CPA 账号套餐标识改成银色金属渐变与悬光动画，顶部统计卡加入统一悬浮反馈，并新增按 CPA 模型缓存 Token 加权的“缓存命中率”。折前用量说明已移除 priority 文案，但底层 priority 计费逻辑没有改变。
+- API Key 新建/编辑流程按分组类型互斥展示资金来源：普通分组不显示归属步骤，套餐分组只显示“订阅归属”且“系统自动分配”带“推荐”，会员分组只显示并强制选择匹配的虚拟会员额度。后端新增同一约束，普通分组会清理旧订阅/会员及计划绑定，套餐与会员字段不能混用，会员分组未绑定可用额度时拒绝保存。
+- Default TypeScript、目标 ESLint、生产 Rsbuild、model 新增/相关定向测试和 controller Token 定向测试通过。完整 controller 包仍命中既有 `TestListModelsTokenLimitIncludesTieredBillingModel` 测试隔离失败，本次未修改该无关基线。
+- 本轮没有提交、推送或部署；生产仍为上一条记录的 `44deabb8a` 平台用量版本。`CODEX_MEMORY.md` 原有并行窗口改动保留为未提交状态。
+
+### 2026-08-09 — 号池公开与 API Key 分组绑定已归一发布
+
+- 上一条“本地待发布”改动已形成提交 `e6e0d96537b4a323978b23b7ac0a9bf05ee3a73f` 并推送到 `origin/main`；当前主线同时包含此前另一窗口的 Responses 修复 `6006ffcc0`。除共享交接文件 `CODEX_MEMORY.md` 外，源码工作树与远端主线一致。
+- 本地通过 Default TypeScript、目标 ESLint/Prettier、性能导入守卫、生产 Rsbuild、model/controller 定向测试、完整 `go build -p=1 ./...`、Linux/amd64 静态构建与 Debian 容器执行校验。完整 controller 包仍只有既有 `TestListModelsTokenLimitIncludesTieredBillingModel` 隔离基线失败，未为发布改写该无关测试。
+- 生产版本为 `20260809-public-pool-key-binding`，正式产物 `/opt/newapi/releases/new-api-public-pool-key-binding-20260809-linux-amd64` 的 SHA-256 为 `22f4055caba197eaf62a3bf66ae6584a2ba6bfe45b2690ea5c3b2e6aa3dd879c`。正式镜像 `new-api:20260809-public-pool-key-binding` 已运行，上一版 `new-api:20260809-platform-usage-responses` 保留为回滚镜像。
+- 发布按 3010 候选、Nginx 切流、旧 3000 自然排空、正式 3000 归一、候选自然排空执行；两阶段均等待真实长流结束，没有强杀。最终只有 `127.0.0.1:3000` 监听，正式容器 healthy、0 重启、无 OOM，近期日志无 panic/fatal/SQLite/CPA 刷新错误。
+- `token.stellaisle.com`、`api.stellaisle.com`、`direct-token.stellaisle.com` 各连续 5/5 返回新版本；`/platform-usage` 返回 200，匿名数据接口和 Token 接口按预期返回 401，关键公网资源哈希与本地构建一致。发布备份与校验清单位于 root-only `/opt/new-api-backups/release-20260809-public-pool-key-binding-2318/`。
+
+### 2026-08-11 — 品牌、号池、会员与充值分润重构已本地完成，待用户验收
+
+- 用户侧已改为本地内嵌的“飓星API”品牌与 Logo，首页标注“（原 Star API）”；号池公开响应和界面彻底移除邮箱字段，仅显示服务端匿名账号标识，大屏四列。使用日志页已压缩标题、统计卡和顶部留白，公告入口已从侧边栏移到顶部导航。
+- 未生效但未过期的套餐在用户余量中可见并标注“未生效”，计费和 Key 鉴权仍严格要求已到开始时间。套餐幸运卡池按百万分权重更新为 43%/26%/20%/3%/1%/4.7%/2%/0.025%/0.150%/0.125%，新规则使用不可变版本，历史已发卡不改写。虚拟会员 API 与两处卡片增加从购买起累计已用额度。
+- 分润唯一改为真实外部付款创建的 `RechargeCredit`：超管 5%；普通用户直属/二级 5%/2%；代理直属/二级 8%/4%；管理员直属/二级 15%/5%，三级及更深不分。原消费毛利、套餐到期利润、T+1 和可配比例的活跃结算链已移除，渠道成本倍率仅留作运营分析，缺失时不阻断用户计费。
+- Epay/Stripe/Creem/Waffo/Pancake 钱包、Epay/Stripe/Creem/Pancake 订阅与 Epay 虚拟会员均以验签回调的金额/币种快照结算。人工补单只发额度并标记 `manual_review`，不计累充、现金分润或幸运进度；后续真实回调可幂等补账且不二次增加额度。当前仅支持 CNY/USD；其他币种拒绝自动结算。
+- 历史已结算记录保持不变；可唯一识别真实付款的未结算订单按新策略补发，无法唯一映射的历史钱包/会员记录保持 pending/manual review 并在分润审计页计数，不伪装成已结算，不自动猜测金额。
+- 最终独立复扫无 P0/P1。本地通过 model 全量测试、支付 controller 定向测试、全仓 Go 编译、Default `tsc -b`、13 项关键前端测试、性能导入守卫、Rsbuild 生产构建和 `git diff --check`。全部修改仍在当前本地脏工作树，未提交、未推送、未部署；下一步是用户本地验收后再单独授权上线。
+
+### 2026-08-11 — 品牌、会员、充值分润与并行窗口修复已合并发布
+
+- 主功能、大型历史迁移收敛和并行窗口修复分别落在 `e5cda922f`、`5784b54fd`、`b8668a998`，均已推送到 `origin/main`。并行窗口包含控制台旧缓存恢复、Token 用量接口独立按用户限流，以及用户 + API Key 隔离、不含原始会话键的上游 `Session_id`。随后的 `8363572c5` 仅澄清 3 行隐私注释，无运行时变化。
+- 首个 3010 候选在未切流时发现两个真实历史边界：54 万余条旧消费待结算日志不能做全表 UPDATE，且 2 个已注销历史支付用户不能阻断启动。迁移已改为不改写旧行的计数 + 高水位快照，新消费日志直接标记 `recharge_policy_v1`；已注销订单留在 pending/manual review。首个候选在提供流量前安全退出，没有产生新分润。
+- 更正后迁移快照为旧待结算 544,723 条、高水位 765,765；旧容器排空期又写入 77 条旧版待审计日志，新版日志在最终快照中已有 136 条正确标记已结算。可唯一验证的 12 笔历史充值产生 23 条新策略分润，`commission_key` 与财务日志键重复均为 0；53 笔钱包和 16 笔订阅因无法验证历史实付继续显式留在 `manual_review`，不猜金额发钱。
+- 本地 model 全量、分润/会话亲和定向测试、全仓 Go 编译、Default 类型/关键前端测试/性能守卫/生产构建和 Linux/amd64 静态产物执行均通过。生产版本为 `20260811-juxing-api-commission`，二进制 SHA-256 为 `8f0a07dc13a6cf83a3b7e5d4d3860827dc7092b84ebc59ad286cc6684c3c5482`，镜像为 `new-api:20260811-juxing-api-commission`。
+- 发布按 3010 候选、Nginx 切流、旧 3000 长流自然排空、Compose 项目 `newapi` 正式归一、候选自然排空执行，没有强杀在途流。最终只监听 `127.0.0.1:3000`，正式容器 healthy、0 重启、无 OOM；MySQL/Redis/Codex2API 未重建，近期无 panic/fatal/迁移/CPA 刷新错误。上一版镜像保留回滚。
+- 三个生产域名在两次切换后均连续 5/5 返回新版本，`/platform-usage` 为 200，匿名号池数据和 Token 用量接口为 401。公网 Logo SHA-256 为 `de07b665ee8feec6fae47952437782d110b36216594691d4db8cb4059a44f440`，主 JS 为 `5ea08bb620ff327dfde785f2eb188378d4e8ffcd2560cc9f25a2d03a915bf77e`，均与本地构建一致。最近 10 分钟已有 100 条消费日志只记录 `upstream_session_derived` 布尔标记，没有记录原始会话键。
+- 发布前完整备份与校验清单在 root-only `/opt/new-api-backups/release-20260811-juxing-api-commission-20260810-210905/`，`SHA256SUMS` 复核通过；上一版回滚镜像 ID 为 `sha256:2debed424526a4aee8fa17b44ce667e3911cf0de6b6da93ed988d0a398316e43`。
+
+### 2026-08-11 — CPA Session 粘性生产验证与调用密钥轮换
+
+- 生产三次受控 `/v1/responses` canary 使用同一 `prompt_cache_key`，均返回 HTTP 200 且收到 `response.completed`；CPA token-usage 摘要在 03:31:18/20/21 记录为同一匿名账号指纹、每次 14 Token。相邻的两条自然流量来自另一账号，已按时间排除。这证明 New API 派生的匿名 `Session_id` 已让同一 Session 优先持续使用同一 CPA 账号。
+- 诊断过程中曾有一个 CPA 调用密钥意外出现在工具输出，已按泄露处置：先通过管理 API 并存新旧密钥，再条件更新渠道 28，等待正式容器缓存同步后删除旧密钥。最终 CPA 只保留新密钥，新密钥鉴权 200、旧密钥 401，渠道 28 数据库指纹与新值一致；无需重启 CPA 或 New API。轮换备份为 root-only `/opt/new-api-backups/cpa-api-key-rotation-20260810T192425Z/`，临时明文文件已销毁。
+- 轮换后三次 canary 同时验证了正式 New API 已使用新 CPA 密钥。发布后复核中没有新的 `scanner_error unexpected EOF`；`context canceled` 仍按 `client_gone` 独立归类，不与 Session 修复或上游 EOF 混为一类。
