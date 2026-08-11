@@ -24,6 +24,7 @@ const (
 	RechargeCommissionPending       = "pending"
 	RechargeCommissionDone          = "done"
 	RechargeCommissionSkippedSource = "skipped_source"
+	RechargeCommissionSkippedRole   = "skipped_role"
 	RechargeCommissionPolicyV1      = 1
 )
 
@@ -195,7 +196,7 @@ func settleRechargeCommissionTx(tx *gorm.DB, buyer *User, baseQuota, amountCents
 	if tx == nil {
 		return nil, errors.New("recharge commission transaction is nil")
 	}
-	if buyer == nil || buyer.Id <= 0 || baseQuota <= 0 || buyer.Role >= common.RoleRootUser {
+	if buyer == nil || buyer.Id <= 0 || baseQuota <= 0 || buyer.Role >= common.RoleAdminUser {
 		return nil, nil
 	}
 	auditRef := RechargeCommissionSourceRef(sourceType, sourceRef)
@@ -339,7 +340,9 @@ func SettleRechargeCreditCommissionTx(tx *gorm.DB, credit *RechargeCredit) ([]in
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, credit.Id).Error; err != nil {
 		return nil, err
 	}
-	if locked.CommissionState == RechargeCommissionDone || locked.CommissionState == RechargeCommissionSkippedSource {
+	if locked.CommissionState == RechargeCommissionDone ||
+		locked.CommissionState == RechargeCommissionSkippedSource ||
+		locked.CommissionState == RechargeCommissionSkippedRole {
 		*credit = locked
 		return nil, nil
 	}
@@ -385,6 +388,23 @@ func SettleRechargeCreditCommissionTx(tx *gorm.DB, credit *RechargeCredit) ([]in
 	var buyer User
 	if err := tx.Omit("password").Where("id = ?", locked.UserId).First(&buyer).Error; err != nil {
 		return nil, err
+	}
+	if buyer.Role >= common.RoleAdminUser {
+		// Administrator and root purchases still qualify for cumulative recharge
+		// and lucky progress, but never enter commission reports or payouts.
+		locked.CommissionState = RechargeCommissionSkippedRole
+		locked.CommissionPolicyVersion = RechargeCommissionPolicyV1
+		locked.CommissionSettledAt = common.GetTimestamp()
+		if err := tx.Model(&RechargeCredit{}).Where("id = ? AND commission_state = ?", locked.Id, RechargeCommissionPending).
+			Updates(map[string]interface{}{
+				"commission_state":          locked.CommissionState,
+				"commission_policy_version": locked.CommissionPolicyVersion,
+				"commission_settled_at":     locked.CommissionSettledAt,
+			}).Error; err != nil {
+			return nil, err
+		}
+		*credit = locked
+		return nil, nil
 	}
 	giftRecipients, err := settleRechargeCommissionTx(
 		tx, &buyer, locked.CommissionBaseQuota, locked.AmountCents,

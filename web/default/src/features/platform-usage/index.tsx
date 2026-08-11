@@ -43,6 +43,7 @@ import type {
   CPAQuotaWindow,
   CPAUsageSnapshot,
 } from './types'
+import { metricCardSurfaceClass } from './visuals'
 
 function formatSyncTime(timestamp: number, fallback = '—') {
   if (!timestamp) return fallback
@@ -270,9 +271,7 @@ function MetricCard({
     <div
       className={cn(
         'group relative overflow-hidden rounded-xl border p-4 transition-[transform,border-color,box-shadow] duration-200 hover:-translate-y-1 hover:border-emerald-500/20 hover:shadow-[0_16px_34px_rgba(15,23,42,.08)] motion-reduce:transform-none',
-        accent
-          ? 'border-emerald-500/20 bg-[linear-gradient(145deg,rgba(16,185,129,.10),rgba(16,185,129,.025))]'
-          : 'bg-card'
+        metricCardSurfaceClass(accent)
       )}
     >
       <span className='pointer-events-none absolute inset-x-6 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(16,185,129,.55),transparent)] opacity-0 transition-opacity group-hover:opacity-100' />

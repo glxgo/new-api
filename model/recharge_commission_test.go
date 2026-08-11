@@ -214,6 +214,63 @@ func TestRootDirectInvitationReceivesOnlyFixedFivePercent(t *testing.T) {
 	require.Equal(t, DividendTypeRoot, records[0].Type)
 }
 
+func TestAdministratorAndRootOwnRechargeNeverPaysCommission(t *testing.T) {
+	db := newRechargeCommissionTestDB(t)
+	oldDB, oldRedis, oldQuotaPerUnit := DB, common.RedisEnabled, common.QuotaPerUnit
+	DB, common.RedisEnabled, common.QuotaPerUnit = db, false, 100
+	t.Cleanup(func() {
+		DB, common.RedisEnabled, common.QuotaPerUnit = oldDB, oldRedis, oldQuotaPerUnit
+	})
+
+	root := User{Username: "root-own-recharge", Role: common.RoleRootUser, AffCode: "root-own-recharge"}
+	inviter := User{Username: "inviter-own-recharge", Role: common.RoleCommonUser, AffCode: "inviter-own-recharge"}
+	require.NoError(t, db.Create(&root).Error)
+	require.NoError(t, db.Create(&inviter).Error)
+	admin := User{
+		Username: "admin-own-recharge", Role: common.RoleAdminUser, AffCode: "admin-own-recharge",
+		InviterId: inviter.Id, AffAdminId: root.Id,
+	}
+	require.NoError(t, db.Create(&admin).Error)
+
+	for _, testCase := range []struct {
+		buyer     *User
+		sourceRef string
+	}{
+		{buyer: &admin, sourceRef: "admin-own-payment"},
+		{buyer: &root, sourceRef: "root-own-payment"},
+	} {
+		require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+			_, err := RecordPaidRechargeCreditTx(
+				tx, testCase.buyer.Id, 10_000, 10_000, "CNY",
+				RechargeSourceWalletTopUp, testCase.sourceRef, 1_800_000_006,
+			)
+			return err
+		}))
+
+		var credit RechargeCredit
+		require.NoError(t, db.Where("source_ref = ?", testCase.sourceRef).First(&credit).Error)
+		require.Equal(t, RechargeCommissionSkippedRole, credit.CommissionState)
+		require.Equal(t, RechargeCommissionPolicyV1, credit.CommissionPolicyVersion)
+	}
+	var reportableRechargeCount int64
+	require.NoError(t, db.Model(&RechargeCredit{}).
+		Where("commission_state = ?", RechargeCommissionDone).
+		Count(&reportableRechargeCount).Error)
+	require.Zero(t, reportableRechargeCount)
+
+	var dividendCount int64
+	require.NoError(t, db.Model(&DividendRecord{}).Count(&dividendCount).Error)
+	require.Zero(t, dividendCount)
+
+	for _, user := range []*User{&root, &inviter, &admin} {
+		var refreshed User
+		require.NoError(t, db.First(&refreshed, user.Id).Error)
+		require.Zero(t, refreshed.GiftQuota)
+		require.Zero(t, refreshed.DividendBalance)
+		require.Zero(t, refreshed.DividendTotal)
+	}
+}
+
 type RootUserAliasForRechargeTest struct {
 	Id              int
 	DividendBalance int

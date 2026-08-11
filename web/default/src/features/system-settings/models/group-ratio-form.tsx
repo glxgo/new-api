@@ -137,9 +137,9 @@ export const GroupRatioForm = memo(function GroupRatioForm({
         {editMode === 'visual' ? (
           <div className='space-y-6'>
             <div className='border-border bg-muted/30 rounded-lg border p-4 text-sm'>
-              <div className='font-medium'>成本倍率已迁移到渠道</div>
+              <div className='font-medium'>渠道成本配置已停用</div>
               <div className='text-muted-foreground mt-1'>
-                这里仅维护销售分组倍率；平台成本请在渠道新增、编辑或标签批量编辑中设置。
+                这里仅维护销售分组倍率；充值分润只按有效充值金额和固定比例结算。
               </div>
             </div>
             <GroupRatioVisualEditor
@@ -206,10 +206,9 @@ export const GroupRatioForm = memo(function GroupRatioForm({
             />
 
             <div className='border-border bg-muted/30 rounded-lg border p-4 text-sm'>
-              <div className='font-medium'>成本倍率已迁移到渠道</div>
+              <div className='font-medium'>渠道成本配置已停用</div>
               <div className='text-muted-foreground mt-1'>
-                平台成本按本次最终成功渠道的成本倍率计算。旧分组成本倍率仅保留用于回滚，
-                此处不再提供编辑入口。
+                历史成本字段仅保留兼容，不再提供编辑入口，也不参与充值分润。
               </div>
             </div>
 

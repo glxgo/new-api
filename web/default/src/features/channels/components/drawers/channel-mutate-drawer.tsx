@@ -210,7 +210,6 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     values.remark?.trim() ||
     values.priority ||
     values.weight ||
-    values.cost_ratio != null ||
     values.proxy?.trim() ||
     values.system_prompt?.trim() ||
     values.force_format ||
@@ -2606,38 +2605,6 @@ export function ChannelMutateDrawer({
                                 </FormControl>
                                 <FormDescription>
                                   0 表示不限制；一分钟满载时无感切换。
-                                </FormDescription>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-
-                          <FormField
-                            control={form.control}
-                            name='cost_ratio'
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>成本倍率</FormLabel>
-                                <FormControl>
-                                  <Input
-                                    type='number'
-                                    min={0}
-                                    max={1000}
-                                    step='0.000001'
-                                    placeholder='例如 0.85'
-                                    value={field.value ?? ''}
-                                    onChange={(e) =>
-                                      field.onChange(
-                                        e.target.value === ''
-                                          ? undefined
-                                          : Number(e.target.value)
-                                      )
-                                    }
-                                  />
-                                </FormControl>
-                                <FormDescription>
-                                  仅用于成本观测；0
-                                  表示零成本，留空不会阻断渠道启用或计费。
                                 </FormDescription>
                                 <FormMessage />
                               </FormItem>

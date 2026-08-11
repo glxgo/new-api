@@ -64,7 +64,6 @@ export function EditTagDialog({ open, onOpenChange }: EditTagDialogProps) {
   const [customModel, setCustomModel] = useState('')
   const [modelMapping, setModelMapping] = useState('')
   const [selectedGroups, setSelectedGroups] = useState<string[]>([])
-  const [costRatio, setCostRatio] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Fetch tag models
@@ -93,13 +92,13 @@ export function EditTagDialog({ open, onOpenChange }: EditTagDialogProps) {
   const availableGroups = groupsData?.data || []
 
   // Initialize form when tag changes
+  /* eslint-disable react-hooks/set-state-in-effect -- Dialog draft state must reset when its tag context changes. */
   useEffect(() => {
     if (open && currentTag) {
       setNewTag(currentTag)
       setModelMapping('')
       setSelectedGroups([])
       setCustomModel('')
-      setCostRatio('')
 
       // Load tag models
       if (tagModelsData?.data) {
@@ -110,6 +109,7 @@ export function EditTagDialog({ open, onOpenChange }: EditTagDialogProps) {
       }
     }
   }, [open, currentTag, tagModelsData])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleAddCustomModel = () => {
     if (!customModel.trim()) return
@@ -163,8 +163,7 @@ export function EditTagDialog({ open, onOpenChange }: EditTagDialogProps) {
       newTag !== currentTag ||
       modelMapping.trim() ||
       selectedModels.length > 0 ||
-      selectedGroups.length > 0 ||
-      costRatio.trim() !== ''
+      selectedGroups.length > 0
 
     if (!hasChanges) {
       toast.warning(t('No changes to save'))
@@ -191,14 +190,6 @@ export function EditTagDialog({ open, onOpenChange }: EditTagDialogProps) {
 
       if (selectedGroups.length > 0) {
         params.groups = selectedGroups.join(',')
-      }
-      if (costRatio.trim() !== '') {
-        const parsed = Number(costRatio)
-        if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1000) {
-          toast.error('成本倍率必须在 0-1000 之间')
-          return
-        }
-        params.cost_ratio_ppm = Math.round(parsed * 1_000_000)
       }
 
       const response = await editTagChannels(
@@ -257,25 +248,6 @@ export function EditTagDialog({ open, onOpenChange }: EditTagDialogProps) {
     >
       <ScrollArea className='max-h-[60vh] pr-4'>
         <div className='space-y-6'>
-          <div className='space-y-2'>
-            <Label htmlFor='tag-cost-ratio'>渠道成本倍率</Label>
-            <Input
-              id='tag-cost-ratio'
-              type='number'
-              min={0}
-              max={1000}
-              step='0.000001'
-              value={costRatio}
-              onChange={(e) => setCostRatio(e.target.value)}
-              placeholder='留空保持不变，例如 0.85'
-            />
-            <p className='text-muted-foreground text-xs'>
-              批量应用到此标签下所有渠道；0 表示显式零成本。
-            </p>
-          </div>
-
-          <Separator />
-
           {/* Tag Name */}
           <div className='space-y-2'>
             <Label htmlFor='new-tag'>

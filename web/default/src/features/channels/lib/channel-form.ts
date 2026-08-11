@@ -140,7 +140,6 @@ export const channelFormSchema = z
     weight: z.number().optional(),
     concurrency_limit: z.number().int().min(0).max(100000),
     rpm_limit: z.number().int().min(0).max(10000000),
-    cost_ratio: z.number().min(0).max(1000).optional(),
     test_model: z.string().optional(),
     auto_ban: z.number().optional(),
     status: z.number(),
@@ -285,7 +284,6 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   weight: 0,
   concurrency_limit: 0,
   rpm_limit: 0,
-  cost_ratio: undefined,
   test_model: '',
   auto_ban: 1,
   status: CHANNEL_STATUS.ENABLED,
@@ -440,10 +438,6 @@ export function transformChannelToFormDefaults(
     priority: channel.priority || 0,
     concurrency_limit: channel.concurrency_limit || 0,
     rpm_limit: channel.rpm_limit || 0,
-    cost_ratio:
-      channel.cost_ratio_ppm == null
-        ? undefined
-        : channel.cost_ratio_ppm / 1_000_000,
     weight: channel.weight || 0,
     test_model: channel.test_model || '',
     auto_ban: channel.auto_ban ?? 1,
@@ -636,10 +630,6 @@ export function transformFormDataToCreatePayload(formData: ChannelFormValues): {
     weight: formData.weight || null,
     concurrency_limit: formData.concurrency_limit,
     rpm_limit: formData.rpm_limit,
-    cost_ratio_ppm:
-      formData.cost_ratio == null
-        ? null
-        : Math.round(formData.cost_ratio * 1_000_000),
     test_model: formData.test_model || null,
     auto_ban: formData.auto_ban ?? 1,
     status: formData.status,
@@ -690,10 +680,6 @@ export function transformFormDataToUpdatePayload(
     weight: formData.weight ?? 0,
     concurrency_limit: formData.concurrency_limit,
     rpm_limit: formData.rpm_limit,
-    cost_ratio_ppm:
-      formData.cost_ratio == null
-        ? null
-        : Math.round(formData.cost_ratio * 1_000_000),
     test_model: formData.test_model || null,
     auto_ban: formData.auto_ban ?? 1,
     status: formData.status,
