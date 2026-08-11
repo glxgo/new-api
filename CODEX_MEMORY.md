@@ -1403,3 +1403,11 @@
 - 生产切点固定为新分润版本首次正式容器启动时刻 `1786389981`（2026-08-11 03:26:21 CST）。切点前 12 笔历史充值曾被旧迁移误发 23 条 policy v1 分润，合计 9,688,300 quota；现已用单一受守护事务定向扣回这部分误增余额、删除对应 23 条新策略记录，并将 12 条充值台账改回 `legacy/policy=0`。事务仅针对记录 ID 110966–110988；切点后 ID 110989–110991 的 3 条正常分润完整保留。最终 policy v1 为 3 条、合计 750,000 quota，唯一键重复均为 0。
 - 本地 model 全量测试、Default TypeScript/ESLint/Default 与 Classic 生产构建、全仓 Go 编译和 Linux/amd64 静态构建通过。生产版本为 `20260811-rebate-cutover`，二进制 SHA-256 为 `ee2855fbb84a503738840f6ffded02e98c661c587d37a81c0dd6bb20d9b24616`。3010 候选、Nginx 切流、两侧长流自然排空和 3000 归一完成，正式容器 healthy、0 重启，三个生产域名各 5/5 返回新版本。
 - 回退前完整 MySQL 备份、目标数据子集、事务日志、前后 Compose/Nginx 和 SHA-256 清单位于 root-only `/opt/new-api-backups/rebate-history-rollback-20260811-1208/`。原 `20260811-juxing-api-commission` 镜像与二进制仍保留供回滚。
+
+### 2026-08-11 — 人工补单、管理员充值与幸运活动当前规则公示已发布
+
+- 提交 `7e9838dff` 将人工补单和显式管理员充值接入累计充值、policy v1 固定分润、幸运进度及幂等充值日志；同一来源重复提交不会重复增加额度、返利或幸运进度。赠金、兑换和原始余额覆盖等非充值动作仍排除，历史 `manual_review` 不会被自动重放。
+- 幸运活动 V2 数据此前已经发布成功，但 Default 公示面板复用了所选历史卡的规则，413 张 V1 可用卡使用户大多看到旧池。现用 `status.rule_set_id` 选择当前公示规则，用卡片自己的 `rule_set_id` 选择实际抽奖规则，并新增回归锁定“公示 V2、旧卡仍按 V1 抽奖”；界面显示“当前公示版本 V2”。
+- 本地人工补单/管理员充值定向 Go 测试、全仓 Go 编译、幸运规则 Node 测试、Default TypeScript/ESLint/Prettier/生产构建和 Classic Prettier/生产构建通过。提交已推送 `origin/main`。
+- 生产版本为 `20260811-manual-admin-lucky`，正式二进制 SHA-256 为 `21750a02384023c86e572269a54461bdb7836938d73e47f38eafe191204d6e7d`，镜像为 `new-api:20260811-manual-admin-lucky`。3010 候选、两次 Nginx 切流与两侧连接自然排空完成；正式 3000 healthy、0 重启、无 OOM，三个生产域名各 5/5 返回新版本。
+- 启动前后 policy v1 返利均保持 3 条、750,000 quota，切点前 policy v1 充值台账均为 0，没有历史补发或回退。活动仍为 rule id 2 / version 2，套餐池精确匹配新概率。发布前完整备份位于 `/opt/new-api-backups/release-20260811-manual-admin-lucky-20260811-1235/`。
