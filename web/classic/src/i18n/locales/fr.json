@@ -1844,7 +1844,7 @@
     "是": "Oui",
     "是否为企业账户": "Est-ce un compte d'entreprise ?",
     "是否同时重置对话消息？选择\"是\"将清空所有对话记录并恢复默认示例；选择\"否\"将保留当前对话记录。": "Voulez-vous également réinitialiser les messages de conversation ? Choisir \"Oui\" effacera tous les enregistrements de conversation et restaurera les exemples par défaut ; choisir \"Non\" conservera les enregistrements de conversation actuels.",
-    "是否将该订单标记为成功并为用户入账？": "Marquer cette commande comme réussie et créditer l'utilisateur ?",
+    "补单会为用户增加额度，并计入累充、分润和幸运大转盘进度，且无法自动撤销。是否继续？": "La complétion manuelle créditera l'utilisateur et comptera dans le cumul des recharges, les commissions et la progression de la roue de la chance. Elle ne peut pas être annulée automatiquement. Continuer ?",
     "是否检测上游模型更新": "",
     "是否确认充值？": "Confirmer la recharge ?",
     "是否自动同步上游模型更新": "",

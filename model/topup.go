@@ -54,6 +54,32 @@ func SetTopUpPaymentExpectation(topUp *TopUp, snapshot PaymentSnapshot) error {
 	return nil
 }
 
+// manualTopUpPaymentSnapshot turns the amount stored with an order into the
+// immutable settlement snapshot authorized by an administrator. New orders
+// should already carry an expectation; provider-specific fallbacks keep legacy
+// Stripe/Creem/Epay orders completable without guessing an ambiguous currency.
+func manualTopUpPaymentSnapshot(topUp *TopUp) (PaymentSnapshot, error) {
+	if topUp == nil {
+		return PaymentSnapshot{}, errors.New("topup is nil")
+	}
+	if topUp.ExpectedPaymentAmountMinor > 0 && strings.TrimSpace(topUp.ExpectedPaymentCurrency) != "" {
+		return NewPaymentSnapshotFromMinor(topUp.ExpectedPaymentAmountMinor, topUp.ExpectedPaymentCurrency)
+	}
+
+	var currency string
+	switch topUp.PaymentProvider {
+	case "", PaymentProviderEpay:
+		currency = "CNY"
+	case PaymentProviderStripe, PaymentProviderCreem, PaymentProviderWaffoPancake:
+		currency = "USD"
+	case PaymentProviderWaffo:
+		return PaymentSnapshot{}, errors.New("充值订单缺少支付金额和币种快照，无法补单")
+	default:
+		return PaymentSnapshot{}, errors.New("不支持该支付渠道的人工补单")
+	}
+	return NewPaymentSnapshotFromMoney(topUp.Money, currency)
+}
+
 func applyVerifiedTopUpPayment(topUp *TopUp, actual PaymentSnapshot) error {
 	if topUp == nil {
 		return errors.New("topup is nil")
@@ -529,6 +555,7 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 	var quotaToAdd int
 	var payMoney float64
 	var paymentMethod string
+	var completedNow bool
 
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		topUp := &TopUp{}
@@ -563,13 +590,19 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 		if quotaToAdd <= 0 {
 			return errors.New("无效的充值额度")
 		}
-		// Manual completion proves only that an administrator wants to grant the
-		// purchased quota. Even when the order has an expected payment snapshot,
-		// it does not prove that the provider received money. Cash-only effects
-		// (cumulative recharge, commission and lucky-wheel progress) are deferred
-		// until an authenticated provider callback supplies the actual snapshot.
-		topUp.CommissionReconciliationStatus = "manual_review"
-		topUp.CommissionReconciliationReason = "manual completion has no verified provider payment snapshot; cumulative recharge, commission and lucky progress were withheld"
+		paymentSnapshot, err := manualTopUpPaymentSnapshot(topUp)
+		if err != nil {
+			return err
+		}
+		if topUp.ExpectedPaymentAmountMinor <= 0 || strings.TrimSpace(topUp.ExpectedPaymentCurrency) == "" {
+			if err := SetTopUpPaymentExpectation(topUp, paymentSnapshot); err != nil {
+				return err
+			}
+		}
+		topUp.ActualPaymentAmountMinor = paymentSnapshot.AmountMinor
+		topUp.ActualPaymentCurrency = paymentSnapshot.Currency
+		topUp.CommissionReconciliationStatus = "manual_completed"
+		topUp.CommissionReconciliationReason = "administrator authorized the stored order amount and currency for recharge settlement"
 
 		// 标记完成
 		topUp.CompleteTime = common.GetTimestamp()
@@ -583,9 +616,19 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 		if err := tx.Model(&User{}).Where("id = ?", topUp.UserId).Update("quota", gorm.Expr("quota + ?", quotaToAdd)).Error; err != nil {
 			return err
 		}
+		if _, err := RecordTopUpRechargeCreditTx(tx, topUp); err != nil {
+			return err
+		}
+		if err := completeTopUpCouponUseTx(tx, topUp); err != nil {
+			return err
+		}
+		if _, err := RecordLuckyRechargeTx(tx, topUp); err != nil {
+			return err
+		}
 		userId = topUp.UserId
 		payMoney = topUp.Money
 		paymentMethod = topUp.PaymentMethod
+		completedNow = true
 		return nil
 	})
 
@@ -593,8 +636,15 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 		return err
 	}
 
-	// 事务外记录日志，避免阻塞
-	RecordTopupLog(userId, fmt.Sprintf("管理员补单成功，充值金额: %v，支付金额：%f", logger.FormatQuota(quotaToAdd), payMoney), callerIp, paymentMethod, "admin")
+	if !completedNow {
+		return nil
+	}
+
+	// 事务外幂等记录日志，避免日志库阻塞主账务事务。
+	content := fmt.Sprintf("管理员补单成功，充值额度: %v，支付金额: %.2f；已计入累充、分润和幸运进度", logger.FormatQuota(quotaToAdd), payMoney)
+	if err := EnsureTopupPaymentLog(userId, "wallet_topup:manual:"+tradeNo, content, callerIp, paymentMethod, "admin"); err != nil {
+		common.SysLog(fmt.Sprintf("failed to record manual topup log for user %d: %s", userId, err.Error()))
+	}
 	_ = InvalidateUserCache(userId)
 	InvalidateRechargeCommissionRecipientCaches(RechargeSourceWalletTopUp, tradeNo)
 	return nil

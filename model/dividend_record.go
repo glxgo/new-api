@@ -67,7 +67,7 @@ type AffiliateSourceSummary struct {
 	Rebate        int64
 }
 
-// GetAffiliateSourceSummaries 返回指定下级为某个收款用户累计产生的真实付款与返利。
+// GetAffiliateSourceSummaries 返回指定下级为某个收款用户累计产生的有效充值与返利。
 func GetAffiliateSourceSummaries(recipientId int, sourceUserIds []int) (map[int]AffiliateSourceSummary, error) {
 	result := make(map[int]AffiliateSourceSummary, len(sourceUserIds))
 	if recipientId <= 0 || len(sourceUserIds) == 0 {
@@ -84,7 +84,7 @@ func GetAffiliateSourceSummaries(recipientId int, sourceUserIds []int) (map[int]
 	var recharges []rechargeRow
 	if err := DB.Model(&RechargeCredit{}).
 		Select("user_id, COALESCE(SUM(amount_cents), 0) AS amount").
-		Where("user_id IN ? AND source_type IN ? AND commission_state = ? AND commission_policy_version = ?", sourceUserIds, []string{RechargeSourceWalletTopUp, RechargeSourceSubscription, RechargeSourceVirtualMembership}, RechargeCommissionDone, RechargeCommissionPolicyV1).
+		Where("user_id IN ? AND source_type IN ? AND commission_state = ? AND commission_policy_version = ?", sourceUserIds, []string{RechargeSourceWalletTopUp, RechargeSourceSubscription, RechargeSourceVirtualMembership, RechargeSourceAdmin}, RechargeCommissionDone, RechargeCommissionPolicyV1).
 		Group("user_id").Scan(&recharges).Error; err != nil {
 		return nil, err
 	}
@@ -113,7 +113,7 @@ func GetAffiliateSourceSummaries(recipientId int, sourceUserIds []int) (map[int]
 	return result, nil
 }
 
-// GetRechargeCentsByUsersBetween 返回指定时间窗内的真实支付充值汇总。
+// GetRechargeCentsByUsersBetween 返回指定时间窗内计入累充的充值汇总。
 func GetRechargeCentsByUsersBetween(userIds []int, start, end int64) (map[int]int64, error) {
 	result := make(map[int]int64, len(userIds))
 	if len(userIds) == 0 {
@@ -126,7 +126,7 @@ func GetRechargeCentsByUsersBetween(userIds []int, start, end int64) (map[int]in
 	var rows []row
 	err := DB.Model(&RechargeCredit{}).
 		Select("user_id, COALESCE(SUM(amount_cents), 0) AS amount").
-		Where("user_id IN ? AND source_type IN ? AND commission_state = ? AND commission_policy_version = ? AND created_at >= ? AND created_at < ?", userIds, []string{RechargeSourceWalletTopUp, RechargeSourceSubscription, RechargeSourceVirtualMembership}, RechargeCommissionDone, RechargeCommissionPolicyV1, start, end).
+		Where("user_id IN ? AND source_type IN ? AND commission_state = ? AND commission_policy_version = ? AND created_at >= ? AND created_at < ?", userIds, []string{RechargeSourceWalletTopUp, RechargeSourceSubscription, RechargeSourceVirtualMembership, RechargeSourceAdmin}, RechargeCommissionDone, RechargeCommissionPolicyV1, start, end).
 		Group("user_id").Scan(&rows).Error
 	if err != nil {
 		return nil, err

@@ -77,6 +77,7 @@ import {
   getTargetRotation,
   getWheelLabelRotation,
   PRIZE_NAMES,
+  selectLuckyRules,
 } from './wheel-model'
 
 const DRAW_PAGE_SIZE = 10
@@ -147,16 +148,19 @@ export function LuckyWheel() {
   const selectedCard = availableCards.find(
     (card) => String(card.id) === selectedCardId
   )
-  const activeRule =
-    rules.find((rule) => rule.id === selectedCard?.rule_set_id) || rules[0]
+  const { drawRule, publicRule } = selectLuckyRules(
+    rules,
+    status?.rule_set_id,
+    selectedCard?.rule_set_id
+  )
   const visiblePool = useMemo(
     () =>
       selectedCard?.pool_type === 'recharge'
-        ? parsePool(activeRule?.recharge_pool)
-        : parsePool(activeRule?.subscription_pool),
+        ? parsePool(drawRule?.recharge_pool)
+        : parsePool(drawRule?.subscription_pool),
     [
-      activeRule?.recharge_pool,
-      activeRule?.subscription_pool,
+      drawRule?.recharge_pool,
+      drawRule?.subscription_pool,
       selectedCard?.pool_type,
     ]
   )
@@ -165,20 +169,16 @@ export function LuckyWheel() {
       buildWheelSegments(
         visiblePool,
         selectedCard?.pool_type || 'subscription',
-        activeRule?.recharge_bonus_usd_micros || 0
+        drawRule?.recharge_bonus_usd_micros || 0
       ),
-    [
-      activeRule?.recharge_bonus_usd_micros,
-      selectedCard?.pool_type,
-      visiblePool,
-    ]
+    [drawRule?.recharge_bonus_usd_micros, selectedCard?.pool_type, visiblePool]
   )
   const previewPool = useMemo(
     () =>
       poolPreviewType === 'recharge'
-        ? parsePool(activeRule?.recharge_pool)
-        : parsePool(activeRule?.subscription_pool),
-    [activeRule?.recharge_pool, activeRule?.subscription_pool, poolPreviewType]
+        ? parsePool(publicRule?.recharge_pool)
+        : parsePool(publicRule?.subscription_pool),
+    [publicRule?.recharge_pool, publicRule?.subscription_pool, poolPreviewType]
   )
   const previewLabels = useMemo(
     () =>
@@ -186,10 +186,10 @@ export function LuckyWheel() {
         buildWheelSegments(
           previewPool,
           poolPreviewType,
-          activeRule?.recharge_bonus_usd_micros || 0
+          publicRule?.recharge_bonus_usd_micros || 0
         ).map((prize) => [prize.code, prize.label])
       ),
-    [activeRule?.recharge_bonus_usd_micros, poolPreviewType, previewPool]
+    [publicRule?.recharge_bonus_usd_micros, poolPreviewType, previewPool]
   )
 
   async function refresh(preferredCardId = '', requestedDrawPage = 1) {
@@ -539,14 +539,21 @@ export function LuckyWheel() {
                     className='mt-4 w-full max-w-2xl rounded-2xl border border-[#df744d]/25 bg-white/90 p-4 text-left shadow-sm sm:p-5 dark:border-[#f08a61]/35 dark:bg-[#271711] dark:shadow-[0_18px_45px_-28px_rgba(0,0,0,.95)]'
                   >
                     <div className='mb-4'>
-                      <h3
-                        id='lucky-wheel-rules-title'
-                        className='font-serif text-xl font-semibold text-[#6f2b18] dark:text-[#ffd9c8]'
-                      >
-                        活动规则与奖池概率
-                      </h3>
+                      <div className='flex flex-wrap items-center gap-2'>
+                        <h3
+                          id='lucky-wheel-rules-title'
+                          className='font-serif text-xl font-semibold text-[#6f2b18] dark:text-[#ffd9c8]'
+                        >
+                          活动规则与奖池概率
+                        </h3>
+                        {publicRule && (
+                          <Badge variant='secondary'>
+                            当前公示版本 V{publicRule.version}
+                          </Badge>
+                        )}
+                      </div>
                       <p className='text-muted-foreground mt-1 text-sm dark:text-[#d6b4a6]'>
-                        两类幸运卡使用独立奖池。可主动切换查看，实际抽奖仍严格跟随所选卡片来源。
+                        这里公示当前活动最新版；历史卡实际抽奖仍严格按发卡时绑定的规则执行。
                       </p>
                     </div>
                     <div className='mb-4 grid grid-cols-2 gap-1 rounded-xl border border-[#df744d]/20 bg-[#fff7ef] p-1 dark:border-[#f08a61]/25 dark:bg-black/20'>
@@ -606,7 +613,7 @@ export function LuckyWheel() {
                           充值来源卡：
                         </strong>
                         套餐额度奖在显示面额上额外增加 $
-                        {(activeRule?.recharge_bonus_usd_micros || 0) /
+                        {(publicRule?.recharge_bonus_usd_micros || 0) /
                           1_000_000}
                         ，有效期固定 30 天；不会抽中套餐双倍卡或全额重置卡。
                       </p>

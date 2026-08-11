@@ -86,7 +86,7 @@ export function Profit() {
           <div className='flex flex-wrap items-center justify-between gap-2'>
             <p className='text-muted-foreground text-sm'>
               {t(
-                '仅按真实外部付款固定比例分润；余额购买和管理员发放不重复计入。'
+                '外部付款、人工补单和管理员充值按固定比例分润；余额购买和免费会员发放不重复计入。'
               )}
             </p>
             <div className='bg-muted inline-flex rounded-lg p-0.5'>

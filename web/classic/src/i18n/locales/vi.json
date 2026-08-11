@@ -1816,7 +1816,7 @@
     "是": "Có",
     "是否为企业账户": "Đây có phải là tài khoản doanh nghiệp không?",
     "是否同时重置对话消息？选择\"是\"将清空所有对话记录并恢复默认示例；选择\"否\"将保留当前对话记录。": "Đặt lại tin nhắn trò chuyện cùng lúc? Chọn \"Có\" sẽ xóa tất cả hồ sơ trò chuyện và khôi phục các ví dụ mặc định; chọn \"Không\" sẽ giữ lại hồ sơ trò chuyện hiện tại.",
-    "是否将该订单标记为成功并为用户入账？": "Đánh dấu đơn hàng này là thành công và ghi có cho người dùng?",
+    "补单会为用户增加额度，并计入累充、分润和幸运大转盘进度，且无法自动撤销。是否继续？": "Hoàn thành thủ công sẽ cộng hạn mức cho người dùng và tính vào tổng nạp, hoa hồng cùng tiến độ Vòng quay may mắn. Thao tác này không thể tự động hoàn tác. Tiếp tục?",
     "是否检测上游模型更新": "",
     "是否确认充值？": "Confirm the recharge?",
     "是否自动同步上游模型更新": "",

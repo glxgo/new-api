@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
@@ -45,8 +46,9 @@ type RechargeCapacityProgress struct {
 }
 
 // RechargeCredit is an append-only, idempotent qualification ledger. It keeps
-// paid orders and administrator recharge actions auditable without treating
-// gifts, redemptions, check-ins, refunds, or balance overrides as recharge.
+// paid orders and explicit administrator recharge actions auditable and
+// qualified, without treating gifts, redemptions, check-ins, refunds, or raw
+// balance overrides as recharge.
 type RechargeCredit struct {
 	Id                      int64  `json:"id" gorm:"primaryKey"`
 	UserId                  int    `json:"user_id" gorm:"not null;index"`
@@ -134,9 +136,9 @@ func MoneyToRechargeCents(money float64) int64 {
 }
 
 func RecordRechargeCreditTx(tx *gorm.DB, userId int, amountCents int64, sourceType string, sourceRef string, createdAt int64) (bool, error) {
-	// Administrative grants are retained as auditable ledger events, but they
-	// are not real payments: they must not depend on payment conversion,
-	// increase cumulative recharge, or enter cash commission settlement.
+	// Non-qualified legacy and gift sources remain auditable without entering
+	// cumulative recharge or fixed commission settlement. Explicit administrator
+	// recharge is a qualified source and follows the same atomic path as payment.
 	if !rechargeSourcePaysCommission(sourceType) {
 		return recordRechargeCreditTx(tx, userId, amountCents, 0, "CNY", sourceType, sourceRef, createdAt, RechargeCommissionPending)
 	}
@@ -217,6 +219,7 @@ func recordRechargeCreditTx(tx *gorm.DB, userId int, amountCents, commissionBase
 				RechargeSourceWalletTopUp,
 				RechargeSourceSubscription,
 				RechargeSourceVirtualMembership,
+				RechargeSourceAdmin,
 			}).
 			Select("COALESCE(SUM(amount_cents), 0)").
 			Scan(&ledgerTotal).Error; err != nil {
@@ -283,8 +286,11 @@ func IncreaseUserQuotaWithRechargeCredit(userId int, quota int, amountCents int6
 	if userId <= 0 || quota <= 0 || amountCents <= 0 || strings.TrimSpace(sourceRef) == "" {
 		return errors.New("invalid administrator recharge")
 	}
+	var createdNow bool
+	var occurredAt int64
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		created, err := RecordRechargeCreditTx(tx, userId, amountCents, "admin", sourceRef, common.GetTimestamp())
+		occurredAt = common.GetTimestamp()
+		created, err := RecordRechargeCreditTx(tx, userId, amountCents, RechargeSourceAdmin, sourceRef, occurredAt)
 		if err != nil {
 			return err
 		}
@@ -298,6 +304,10 @@ func IncreaseUserQuotaWithRechargeCredit(userId int, quota int, amountCents int6
 		} else if result.RowsAffected != 1 {
 			return fmt.Errorf("user %d not found", userId)
 		}
+		if _, err := RecordLuckyPaidOrderRechargeTx(tx, userId, amountCents, RechargeSourceAdmin, sourceRef, occurredAt); err != nil {
+			return err
+		}
+		createdNow = true
 		return nil
 	})
 	if err != nil {
@@ -305,6 +315,13 @@ func IncreaseUserQuotaWithRechargeCredit(userId int, quota int, amountCents int6
 	}
 	if err := InvalidateUserCache(userId); err != nil {
 		common.SysLog(fmt.Sprintf("failed to invalidate recharge capacity cache for user %d: %s", userId, err.Error()))
+	}
+	InvalidateRechargeCommissionRecipientCaches(RechargeSourceAdmin, sourceRef)
+	if createdNow && LOG_DB != nil {
+		content := fmt.Sprintf("管理员充值成功，充值额度: %v，计入充值金额: ¥%.2f", logger.FormatQuota(quota), float64(amountCents)/100)
+		if err := EnsureTopupLog(userId, "admin_recharge:"+sourceRef, content); err != nil {
+			common.SysLog(fmt.Sprintf("failed to record administrator recharge log for user %d: %s", userId, err.Error()))
+		}
 	}
 	return nil
 }

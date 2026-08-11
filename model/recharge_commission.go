@@ -30,9 +30,10 @@ const (
 var ErrUnsupportedPaymentCurrency = errors.New("unsupported payment currency snapshot")
 var ErrPaymentSnapshotMismatch = errors.New("verified payment amount or currency does not match order snapshot")
 
-// PaymentSnapshot is captured only after a provider webhook has been
-// authenticated. AmountMinor uses the ISO currency's minor unit; this policy
-// currently accepts only CNY and USD, both with two decimal places.
+// PaymentSnapshot is the immutable amount used to settle a recharge. It is
+// captured either from an authenticated provider callback or from an explicit
+// administrator completion. AmountMinor uses the ISO currency's minor unit;
+// this policy currently accepts only CNY and USD, both with two decimal places.
 type PaymentSnapshot struct {
 	AmountMinor int64  `json:"amount_minor"`
 	Currency    string `json:"currency"`
@@ -136,7 +137,7 @@ func RechargeCommissionSourceRef(sourceType, sourceRef string) string {
 
 func rechargeSourcePaysCommission(sourceType string) bool {
 	switch strings.TrimSpace(sourceType) {
-	case RechargeSourceWalletTopUp, RechargeSourceSubscription, RechargeSourceVirtualMembership:
+	case RechargeSourceWalletTopUp, RechargeSourceSubscription, RechargeSourceVirtualMembership, RechargeSourceAdmin:
 		return true
 	default:
 		return false

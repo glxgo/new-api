@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { LuckyCard, LuckyPrize } from './types.ts'
+import type { LuckyCard, LuckyPrize, LuckyRuleSet } from './types.ts'
 
 export const PRIZE_NAMES: Record<string, string> = {
   quota_5: '$5 套餐额度',
@@ -35,6 +35,17 @@ export const PRIZE_NAMES: Record<string, string> = {
 
 export interface WheelSegment extends LuckyPrize {
   label: string
+}
+
+export function selectLuckyRules(
+  rules: LuckyRuleSet[],
+  currentRuleId?: number,
+  selectedCardRuleId?: number
+) {
+  const publicRule = rules.find((rule) => rule.id === currentRuleId) || rules[0]
+  const drawRule =
+    rules.find((rule) => rule.id === selectedCardRuleId) || publicRule
+  return { drawRule, publicRule }
 }
 
 function availableCards(cards: LuckyCard[]) {

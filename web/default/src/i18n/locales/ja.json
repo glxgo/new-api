@@ -445,7 +445,7 @@
     "Are you sure you want to delete this key? This action cannot be undone.": "このキーを削除してもよろしいですか？この操作は元に戻せません。",
     "Are you sure you want to disable all enabled keys?": "すべての有効なキーを無効にすることをよろしいですか？",
     "Are you sure you want to enable all keys?": "すべてのキーを有効にすることをよろしいですか？",
-    "Are you sure you want to manually complete this order? The user will be credited with the corresponding quota.": "この注文を手動で完了してもよろしいですか？ユーザーには対応するクォータがクレジットされます。",
+    "Are you sure you want to manually complete this order? The user will receive quota, and this amount will count toward cumulative recharge, commissions, and Lucky Wheel progress. This cannot be automatically reversed.": "この注文を手動で完了しますか？ユーザーにクォータが付与され、累計チャージ、コミッション、ラッキールーレットの進捗にも反映されます。この操作は自動では取り消せません。",
     "Are you sure you want to sign out? You will need to sign in again to access your account.": "ログアウトしてもよろしいですか？アカウントにアクセスするには再度ログインする必要があります。",
     "Are you sure you want to unbind {{provider}} for this user? The user will no longer be able to log in via this method.": "このユーザーの{{provider}}連携を解除してもよろしいですか？このユーザーはこの方法でログインできなくなります。",
     "Are you sure you want to unbind {{provider}}? You will no longer be able to log in via this method.": "{{provider}}の連携を解除してもよろしいですか？この方法でログインできなくなります。",

@@ -9,11 +9,11 @@ const rules = [
   ['普通用户邀新', '直属充值 5%，二级充值 2%'],
   ['代理邀新', '直属充值 8%，二级充值 4%'],
   ['管理员分润', '直属用户充值 15%，二级用户充值 5%'],
-  ['超级管理员', '全部真实外部付款固定 5%'],
+  ['超级管理员', '全部有效充值事件固定 5%'],
 ] as const
 
 // Fixed business policy: intentionally read-only. Model prices, channel costs,
-// balance purchases and administrator grants never change or trigger it.
+// balance purchases and free membership grants never change or trigger it.
 export function DividendSettingsSection() {
   const { t } = useTranslation()
   return (
@@ -44,7 +44,7 @@ export function DividendSettingsSection() {
         </div>
         <p className='text-muted-foreground border-t border-dashed px-5 py-4 text-xs leading-relaxed'>
           {t(
-            '仅真实外部付款计入充值和分润；余额购买避免重复计算，管理员免费发放不计入。历史已结算记录保持不变。'
+            '外部付款、人工补单和管理员充值均计入累充与分润；余额购买和免费会员发放不重复触发。历史已结算记录保持不变。'
           )}
         </p>
       </div>

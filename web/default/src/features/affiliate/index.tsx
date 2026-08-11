@@ -92,7 +92,7 @@ export function Affiliate() {
             </div>
             <p className='text-muted-foreground mt-2 text-sm leading-relaxed'>
               {t(
-                'Real external payments from direct invitees earn {{rate}}%; payments from second-level invitees earn {{irate}}%.',
+                'Qualifying recharges from direct invitees earn {{rate}}%; qualifying recharges from second-level invitees earn {{irate}}%.',
                 {
                   rate: Math.round((s?.direct_rate ?? 0.05) * 100),
                   irate: Math.round((s?.indirect_rate ?? 0.02) * 100),
@@ -110,7 +110,7 @@ export function Affiliate() {
             </p>
             <p className='text-muted-foreground mt-1 text-xs'>
               {t(
-                'Balance purchases and administrator grants do not trigger another commission.'
+                'Balance purchases and free membership grants do not trigger another commission; administrator recharges do.'
               )}
             </p>
             {s?.rebate_withdrawable && (

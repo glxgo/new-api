@@ -86,27 +86,59 @@ func TestRechargeCapacityProgress(t *testing.T) {
 	require.Len(t, progress.Tiers, 6)
 }
 
-func TestAdministratorGrantIsAtomicIdempotentAndNotCumulativeRecharge(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&User{}, &RechargeCredit{}))
-	oldDB := DB
-	DB = db
-	t.Cleanup(func() { DB = oldDB })
+func TestAdministratorRechargeCountsCommissionAndLuckyProgressOnce(t *testing.T) {
+	db := setupLuckyWheelTestDB(t)
+	require.NoError(t, db.AutoMigrate(&RechargeCredit{}, &DividendRecord{}, &Log{}))
+	oldLogDB, oldQuota, oldPrice, oldRedis := LOG_DB, common.QuotaPerUnit, operation_setting.Price, common.RedisEnabled
+	LOG_DB, common.QuotaPerUnit, operation_setting.Price, common.RedisEnabled = db, 100, 1, false
+	t.Cleanup(func() {
+		LOG_DB, common.QuotaPerUnit, operation_setting.Price, common.RedisEnabled = oldLogDB, oldQuota, oldPrice, oldRedis
+	})
+	require.NoError(t, db.Model(&LuckyCampaign{}).Where("code = ?", LuckyCampaignCode).
+		Updates(map[string]interface{}{"issuance_paused": false, "draw_paused": false}).Error)
 
-	user := User{Username: "admin-recharge", Password: "hashed-password", AffCode: "rcc2"}
+	root := User{Username: "admin-recharge-root", Role: common.RoleRootUser, Password: "hashed-password", AffCode: "rcc-root"}
+	inviter := User{Username: "admin-recharge-inviter", Role: common.RoleCommonUser, Password: "hashed-password", AffCode: "rcc-inviter"}
+	require.NoError(t, db.Create(&root).Error)
+	require.NoError(t, db.Create(&inviter).Error)
+	user := User{Username: "admin-recharge", Password: "hashed-password", AffCode: "rcc2", InviterId: inviter.Id}
 	require.NoError(t, db.Create(&user).Error)
 
-	require.NoError(t, IncreaseUserQuotaWithRechargeCredit(user.Id, 500_000, 100, "admin-request-1"))
-	require.NoError(t, IncreaseUserQuotaWithRechargeCredit(user.Id, 500_000, 100, "admin-request-1"))
+	require.NoError(t, IncreaseUserQuotaWithRechargeCredit(user.Id, 10_000, 10_000, "admin-request-1"))
+	require.NoError(t, IncreaseUserQuotaWithRechargeCredit(user.Id, 10_000, 10_000, "admin-request-1"))
 
-	var stored User
+	var stored, storedRoot, storedInviter User
 	require.NoError(t, db.First(&stored, user.Id).Error)
-	require.Equal(t, 500_000, stored.Quota)
-	require.Zero(t, stored.RechargeTotalCents)
+	require.NoError(t, db.First(&storedRoot, root.Id).Error)
+	require.NoError(t, db.First(&storedInviter, inviter.Id).Error)
+	require.Equal(t, 10_000, stored.Quota)
+	require.EqualValues(t, 10_000, stored.RechargeTotalCents)
+	require.Equal(t, 500, storedRoot.DividendBalance)
+	require.Equal(t, 500, storedInviter.GiftQuota)
+
+	var progress LuckyRechargeProgress
+	require.NoError(t, db.First(&progress, user.Id).Error)
+	require.EqualValues(t, 10_000, progress.EligibleCents)
+	require.EqualValues(t, 2, progress.HighestAwardedStage)
+	var creditCount, dividendCount, luckyEventCount, topupLogCount int64
+	require.NoError(t, db.Model(&RechargeCredit{}).Where("source_type = ? AND source_ref = ?", RechargeSourceAdmin, "admin-request-1").Count(&creditCount).Error)
+	require.NoError(t, db.Model(&DividendRecord{}).Where("source_ref = ?", RechargeCommissionSourceRef(RechargeSourceAdmin, "admin-request-1")).Count(&dividendCount).Error)
+	require.NoError(t, db.Model(&LuckyRechargeEvent{}).Where("source_type = ? AND source_ref = ?", RechargeSourceAdmin, "admin-request-1").Count(&luckyEventCount).Error)
+	require.NoError(t, db.Model(&Log{}).Where("financial_event_key = ?", "topup:admin_recharge:admin-request-1").Count(&topupLogCount).Error)
+	require.EqualValues(t, 1, creditCount)
+	require.EqualValues(t, 2, dividendCount)
+	require.EqualValues(t, 1, luckyEventCount)
+	require.EqualValues(t, 1, topupLogCount)
+	summaries, err := GetAffiliateSourceSummaries(inviter.Id, []int{user.Id})
+	require.NoError(t, err)
+	require.EqualValues(t, 10_000, summaries[user.Id].RechargeCents)
+	require.EqualValues(t, 500, summaries[user.Id].Rebate)
+	windowed, err := GetRechargeCentsByUsersBetween([]int{user.Id}, 0, common.GetTimestamp()+1)
+	require.NoError(t, err)
+	require.EqualValues(t, 10_000, windowed[user.Id])
 }
 
-func TestManualCompleteTopUpWithholdsUnverifiedStripeCommissionButCompletesQuota(t *testing.T) {
+func TestManualCompleteTopUpCountsStripeRechargeCommissionOnce(t *testing.T) {
 	db := newRechargeCommissionTestDB(t)
 	require.NoError(t, db.AutoMigrate(&TopUp{}, &Log{}))
 	oldDB, oldQuota, oldPrice := DB, common.QuotaPerUnit, operation_setting.Price
@@ -123,15 +155,21 @@ func TestManualCompleteTopUpWithholdsUnverifiedStripeCommissionButCompletesQuota
 	require.NoError(t, db.Create(&topup).Error)
 
 	require.NoError(t, ManualCompleteTopUp(topup.TradeNo, "127.0.0.1"))
+	require.NoError(t, ManualCompleteTopUp(topup.TradeNo, "127.0.0.1"))
 	require.NoError(t, db.First(&topup, topup.Id).Error)
 	require.Equal(t, common.TopUpStatusSuccess, topup.Status)
-	require.Equal(t, "manual_review", topup.CommissionReconciliationStatus)
+	require.Equal(t, "manual_completed", topup.CommissionReconciliationStatus)
+	require.EqualValues(t, 1_000, topup.ActualPaymentAmountMinor)
+	require.Equal(t, "USD", topup.ActualPaymentCurrency)
 	var creditCount int64
 	require.NoError(t, db.Model(&RechargeCredit{}).Where("source_ref = ?", topup.TradeNo).Count(&creditCount).Error)
-	require.Zero(t, creditCount)
+	require.EqualValues(t, 1, creditCount)
 	require.NoError(t, db.First(&user, user.Id).Error)
 	require.Equal(t, 1_000, user.Quota)
-	require.Zero(t, user.RechargeTotalCents)
+	require.EqualValues(t, 7_300, user.RechargeTotalCents)
+	var manualLogCount int64
+	require.NoError(t, db.Model(&Log{}).Where("financial_event_key = ?", "topup:wallet_topup:manual:"+topup.TradeNo).Count(&manualLogCount).Error)
+	require.EqualValues(t, 1, manualLogCount)
 
 	actual := PaymentSnapshot{AmountMinor: 1_000, Currency: "USD"}
 	require.NoError(t, Recharge(topup.TradeNo, "cus_verified", "127.0.0.1", actual))
@@ -148,39 +186,45 @@ func TestManualCompleteTopUpWithholdsUnverifiedStripeCommissionButCompletesQuota
 	require.EqualValues(t, 1, providerLogCount, "provider callback replay must not duplicate the financial log")
 }
 
-func TestManualCompleteTopUpWithholdsExpectedSnapshotUntilVerifiedCallback(t *testing.T) {
-	db := newRechargeCommissionTestDB(t)
-	require.NoError(t, db.AutoMigrate(&TopUp{}, &LuckyRechargeEvent{}, &LuckyRechargeProgress{}))
+func TestManualCompleteTopUpCountsLuckyProgressFromExpectedSnapshot(t *testing.T) {
+	db := setupLuckyWheelTestDB(t)
+	require.NoError(t, db.AutoMigrate(&RechargeCredit{}, &DividendRecord{}))
 	oldDB, oldPrice, oldQuota := DB, operation_setting.Price, common.QuotaPerUnit
 	DB, operation_setting.Price, common.QuotaPerUnit = db, 7.3, 100
 	t.Cleanup(func() { DB, operation_setting.Price, common.QuotaPerUnit = oldDB, oldPrice, oldQuota })
+	require.NoError(t, db.Model(&LuckyCampaign{}).Where("code = ?", LuckyCampaignCode).
+		Updates(map[string]interface{}{"issuance_paused": false, "draw_paused": false}).Error)
 
 	user := User{Username: "manual-waffo", Password: "hashed-password", AffCode: "manual-waffo"}
 	require.NoError(t, db.Create(&user).Error)
 	topup := TopUp{
 		UserId: user.Id, Amount: 10, Money: 10, TradeNo: "manual-waffo-trusted",
 		PaymentProvider: PaymentProviderWaffo, Status: common.TopUpStatusPending,
-		LuckyRechargeEligible: true, LuckyRuleSetId: 99,
 	}
 	expected := PaymentSnapshot{AmountMinor: 1_000, Currency: "USD"}
 	require.NoError(t, SetTopUpPaymentExpectation(&topup, expected))
 	require.NoError(t, db.Create(&topup).Error)
 
 	require.NoError(t, ManualCompleteTopUp(topup.TradeNo, "127.0.0.1"))
+	require.NoError(t, ManualCompleteTopUp(topup.TradeNo, "127.0.0.1"))
 	require.NoError(t, db.First(&topup, topup.Id).Error)
 	require.Equal(t, common.TopUpStatusSuccess, topup.Status)
-	require.Equal(t, "manual_review", topup.CommissionReconciliationStatus)
-	require.Zero(t, topup.ActualPaymentAmountMinor)
+	require.Equal(t, "manual_completed", topup.CommissionReconciliationStatus)
+	require.EqualValues(t, expected.AmountMinor, topup.ActualPaymentAmountMinor)
+	require.Equal(t, expected.Currency, topup.ActualPaymentCurrency)
 	var creditCount, luckyEventCount, luckyProgressCount int64
 	require.NoError(t, db.Model(&RechargeCredit{}).Where("source_ref = ?", topup.TradeNo).Count(&creditCount).Error)
 	require.NoError(t, db.Model(&LuckyRechargeEvent{}).Where("source_ref = ?", topup.TradeNo).Count(&luckyEventCount).Error)
 	require.NoError(t, db.Model(&LuckyRechargeProgress{}).Where("user_id = ?", user.Id).Count(&luckyProgressCount).Error)
-	require.Zero(t, creditCount)
-	require.Zero(t, luckyEventCount)
-	require.Zero(t, luckyProgressCount)
+	require.EqualValues(t, 1, creditCount)
+	require.EqualValues(t, 1, luckyEventCount)
+	require.EqualValues(t, 1, luckyProgressCount)
 	require.NoError(t, db.First(&user, user.Id).Error)
 	require.Equal(t, 1_000, user.Quota)
-	require.Zero(t, user.RechargeTotalCents)
+	require.EqualValues(t, 7_300, user.RechargeTotalCents)
+	var progress LuckyRechargeProgress
+	require.NoError(t, db.First(&progress, user.Id).Error)
+	require.EqualValues(t, 7_300, progress.EligibleCents)
 }
 
 func TestManualCompleteCreemUsesStoredQuotaWithoutMultiplyingAgain(t *testing.T) {
@@ -203,12 +247,14 @@ func TestManualCompleteCreemUsesStoredQuotaWithoutMultiplyingAgain(t *testing.T)
 	require.NoError(t, ManualCompleteTopUp(topup.TradeNo, "127.0.0.1"))
 	require.NoError(t, db.First(&user, user.Id).Error)
 	require.Equal(t, 1_000, user.Quota, "Creem Amount is already internal quota")
-	require.Zero(t, user.RechargeTotalCents)
+	require.EqualValues(t, 7_300, user.RechargeTotalCents)
 	require.NoError(t, db.First(&topup, topup.Id).Error)
-	require.Equal(t, "manual_review", topup.CommissionReconciliationStatus)
+	require.Equal(t, "manual_completed", topup.CommissionReconciliationStatus)
+	require.EqualValues(t, 1_000, topup.ActualPaymentAmountMinor)
+	require.Equal(t, "USD", topup.ActualPaymentCurrency)
 	var creditCount int64
 	require.NoError(t, db.Model(&RechargeCredit{}).Where("source_ref = ?", topup.TradeNo).Count(&creditCount).Error)
-	require.Zero(t, creditCount)
+	require.EqualValues(t, 1, creditCount)
 
 	actual := PaymentSnapshot{AmountMinor: 1_000, Currency: "USD"}
 	require.NoError(t, RechargeCreem(topup.TradeNo, "payer@example.com", "Payer", "127.0.0.1", actual))

@@ -153,12 +153,12 @@ func TestRechargeCommissionUsesAgentAndAdminDirectRates(t *testing.T) {
 	require.Zero(t, refreshedAgent.GiftQuota)
 }
 
-func TestAdministratorRechargeCreditNeverPaysCashCommission(t *testing.T) {
+func TestAdministratorRechargeCreditPaysFixedCommission(t *testing.T) {
 	db := newRechargeCommissionTestDB(t)
-	oldDB, oldRedis, oldQuotaPerUnit := DB, common.RedisEnabled, common.QuotaPerUnit
-	DB, common.RedisEnabled, common.QuotaPerUnit = db, false, 100
+	oldDB, oldRedis, oldQuotaPerUnit, oldPrice := DB, common.RedisEnabled, common.QuotaPerUnit, operation_setting.Price
+	DB, common.RedisEnabled, common.QuotaPerUnit, operation_setting.Price = db, false, 100, 1
 	t.Cleanup(func() {
-		DB, common.RedisEnabled, common.QuotaPerUnit = oldDB, oldRedis, oldQuotaPerUnit
+		DB, common.RedisEnabled, common.QuotaPerUnit, operation_setting.Price = oldDB, oldRedis, oldQuotaPerUnit, oldPrice
 	})
 
 	root := User{Username: "root", Role: common.RoleRootUser, AffCode: "root-admin-skip"}
@@ -174,12 +174,16 @@ func TestAdministratorRechargeCreditNeverPaysCashCommission(t *testing.T) {
 	}))
 	var credit RechargeCredit
 	require.NoError(t, db.Where("source_type = ? AND source_ref = ?", RechargeSourceAdmin, "grant-001").First(&credit).Error)
-	require.Equal(t, RechargeCommissionSkippedSource, credit.CommissionState)
+	require.Equal(t, RechargeCommissionDone, credit.CommissionState)
 	var recordCount int64
 	require.NoError(t, db.Model(&DividendRecord{}).Count(&recordCount).Error)
-	require.Zero(t, recordCount)
+	require.EqualValues(t, 2, recordCount)
 	require.NoError(t, db.First(&buyer, buyer.Id).Error)
-	require.Zero(t, buyer.RechargeTotalCents, "an administrator grant is not cumulative recharge")
+	require.EqualValues(t, 10_000, buyer.RechargeTotalCents)
+	require.NoError(t, db.First(&root, root.Id).Error)
+	require.NoError(t, db.First(&inviter, inviter.Id).Error)
+	require.Equal(t, 500, root.DividendBalance)
+	require.Equal(t, 500, inviter.GiftQuota)
 }
 
 func TestRootDirectInvitationReceivesOnlyFixedFivePercent(t *testing.T) {

@@ -129,7 +129,9 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
   const confirmAdminComplete = (tradeNo) => {
     Modal.confirm({
       title: t('确认补单'),
-      content: t('是否将该订单标记为成功并为用户入账？'),
+      content: t(
+        '补单会为用户增加额度，并计入累充、分润和幸运大转盘进度，且无法自动撤销。是否继续？',
+      ),
       onOk: () => handleAdminComplete(tradeNo),
     });
   };
@@ -227,14 +229,14 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
           if (record.status === 'pending') {
             actions.push(
               <Button
-                key="complete"
+                key='complete'
                 size='small'
                 type='primary'
                 theme='outline'
                 onClick={() => confirmAdminComplete(record.trade_no)}
               >
                 {t('补单')}
-              </Button>
+              </Button>,
             );
           }
           return actions.length > 0 ? <>{actions}</> : null;

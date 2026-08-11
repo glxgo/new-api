@@ -115,6 +115,12 @@ func (*CreemAdaptor) RequestPay(c *gin.Context, req *CreemPayRequest) {
 		CreateTime:      time.Now().Unix(),
 		Status:          common.TopUpStatusPending,
 	}
+	creemSnapshot, snapshotErr := model.NewPaymentSnapshotFromMoney(selectedProduct.Price, selectedProduct.Currency)
+	if snapshotErr != nil || model.SetTopUpPaymentExpectation(topUp, creemSnapshot) != nil {
+		logger.LogError(c.Request.Context(), fmt.Sprintf("Creem 支付金额快照失败 user_id=%d trade_no=%s product_id=%s currency=%q", id, referenceId, selectedProduct.ProductId, selectedProduct.Currency))
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "支付金额快照失败"})
+		return
+	}
 	err = topUp.Insert()
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Creem 创建充值订单失败 user_id=%d trade_no=%s product_id=%s error=%q", id, referenceId, selectedProduct.ProductId, err.Error()))

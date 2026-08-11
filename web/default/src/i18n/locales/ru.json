@@ -445,7 +445,7 @@
     "Are you sure you want to delete this key? This action cannot be undone.": "Вы уверены, что хотите удалить этот ключ? Это действие нельзя отменить.",
     "Are you sure you want to disable all enabled keys?": "Вы уверены, что хотите отключить все включённые ключи?",
     "Are you sure you want to enable all keys?": "Вы уверены, что хотите включить все ключи?",
-    "Are you sure you want to manually complete this order? The user will be credited with the corresponding quota.": "Вы уверены, что хотите вручную завершить этот заказ? Пользователю будет начислена соответствующая квота.",
+    "Are you sure you want to manually complete this order? The user will receive quota, and this amount will count toward cumulative recharge, commissions, and Lucky Wheel progress. This cannot be automatically reversed.": "Вы уверены, что хотите завершить этот заказ вручную? Пользователь получит квоту, а сумма будет учтена в накопительном пополнении, комиссиях и прогрессе колеса удачи. Операцию нельзя отменить автоматически.",
     "Are you sure you want to sign out? You will need to sign in again to access your account.": "Вы уверены, что хотите выйти? Вам нужно будет войти снова, чтобы получить доступ к аккаунту.",
     "Are you sure you want to unbind {{provider}} for this user? The user will no longer be able to log in via this method.": "Вы уверены, что хотите отвязать {{provider}} для этого пользователя? Пользователь больше не сможет входить через этот метод.",
     "Are you sure you want to unbind {{provider}}? You will no longer be able to log in via this method.": "Вы уверены, что хотите отвязать {{provider}}? Вы больше не сможете входить через этот метод.",

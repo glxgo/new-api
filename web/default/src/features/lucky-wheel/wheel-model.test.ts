@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import type { LuckyCard, LuckyPrize } from './types.ts'
+import type { LuckyCard, LuckyPrize, LuckyRuleSet } from './types.ts'
 import {
   buildWheelSegments,
   chooseAvailableCardId,
@@ -27,6 +27,7 @@ import {
   getReadableLabelRotation,
   getTargetRotation,
   getWheelLabelRotation,
+  selectLuckyRules,
 } from './wheel-model.ts'
 
 function card(id: number, status = 'available', expiresAt = id): LuckyCard {
@@ -40,6 +41,17 @@ function card(id: number, status = 'available', expiresAt = id): LuckyCard {
     status,
     issued_at: 1,
     expires_at: expiresAt,
+  }
+}
+
+function rule(id: number, version: number): LuckyRuleSet {
+  return {
+    id,
+    version,
+    subscription_pool: '[]',
+    recharge_pool: '[]',
+    recharge_bonus_usd_micros: 40_000_000,
+    activity_group: 'default',
   }
 }
 
@@ -120,5 +132,15 @@ describe('lucky wheel model', () => {
     assert.equal(formatPrizeProbability(47_000), '4.7')
     assert.equal(formatPrizeProbability(250), '0.025')
     assert.equal(formatPrizeProbability(1_500), '0.150')
+  })
+
+  test('discloses the current campaign rule while an old card keeps its immutable draw rule', () => {
+    const oldRule = rule(1, 1)
+    const currentRule = rule(2, 2)
+
+    assert.deepEqual(selectLuckyRules([oldRule, currentRule], 2, 1), {
+      drawRule: oldRule,
+      publicRule: currentRule,
+    })
   })
 })
