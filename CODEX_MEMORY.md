@@ -1411,3 +1411,12 @@
 - 本地人工补单/管理员充值定向 Go 测试、全仓 Go 编译、幸运规则 Node 测试、Default TypeScript/ESLint/Prettier/生产构建和 Classic Prettier/生产构建通过。提交已推送 `origin/main`。
 - 生产版本为 `20260811-manual-admin-lucky`，正式二进制 SHA-256 为 `21750a02384023c86e572269a54461bdb7836938d73e47f38eafe191204d6e7d`，镜像为 `new-api:20260811-manual-admin-lucky`。3010 候选、两次 Nginx 切流与两侧连接自然排空完成；正式 3000 healthy、0 重启、无 OOM，三个生产域名各 5/5 返回新版本。
 - 启动前后 policy v1 返利均保持 3 条、750,000 quota，切点前 policy v1 充值台账均为 0，没有历史补发或回退。活动仍为 rule id 2 / version 2，套餐池精确匹配新概率。发布前完整备份位于 `/opt/new-api-backups/release-20260811-manual-admin-lucky-20260811-1235/`。
+
+### 2026-08-12 — 号池白底、渠道成本入口退役与员工自充分润排除已发布
+
+- 提交 `1511d50de` 已推送 `origin/main`。“号池公开”的“今日折前消耗”高亮卡在浅色模式改为纯白底，保留边框、图标和悬浮反馈；新增静态回归，禁止重新引入绿色渐变底。
+- Default 新建/编辑渠道、标签批量编辑和 Classic 渠道弹窗均已删除成本倍率输入及写回；编辑旧渠道不会清空数据库中已有历史值。充值分润后端只使用有效充值金额与固定比例，`DividendRecord.GrossProfit` 固定为 0；渠道成本字段及日志成本计算仍仅作为历史兼容和运营观测保留，不参与充值分润、用户扣费或渠道启用门禁。
+- 管理员或超管自己作为充值用户时，充值台账会记为 `skipped_role`：仍计入该账号的累计充值和幸运进度，但不生成任何返利/分红，也不进入分润看板的有效充值金额。管理员给普通用户充值的既定有效充值口径不变。角色、报表排除和零余额变更均有 model 回归覆盖。
+- 本地通过 model 全量测试、全仓 Go 编译、Default TypeScript/ESLint/Prettier、10 项相关 Node 测试、Default 与 Classic 生产构建、Linux/amd64 静态构建和差异检查。生产版本为 `20260812-channel-cost-admin-self`，二进制 SHA-256 `7caab3d0c3ec3d671e7dddf013d8e9783c82f9d932736582da84f400db021b8b`，镜像 `new-api:20260812-channel-cost-admin-self`。
+- 发布按 3010 候选、Nginx 切流、旧 3000 自然排空、正式 3000 归一和候选自然排空完成；两侧切换时连接数均为 0，没有强杀请求。正式容器 healthy、0 重启，最终仅监听 3000；四个 Host-aware 源站入口各 5/5 返回新版本，主页、号池和渠道页均为 200。
+- 上线前、候选启动后和正式切换后的财务快照一致：policy v1 分润始终 12 条、合计 2,774,250 quota；policy v1 充值台账始终为 done 4 条/3,699 分和 skipped_source 1 条/200 分，员工 done 台账为 0。没有补发、回退或改写任何历史分润。完整 MySQL、Compose、Nginx、旧二进制和 inspect 备份位于 root-only `/opt/new-api-backups/release-20260812-channel-cost-admin-self-20260811-194638/`。
