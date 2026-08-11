@@ -84,7 +84,7 @@ func GetAffiliateSourceSummaries(recipientId int, sourceUserIds []int) (map[int]
 	var recharges []rechargeRow
 	if err := DB.Model(&RechargeCredit{}).
 		Select("user_id, COALESCE(SUM(amount_cents), 0) AS amount").
-		Where("user_id IN ? AND source_type IN ?", sourceUserIds, []string{RechargeSourceWalletTopUp, RechargeSourceSubscription, RechargeSourceVirtualMembership}).
+		Where("user_id IN ? AND source_type IN ? AND commission_state = ? AND commission_policy_version = ?", sourceUserIds, []string{RechargeSourceWalletTopUp, RechargeSourceSubscription, RechargeSourceVirtualMembership}, RechargeCommissionDone, RechargeCommissionPolicyV1).
 		Group("user_id").Scan(&recharges).Error; err != nil {
 		return nil, err
 	}
@@ -126,7 +126,7 @@ func GetRechargeCentsByUsersBetween(userIds []int, start, end int64) (map[int]in
 	var rows []row
 	err := DB.Model(&RechargeCredit{}).
 		Select("user_id, COALESCE(SUM(amount_cents), 0) AS amount").
-		Where("user_id IN ? AND source_type IN ? AND created_at >= ? AND created_at < ?", userIds, []string{RechargeSourceWalletTopUp, RechargeSourceSubscription, RechargeSourceVirtualMembership}, start, end).
+		Where("user_id IN ? AND source_type IN ? AND commission_state = ? AND commission_policy_version = ? AND created_at >= ? AND created_at < ?", userIds, []string{RechargeSourceWalletTopUp, RechargeSourceSubscription, RechargeSourceVirtualMembership}, RechargeCommissionDone, RechargeCommissionPolicyV1, start, end).
 		Group("user_id").Scan(&rows).Error
 	if err != nil {
 		return nil, err

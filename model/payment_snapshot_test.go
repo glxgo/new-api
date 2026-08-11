@@ -95,24 +95,3 @@ func TestPaymentSnapshotRequiresExactMinorUnits(t *testing.T) {
 	_, err = NewPaymentSnapshotFromDisplayAmount("10.00", "EUR")
 	require.True(t, errors.Is(err, ErrUnsupportedPaymentCurrency))
 }
-
-func TestHistoricalSubscriptionVerifiedPayloadMatrix(t *testing.T) {
-	tests := []struct {
-		name, provider, payload, currency string
-		minor                             int64
-	}{
-		{"stripe", PaymentProviderStripe, `{"amount_total":"875","currency":"usd"}`, "USD", 875},
-		{"creem", PaymentProviderCreem, `{"object":{"order":{"amount_paid":7300,"currency":"CNY"}}}`, "CNY", 7_300},
-		{"pancake", PaymentProviderWaffoPancake, `{"data":{"amount":"19.99","currency":"USD"}}`, "USD", 1_999},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			snapshot, err := historicalSubscriptionPaymentSnapshot(&SubscriptionOrder{PaymentProvider: tt.provider, ProviderPayload: tt.payload})
-			require.NoError(t, err)
-			require.Equal(t, tt.currency, snapshot.Currency)
-			require.Equal(t, tt.minor, snapshot.AmountMinor)
-		})
-	}
-	_, err := historicalSubscriptionPaymentSnapshot(&SubscriptionOrder{PaymentProvider: PaymentProviderStripe, ProviderPayload: `{}`})
-	require.ErrorContains(t, err, "amount_total")
-}

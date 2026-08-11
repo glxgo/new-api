@@ -102,7 +102,7 @@ export function ProfitStatCards({ summary, loading }: ProfitStatCardsProps) {
     {
       label: t('本期分润合计'),
       value: formatQuota(summary.total_commission),
-      description: t('历史策略记录单独标识且不重算'),
+      description: t('仅统计新系统上线后的充值分润'),
       icon: BadgeDollarSign,
       tone: 'accent',
     },

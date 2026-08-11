@@ -16,6 +16,10 @@ import (
 // sale price, channel cost, gross profit or platform net profit.
 func GetProfitSummary(c *gin.Context) {
 	start, end := parseProfitTimeRange(c)
+	cutoverAt, _ := model.RechargeCommissionCutoverAt()
+	if cutoverAt > start {
+		start = cutoverAt
+	}
 
 	var paid struct {
 		Amount int64
@@ -47,19 +51,9 @@ func GetProfitSummary(c *gin.Context) {
 		}
 	}
 
-	// Historical rows remain immutable and visible as a separately labelled
-	// audit total. They are never mixed into the current recharge policy.
-	var legacyCommission int64
-	model.DB.Model(&model.DividendRecord{}).
-		Where("policy_version = 0 AND created_at >= ? AND created_at < ?", start, end).
-		Select("COALESCE(SUM(amount),0)").Scan(&legacyCommission)
-
-	var topUpReview, subscriptionReview, legacyLogReview int64
-	model.DB.Model(&model.TopUp{}).Where("commission_reconciliation_status = ?", "manual_review").Count(&topUpReview)
-	model.DB.Model(&model.SubscriptionOrder{}).Where("commission_reconciliation_status = ?", "manual_review").Count(&subscriptionReview)
-	if count, err := model.CountPendingLegacyProfitReconciliations(); err == nil {
-		legacyLogReview = count
-	}
+	var topUpReview, subscriptionReview int64
+	model.DB.Model(&model.TopUp{}).Where("commission_reconciliation_status = ? AND complete_time >= ?", "manual_review", cutoverAt).Count(&topUpReview)
+	model.DB.Model(&model.SubscriptionOrder{}).Where("commission_reconciliation_status = ? AND complete_time >= ?", "manual_review", cutoverAt).Count(&subscriptionReview)
 
 	common.ApiSuccess(c, gin.H{
 		"start":                        start,
@@ -70,8 +64,7 @@ func GetProfitSummary(c *gin.Context) {
 		"admin_dividend":               admin,
 		"root_dividend":                root,
 		"total_commission":             affiliate + admin + root,
-		"legacy_commission_paid":       legacyCommission,
-		"pending_reconciliation_count": topUpReview + subscriptionReview + legacyLogReview,
+		"pending_reconciliation_count": topUpReview + subscriptionReview,
 	})
 }
 
@@ -105,7 +98,7 @@ func GetDividendRecords(c *gin.Context) {
 		pageSize = 20
 	}
 	applyFilters := func() *gorm.DB {
-		tx := model.DB.Table("dividend_records")
+		tx := model.DB.Table("dividend_records").Where("policy_version = ?", model.RechargeCommissionPolicyV1)
 		if v := c.Query("source_user_id"); v != "" {
 			if uid, err := strconv.Atoi(v); err == nil {
 				tx = tx.Where("source_user_id = ?", uid)

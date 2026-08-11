@@ -18,7 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import dayjs from '@/lib/dayjs'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -108,19 +107,6 @@ export function Profit() {
             </div>
           </div>
           <ProfitStatCards summary={summary ?? null} loading={isLoading} />
-          {(summary?.pending_reconciliation_count ?? 0) > 0 && (
-            <div className='flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/8 px-4 py-3 text-sm text-amber-900 dark:text-amber-100'>
-              <AlertTriangle className='mt-0.5 size-4 shrink-0' />
-              <p>
-                {t(
-                  'There are {{count}} historical payment records awaiting manual reconciliation. No commission has been issued for them.',
-                  {
-                    count: summary?.pending_reconciliation_count ?? 0,
-                  }
-                )}
-              </p>
-            </div>
-          )}
           <Suspense
             fallback={<Skeleton className='h-[320px] w-full rounded-lg' />}
           >

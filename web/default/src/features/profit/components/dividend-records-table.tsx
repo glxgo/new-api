@@ -101,11 +101,9 @@ export function DividendRecordsTable() {
         accessorKey: 'policy_version',
         header: t('结算策略'),
         size: 120,
-        cell: ({ row }) => (
+        cell: () => (
           <span className='text-muted-foreground text-sm'>
-            {row.original.policy_version === 1
-              ? t('充值固定比例')
-              : t('历史已结算')}
+            {t('充值固定比例')}
           </span>
         ),
       },

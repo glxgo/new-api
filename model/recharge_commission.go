@@ -342,6 +342,26 @@ func SettleRechargeCreditCommissionTx(tx *gorm.DB, credit *RechargeCredit) ([]in
 		*credit = locked
 		return nil, nil
 	}
+	cutoverAt, err := rechargeCommissionCutoverAtTx(tx)
+	if err != nil {
+		return nil, err
+	}
+	if cutoverAt > 0 && locked.CreatedAt < cutoverAt {
+		// Historical credits still belong to the cumulative-recharge ledger, but
+		// they must never be promoted into the new fixed commission policy.
+		locked.CommissionState = RechargeCommissionLegacy
+		locked.CommissionPolicyVersion = 0
+		locked.CommissionSettledAt = 0
+		if err := tx.Model(&RechargeCredit{}).Where("id = ?", locked.Id).Updates(map[string]interface{}{
+			"commission_state":          locked.CommissionState,
+			"commission_policy_version": locked.CommissionPolicyVersion,
+			"commission_settled_at":     locked.CommissionSettledAt,
+		}).Error; err != nil {
+			return nil, err
+		}
+		*credit = locked
+		return nil, nil
+	}
 	if !rechargeSourcePaysCommission(locked.SourceType) {
 		locked.CommissionState = RechargeCommissionSkippedSource
 		locked.CommissionPolicyVersion = RechargeCommissionPolicyV1

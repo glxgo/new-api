@@ -34,7 +34,6 @@ export interface ProfitSummary {
   admin_dividend: number
   root_dividend: number
   total_commission: number
-  legacy_commission_paid: number
   pending_reconciliation_count: number
 }
 
@@ -48,8 +47,7 @@ export const DIVIDEND_TYPE = {
 export type DividendRecordType =
   (typeof DIVIDEND_TYPE)[keyof typeof DIVIDEND_TYPE]
 
-// Commission records aggregate recipients for the same paid source. Version 0
-// rows are immutable legacy settlements; version 1 rows use paid recharge.
+// Commission records aggregate recipients for the same post-cutover recharge.
 export interface DividendRecord {
   source_user_id: number
   source_username: string

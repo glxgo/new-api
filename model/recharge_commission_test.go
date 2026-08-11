@@ -216,7 +216,7 @@ type RootUserAliasForRechargeTest struct {
 	DividendTotal   int
 }
 
-func TestRechargeCommissionMigrationClosesOnlyUnsettledLegacyProfitQueue(t *testing.T) {
+func TestRechargeCommissionMigrationLeavesLegacyProfitQueueUntouched(t *testing.T) {
 	db := newRechargeCommissionTestDB(t)
 	require.NoError(t, db.AutoMigrate(&Log{}, &AffiliateSettle{}, &Option{}))
 	oldDB, oldLogDB, oldMaster := DB, LOG_DB, common.IsMasterNode
@@ -238,15 +238,10 @@ func TestRechargeCommissionMigrationClosesOnlyUnsettledLegacyProfitQueue(t *test
 	require.Empty(t, legacyPending.SettleBatchId)
 	require.Empty(t, legacyPending.ProfitReconciliationStatus, "cutover must not rewrite the legacy log table")
 	require.Empty(t, legacyPending.ProfitReconciliationReason)
-	pendingCount, err := CountPendingLegacyProfitReconciliations()
-	require.NoError(t, err)
-	require.EqualValues(t, 1, pendingCount)
-
 	lateLegacy := Log{UserId: 1, Type: LogTypeConsume, Settled: false, CreatedAt: 12}
 	require.NoError(t, db.Create(&lateLegacy).Error)
-	pendingCount, err = CountPendingLegacyProfitReconciliations()
-	require.NoError(t, err)
-	require.EqualValues(t, 2, pendingCount, "old-version logs written during blue-green drain remain auditable")
+	require.NoError(t, db.First(&lateLegacy, lateLegacy.Id).Error)
+	require.False(t, lateLegacy.Settled, "old-version logs written during blue-green drain remain untouched")
 	require.NoError(t, db.First(&historicalDone, historicalDone.Id).Error)
 	require.Equal(t, "2026-08-01", historicalDone.SettleBatchId)
 	var running, done AffiliateSettle
@@ -255,6 +250,9 @@ func TestRechargeCommissionMigrationClosesOnlyUnsettledLegacyProfitQueue(t *test
 	require.Equal(t, AffiliateSettleStatusFailed, running.Status)
 	require.Equal(t, AffiliateSettleStatusDone, done.Status)
 	require.Equal(t, 123, done.TotalGross, "settled historical profit must remain immutable")
+	cutoverAt, err := RechargeCommissionCutoverAt()
+	require.NoError(t, err)
+	require.Positive(t, cutoverAt)
 }
 
 func TestRecordConsumeLogKeepsNewRequestsOutOfLegacyProfitQueue(t *testing.T) {
@@ -283,7 +281,7 @@ func TestRecordConsumeLogKeepsNewRequestsOutOfLegacyProfitQueue(t *testing.T) {
 	require.Equal(t, rechargeCommissionLogBatchV1, log.SettleBatchId)
 }
 
-func TestRechargeCommissionMigrationPaysOnlyIdentifiablePendingEpayOrderOnce(t *testing.T) {
+func TestRechargeCommissionMigrationNeverBackfillsHistoricalOrders(t *testing.T) {
 	db := newRechargeCommissionTestDB(t)
 	require.NoError(t, db.AutoMigrate(&Log{}, &AffiliateSettle{}, &Option{}, &VirtualMembershipPlan{}, &VirtualMembershipOrder{}, &UserVirtualMembership{}))
 	oldDB, oldLogDB, oldMaster, oldPrice, oldQuota := DB, LOG_DB, common.IsMasterNode, operation_setting.Price, common.QuotaPerUnit
@@ -312,18 +310,24 @@ func TestRechargeCommissionMigrationPaysOnlyIdentifiablePendingEpayOrderOnce(t *
 	var gotInviter, gotRoot User
 	require.NoError(t, db.First(&gotInviter, inviter.Id).Error)
 	require.NoError(t, db.First(&gotRoot, root.Id).Error)
-	require.Equal(t, 250_000, gotInviter.GiftQuota)
-	require.Equal(t, 250_000, gotRoot.DividendBalance)
+	require.Zero(t, gotInviter.GiftQuota)
+	require.Zero(t, gotRoot.DividendBalance)
 	var count int64
 	require.NoError(t, db.Model(&DividendRecord{}).Where("policy_version = ?", RechargeCommissionPolicyV1).Count(&count).Error)
-	require.EqualValues(t, 2, count)
+	require.Zero(t, count)
+	var historicalCredit RechargeCredit
+	require.NoError(t, db.Where("source_ref = ?", order.TradeNo).First(&historicalCredit).Error)
+	require.Equal(t, RechargeCommissionLegacy, historicalCredit.CommissionState)
+	require.Zero(t, historicalCredit.CommissionPolicyVersion)
+	require.NoError(t, db.First(&order, order.Id).Error)
+	require.Equal(t, SubscriptionDividendPending, order.DividendState)
 	require.NoError(t, db.First(&ambiguous, ambiguous.Id).Error)
-	require.Equal(t, SubscriptionDividendPending, ambiguous.DividendState, "unmapped historical payment remains visibly unresolved")
+	require.Equal(t, SubscriptionDividendPending, ambiguous.DividendState)
 	require.NoError(t, db.Model(&RechargeCredit{}).Where("source_ref = ?", ambiguous.TradeNo).Count(&count).Error)
 	require.Zero(t, count)
 }
 
-func TestRechargeCommissionMigrationKeepsDeletedOwnersForManualReview(t *testing.T) {
+func TestRechargeCommissionMigrationDoesNotInspectDeletedHistoricalOwners(t *testing.T) {
 	db := newRechargeCommissionTestDB(t)
 	require.NoError(t, db.AutoMigrate(
 		&Log{}, &AffiliateSettle{}, &Option{}, &TopUp{},
@@ -381,14 +385,57 @@ func TestRechargeCommissionMigrationKeepsDeletedOwnersForManualReview(t *testing
 	require.NoError(t, MigrateRechargeCommissionPolicyV1())
 
 	require.NoError(t, db.First(&subOrder, subOrder.Id).Error)
-	require.Equal(t, "manual_review", subOrder.CommissionReconciliationStatus)
+	require.Empty(t, subOrder.CommissionReconciliationStatus)
 	require.NoError(t, db.First(&subscription, subscription.Id).Error)
 	require.Equal(t, SubscriptionDividendPending, subscription.DividendState)
 	require.NoError(t, db.First(&vmOrder, vmOrder.Id).Error)
 	require.Equal(t, SubscriptionDividendPending, vmOrder.DividendState)
 	require.NoError(t, db.First(&topup, topup.Id).Error)
-	require.Equal(t, "manual_review", topup.CommissionReconciliationStatus)
+	require.Empty(t, topup.CommissionReconciliationStatus)
 	var creditCount int64
 	require.NoError(t, db.Model(&RechargeCredit{}).Where("source_ref IN ?", []string{subOrder.TradeNo, vmOrder.TradeNo, topup.TradeNo}).Count(&creditCount).Error)
 	require.Zero(t, creditCount)
+}
+
+func TestRechargeCommissionCutoverRejectsPreCutoverCreditAndPaysNewCredit(t *testing.T) {
+	db := newRechargeCommissionTestDB(t)
+	require.NoError(t, db.AutoMigrate(&Option{}))
+	oldDB, oldRedis := DB, common.RedisEnabled
+	DB, common.RedisEnabled = db, false
+	t.Cleanup(func() { DB, common.RedisEnabled = oldDB, oldRedis })
+
+	require.NoError(t, db.Create(&Option{Key: rechargeCommissionCutoverAtKey, Value: "1000"}).Error)
+	root := User{Username: "cutover-root", Role: common.RoleRootUser, AffCode: "cutover-root"}
+	inviter := User{Username: "cutover-inviter", Role: common.RoleCommonUser, AffCode: "cutover-inviter"}
+	require.NoError(t, db.Create(&root).Error)
+	require.NoError(t, db.Create(&inviter).Error)
+	buyer := User{Username: "cutover-buyer", Role: common.RoleCommonUser, AffCode: "cutover-buyer", InviterId: inviter.Id}
+	require.NoError(t, db.Create(&buyer).Error)
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		_, err := RecordPaidRechargeCreditTx(tx, buyer.Id, 10_000, 10_000, "CNY", RechargeSourceWalletTopUp, "before-cutover", 999)
+		return err
+	}))
+	var before RechargeCredit
+	require.NoError(t, db.Where("source_ref = ?", "before-cutover").First(&before).Error)
+	require.Equal(t, RechargeCommissionLegacy, before.CommissionState)
+	require.Zero(t, before.CommissionPolicyVersion)
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		_, err := RecordPaidRechargeCreditTx(tx, buyer.Id, 10_000, 10_000, "CNY", RechargeSourceWalletTopUp, "at-cutover", 1000)
+		return err
+	}))
+	var after RechargeCredit
+	require.NoError(t, db.Where("source_ref = ?", "at-cutover").First(&after).Error)
+	require.Equal(t, RechargeCommissionDone, after.CommissionState)
+	require.Equal(t, RechargeCommissionPolicyV1, after.CommissionPolicyVersion)
+
+	var gotRoot, gotInviter User
+	require.NoError(t, db.First(&gotRoot, root.Id).Error)
+	require.NoError(t, db.First(&gotInviter, inviter.Id).Error)
+	require.Equal(t, 500, gotRoot.DividendBalance)
+	require.Equal(t, 500, gotInviter.GiftQuota)
+	var dividendCount int64
+	require.NoError(t, db.Model(&DividendRecord{}).Count(&dividendCount).Error)
+	require.EqualValues(t, 2, dividendCount)
 }
