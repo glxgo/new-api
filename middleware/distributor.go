@@ -81,6 +81,12 @@ func Distribute() func(c *gin.Context) {
 					abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorModelNameRequired))
 					return
 				}
+				if common.GetContextKeyString(c, constant.ContextKeyTokenRoutingMode) == model.TokenRoutingModeCustom {
+					if _, routeErr := service.SelectTokenRouteStep(c, modelRequest.Model, model.PathToRelayFormat(c.Request.URL.Path)); routeErr != nil {
+						abortWithOpenAiMessage(c, http.StatusForbidden, routeErr.Error(), types.ErrorCodeInsufficientUserQuota)
+						return
+					}
+				}
 				var selectGroup string
 				usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
 				// check path is /pg/chat/completions
@@ -139,6 +145,9 @@ func Distribute() func(c *gin.Context) {
 						RelayFormat: model.PathToRelayFormat(c.Request.URL.Path),
 					})
 					if err != nil {
+						if c.GetBool("token_route_configured") {
+							service.OpenTokenRouteCircuit(c)
+						}
 						showGroup := usingGroup
 						if usingGroup == "auto" {
 							showGroup = fmt.Sprintf("auto(%s)", selectGroup)
@@ -153,6 +162,9 @@ func Distribute() func(c *gin.Context) {
 						return
 					}
 					if channel == nil {
+						if c.GetBool("token_route_configured") {
+							service.OpenTokenRouteCircuit(c)
+						}
 						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": usingGroup, "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
 						return
 					}
@@ -165,6 +177,7 @@ func Distribute() func(c *gin.Context) {
 		if channel != nil && c.Writer != nil && c.Writer.Status() < http.StatusBadRequest {
 			// Retry/capacity fallback may replace the initially selected channel.
 			service.RecordChannelAffinity(c, c.GetInt("channel_id"))
+			service.RecordTokenRouteSuccess(c)
 		}
 	}
 }

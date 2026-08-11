@@ -281,6 +281,47 @@ func GetActiveUserVirtualMembershipAllowedGroups(userId int) ([]string, error) {
 	return groups, nil
 }
 
+func HasActiveUserVirtualMembershipByGroup(userId int, group string) (bool, error) {
+	if userId <= 0 || strings.TrimSpace(group) == "" {
+		return false, nil
+	}
+	now := common.GetTimestamp()
+	var count int64
+	group = strings.TrimSpace(group)
+	query := DB.Model(&UserVirtualMembership{}).
+		Where("user_id = ? AND status = ? AND start_time <= ? AND end_time > ?",
+			userId, VirtualMembershipStatusActive, now, now)
+	if group == VirtualMembershipDefaultAllowedGroup {
+		query = query.Where("(allowed_group = ? OR allowed_group = '')", group)
+	} else {
+		query = query.Where("allowed_group = ?", group)
+	}
+	err := query.Count(&count).Error
+	return count > 0, err
+}
+
+func ValidateActiveVirtualMembershipEntitlementForToken(userId int, group string, membershipId int) error {
+	if membershipId <= 0 {
+		return errors.New("虚拟会员不存在")
+	}
+	now := common.GetTimestamp()
+	var membership UserVirtualMembership
+	if err := DB.Where("id = ? AND user_id = ?", membershipId, userId).First(&membership).Error; err != nil {
+		return err
+	}
+	allowedGroup := strings.TrimSpace(membership.AllowedGroup)
+	if allowedGroup == "" {
+		allowedGroup = VirtualMembershipDefaultAllowedGroup
+	}
+	if allowedGroup != strings.TrimSpace(group) {
+		return errors.New("虚拟会员不支持当前 API Key 分组")
+	}
+	if membership.Status != VirtualMembershipStatusActive || membership.StartTime > now || membership.EndTime <= now {
+		return errors.New("虚拟会员尚未生效、已结束或已失效")
+	}
+	return nil
+}
+
 // VirtualMembershipCapacity is the purchased, per-membership capacity that
 // applies to a key bound to the membership's dedicated group.
 type VirtualMembershipCapacity struct {
@@ -1236,7 +1277,11 @@ func ValidateVirtualMembershipForToken(userId int, group string, membershipId in
 		}
 		return err
 	}
-	if membership.AllowedGroup != "" && strings.TrimSpace(membership.AllowedGroup) != strings.TrimSpace(group) {
+	allowedGroup := strings.TrimSpace(membership.AllowedGroup)
+	if allowedGroup == "" {
+		allowedGroup = VirtualMembershipDefaultAllowedGroup
+	}
+	if allowedGroup != strings.TrimSpace(group) {
 		return errors.New("虚拟会员不支持当前 API Key 分组")
 	}
 	if !requireUsable {
@@ -1261,6 +1306,112 @@ func ValidateVirtualMembershipForToken(userId int, group string, membershipId in
 		}
 		return nil
 	})
+}
+
+// HasUsableVirtualMembershipForRoute performs the same lazy reset used by
+// billing and answers whether an auto-allocation route currently has at least
+// one usable entitlement. An empty modelName is used by policy validation.
+func HasUsableVirtualMembershipForRoute(userId int, group, modelName string) (bool, error) {
+	if userId <= 0 || strings.TrimSpace(group) == "" {
+		return false, nil
+	}
+	usable := false
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var memberships []UserVirtualMembership
+		now := common.GetTimestamp()
+		group = strings.TrimSpace(group)
+		query := tx.Set("gorm:query_option", "FOR UPDATE").
+			Where("user_id = ? AND status = ? AND start_time <= ? AND end_time > ?",
+				userId, VirtualMembershipStatusActive, now, now)
+		if group == VirtualMembershipDefaultAllowedGroup {
+			query = query.Where("(allowed_group = ? OR allowed_group = '')", group)
+		} else {
+			query = query.Where("allowed_group = ?", group)
+		}
+		if err := query.Order("weekly_reset_at asc, end_time asc, id asc").Find(&memberships).Error; err != nil {
+			return err
+		}
+		for i := range memberships {
+			membership := &memberships[i]
+			if err := virtualMembershipResetIfDue(tx, membership, now); err != nil {
+				return err
+			}
+			if modelName != "" && !virtualMembershipAllowsModel(membership, modelName) {
+				continue
+			}
+			if membership.WeeklyQuota > 0 && membership.WeeklyUsed >= membership.WeeklyQuota {
+				continue
+			}
+			if membership.FiveHourActive && membership.FiveHourQuota > 0 && membership.FiveHourUsed >= membership.FiveHourQuota {
+				continue
+			}
+			usable = true
+			break
+		}
+		return nil
+	})
+	return usable, err
+}
+
+// PreConsumeVirtualMembershipAuto selects and reserves one membership in a
+// single transaction. The earliest weekly reset wins; exhausted instances are
+// skipped and no wallet fallback is ever attempted here.
+func PreConsumeVirtualMembershipAuto(requestId string, userId int, modelName string, amount int64, usingGroup string) (*UserVirtualMembership, error) {
+	if amount <= 0 {
+		return nil, errors.New("虚拟会员预扣额度必须大于 0")
+	}
+	var selected UserVirtualMembership
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var existing VirtualMembershipPreConsumeRecord
+		if result := tx.Where("request_id = ?", requestId).Limit(1).Find(&existing); result.Error != nil {
+			return result.Error
+		} else if result.RowsAffected > 0 {
+			return tx.Where("id = ? AND user_id = ?", existing.MembershipId, userId).First(&selected).Error
+		}
+		now := common.GetTimestamp()
+		var memberships []UserVirtualMembership
+		usingGroup = strings.TrimSpace(usingGroup)
+		query := tx.Set("gorm:query_option", "FOR UPDATE").
+			Where("user_id = ? AND status = ? AND start_time <= ? AND end_time > ?",
+				userId, VirtualMembershipStatusActive, now, now)
+		if usingGroup == VirtualMembershipDefaultAllowedGroup {
+			query = query.Where("(allowed_group = ? OR allowed_group = '')", usingGroup)
+		} else {
+			query = query.Where("allowed_group = ?", usingGroup)
+		}
+		if err := query.Order("weekly_reset_at asc, end_time asc, id asc").Find(&memberships).Error; err != nil {
+			return err
+		}
+		for i := range memberships {
+			membership := &memberships[i]
+			if err := virtualMembershipResetIfDue(tx, membership, now); err != nil {
+				return err
+			}
+			if !virtualMembershipAllowsModel(membership, modelName) {
+				continue
+			}
+			if membership.WeeklyQuota > 0 && membership.WeeklyUsed+amount > membership.WeeklyQuota {
+				continue
+			}
+			if membership.FiveHourActive && membership.FiveHourQuota > 0 && membership.FiveHourUsed+amount > membership.FiveHourQuota {
+				continue
+			}
+			if err := preConsumeVirtualMembershipTx(tx, requestId, membership.Id, userId, modelName, usingGroup, amount); err != nil {
+				return err
+			}
+			selected = *membership
+			selected.WeeklyUsed += amount
+			if selected.FiveHourActive {
+				selected.FiveHourUsed += amount
+			}
+			return nil
+		}
+		return errors.New("当前虚拟会员分组的全部周额度或 5 小时额度均不足")
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &selected, nil
 }
 
 func preConsumeVirtualMembershipTx(tx *gorm.DB, requestId string, membershipId, userId int, modelName, usingGroup string, amount int64) error {

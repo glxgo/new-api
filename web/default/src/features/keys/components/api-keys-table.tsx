@@ -629,7 +629,13 @@ function ApiKeysDesktopWorkspace({
             <div className='grid gap-3 text-xs 2xl:grid-cols-2'>
               <div className='grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3'>
                 <span className='text-muted-foreground'>{t('Group')}</span>
-                <ApiKeyGroupCell apiKey={apiKey} />
+                {apiKey.routing_mode === 'custom' ? (
+                  <span className='text-primary text-xs font-medium'>
+                    API Key 消耗路由策略 · 首选 {apiKey.group}
+                  </span>
+                ) : (
+                  <ApiKeyGroupCell apiKey={apiKey} />
+                )}
               </div>
               {apiKey.subscription_mode === 'instance' &&
                 apiKey.subscription_id > 0 && (

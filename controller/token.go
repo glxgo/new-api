@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
@@ -31,21 +32,25 @@ func buildMaskedTokenResponses(tokens []*model.Token) []*model.Token {
 	return maskedTokens
 }
 
-func decodeTokenMutation(c *gin.Context, token *model.Token) (bool, error) {
+func decodeTokenMutation(c *gin.Context, token *model.Token) (bool, bool, error) {
 	body, err := c.GetRawData()
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	if err := common.Unmarshal(body, token); err != nil {
-		return false, err
+		return false, false, err
 	}
 	var fields map[string]any
 	if err := common.Unmarshal(body, &fields); err != nil {
-		return false, err
+		return false, false, err
 	}
 	_, subscriptionBindingProvided := fields["subscription_mode"]
 	_, virtualMembershipProvided := fields["virtual_membership_id"]
-	return subscriptionBindingProvided || virtualMembershipProvided, nil
+	_, virtualMembershipModeProvided := fields["virtual_membership_mode"]
+	_, routingModeProvided := fields["routing_mode"]
+	_, routeStepsProvided := fields["route_steps"]
+	return subscriptionBindingProvided || virtualMembershipProvided || virtualMembershipModeProvided,
+		routingModeProvided || routeStepsProvided, nil
 }
 
 func tokenBindingInput(token *model.Token) model.TokenSubscriptionBindingInput {
@@ -61,6 +66,20 @@ func tokenBindingInput(token *model.Token) model.TokenSubscriptionBindingInput {
 		WalletLimit:    token.SubscriptionWalletLimit,
 		CancelPlanned:  token.CancelPlannedSubscription,
 	}
+}
+
+func validateTokenRouteWalletGroups(userId int, steps []model.TokenRouteStep) error {
+	userGroup, err := model.GetUserGroup(userId, false)
+	if err != nil {
+		return err
+	}
+	for _, step := range steps {
+		if step.FundingSource == model.TokenRouteSourceWallet &&
+			!service.GroupInUserUsableGroups(userGroup, step.GroupName) {
+			return fmt.Errorf("无权将分组 %s 加入 API Key 消耗路由策略", step.GroupName)
+		}
+	}
+	return nil
 }
 
 func GetAllTokens(c *gin.Context) {
@@ -103,6 +122,10 @@ func GetToken(c *gin.Context) {
 	}
 	token, err := model.GetTokenByIds(id, userId)
 	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if err := model.AttachTokenRouteSteps(token); err != nil {
 		common.ApiError(c, err)
 		return
 	}
@@ -198,7 +221,7 @@ func GetTokenUsage(c *gin.Context) {
 
 func AddToken(c *gin.Context) {
 	token := model.Token{}
-	bindingProvided, err := decodeTokenMutation(c, &token)
+	bindingProvided, _, err := decodeTokenMutation(c, &token)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -233,26 +256,47 @@ func AddToken(c *gin.Context) {
 		})
 		return
 	}
-	if strings.TrimSpace(token.Group) == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"success": false,
-			"message": "请选择令牌分组",
-		})
-		return
-	}
+	userId := c.GetInt("id")
+	routingMode := model.NormalizeTokenRoutingMode(token.RoutingMode)
+	var preparedRoute []model.TokenRouteStep
 	bindingInput := tokenBindingInput(&token)
-	if !bindingProvided {
-		bindingInput.Mode = model.TokenSubscriptionModeAuto
-	}
-	bindingInput, virtualMembershipId, err := model.ResolveTokenFundingBindingForGroup(
-		c.GetInt("id"),
-		strings.TrimSpace(token.Group),
-		bindingInput,
-		token.VirtualMembershipId,
-	)
-	if err != nil {
-		common.ApiError(c, err)
-		return
+	virtualMembershipId := 0
+	virtualMembershipMode := model.NormalizeVirtualMembershipMode(token.VirtualMembershipMode)
+	if routingMode == model.TokenRoutingModeCustom {
+		preparedRoute, err = model.PrepareTokenRouteSteps(userId, token.RouteSteps)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		if err = validateTokenRouteWalletGroups(userId, preparedRoute); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		token.Group = preparedRoute[0].GroupName
+		bindingInput = model.TokenSubscriptionBindingInput{Mode: model.TokenSubscriptionModeAuto, CancelPlanned: true}
+		virtualMembershipMode = model.VirtualMembershipModeInstance
+	} else {
+		if strings.TrimSpace(token.Group) == "" {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "请选择令牌分组",
+			})
+			return
+		}
+		if !bindingProvided {
+			bindingInput.Mode = model.TokenSubscriptionModeAuto
+		}
+		bindingInput, virtualMembershipId, virtualMembershipMode, err = model.ResolveTokenFundingBindingForGroupWithMode(
+			userId,
+			strings.TrimSpace(token.Group),
+			bindingInput,
+			token.VirtualMembershipId,
+			virtualMembershipMode,
+		)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
 	}
 	key, err := common.GenerateKey()
 	if err != nil {
@@ -261,29 +305,37 @@ func AddToken(c *gin.Context) {
 		return
 	}
 	cleanToken := model.Token{
-		UserId:             c.GetInt("id"),
-		Name:               token.Name,
-		Key:                key,
-		CreatedTime:        common.GetTimestamp(),
-		AccessedTime:       common.GetTimestamp(),
-		ExpiredTime:        token.ExpiredTime,
-		RemainQuota:        token.RemainQuota,
-		UnlimitedQuota:     token.UnlimitedQuota,
-		ModelLimitsEnabled: token.ModelLimitsEnabled,
-		ModelLimits:        token.ModelLimits,
-		AllowIps:           token.AllowIps,
-		Group:              strings.TrimSpace(token.Group),
-		CrossGroupRetry:    token.CrossGroupRetry,
+		UserId:                userId,
+		Name:                  token.Name,
+		Key:                   key,
+		CreatedTime:           common.GetTimestamp(),
+		AccessedTime:          common.GetTimestamp(),
+		ExpiredTime:           token.ExpiredTime,
+		RemainQuota:           token.RemainQuota,
+		UnlimitedQuota:        token.UnlimitedQuota,
+		ModelLimitsEnabled:    token.ModelLimitsEnabled,
+		ModelLimits:           token.ModelLimits,
+		AllowIps:              token.AllowIps,
+		Group:                 strings.TrimSpace(token.Group),
+		CrossGroupRetry:       token.CrossGroupRetry,
+		RoutingMode:           routingMode,
+		VirtualMembershipMode: virtualMembershipMode,
 	}
 	model.ApplyTokenSubscriptionBindingInput(&cleanToken, bindingInput)
 	cleanToken.VirtualMembershipId = virtualMembershipId
-	err = cleanToken.Insert()
+	if routingMode == model.TokenRoutingModeCustom {
+		err = model.InsertTokenWithRoute(&cleanToken, preparedRoute)
+	} else {
+		err = cleanToken.Insert()
+	}
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	if err := model.RecordInitialTokenSubscriptionBinding(&cleanToken, "API key created"); err != nil {
-		common.SysLog("failed to record initial token subscription binding: " + err.Error())
+	if routingMode != model.TokenRoutingModeCustom {
+		if err := model.RecordInitialTokenSubscriptionBinding(&cleanToken, "API key created"); err != nil {
+			common.SysLog("failed to record initial token subscription binding: " + err.Error())
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -309,7 +361,7 @@ func UpdateToken(c *gin.Context) {
 	userId := c.GetInt("id")
 	statusOnly := c.Query("status_only")
 	token := model.Token{}
-	bindingProvided, err := decodeTokenMutation(c, &token)
+	bindingProvided, routingProvided, err := decodeTokenMutation(c, &token)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -347,6 +399,42 @@ func UpdateToken(c *gin.Context) {
 	if statusOnly != "" {
 		cleanToken.Status = token.Status
 	} else {
+		routingMode := model.NormalizeTokenRoutingMode(cleanToken.RoutingMode)
+		if routingProvided {
+			routingMode = model.NormalizeTokenRoutingMode(token.RoutingMode)
+		}
+		if routingMode == model.TokenRoutingModeCustom {
+			preparedRoute, prepareErr := model.PrepareTokenRouteSteps(userId, token.RouteSteps)
+			if prepareErr != nil {
+				common.ApiError(c, prepareErr)
+				return
+			}
+			if prepareErr = validateTokenRouteWalletGroups(userId, preparedRoute); prepareErr != nil {
+				common.ApiError(c, prepareErr)
+				return
+			}
+			token.Group = preparedRoute[0].GroupName
+			cleanToken.Name = token.Name
+			cleanToken.ExpiredTime = token.ExpiredTime
+			cleanToken.RemainQuota = token.RemainQuota
+			cleanToken.UnlimitedQuota = token.UnlimitedQuota
+			cleanToken.ModelLimitsEnabled = token.ModelLimitsEnabled
+			cleanToken.ModelLimits = token.ModelLimits
+			cleanToken.AllowIps = token.AllowIps
+			cleanToken.Group = token.Group
+			cleanToken.RoutingMode = model.TokenRoutingModeCustom
+			updated, routeErr := model.UpdateTokenWithRoute(userId, cleanToken, preparedRoute, token.RoutingRevision)
+			if routeErr != nil {
+				common.ApiError(c, routeErr)
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"message": "",
+				"data":    buildMaskedTokenResponse(updated),
+			})
+			return
+		}
 		if strings.TrimSpace(token.Group) == "" {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
@@ -355,12 +443,17 @@ func UpdateToken(c *gin.Context) {
 			return
 		}
 		bindingInput := tokenBindingInput(&token)
+		if model.NormalizeTokenRoutingMode(cleanToken.RoutingMode) == model.TokenRoutingModeCustom {
+			bindingProvided = true
+			bindingInput.Mode = model.TokenSubscriptionModeAuto
+		}
 		if bindingProvided {
-			bindingInput, virtualMembershipId, resolveErr := model.ResolveTokenFundingBindingForGroup(
+			bindingInput, virtualMembershipId, virtualMembershipMode, resolveErr := model.ResolveTokenFundingBindingForGroupWithMode(
 				userId,
 				strings.TrimSpace(token.Group),
 				bindingInput,
 				token.VirtualMembershipId,
+				token.VirtualMembershipMode,
 			)
 			if resolveErr != nil {
 				common.ApiError(c, resolveErr)
@@ -368,6 +461,7 @@ func UpdateToken(c *gin.Context) {
 			}
 			model.ApplyTokenSubscriptionBindingInput(&token, bindingInput)
 			token.VirtualMembershipId = virtualMembershipId
+			token.VirtualMembershipMode = virtualMembershipMode
 		} else if model.NormalizeTokenSubscriptionMode(cleanToken.SubscriptionMode) == model.TokenSubscriptionModeInstance &&
 			cleanToken.SubscriptionId > 0 {
 			if _, err := model.ValidateSubscriptionForToken(
@@ -390,8 +484,11 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.AllowIps = token.AllowIps
 		cleanToken.Group = strings.TrimSpace(token.Group)
 		cleanToken.CrossGroupRetry = token.CrossGroupRetry
+		cleanToken.RoutingMode = model.TokenRoutingModeSingle
+		cleanToken.RoutingRevision = token.RoutingRevision
 		if bindingProvided {
 			cleanToken.VirtualMembershipId = token.VirtualMembershipId
+			cleanToken.VirtualMembershipMode = token.VirtualMembershipMode
 		}
 	}
 	if statusOnly == "" && bindingProvided {

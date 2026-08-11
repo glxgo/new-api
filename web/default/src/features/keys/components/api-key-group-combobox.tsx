@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useMemo, useState } from 'react'
-import { Check, ChevronsUpDown } from 'lucide-react'
+import { Check, ChevronsUpDown, Route } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -62,6 +62,8 @@ type ApiKeyGroupComboboxProps = {
   // pinned to the top of the list and badged as a "Plan Group".
   subscribedGroups?: string[]
   virtualMembershipGroups?: string[]
+  customRoutingSelected?: boolean
+  onCustomRouting?: () => void
 }
 
 function formatGroupRatio(
@@ -150,6 +152,8 @@ export function ApiKeyGroupCombobox({
   disabled,
   subscribedGroups,
   virtualMembershipGroups,
+  customRoutingSelected = false,
+  onCustomRouting,
 }: ApiKeyGroupComboboxProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -266,6 +270,38 @@ export function ApiKeyGroupCombobox({
       />
       <CommandList className={mobile ? 'max-h-[55dvh] pb-2' : 'max-h-[360px]'}>
         <CommandEmpty>{t('No group found.')}</CommandEmpty>
+        {onCustomRouting && (
+          <>
+            <CommandGroup>
+              <CommandItem
+                value='API Key 消耗路由策略'
+                onSelect={() => {
+                  setOpen(false)
+                  setSearchValue('')
+                  onCustomRouting()
+                }}
+                className='border-primary/15 bg-primary/5 data-[selected=true]:bg-primary/10 grid min-h-16 grid-cols-[1rem_minmax(0,1fr)_auto] items-start gap-x-3 rounded-lg border px-3 py-3'
+              >
+                <Check
+                  className={cn(
+                    'mt-0.5 size-4',
+                    customRoutingSelected ? 'opacity-100' : 'opacity-0'
+                  )}
+                />
+                <span className='min-w-0'>
+                  <span className='text-foreground block text-sm leading-5 font-semibold'>
+                    API Key 消耗路由策略
+                  </span>
+                  <span className='text-muted-foreground mt-0.5 block text-xs leading-[1.125rem]'>
+                    选择多个明确分组，拖动安排消耗顺序与故障转移
+                  </span>
+                </span>
+                <Route className='text-primary mt-0.5 size-4' />
+              </CommandItem>
+            </CommandGroup>
+            <CommandSeparator />
+          </>
+        )}
         {virtualMembershipOptions.length > 0 && (
           <CommandGroup heading={t('Virtual Membership Group')}>
             {virtualMembershipOptions.map(renderOption)}
@@ -302,13 +338,19 @@ export function ApiKeyGroupCombobox({
       <span className='flex min-w-0 flex-1 items-center justify-between gap-2 sm:gap-3'>
         <span className='min-w-0'>
           <span className='block truncate font-medium'>
-            {selectedOption?.label || placeholder || t('Select a group')}
+            {customRoutingSelected
+              ? 'API Key 消耗路由策略'
+              : selectedOption?.label || placeholder || t('Select a group')}
           </span>
-          {selectedOption?.desc && (
+          {customRoutingSelected ? (
+            <span className='text-muted-foreground block truncate text-[11px] sm:text-xs'>
+              已按自定义顺序选择可消耗分组
+            </span>
+          ) : selectedOption?.desc ? (
             <span className='text-muted-foreground block truncate text-[11px] sm:text-xs'>
               {selectedOption.desc}
             </span>
-          )}
+          ) : null}
         </span>
         <span className='hidden items-center gap-1.5 sm:flex'>
           {selectedIsVirtualMembership ? (

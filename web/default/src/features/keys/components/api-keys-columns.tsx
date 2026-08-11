@@ -175,6 +175,16 @@ export function useApiKeysColumns(): ColumnDef<ApiKey>[] {
       header: t('Quota ownership'),
       cell: ({ row }) => {
         const apiKey = row.original
+        if (apiKey.routing_mode === 'custom') {
+          return (
+            <StatusBadge
+              label='API Key 消耗路由策略'
+              variant='info'
+              copyable={false}
+              className='-ml-1.5'
+            />
+          )
+        }
         const isBound =
           apiKey.subscription_mode === 'instance' && apiKey.subscription_id > 0
         if (!isBound) {

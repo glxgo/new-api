@@ -1453,6 +1453,37 @@ func HasActiveUserSubscriptionByGroup(userId int, group string) (bool, error) {
 	return count > 0, nil
 }
 
+// HasUsableUserSubscriptionByGroup is stricter than the entitlement check:
+// routing uses it to skip a group whose active subscription ledgers are all
+// exhausted. A due periodic reset makes the ledger usable again on the next
+// request; the pre-consume transaction remains the source of truth.
+func HasUsableUserSubscriptionByGroup(userId int, group string) (bool, error) {
+	if userId <= 0 || strings.TrimSpace(group) == "" {
+		return false, nil
+	}
+	now := GetDBTimestamp()
+	var subscriptions []UserSubscription
+	if err := DB.Where(
+		"user_id = ? AND status = ? AND start_time <= ? AND end_time > ? AND allowed_group = ?",
+		userId, "active", now, now, strings.TrimSpace(group),
+	).Order("end_time asc, id asc").Find(&subscriptions).Error; err != nil {
+		return false, err
+	}
+	for i := range subscriptions {
+		sub := &subscriptions[i]
+		if sub.AmountCap > 0 && sub.AmountCapUsed >= sub.AmountCap {
+			continue
+		}
+		if sub.NextResetTime > 0 && sub.NextResetTime <= now {
+			return true, nil
+		}
+		if sub.AmountTotal <= 0 || sub.AmountUsed < sub.AmountTotal {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // HasSubscriptionPlanByGroup reports whether a group is reserved by any
 // subscription plan. Such groups are subscription-only even when the current
 // user has no matching active subscription; wallet fallback must not bypass

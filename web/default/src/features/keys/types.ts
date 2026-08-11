@@ -22,6 +22,22 @@ import { z } from 'zod'
 // API Key Schema & Types
 // ============================================================================
 
+export const apiKeyRouteStepSchema = z.object({
+  id: z.number().optional().default(0),
+  position: z.number(),
+  group: z.string(),
+  funding_source: z
+    .enum(['wallet', 'subscription', 'virtual_membership'])
+    .optional(),
+  selection_mode: z.enum(['auto', 'instance']),
+  source_id: z.number(),
+})
+
+export type ApiKeyRouteStep = Omit<
+  z.infer<typeof apiKeyRouteStepSchema>,
+  'id'
+> & { id?: number }
+
 export const apiKeySchema = z.object({
   id: z.number(),
   name: z.string(),
@@ -42,6 +58,9 @@ export const apiKeySchema = z.object({
     }, z.boolean())
     .optional()
     .default(false),
+  routing_mode: z.enum(['single', 'custom']).optional().default('single'),
+  routing_revision: z.number().optional().default(0),
+  route_steps: z.array(apiKeyRouteStepSchema).optional().default([]),
   subscription_mode: z.enum(['auto', 'instance']).optional().default('auto'),
   subscription_id: z.number().optional().default(0),
   subscription_allow_renewal: z.boolean().optional().default(false),
@@ -54,6 +73,10 @@ export const apiKeySchema = z.object({
   planned_subscription_group: z.string().optional().default(''),
   planned_subscription_effective: z.number().optional().default(0),
   virtual_membership_id: z.number().optional().default(0),
+  virtual_membership_mode: z
+    .enum(['auto', 'instance'])
+    .optional()
+    .default('instance'),
   model_limits_enabled: z.boolean(),
   model_limits: z.string().nullish().default(''),
   allow_ips: z.string().nullish().default(''),
@@ -104,6 +127,9 @@ export interface ApiKeyFormData {
   allow_ips: string
   group: string
   cross_group_retry: boolean
+  routing_mode: 'single' | 'custom'
+  routing_revision: number
+  route_steps: ApiKeyRouteStep[]
   subscription_mode: 'auto' | 'instance'
   subscription_id: number
   subscription_allow_renewal: boolean
@@ -112,6 +138,7 @@ export interface ApiKeyFormData {
   subscription_wallet_limit: number
   cancel_planned_subscription: boolean
   virtual_membership_id: number
+  virtual_membership_mode: 'auto' | 'instance'
 }
 
 export interface ApiKeySubscriptionHistory {

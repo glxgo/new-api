@@ -89,6 +89,26 @@ func TestHasSubscriptionPlanByGroupReservesPackageGroup(t *testing.T) {
 	require.False(t, reserved)
 }
 
+func TestHasUsableUserSubscriptionByGroupSkipsExhaustedAndRestoresDueReset(t *testing.T) {
+	db := setupSubscriptionBindingTestDB(t)
+	now := common.GetTimestamp()
+	sub := UserSubscription{
+		UserId: 31, PlanId: 1, PlanTitle: "route plan", Status: "active",
+		StartTime: now - 60, EndTime: now + 3600, AllowedGroup: "plan-route",
+		AmountTotal: 100, AmountUsed: 100, NextResetTime: now + 300,
+	}
+	require.NoError(t, db.Create(&sub).Error)
+
+	usable, err := HasUsableUserSubscriptionByGroup(31, "plan-route")
+	require.NoError(t, err)
+	require.False(t, usable)
+
+	require.NoError(t, db.Model(&sub).Update("next_reset_time", now-1).Error)
+	usable, err = HasUsableUserSubscriptionByGroup(31, "plan-route")
+	require.NoError(t, err)
+	require.True(t, usable)
+}
+
 func TestResolveTokenFundingBindingForGroup(t *testing.T) {
 	db := setupSubscriptionBindingTestDB(t)
 	now := common.GetTimestamp()
@@ -150,6 +170,33 @@ func TestResolveTokenFundingBindingForGroup(t *testing.T) {
 		require.Equal(t, TokenSubscriptionModeAuto, resolved.Mode)
 		require.Equal(t, membership.Id, membershipId)
 	})
+}
+
+func TestResolveTokenFundingBindingForGroupSupportsAutomaticMembership(t *testing.T) {
+	db := setupSubscriptionBindingTestDB(t)
+	now := common.GetTimestamp()
+	plan := VirtualMembershipPlan{
+		Code: "auto-member", Title: "auto member", AllowedGroup: "member-auto",
+		DurationDays: 30, Enabled: true,
+	}
+	require.NoError(t, db.Create(&plan).Error)
+	require.NoError(t, db.Create(&UserVirtualMembership{
+		UserId: 29, PlanId: plan.Id, PlanTitle: plan.Title,
+		Status: VirtualMembershipStatusActive, StartTime: now - 60, EndTime: now + 3600,
+		AllowedGroup: "member-auto", WeeklyQuota: 10_000, WeeklyResetAt: now + 1800,
+	}).Error)
+
+	resolved, membershipId, mode, err := ResolveTokenFundingBindingForGroupWithMode(
+		29,
+		"member-auto",
+		TokenSubscriptionBindingInput{Mode: TokenSubscriptionModeAuto},
+		0,
+		VirtualMembershipModeAuto,
+	)
+	require.NoError(t, err)
+	require.Equal(t, TokenSubscriptionModeAuto, resolved.Mode)
+	require.Zero(t, membershipId)
+	require.Equal(t, VirtualMembershipModeAuto, mode)
 }
 
 func TestSubscriptionOrderSnapshotDoesNotDriftAfterPlanEdit(t *testing.T) {

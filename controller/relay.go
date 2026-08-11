@@ -542,9 +542,12 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 	}
 
 	if !recordUserError {
+		service.RecordTokenRouteFailure(c, err)
 		service.RecordChannelRetryAttempt(c, channelError, err)
 		return
 	}
+	c.Set("token_route_terminal_error", true)
+	service.RecordTokenRouteFailure(c, err)
 	recordChannelErrorLog(c, channelError, err)
 }
 

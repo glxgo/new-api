@@ -94,6 +94,7 @@ import {
   ApiKeyGroupCombobox,
   type ApiKeyGroupOption,
 } from './api-key-group-combobox'
+import { ApiKeyRoutingPolicyDialog } from './api-key-routing-policy-dialog'
 import { useApiKeys } from './api-keys-provider'
 
 type ApiKeyMutateDrawerProps = {
@@ -112,6 +113,10 @@ function subscriptionBindingSignature(values: ApiKeyFormValues): string {
     walletLimit: values.subscription_wallet_limit_dollars,
     keepPlanned: values.keep_planned_subscription,
     virtualMembershipId: values.virtual_membership_id,
+    virtualMembershipMode: values.virtual_membership_mode,
+    routingMode: values.routing_mode,
+    routingRevision: values.routing_revision,
+    routeSteps: values.route_steps,
     group: values.group,
   })
 }
@@ -128,6 +133,7 @@ export function ApiKeysMutateDrawer({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const submittingRef = useRef(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [routingPolicyOpen, setRoutingPolicyOpen] = useState(false)
   const [subscriptionChoiceConfirmed, setSubscriptionChoiceConfirmed] =
     useState(false)
   const [initialBindingSignature, setInitialBindingSignature] = useState('')
@@ -276,7 +282,11 @@ export function ApiKeysMutateDrawer({
   }, [groups, form])
 
   const onSubmit = async (data: ApiKeyFormValues) => {
-    if (hasVirtualMembershipStep && data.virtual_membership_id <= 0) {
+    if (
+      hasVirtualMembershipStep &&
+      data.virtual_membership_mode === 'instance' &&
+      data.virtual_membership_id <= 0
+    ) {
       form.setError('virtual_membership_id', {
         type: 'manual',
         message: '请选择虚拟会员额度',
@@ -289,6 +299,7 @@ export function ApiKeysMutateDrawer({
     }
     if (
       isUpdate &&
+      hasSourceStep &&
       initialBindingSignature &&
       subscriptionBindingSignature(data) !== initialBindingSignature &&
       !changeAcknowledged
@@ -422,15 +433,18 @@ export function ApiKeysMutateDrawer({
     ? t('Enter quota in tokens')
     : t('Enter quota in {{currency}}', { currency: currencyLabel })
   const selectedGroup = form.watch('group')
+  const routingMode = form.watch('routing_mode')
+  const routeSteps = form.watch('route_steps')
   const unlimitedQuota = form.watch('unlimited_quota')
   const subscriptionMode = form.watch('subscription_mode')
   const selectedSubscriptionId = form.watch('subscription_id')
   const allowRenewal = form.watch('subscription_allow_renewal')
   const allowSameGroup = form.watch('subscription_allow_same_group')
   const allowWallet = form.watch('subscription_allow_wallet')
-  const hasSubscriptionStep = subscribedGroups.includes(selectedGroup)
+  const hasSubscriptionStep =
+    routingMode === 'single' && subscribedGroups.includes(selectedGroup)
   const hasVirtualMembershipStep =
-    virtualMembershipGroups.includes(selectedGroup)
+    routingMode === 'single' && virtualMembershipGroups.includes(selectedGroup)
   const continuationEnabled = allowRenewal || allowSameGroup || allowWallet
   const currentBindingSignature = subscriptionBindingSignature(form.getValues())
   const bindingChanged =
@@ -481,6 +495,26 @@ export function ApiKeysMutateDrawer({
         (membership.allowed_group?.trim() || '') === selectedGroup
     )
   }, [selectedGroup, virtualMembershipQuery.data])
+  const allSubscriptionInstances = useMemo(() => {
+    const records = selfSubQuery.data?.data?.all_subscriptions || []
+    const now = Date.now() / 1000
+    return records
+      .map((record) => record.subscription)
+      .filter(
+        (subscription): subscription is UserSubscription =>
+          !!subscription &&
+          subscription.status === 'active' &&
+          subscription.start_time <= now &&
+          subscription.end_time > now
+      )
+  }, [selfSubQuery.data])
+  const allVirtualMemberships = useMemo(
+    () =>
+      (virtualMembershipQuery.data?.data?.memberships || []).filter(
+        (membership) => membership.status === 'active'
+      ),
+    [virtualMembershipQuery.data]
+  )
   const hasSourceStep = hasSubscriptionStep || hasVirtualMembershipStep
 
   useEffect(() => {
@@ -549,10 +583,16 @@ export function ApiKeysMutateDrawer({
               <ApiKeyGroupCombobox
                 options={groups}
                 value={field.value}
-                onValueChange={field.onChange}
+                onValueChange={(value) => {
+                  field.onChange(value)
+                  form.setValue('routing_mode', 'single')
+                  form.setValue('route_steps', [])
+                }}
                 placeholder={t('Select a group')}
                 subscribedGroups={subscribedGroups}
                 virtualMembershipGroups={virtualMembershipGroups}
+                customRoutingSelected={routingMode === 'custom'}
+                onCustomRouting={() => setRoutingPolicyOpen(true)}
               />
             </FormControl>
             <FormMessage />
@@ -759,86 +799,150 @@ export function ApiKeysMutateDrawer({
       )}
 
       {hasVirtualMembershipStep && (
-        <FormField
-          control={form.control}
-          name='virtual_membership_id'
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>虚拟会员额度</FormLabel>
-              <FormDescription>
-                绑定后，本 API Key 的请求会优先消耗所选虚拟会员额度。
-              </FormDescription>
-              <FormControl>
-                <RadioGroup
-                  value={field.value > 0 ? String(field.value) : '0'}
-                  onValueChange={(value) => {
-                    const membershipId = Number(value)
-                    field.onChange(membershipId)
-                    if (membershipId > 0) {
-                      form.clearErrors('virtual_membership_id')
-                      form.setValue('subscription_mode', 'auto')
-                      form.setValue('subscription_id', 0)
-                      setSubscriptionChoiceConfirmed(true)
-                    }
-                  }}
-                  className='max-h-64 gap-2 overflow-y-auto pr-1'
-                >
-                  {virtualMemberships.map((membership) => {
-                    const incompatible =
-                      !!membership.allowed_group &&
-                      membership.allowed_group !== selectedGroup
-                    const unavailable =
-                      incompatible || membership.weekly_remaining <= 0
-                    return (
-                      <label
-                        key={membership.id}
-                        className={cn(
-                          'border-border bg-card grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border p-3',
-                          field.value === membership.id &&
-                            'border-primary bg-primary/5',
-                          unavailable &&
-                            'bg-muted/40 cursor-not-allowed opacity-65'
-                        )}
-                      >
-                        <RadioGroupItem
-                          value={String(membership.id)}
-                          disabled={unavailable}
-                        />
-                        <span className='min-w-0'>
-                          <span className='block truncate text-sm font-medium'>
-                            {membership.plan_title} · #{membership.id}
-                          </span>
-                          <span className='text-muted-foreground mt-1 block text-xs'>
-                            周余量 {formatQuota(membership.weekly_remaining)}
-                            {membership.five_hour_enabled
-                              ? ` · 5h ${formatQuota(membership.five_hour_remaining)}`
-                              : ''}
-                          </span>
+        <div className='space-y-4'>
+          <FormField
+            control={form.control}
+            name='virtual_membership_mode'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>会员额度分配</FormLabel>
+                <FormControl>
+                  <RadioGroup
+                    value={field.value}
+                    onValueChange={(value) => {
+                      field.onChange(value)
+                      if (value === 'auto') {
+                        form.setValue('virtual_membership_id', 0)
+                        form.clearErrors('virtual_membership_id')
+                      }
+                    }}
+                    className='grid gap-3 sm:grid-cols-2'
+                  >
+                    <label
+                      className={cn(
+                        'border-border bg-card flex cursor-pointer gap-3 rounded-xl border p-4',
+                        field.value === 'auto' && 'border-primary bg-primary/5'
+                      )}
+                    >
+                      <RadioGroupItem value='auto' className='mt-0.5' />
+                      <span>
+                        <span className='flex items-center gap-2 text-sm font-semibold'>
+                          自动分配
+                          <Badge className='px-1.5 py-0 text-[10px]'>
+                            推荐
+                          </Badge>
                         </span>
-                        <span className='text-muted-foreground text-[10px]'>
-                          {membership.group_size === 1
-                            ? '单独'
-                            : `${membership.group_size} 人团`}
+                        <span className='text-muted-foreground mt-1 block text-xs leading-5'>
+                          先用周限额最早到期的会员，用完自动换下一个。
                         </span>
-                      </label>
-                    )
-                  })}
-                  {virtualMemberships.length === 0 && (
-                    <div className='border-border bg-muted/30 rounded-xl border border-dashed p-6 text-center'>
-                      <p className='text-sm font-medium'>
-                        暂无可绑定的虚拟会员额度
-                      </p>
-                      <p className='text-muted-foreground mt-1 text-xs'>
-                        请先购买或恢复该会员分组对应的有效额度。
-                      </p>
-                    </div>
-                  )}
-                </RadioGroup>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
+                      </span>
+                    </label>
+                    <label
+                      className={cn(
+                        'border-border bg-card flex cursor-pointer gap-3 rounded-xl border p-4',
+                        field.value === 'instance' &&
+                          'border-primary bg-primary/5'
+                      )}
+                    >
+                      <RadioGroupItem value='instance' className='mt-0.5' />
+                      <span>
+                        <span className='text-sm font-semibold'>
+                          绑定指定会员
+                        </span>
+                        <span className='text-muted-foreground mt-1 block text-xs leading-5'>
+                          与原有方式相同，这枚 Key 只消耗选定的会员实例。
+                        </span>
+                      </span>
+                    </label>
+                  </RadioGroup>
+                </FormControl>
+              </FormItem>
+            )}
+          />
+          {form.watch('virtual_membership_mode') === 'instance' && (
+            <FormField
+              control={form.control}
+              name='virtual_membership_id'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>虚拟会员额度</FormLabel>
+                  <FormDescription>
+                    绑定后，本 API Key 的请求会优先消耗所选虚拟会员额度。
+                  </FormDescription>
+                  <FormControl>
+                    <RadioGroup
+                      value={field.value > 0 ? String(field.value) : '0'}
+                      onValueChange={(value) => {
+                        const membershipId = Number(value)
+                        field.onChange(membershipId)
+                        if (membershipId > 0) {
+                          form.clearErrors('virtual_membership_id')
+                          form.setValue('subscription_mode', 'auto')
+                          form.setValue('subscription_id', 0)
+                          setSubscriptionChoiceConfirmed(true)
+                        }
+                      }}
+                      className='max-h-64 gap-2 overflow-y-auto pr-1'
+                    >
+                      {virtualMemberships.map((membership) => {
+                        const incompatible =
+                          !!membership.allowed_group &&
+                          membership.allowed_group !== selectedGroup
+                        const unavailable =
+                          incompatible || membership.weekly_remaining <= 0
+                        return (
+                          <label
+                            key={membership.id}
+                            className={cn(
+                              'border-border bg-card grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border p-3',
+                              field.value === membership.id &&
+                                'border-primary bg-primary/5',
+                              unavailable &&
+                                'bg-muted/40 cursor-not-allowed opacity-65'
+                            )}
+                          >
+                            <RadioGroupItem
+                              value={String(membership.id)}
+                              disabled={unavailable}
+                            />
+                            <span className='min-w-0'>
+                              <span className='block truncate text-sm font-medium'>
+                                {membership.plan_title} · #{membership.id}
+                              </span>
+                              <span className='text-muted-foreground mt-1 block text-xs'>
+                                周余量{' '}
+                                {formatQuota(membership.weekly_remaining)}
+                                {membership.five_hour_enabled
+                                  ? ` · 5h ${formatQuota(membership.five_hour_remaining)}`
+                                  : ''}
+                              </span>
+                            </span>
+                            <span className='text-muted-foreground text-[10px]'>
+                              {membership.group_size === 1
+                                ? '单独'
+                                : `${membership.group_size} 人团`}
+                            </span>
+                          </label>
+                        )
+                      })}
+                      {virtualMemberships.length === 0 && (
+                        <div className='border-border bg-muted/30 rounded-xl border border-dashed p-6 text-center'>
+                          <p className='text-sm font-medium'>
+                            暂无可绑定的虚拟会员额度
+                          </p>
+                          <p className='text-muted-foreground mt-1 text-xs'>
+                            请先购买或恢复该会员分组对应的有效额度。
+                          </p>
+                        </div>
+                      )}
+                    </RadioGroup>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           )}
-        />
+        </div>
       )}
 
       {hasSubscriptionStep && subscriptionMode === 'instance' && (
@@ -1447,6 +1551,8 @@ export function ApiKeysMutateDrawer({
                     }
                     if (
                       hasVirtualMembershipStep &&
+                      form.getValues('virtual_membership_mode') ===
+                        'instance' &&
                       form.getValues('virtual_membership_id') <= 0
                     ) {
                       form.setError('virtual_membership_id', {
@@ -1543,6 +1649,31 @@ export function ApiKeysMutateDrawer({
           </DialogFooter>
         )}
       </DialogContent>
+      {routingPolicyOpen && (
+        <ApiKeyRoutingPolicyDialog
+          open={routingPolicyOpen}
+          onOpenChange={setRoutingPolicyOpen}
+          groups={groups}
+          subscribedGroups={subscribedGroups}
+          virtualMembershipGroups={virtualMembershipGroups}
+          subscriptions={allSubscriptionInstances}
+          memberships={allVirtualMemberships}
+          initialSteps={routeSteps}
+          onSave={(steps) => {
+            form.setValue('routing_mode', 'custom', { shouldDirty: true })
+            form.setValue('route_steps', steps, { shouldDirty: true })
+            form.setValue('group', steps[0]?.group || '', {
+              shouldDirty: true,
+              shouldValidate: true,
+            })
+            form.setValue('cross_group_retry', false)
+            form.setValue('subscription_mode', 'auto')
+            form.setValue('subscription_id', 0)
+            form.setValue('virtual_membership_id', 0)
+            form.setValue('virtual_membership_mode', 'instance')
+          }}
+        />
+      )}
     </Dialog>
   )
 }

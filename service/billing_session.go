@@ -539,6 +539,33 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		model.NormalizeTokenSubscriptionMode(tokenBinding.SubscriptionMode) == model.TokenSubscriptionModeInstance &&
 		tokenBinding.SubscriptionId > 0
 	virtualBinding := tokenBinding != nil && tokenBinding.VirtualMembershipId > 0
+	virtualAutoBinding := tokenBinding != nil &&
+		model.NormalizeVirtualMembershipMode(tokenBinding.VirtualMembershipMode) == model.VirtualMembershipModeAuto
+	routeSource, routeSelection, routeSourceId, routeConfigured := CurrentTokenRouteSource(c)
+	routeSubscriptionBinding := tokenBinding
+	routeMembershipId := 0
+	routeMembershipAuto := false
+	if routeConfigured {
+		switch routeSource {
+		case model.TokenRouteSourceSubscription:
+			if tokenBinding != nil {
+				copyBinding := *tokenBinding
+				if routeSelection == model.TokenRouteSelectionInstance {
+					copyBinding.SubscriptionMode = model.TokenSubscriptionModeInstance
+					copyBinding.SubscriptionId = routeSourceId
+					copyBinding.SubscriptionAllowRenewal = false
+					copyBinding.SubscriptionAllowSameGroup = false
+				} else {
+					copyBinding.SubscriptionMode = model.TokenSubscriptionModeAuto
+					copyBinding.SubscriptionId = 0
+				}
+				routeSubscriptionBinding = &copyBinding
+			}
+		case model.TokenRouteSourceVirtualMembership:
+			routeMembershipAuto = routeSelection != model.TokenRouteSelectionInstance
+			routeMembershipId = routeSourceId
+		}
+	}
 	subscriptionPlanGroup, planGroupErr := model.HasSubscriptionPlanByGroup(relayInfo.UsingGroup)
 	if planGroupErr != nil {
 		return nil, types.NewError(planGroupErr, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
@@ -607,7 +634,7 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 				modelName:  relayInfo.OriginModelName,
 				amount:     subConsume,
 				usingGroup: relayInfo.UsingGroup,
-				binding:    tokenBinding,
+				binding:    routeSubscriptionBinding,
 			},
 		}
 		// 必须传 subConsume 而非 preConsumedQuota，保证 SubscriptionFunding.amount、
@@ -624,7 +651,8 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 			funding: &VirtualMembershipFunding{
 				requestId: relayInfo.RequestId, userId: relayInfo.UserId,
 				modelName: relayInfo.OriginModelName, usingGroup: relayInfo.UsingGroup,
-				membershipId: tokenBinding.VirtualMembershipId,
+				membershipId: routeMembershipId,
+				autoAllocate: routeMembershipAuto,
 			},
 		}
 		if apiErr := session.preConsume(c, preConsumedQuota); apiErr != nil {
@@ -633,7 +661,31 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		return session, nil
 	}
 
+	if routeConfigured {
+		var session *BillingSession
+		var routeErr *types.NewAPIError
+		switch routeSource {
+		case model.TokenRouteSourceWallet:
+			session, routeErr = tryWallet(false)
+		case model.TokenRouteSourceSubscription:
+			session, routeErr = trySubscription()
+		case model.TokenRouteSourceVirtualMembership:
+			session, routeErr = tryVirtualMembership()
+		default:
+			return nil, types.NewError(errors.New("API Key 消耗路由资金来源无效"), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
+		}
+		if routeErr != nil && routeErr.GetErrorCode() == types.ErrorCodeInsufficientUserQuota {
+			MarkCurrentTokenRouteQuotaUnavailable(c)
+		}
+		return session, routeErr
+	}
+
 	if virtualBinding {
+		routeMembershipId = tokenBinding.VirtualMembershipId
+		return tryVirtualMembership()
+	}
+	if virtualAutoBinding && virtualMembershipPlanGroup {
+		routeMembershipAuto = true
 		return tryVirtualMembership()
 	}
 

@@ -175,6 +175,7 @@ type VirtualMembershipFunding struct {
 	membershipId int
 	preConsumed  int64
 	planTitle    string
+	autoAllocate bool
 }
 
 func (v *VirtualMembershipFunding) Source() string { return BillingSourceVirtualMembership }
@@ -183,12 +184,24 @@ func (v *VirtualMembershipFunding) PreConsume(amount int) error {
 	if amount <= 0 {
 		return nil
 	}
-	if err := model.PreConsumeVirtualMembershipForToken(v.requestId, v.userId, v.modelName, int64(amount), v.usingGroup, v.membershipId); err != nil {
-		return err
+	if v.autoAllocate {
+		membership, err := model.PreConsumeVirtualMembershipAuto(v.requestId, v.userId, v.modelName, int64(amount), v.usingGroup)
+		if err != nil {
+			return err
+		}
+		v.membershipId = membership.Id
+		v.planTitle = membership.PlanTitle
+	} else {
+		if err := model.PreConsumeVirtualMembershipForToken(v.requestId, v.userId, v.modelName, int64(amount), v.usingGroup, v.membershipId); err != nil {
+			return err
+		}
 	}
 	v.preConsumed = int64(amount)
-	if membership, err := model.GetVirtualMembershipByIdForUser(v.userId, v.membershipId); err == nil && membership != nil {
-		v.planTitle = membership.PlanTitle
+	if v.planTitle == "" {
+		membership, err := model.GetVirtualMembershipByIdForUser(v.userId, v.membershipId)
+		if err == nil && membership != nil {
+			v.planTitle = membership.PlanTitle
+		}
 	}
 	return nil
 }

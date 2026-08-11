@@ -229,6 +229,39 @@ func TestListUserVirtualMembershipsIncludesSettledLifetimeUsage(t *testing.T) {
 	require.EqualValues(t, 7, byTitle["current"].WeeklyUsed, "lifetime aggregation must not alter current-cycle usage")
 }
 
+func TestPreConsumeVirtualMembershipAutoUsesEarliestUsableResetAndRestoresPriority(t *testing.T) {
+	db := setupVirtualMembershipTestDB(t)
+	now := common.GetTimestamp()
+	memberships := []UserVirtualMembership{
+		{
+			UserId: 71, PlanId: 1, PlanTitle: "earliest", Status: VirtualMembershipStatusActive,
+			StartTime: now - 60, EndTime: now + 86400, AllowedGroup: "member-route",
+			WeeklyQuota: 100, WeeklyUsed: 95, WeeklyResetAt: now + 100,
+		},
+		{
+			UserId: 71, PlanId: 2, PlanTitle: "second", Status: VirtualMembershipStatusActive,
+			StartTime: now - 60, EndTime: now + 86400, AllowedGroup: "member-route",
+			WeeklyQuota: 100, WeeklyUsed: 0, WeeklyResetAt: now + 200,
+		},
+	}
+	require.NoError(t, db.Create(&memberships).Error)
+
+	selected, err := PreConsumeVirtualMembershipAuto("route-auto-1", 71, "gpt-test", 10, "member-route")
+	require.NoError(t, err)
+	require.Equal(t, memberships[1].Id, selected.Id, "an earlier but insufficient membership must be skipped")
+
+	require.NoError(t, db.Model(&UserVirtualMembership{}).Where("id = ?", memberships[0].Id).Updates(map[string]any{
+		"weekly_used": 100, "weekly_reset_at": now - 1,
+	}).Error)
+	selected, err = PreConsumeVirtualMembershipAuto("route-auto-2", 71, "gpt-test", 10, "member-route")
+	require.NoError(t, err)
+	require.Equal(t, memberships[0].Id, selected.Id, "a lazily reset membership must regain first priority")
+
+	var recordCount int64
+	require.NoError(t, db.Model(&VirtualMembershipPreConsumeRecord{}).Count(&recordCount).Error)
+	require.EqualValues(t, 2, recordCount)
+}
+
 func TestListUserVirtualMembershipsReturnsOnlyCurrentActiveInstances(t *testing.T) {
 	db := setupVirtualMembershipTestDB(t)
 	now := common.GetTimestamp()

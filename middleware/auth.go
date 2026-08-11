@@ -434,12 +434,14 @@ func TokenAuth() func(c *gin.Context) {
 
 		userGroup := userCache.Group
 		tokenGroup := token.Group
-		if tokenGroup != "" {
+		customRouting := model.NormalizeTokenRoutingMode(token.RoutingMode) == model.TokenRoutingModeCustom
+		if tokenGroup != "" && !customRouting {
 			// check common.UserUsableGroups[userGroup]
 			if _, ok := service.GetUserUsableGroups(userGroup)[tokenGroup]; !ok {
 				// 订阅即凭证: 持有 AllowedGroup == tokenGroup 的有效订阅则放行该分组
 				hasSub, _ := model.HasActiveUserSubscriptionByGroup(token.UserId, tokenGroup)
-				if !hasSub {
+				hasMembership, _ := model.HasUsableVirtualMembershipForRoute(token.UserId, tokenGroup, "")
+				if !hasSub && !hasMembership {
 					abortWithOpenAiMessage(c, http.StatusForbidden, fmt.Sprintf("无权访问 %s 分组", tokenGroup))
 					return
 				}
@@ -522,6 +524,7 @@ func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) e
 	}
 	common.SetContextKey(c, constant.ContextKeyTokenGroup, token.Group)
 	common.SetContextKey(c, constant.ContextKeyTokenCrossGroupRetry, token.CrossGroupRetry)
+	common.SetContextKey(c, constant.ContextKeyTokenRoutingMode, model.NormalizeTokenRoutingMode(token.RoutingMode))
 	if len(parts) > 1 {
 		if model.IsAdmin(token.UserId) {
 			c.Set("specific_channel_id", parts[1])

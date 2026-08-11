@@ -152,6 +152,18 @@ func ValidateSubscriptionForToken(userId int, group string, subscriptionId int, 
 	return validateSubscriptionForTokenTx(DB, userId, group, subscriptionId, requireUsable)
 }
 
+func ValidateActiveSubscriptionEntitlementForToken(userId int, group string, subscriptionId int) (*UserSubscription, error) {
+	sub, err := validateSubscriptionForTokenTx(DB, userId, group, subscriptionId, false)
+	if err != nil {
+		return nil, err
+	}
+	now := GetDBTimestamp()
+	if sub.Status != "active" || sub.StartTime > now || sub.EndTime <= now {
+		return nil, ErrTokenSubscriptionNotUsable
+	}
+	return sub, nil
+}
+
 func validateTokenBindingInputTx(tx *gorm.DB, userId int, group string, input TokenSubscriptionBindingInput) (*UserSubscription, error) {
 	input.Mode = NormalizeTokenSubscriptionMode(input.Mode)
 	if input.Mode == TokenSubscriptionModeAuto {
@@ -181,52 +193,84 @@ func ResolveTokenFundingBindingForGroup(
 	input TokenSubscriptionBindingInput,
 	virtualMembershipId int,
 ) (TokenSubscriptionBindingInput, int, error) {
+	resolved, membershipId, _, err := ResolveTokenFundingBindingForGroupWithMode(
+		userId,
+		group,
+		input,
+		virtualMembershipId,
+		VirtualMembershipModeInstance,
+	)
+	return resolved, membershipId, err
+}
+
+// ResolveTokenFundingBindingForGroupWithMode additionally supports automatic
+// virtual-membership allocation. Automatic allocation is still a hard
+// membership boundary: it never falls back to wallet billing.
+func ResolveTokenFundingBindingForGroupWithMode(
+	userId int,
+	group string,
+	input TokenSubscriptionBindingInput,
+	virtualMembershipId int,
+	virtualMembershipMode string,
+) (TokenSubscriptionBindingInput, int, string, error) {
 	group = strings.TrimSpace(group)
+	virtualMembershipMode = NormalizeVirtualMembershipMode(virtualMembershipMode)
 	virtualGroup, err := HasVirtualMembershipPlanByGroup(group)
 	if err != nil {
-		return input, virtualMembershipId, err
+		return input, virtualMembershipId, virtualMembershipMode, err
 	}
 	subscriptionGroup, err := HasSubscriptionPlanByGroup(group)
 	if err != nil {
-		return input, virtualMembershipId, err
+		return input, virtualMembershipId, virtualMembershipMode, err
 	}
 	if virtualGroup && subscriptionGroup {
-		return input, virtualMembershipId, errors.New("当前分组同时属于套餐与虚拟会员，请联系管理员修正分组配置")
+		return input, virtualMembershipId, virtualMembershipMode, errors.New("当前分组同时属于套餐与虚拟会员，请联系管理员修正分组配置")
 	}
 
 	if virtualGroup {
-		if virtualMembershipId <= 0 {
-			return input, 0, errors.New("会员分组必须绑定可用的虚拟会员额度")
-		}
 		if NormalizeTokenSubscriptionMode(input.Mode) != TokenSubscriptionModeAuto || input.SubscriptionId > 0 {
-			return input, 0, errors.New("虚拟会员不能与订阅实例同时绑定")
+			return input, 0, virtualMembershipMode, errors.New("虚拟会员不能与订阅实例同时绑定")
 		}
-		if err := ValidateVirtualMembershipForToken(userId, group, virtualMembershipId, true); err != nil {
-			return input, 0, err
+		if virtualMembershipMode == VirtualMembershipModeAuto {
+			has, err := HasActiveUserVirtualMembershipByGroup(userId, group)
+			if err != nil {
+				return input, 0, virtualMembershipMode, err
+			}
+			if !has {
+				return input, 0, virtualMembershipMode, errors.New("当前没有可用的会员额度")
+			}
+			virtualMembershipId = 0
+		} else {
+			if virtualMembershipId <= 0 {
+				return input, 0, virtualMembershipMode, errors.New("会员分组必须绑定可用的虚拟会员额度")
+			}
+			if err := ValidateVirtualMembershipForToken(userId, group, virtualMembershipId, true); err != nil {
+				return input, 0, virtualMembershipMode, err
+			}
 		}
 		return TokenSubscriptionBindingInput{
 			Mode:          TokenSubscriptionModeAuto,
 			CancelPlanned: true,
 			Reason:        input.Reason,
-		}, virtualMembershipId, nil
+		}, virtualMembershipId, virtualMembershipMode, nil
 	}
 
 	if subscriptionGroup {
 		if virtualMembershipId > 0 {
-			return input, 0, errors.New("套餐分组不能绑定虚拟会员额度")
+			return input, 0, VirtualMembershipModeInstance, errors.New("套餐分组不能绑定虚拟会员额度")
 		}
 		input.Mode = NormalizeTokenSubscriptionMode(input.Mode)
 		if err := ValidateTokenSubscriptionBindingInput(userId, group, input); err != nil {
-			return input, 0, err
+			return input, 0, VirtualMembershipModeInstance, err
 		}
-		return input, 0, nil
+		return input, 0, VirtualMembershipModeInstance, nil
 	}
 
 	return TokenSubscriptionBindingInput{
 		Mode:          TokenSubscriptionModeAuto,
 		CancelPlanned: true,
 		Reason:        input.Reason,
-	}, 0, nil
+	}, 0, VirtualMembershipModeInstance, nil
 }
 
 func applyBindingInput(token *Token, input TokenSubscriptionBindingInput) {
@@ -392,6 +436,16 @@ func UpdateTokenWithSubscriptionBinding(userId int, desired *Token, input TokenS
 			return err
 		}
 		before := current
+		if NormalizeTokenRoutingMode(current.RoutingMode) == TokenRoutingModeCustom &&
+			NormalizeTokenRoutingMode(desired.RoutingMode) == TokenRoutingModeSingle {
+			if desired.RoutingRevision != current.RoutingRevision {
+				return errors.New("API Key 消耗路由策略已被其他窗口修改，请刷新后重试")
+			}
+			desired.RoutingRevision++
+			if err := tx.Where("token_id = ? AND user_id = ?", current.Id, userId).Delete(&TokenRouteStep{}).Error; err != nil {
+				return err
+			}
+		}
 		current.Name = desired.Name
 		current.Status = desired.Status
 		current.ExpiredTime = desired.ExpiredTime
@@ -402,8 +456,11 @@ func UpdateTokenWithSubscriptionBinding(userId int, desired *Token, input TokenS
 		current.AllowIps = desired.AllowIps
 		current.Group = strings.TrimSpace(desired.Group)
 		current.CrossGroupRetry = desired.CrossGroupRetry
+		current.RoutingMode = NormalizeTokenRoutingMode(desired.RoutingMode)
+		current.RoutingRevision = desired.RoutingRevision
 		applyBindingInput(&current, input)
 		current.VirtualMembershipId = desired.VirtualMembershipId
+		current.VirtualMembershipMode = NormalizeVirtualMembershipMode(desired.VirtualMembershipMode)
 		if err := tx.Model(&Token{}).Where("id = ? AND user_id = ?", current.Id, userId).
 			Updates(map[string]any{
 				"name":                           current.Name,
@@ -416,6 +473,8 @@ func UpdateTokenWithSubscriptionBinding(userId int, desired *Token, input TokenS
 				"allow_ips":                      current.AllowIps,
 				"group":                          current.Group,
 				"cross_group_retry":              current.CrossGroupRetry,
+				"routing_mode":                   current.RoutingMode,
+				"routing_revision":               current.RoutingRevision,
 				"subscription_mode":              current.SubscriptionMode,
 				"subscription_id":                current.SubscriptionId,
 				"subscription_allow_renewal":     current.SubscriptionAllowRenewal,
@@ -428,6 +487,7 @@ func UpdateTokenWithSubscriptionBinding(userId int, desired *Token, input TokenS
 				"planned_subscription_group":     current.PlannedSubscriptionGroup,
 				"planned_subscription_effective": current.PlannedSubscriptionEffective,
 				"virtual_membership_id":          current.VirtualMembershipId,
+				"virtual_membership_mode":        current.VirtualMembershipMode,
 			}).Error; err != nil {
 			return err
 		}

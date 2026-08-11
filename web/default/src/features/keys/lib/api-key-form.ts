@@ -36,6 +36,20 @@ export function getApiKeyFormSchema(t: TFunction) {
       allow_ips: z.string().optional(),
       group: z.string().trim().min(1, t('Please select a group')),
       cross_group_retry: z.boolean().optional(),
+      routing_mode: z.enum(['single', 'custom']),
+      routing_revision: z.number(),
+      route_steps: z.array(
+        z.object({
+          id: z.number().optional(),
+          position: z.number(),
+          group: z.string().trim().min(1),
+          funding_source: z
+            .enum(['wallet', 'subscription', 'virtual_membership'])
+            .optional(),
+          selection_mode: z.enum(['auto', 'instance']),
+          source_id: z.number(),
+        })
+      ),
       subscription_mode: z.enum(['auto', 'instance']),
       subscription_id: z.number(),
       subscription_allow_renewal: z.boolean(),
@@ -44,6 +58,7 @@ export function getApiKeyFormSchema(t: TFunction) {
       subscription_wallet_limit_dollars: z.number(),
       keep_planned_subscription: z.boolean(),
       virtual_membership_id: z.number(),
+      virtual_membership_mode: z.enum(['auto', 'instance']),
       tokenCount: z.number().min(1).optional(),
     })
     .superRefine((data, ctx) => {
@@ -58,7 +73,18 @@ export function getApiKeyFormSchema(t: TFunction) {
           message: t('Quota must be zero or greater'),
         })
       }
-      if (data.subscription_mode === 'instance' && data.subscription_id <= 0) {
+      if (data.routing_mode === 'custom' && data.route_steps.length === 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['route_steps'],
+          message: '请至少选择一个明确分组',
+        })
+      }
+      if (
+        data.routing_mode === 'single' &&
+        data.subscription_mode === 'instance' &&
+        data.subscription_id <= 0
+      ) {
         ctx.addIssue({
           code: 'custom',
           path: ['subscription_id'],
@@ -66,6 +92,7 @@ export function getApiKeyFormSchema(t: TFunction) {
         })
       }
       if (
+        data.routing_mode === 'single' &&
         data.subscription_mode === 'instance' &&
         data.subscription_allow_wallet &&
         data.subscription_wallet_limit_dollars <= 0
@@ -94,6 +121,9 @@ export const API_KEY_FORM_DEFAULT_VALUES: ApiKeyFormValues = {
   allow_ips: '',
   group: '',
   cross_group_retry: false,
+  routing_mode: 'single',
+  routing_revision: 0,
+  route_steps: [],
   subscription_mode: 'auto',
   subscription_id: 0,
   subscription_allow_renewal: true,
@@ -102,6 +132,7 @@ export const API_KEY_FORM_DEFAULT_VALUES: ApiKeyFormValues = {
   subscription_wallet_limit_dollars: 0,
   keep_planned_subscription: false,
   virtual_membership_id: 0,
+  virtual_membership_mode: 'auto',
   tokenCount: 1,
 }
 
@@ -138,6 +169,15 @@ export function transformFormDataToPayload(
     allow_ips: data.allow_ips || '',
     group: data.group.trim(),
     cross_group_retry: data.group === 'auto' ? !!data.cross_group_retry : false,
+    routing_mode: data.routing_mode,
+    routing_revision: data.routing_revision,
+    route_steps:
+      data.routing_mode === 'custom'
+        ? data.route_steps.map((step, index) => ({
+            ...step,
+            position: index + 1,
+          }))
+        : [],
     subscription_mode: data.subscription_mode,
     subscription_id:
       data.subscription_mode === 'instance' ? data.subscription_id : 0,
@@ -155,7 +195,13 @@ export function transformFormDataToPayload(
     cancel_planned_subscription:
       data.subscription_mode === 'auto' && !data.keep_planned_subscription,
     virtual_membership_id:
-      data.subscription_mode === 'auto' ? data.virtual_membership_id : 0,
+      data.routing_mode === 'single' && data.subscription_mode === 'auto'
+        ? data.virtual_membership_id
+        : 0,
+    virtual_membership_mode:
+      data.routing_mode === 'single'
+        ? data.virtual_membership_mode
+        : 'instance',
   }
 }
 
@@ -181,6 +227,9 @@ export function transformApiKeyToFormDefaults(
     allow_ips: apiKey.allow_ips || '',
     group: apiKey.group || '',
     cross_group_retry: !!apiKey.cross_group_retry,
+    routing_mode: apiKey.routing_mode || 'single',
+    routing_revision: apiKey.routing_revision || 0,
+    route_steps: apiKey.route_steps || [],
     subscription_mode: apiKey.subscription_mode || 'auto',
     subscription_id: apiKey.subscription_id || 0,
     subscription_allow_renewal: !!apiKey.subscription_allow_renewal,
@@ -192,6 +241,7 @@ export function transformApiKeyToFormDefaults(
     keep_planned_subscription:
       apiKey.subscription_mode === 'auto' && apiKey.planned_subscription_id > 0,
     virtual_membership_id: apiKey.virtual_membership_id || 0,
+    virtual_membership_mode: apiKey.virtual_membership_mode || 'instance',
     tokenCount: 1,
   }
 }
