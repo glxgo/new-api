@@ -1396,3 +1396,10 @@
 - 生产三次受控 `/v1/responses` canary 使用同一 `prompt_cache_key`，均返回 HTTP 200 且收到 `response.completed`；CPA token-usage 摘要在 03:31:18/20/21 记录为同一匿名账号指纹、每次 14 Token。相邻的两条自然流量来自另一账号，已按时间排除。这证明 New API 派生的匿名 `Session_id` 已让同一 Session 优先持续使用同一 CPA 账号。
 - 诊断过程中曾有一个 CPA 调用密钥意外出现在工具输出，已按泄露处置：先通过管理 API 并存新旧密钥，再条件更新渠道 28，等待正式容器缓存同步后删除旧密钥。最终 CPA 只保留新密钥，新密钥鉴权 200、旧密钥 401，渠道 28 数据库指纹与新值一致；无需重启 CPA 或 New API。轮换备份为 root-only `/opt/new-api-backups/cpa-api-key-rotation-20260810T192425Z/`，临时明文文件已销毁。
 - 轮换后三次 canary 同时验证了正式 New API 已使用新 CPA 密钥。发布后复核中没有新的 `scanner_error unexpected EOF`；`context canceled` 仍按 `client_gone` 独立归类，不与 Session 修复或上游 EOF 混为一类。
+
+### 2026-08-11 — 充值分润改为严格上线切点，历史误发已定向回退
+
+- 用户确认最终边界：旧系统已结算返利保持不变，旧系统未结算返利永不补发、不退回；新固定比例分润只处理生产切点及之后创建的有效充值事件。提交 `e00551511` 删除历史订单/消费队列扫描补发，新增持久化 `RechargeCommissionPolicyV1CutoverAt` 门禁，分润报表与邀请充值汇总只读 policy v1 已结算数据。
+- 生产切点固定为新分润版本首次正式容器启动时刻 `1786389981`（2026-08-11 03:26:21 CST）。切点前 12 笔历史充值曾被旧迁移误发 23 条 policy v1 分润，合计 9,688,300 quota；现已用单一受守护事务定向扣回这部分误增余额、删除对应 23 条新策略记录，并将 12 条充值台账改回 `legacy/policy=0`。事务仅针对记录 ID 110966–110988；切点后 ID 110989–110991 的 3 条正常分润完整保留。最终 policy v1 为 3 条、合计 750,000 quota，唯一键重复均为 0。
+- 本地 model 全量测试、Default TypeScript/ESLint/Default 与 Classic 生产构建、全仓 Go 编译和 Linux/amd64 静态构建通过。生产版本为 `20260811-rebate-cutover`，二进制 SHA-256 为 `ee2855fbb84a503738840f6ffded02e98c661c587d37a81c0dd6bb20d9b24616`。3010 候选、Nginx 切流、两侧长流自然排空和 3000 归一完成，正式容器 healthy、0 重启，三个生产域名各 5/5 返回新版本。
+- 回退前完整 MySQL 备份、目标数据子集、事务日志、前后 Compose/Nginx 和 SHA-256 清单位于 root-only `/opt/new-api-backups/rebate-history-rollback-20260811-1208/`。原 `20260811-juxing-api-commission` 镜像与二进制仍保留供回滚。
