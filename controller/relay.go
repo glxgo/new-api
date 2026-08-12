@@ -163,17 +163,19 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			logger.LogWarn(c, "Codex2API prompt filter could not read the original request envelope; request allowed by fail-open policy")
 		} else {
 			var preflightBody []byte
-			if service.Codex2APIPromptFilterAcceptsBodySize(bodyStorage.Size()) {
+			preflightBody, bodyErr = service.BuildBoundedCodex2APIPromptFilterBody(request)
+			if bodyErr != nil && service.Codex2APIPromptFilterAcceptsBodySize(bodyStorage.Size()) {
+				// Unsupported request DTOs retain the original compatibility path
+				// while supported prompt protocols use the normalized current-user
+				// envelope to avoid adapter gaps and auxiliary-context false positives.
 				preflightBody, bodyErr = bodyStorage.Bytes()
-			} else {
-				preflightBody, bodyErr = service.BuildBoundedCodex2APIPromptFilterBody(request)
-				if bodyErr == nil {
-					logger.LogInfo(c, fmt.Sprintf(
-						"Codex2API prompt filter using bounded role-aware envelope: original_bytes=%d bounded_bytes=%d",
-						bodyStorage.Size(),
-						len(preflightBody),
-					))
-				}
+			}
+			if bodyErr == nil && !service.Codex2APIPromptFilterAcceptsBodySize(bodyStorage.Size()) {
+				logger.LogInfo(c, fmt.Sprintf(
+					"Codex2API prompt filter using bounded role-aware envelope: original_bytes=%d bounded_bytes=%d",
+					bodyStorage.Size(),
+					len(preflightBody),
+				))
 			}
 			if bodyErr != nil {
 				logger.LogWarn(c, "Codex2API prompt filter could not prepare a bounded request envelope; request allowed by fail-open policy")
