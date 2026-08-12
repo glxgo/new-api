@@ -246,10 +246,20 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	relayInfo.LastError = nil
 	var lastRetryChannelError *types.ChannelError
 	var lastRetryAPIError *types.NewAPIError
+	var sameChannelRetryCandidate *model.Channel
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
 		relayInfo.RetryIndex = retryParam.GetRetry()
+		// Prefer an independent channel on retry. If none exists, a Responses
+		// attempt that failed before exposing any typed event may safely replay the
+		// same pooled channel: the upstream pool has already cooled the failed
+		// credential and can select another one for this fresh request.
+		fallbackChannel := sameChannelRetryCandidate
+		sameChannelRetryCandidate = nil
 		channel, channelLease, channelErr := getChannelWithCapacity(c, relayInfo, retryParam)
+		if channelErr != nil && fallbackChannel != nil {
+			channel, channelLease, channelErr = getSameChannelRetryWithCapacity(c, relayInfo, fallbackChannel)
+		}
 		if channelErr != nil {
 			logger.LogError(c, channelErr.Error())
 			if lastRetryChannelError != nil && lastRetryAPIError != nil {
@@ -304,6 +314,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if willRetry {
 			lastRetryChannelError = &selectedChannelError
 			lastRetryAPIError = newAPIError
+			if canRetrySameResponsesChannel(c, relayInfo, newAPIError) {
+				sameChannelRetryCandidate = channel
+			}
 			service.ClearCurrentChannelAffinityCache(c)
 		} else {
 			lastRetryChannelError = nil
@@ -492,6 +505,52 @@ func getChannelWithCapacity(c *gin.Context, info *relaycommon.RelayInfo, retryPa
 		} else {
 			logger.LogInfo(c, fmt.Sprintf("渠道 #%d 并发已满（%d），本次请求无感切换同组其他渠道", channel.Id, channel.ConcurrencyLimit))
 		}
+	}
+}
+
+// getSameChannelRetryWithCapacity is a last-resort retry for a Responses
+// failure that happened before any typed downstream event was emitted. Normal
+// channel selection is always attempted first so an independent upstream wins
+// whenever one is available.
+func getSameChannelRetryWithCapacity(c *gin.Context, info *relaycommon.RelayInfo, channel *model.Channel) (*model.Channel, *service.ConcurrencyLease, *types.NewAPIError) {
+	if channel == nil {
+		return nil, nil, types.NewError(errors.New("same-channel retry candidate is nil"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+	}
+	lease, acquired, reason, snapshot := service.AcquireChannelCapacityWithSnapshot(channel.Id, channel.ConcurrencyLimit, channel.RPMLimit)
+	if !acquired {
+		addCapacitySkippedChannel(c, channel.Id, reason)
+		return nil, nil, types.NewErrorWithStatusCode(
+			fmt.Errorf("渠道 #%d 重试时容量已满", channel.Id),
+			types.ErrorCode("channel_capacity_exceeded"),
+			http.StatusTooManyRequests,
+			types.ErrOptionWithSkipRetry(),
+		)
+	}
+	setChannelCapacityLogSnapshot(c, channel, snapshot)
+	if setupErr := middleware.SetupContextForSelectedChannel(c, channel, info.OriginModelName); setupErr != nil {
+		lease.Release()
+		return nil, nil, setupErr
+	}
+	logger.LogInfo(c, fmt.Sprintf("响应流未向客户端转发事件，无独立备用渠道，安全重试渠道 #%d", channel.Id))
+	return channel, lease, nil
+}
+
+func canRetrySameResponsesChannel(c *gin.Context, info *relaycommon.RelayInfo, err *types.NewAPIError) bool {
+	if c == nil || info == nil || err == nil || isClientRequestCanceled(c) {
+		return false
+	}
+	if info.RelayFormat != types.RelayFormatOpenAIResponses || info.ForwardedResponsesEventCount != 0 {
+		return false
+	}
+	if types.IsSkipRetryError(err) || service.IsNonRetryableResponsesEncryptedContentError(err) {
+		return false
+	}
+	switch err.StatusCode {
+	case http.StatusRequestTimeout, http.StatusTooManyRequests, http.StatusInternalServerError,
+		http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	default:
+		return false
 	}
 }
 
