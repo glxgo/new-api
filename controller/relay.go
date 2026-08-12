@@ -161,14 +161,24 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		bodyStorage, bodyErr := common.GetBodyStorage(c)
 		if bodyErr != nil {
 			logger.LogWarn(c, "Codex2API prompt filter could not read the original request envelope; request allowed by fail-open policy")
-		} else if !service.Codex2APIPromptFilterAcceptsBodySize(bodyStorage.Size()) {
-			logger.LogWarn(c, "Codex2API prompt filter request envelope exceeds the bounded preflight size; request allowed by fail-open policy")
 		} else {
-			rawBody, rawBodyErr := bodyStorage.Bytes()
-			if rawBodyErr != nil {
-				logger.LogWarn(c, "Codex2API prompt filter could not materialize the original request envelope; request allowed by fail-open policy")
+			var preflightBody []byte
+			if service.Codex2APIPromptFilterAcceptsBodySize(bodyStorage.Size()) {
+				preflightBody, bodyErr = bodyStorage.Bytes()
 			} else {
-				filterResult := service.CheckCodex2APIPrompt(c, rawBody, relayInfo.OriginModelName, c.Request.URL.Path)
+				preflightBody, bodyErr = service.BuildBoundedCodex2APIPromptFilterBody(request)
+				if bodyErr == nil {
+					logger.LogInfo(c, fmt.Sprintf(
+						"Codex2API prompt filter using bounded role-aware envelope: original_bytes=%d bounded_bytes=%d",
+						bodyStorage.Size(),
+						len(preflightBody),
+					))
+				}
+			}
+			if bodyErr != nil {
+				logger.LogWarn(c, "Codex2API prompt filter could not prepare a bounded request envelope; request allowed by fail-open policy")
+			} else {
+				filterResult := service.CheckCodex2APIPrompt(c, preflightBody, relayInfo.OriginModelName, c.Request.URL.Path)
 				if filterResult.Blocked {
 					logger.LogWarn(c, fmt.Sprintf(
 						"Codex2API blocked prompt before upstream: decision_id=%s reason_code=%s",

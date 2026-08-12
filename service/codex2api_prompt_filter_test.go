@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/gin-gonic/gin"
 )
 
@@ -160,5 +161,118 @@ func TestCodex2APIPromptFilterRejectsOversizedEnvelopeBeforeTransport(t *testing
 	}
 	if Codex2APIPromptFilterAcceptsBodySize(codex2APIPromptFilterMaxBodyBytes + 1) {
 		t.Fatal("oversized body accepted")
+	}
+}
+
+func TestBuildBoundedCodex2APIPromptFilterBodyPreservesLatestResponsesUser(t *testing.T) {
+	largeHistory := strings.Repeat("historical tool output ", 500000)
+	input, err := common.Marshal([]any{
+		map[string]any{"type": "message", "role": "user", "content": largeHistory},
+		map[string]any{"type": "function_call_output", "call_id": "call_1", "output": largeHistory},
+		map[string]any{"type": "message", "role": "user", "content": "latest user security request marker"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := &dto.OpenAIResponsesRequest{Model: "gpt-5.6-sol", Input: input}
+
+	body, err := BuildBoundedCodex2APIPromptFilterBody(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !Codex2APIPromptFilterAcceptsBodySize(int64(len(body))) {
+		t.Fatalf("bounded body remains too large: %d", len(body))
+	}
+	if !strings.Contains(string(body), "latest user security request marker") {
+		t.Fatalf("latest current-user prompt was lost: %s", body)
+	}
+	if strings.Contains(string(body), "historical tool output") {
+		t.Fatal("oversized history leaked into bounded preflight")
+	}
+	if !strings.Contains(string(body), `"role":"user"`) {
+		t.Fatalf("current-user role was not preserved: %s", body)
+	}
+}
+
+func TestBuildBoundedCodex2APIPromptFilterBodyKeepsResponsesInputArrayShape(t *testing.T) {
+	tests := []json.RawMessage{
+		json.RawMessage(`"single prompt"`),
+		json.RawMessage(`{"type":"message","role":"user","content":"object prompt"}`),
+	}
+	for _, input := range tests {
+		request := &dto.OpenAIResponsesRequest{Model: "gpt-5.6-sol", Input: input}
+		body, err := BuildBoundedCodex2APIPromptFilterBody(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var envelope struct {
+			Input []map[string]any `json:"input"`
+		}
+		if err := common.Unmarshal(body, &envelope); err != nil {
+			t.Fatalf("bounded Responses input is not an array: %v; body=%s", err, body)
+		}
+		if len(envelope.Input) != 1 || envelope.Input[0]["role"] != "user" {
+			t.Fatalf("bounded Responses input lost current-user shape: %s", body)
+		}
+	}
+}
+
+func TestBuildBoundedCodex2APIPromptFilterBodyPreservesLatestChatAndClaudeUser(t *testing.T) {
+	largeHistory := strings.Repeat("old context ", 800000)
+	tests := []struct {
+		name    string
+		request dto.Request
+	}{
+		{
+			name: "openai chat",
+			request: &dto.GeneralOpenAIRequest{Model: "gpt-5.6-sol", Messages: []dto.Message{
+				{Role: "user", Content: largeHistory},
+				{Role: "assistant", Content: largeHistory},
+				{Role: "user", Content: "latest chat marker"},
+			}},
+		},
+		{
+			name: "claude messages",
+			request: &dto.ClaudeRequest{Model: "claude-code", Messages: []dto.ClaudeMessage{
+				{Role: "user", Content: largeHistory},
+				{Role: "assistant", Content: largeHistory},
+				{Role: "user", Content: "latest claude marker"},
+			}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, err := BuildBoundedCodex2APIPromptFilterBody(tt.request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !Codex2APIPromptFilterAcceptsBodySize(int64(len(body))) {
+				t.Fatalf("bounded body remains too large: %d", len(body))
+			}
+			if strings.Contains(string(body), "old context") {
+				t.Fatal("oversized history leaked into bounded preflight")
+			}
+			if !strings.Contains(string(body), "latest ") || !strings.Contains(string(body), `"role":"user"`) {
+				t.Fatalf("latest user message was not preserved: %s", body)
+			}
+		})
+	}
+}
+
+func TestBuildBoundedCodex2APIPromptFilterBodyBoundsSingleHugeCurrentPrompt(t *testing.T) {
+	marker := "TAIL-RISK-MARKER"
+	request := &dto.GeneralOpenAIRequest{Model: "gpt-5.6-sol", Messages: []dto.Message{{
+		Role:    "user",
+		Content: strings.Repeat("x", codex2APIPromptFilterCurrentUserBytes*2) + marker,
+	}}}
+	body, err := BuildBoundedCodex2APIPromptFilterBody(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body) > codex2APIPromptFilterBoundedBodyBytes {
+		t.Fatalf("current prompt was not bounded: %d", len(body))
+	}
+	if !strings.Contains(string(body), marker) {
+		t.Fatal("tail of current prompt was lost")
 	}
 }

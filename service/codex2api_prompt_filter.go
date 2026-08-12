@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,16 +18,20 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/gin-gonic/gin"
 )
 
 const (
-	codex2APIPromptFilterDefaultTimeoutMS = 800
+	codex2APIPromptFilterDefaultTimeoutMS = 2000
 	codex2APIPromptFilterMaxBodyBytes     = 8 * 1024 * 1024
 	codex2APIPromptFilterMaxResponseBytes = 64 * 1024
+	codex2APIPromptFilterCurrentUserBytes = 128 * 1024
+	codex2APIPromptFilterBoundedBodyBytes = 256 * 1024
 )
 
 var codex2APIPromptFilterHTTPClient = &http.Client{
@@ -63,6 +68,216 @@ func Codex2APIPromptFilterEnabled() bool {
 
 func Codex2APIPromptFilterAcceptsBodySize(size int64) bool {
 	return size > 0 && size <= codex2APIPromptFilterMaxBodyBytes
+}
+
+// BuildBoundedCodex2APIPromptFilterBody creates a small, role-preserving
+// preflight request from the request DTO that has already been parsed by the
+// relay. It is used only when the original body exceeds the transport bound,
+// so long history/tool payloads cannot bypass the sidecar while the newest
+// current-user message remains enforceable.
+func BuildBoundedCodex2APIPromptFilterBody(request dto.Request) ([]byte, error) {
+	var envelope any
+	switch typed := request.(type) {
+	case *dto.OpenAIResponsesRequest:
+		input, err := boundedResponsesInput(typed.Input)
+		if err != nil {
+			return nil, err
+		}
+		envelope = map[string]any{"model": typed.Model, "input": input}
+	case *dto.OpenAIResponsesCompactionRequest:
+		input, err := boundedResponsesInput(typed.Input)
+		if err != nil {
+			return nil, err
+		}
+		envelope = map[string]any{"model": typed.Model, "input": input}
+	case *dto.GeneralOpenAIRequest:
+		message, ok := latestOpenAIUserMessage(typed.Messages)
+		if ok {
+			envelope = map[string]any{"model": typed.Model, "messages": []any{boundedOpenAIMessage(message)}}
+		} else {
+			envelope = map[string]any{"model": typed.Model, "prompt": boundedPromptText(promptText(typed.Prompt), codex2APIPromptFilterCurrentUserBytes)}
+		}
+	case *dto.ClaudeRequest:
+		message, ok := latestClaudeUserMessage(typed.Messages)
+		if ok {
+			envelope = map[string]any{"model": typed.Model, "messages": []any{boundedClaudeMessage(message)}}
+		} else {
+			envelope = map[string]any{"model": typed.Model, "prompt": boundedPromptText(typed.Prompt, codex2APIPromptFilterCurrentUserBytes)}
+		}
+	default:
+		return nil, fmt.Errorf("unsupported oversized prompt-filter request type %T", request)
+	}
+	body, err := common.Marshal(envelope)
+	if err != nil {
+		return nil, fmt.Errorf("marshal bounded prompt-filter envelope: %w", err)
+	}
+	if len(body) == 0 || len(body) > codex2APIPromptFilterBoundedBodyBytes {
+		return nil, fmt.Errorf("bounded prompt-filter envelope has invalid size %d", len(body))
+	}
+	return body, nil
+}
+
+func boundedResponsesInput(raw json.RawMessage) (any, error) {
+	var input any
+	if err := common.Unmarshal(raw, &input); err != nil {
+		return nil, fmt.Errorf("parse oversized Responses input: %w", err)
+	}
+	switch value := input.(type) {
+	case string:
+		return []any{boundedResponsesMessage("user", value)}, nil
+	case []any:
+		if len(value) == 0 {
+			return []any{}, nil
+		}
+		selected := value[len(value)-1]
+		for idx := len(value) - 1; idx >= 0; idx-- {
+			item, ok := value[idx].(map[string]any)
+			if ok && strings.EqualFold(strings.TrimSpace(promptText(item["role"])), "user") {
+				selected = item
+				break
+			}
+		}
+		role := "user"
+		if item, ok := selected.(map[string]any); ok {
+			if candidate := strings.TrimSpace(promptText(item["role"])); candidate != "" {
+				role = candidate
+			}
+		}
+		return []any{boundedResponsesMessage(role, extractPromptText(selected))}, nil
+	case map[string]any:
+		role := strings.TrimSpace(promptText(value["role"]))
+		if role == "" {
+			role = "user"
+		}
+		return []any{boundedResponsesMessage(role, extractPromptText(value))}, nil
+	default:
+		return []any{boundedResponsesMessage("user", extractPromptText(value))}, nil
+	}
+}
+
+func boundedResponsesMessage(role string, text string) map[string]any {
+	return map[string]any{
+		"type": "message",
+		"role": role,
+		"content": []any{map[string]any{
+			"type": "input_text",
+			"text": boundedPromptText(text, codex2APIPromptFilterCurrentUserBytes),
+		}},
+	}
+}
+
+func latestOpenAIUserMessage(messages []dto.Message) (dto.Message, bool) {
+	if len(messages) == 0 {
+		return dto.Message{}, false
+	}
+	for idx := len(messages) - 1; idx >= 0; idx-- {
+		if strings.EqualFold(strings.TrimSpace(messages[idx].Role), "user") {
+			return messages[idx], true
+		}
+	}
+	return messages[len(messages)-1], true
+}
+
+func boundedOpenAIMessage(message dto.Message) map[string]any {
+	return map[string]any{
+		"role":    message.Role,
+		"content": boundedPromptText(extractPromptText(message.Content), codex2APIPromptFilterCurrentUserBytes),
+	}
+}
+
+func latestClaudeUserMessage(messages []dto.ClaudeMessage) (dto.ClaudeMessage, bool) {
+	if len(messages) == 0 {
+		return dto.ClaudeMessage{}, false
+	}
+	for idx := len(messages) - 1; idx >= 0; idx-- {
+		if strings.EqualFold(strings.TrimSpace(messages[idx].Role), "user") {
+			return messages[idx], true
+		}
+	}
+	return messages[len(messages)-1], true
+}
+
+func boundedClaudeMessage(message dto.ClaudeMessage) map[string]any {
+	return map[string]any{
+		"role":    message.Role,
+		"content": boundedPromptText(extractPromptText(message.Content), codex2APIPromptFilterCurrentUserBytes),
+	}
+}
+
+func extractPromptText(value any) string {
+	var parts []string
+	collectPromptText(value, &parts)
+	return strings.Join(parts, "\n")
+}
+
+func collectPromptText(value any, parts *[]string) {
+	switch typed := value.(type) {
+	case nil:
+		return
+	case string:
+		if strings.TrimSpace(typed) != "" {
+			*parts = append(*parts, typed)
+		}
+	case []any:
+		for _, item := range typed {
+			collectPromptText(item, parts)
+		}
+	case map[string]any:
+		preferred := []string{"text", "content", "output", "prompt", "input", "arguments"}
+		found := false
+		for _, key := range preferred {
+			if item, ok := typed[key]; ok {
+				collectPromptText(item, parts)
+				found = true
+			}
+		}
+		if found {
+			return
+		}
+		for key, item := range typed {
+			switch strings.ToLower(key) {
+			case "role", "type", "id", "call_id", "tool_call_id", "name", "image_url", "file_data", "data", "source", "input_audio":
+				continue
+			}
+			collectPromptText(item, parts)
+		}
+	default:
+		data, err := common.Marshal(typed)
+		if err == nil {
+			*parts = append(*parts, string(data))
+		}
+	}
+}
+
+func promptText(value any) string {
+	if value == nil {
+		return ""
+	}
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return extractPromptText(value)
+}
+
+func boundedPromptText(text string, maxBytes int) string {
+	if maxBytes <= 0 || len(text) <= maxBytes {
+		return text
+	}
+	const marker = "\n...[bounded preflight omitted middle content]...\n"
+	available := maxBytes - len(marker)
+	if available <= 0 {
+		return marker[:maxBytes]
+	}
+	headBytes := available * 3 / 4
+	tailBytes := available - headBytes
+	for headBytes > 0 && !utf8.ValidString(text[:headBytes]) {
+		headBytes--
+	}
+	tailStart := len(text) - tailBytes
+	for tailStart < len(text) && !utf8.ValidString(text[tailStart:]) {
+		tailStart++
+	}
+	return text[:headBytes] + marker + text[tailStart:]
 }
 
 // CheckCodex2APIPrompt runs the optional defense-in-depth sidecar before any
