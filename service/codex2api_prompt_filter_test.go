@@ -276,3 +276,14 @@ func TestBuildBoundedCodex2APIPromptFilterBodyBoundsSingleHugeCurrentPrompt(t *t
 		t.Fatal("tail of current prompt was lost")
 	}
 }
+
+func TestCodex2APIPromptFilterPolicyProfile(t *testing.T) {
+	t.Setenv("CODEX2API_PROMPT_FILTER_PROFILE", " Strict ")
+	if got := codex2APIPromptFilterPolicyProfile(); got != "strict" {
+		t.Fatalf("strict profile = %q", got)
+	}
+	t.Setenv("CODEX2API_PROMPT_FILTER_PROFILE", "unsupported")
+	if got := codex2APIPromptFilterPolicyProfile(); got != "balanced" {
+		t.Fatalf("unsupported profile fallback = %q", got)
+	}
+}

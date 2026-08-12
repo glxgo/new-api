@@ -377,7 +377,7 @@ func CheckCodex2APIPrompt(c *gin.Context, rawBody []byte, model string, endpoint
 func setCodex2APIPromptFilterPolicyMeta(header http.Header, secret string, requestID string, bodyDigest string, model string, endpoint string) {
 	protocol, provider := codex2APIPromptFilterProtocol(endpoint)
 	meta := codex2APIPromptFilterPolicyMeta{
-		Profile:          "balanced",
+		Profile:          codex2APIPromptFilterPolicyProfile(),
 		Mode:             "enforce",
 		Provider:         provider,
 		Protocol:         protocol,
@@ -397,6 +397,16 @@ func setCodex2APIPromptFilterPolicyMeta(header http.Header, secret string, reque
 	}
 	header.Set("X-NewAPI-Policy-Meta", encoded)
 	header.Set("X-NewAPI-Policy-Meta-Signature", signature)
+}
+
+func codex2APIPromptFilterPolicyProfile() string {
+	profile := strings.ToLower(strings.TrimSpace(os.Getenv("CODEX2API_PROMPT_FILTER_PROFILE")))
+	switch profile {
+	case "balanced", "strict", "research":
+		return profile
+	default:
+		return "balanced"
+	}
 }
 
 func codex2APIPromptFilterProtocol(endpoint string) (string, string) {
