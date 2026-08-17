@@ -45,8 +45,9 @@ import { ChannelProbeDialog } from './components/channel-probe-dialog'
 import {
   formatProbeTime,
   probeErrorLabel,
-  probeHealthyPercentage,
   probeLabel,
+  probeSeriesHealthyPercentage,
+  probeSeriesTone,
   probeTone,
 } from './probe'
 import {
@@ -124,15 +125,6 @@ function ProbeStatusBand({ summary }: { summary?: GroupCacheSummary }) {
   const probe = summary?.probe
   const tone = probeTone(probe)
   const series = probe?.series ?? []
-  const healthyPercentage = probeHealthyPercentage(probe)
-  const probeFillClass =
-    tone === 'unhealthy'
-      ? 'bg-destructive'
-      : tone === 'degraded'
-        ? 'bg-warning'
-        : tone === 'healthy'
-          ? 'bg-success'
-          : 'bg-muted-foreground/35'
 
   return (
     <div className='bg-muted/15 rounded-xl border border-dashed p-3'>
@@ -170,19 +162,7 @@ function ProbeStatusBand({ summary }: { summary?: GroupCacheSummary }) {
             </p>
           </div>
         </div>
-        <div className='flex shrink-0 items-end gap-2 text-right'>
-          <div
-            className='bg-muted/50 relative h-8 w-2 overflow-hidden rounded-full'
-            aria-label={`健康渠道占比 ${healthyPercentage.toFixed(0)}%`}
-          >
-            <span
-              className={cn(
-                'absolute inset-x-0 bottom-0 rounded-full transition-[height] duration-300',
-                probeFillClass
-              )}
-              style={{ height: `${healthyPercentage}%` }}
-            />
-          </div>
+        <div className='shrink-0 text-right'>
           <div>
             <p className='font-mono text-sm font-semibold tabular-nums'>
               {probe?.total_channels
@@ -199,17 +179,27 @@ function ProbeStatusBand({ summary }: { summary?: GroupCacheSummary }) {
           className='mt-3 flex h-5 items-end gap-0.5'
           aria-label='主动探测趋势'
         >
-          {series.map((point) => (
-            <span
-              key={point.ts}
-              title={`${new Date(point.ts * 1000).toLocaleString()} · ${point.success_rate.toFixed(1)}%`}
-              className={cn(
-                'min-w-1 flex-1 rounded-[2px]',
-                availabilityBarClass(point.success_rate)
-              )}
-              style={{ height: `${Math.max(20, point.success_rate)}%` }}
-            />
-          ))}
+          {series.map((point) => {
+            const healthyPercentage = probeSeriesHealthyPercentage(point)
+            const pointTone = probeSeriesTone(point)
+            return (
+              <span
+                key={point.ts}
+                title={`${new Date(point.ts * 1000).toLocaleString()} · 正常渠道 ${point.healthy_channels} / ${point.total_channels}（${healthyPercentage.toFixed(0)}%）`}
+                className={cn(
+                  'min-w-1 flex-1 rounded-[2px] transition-[height,opacity] duration-200 hover:opacity-60',
+                  pointTone === 'healthy'
+                    ? 'bg-emerald-500/90 dark:bg-emerald-400/85'
+                    : pointTone === 'degraded'
+                      ? 'bg-amber-400/90 dark:bg-amber-300/80'
+                      : pointTone === 'unhealthy'
+                        ? 'bg-rose-500/90 dark:bg-rose-400/85'
+                        : 'bg-muted-foreground/35'
+                )}
+                style={{ height: `${Math.max(12, healthyPercentage)}%` }}
+              />
+            )
+          })}
         </div>
       ) : (
         <div className='bg-border/50 mt-3 h-px' />

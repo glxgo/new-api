@@ -86,12 +86,15 @@ type GroupCacheSummary struct {
 }
 
 type ProbeSeriesPoint struct {
-	Ts           int64   `json:"ts"`
-	ProbeCount   int64   `json:"probe_count"`
-	SuccessCount int64   `json:"success_count"`
-	SuccessRate  float64 `json:"success_rate"`
-	AvgLatencyMs int64   `json:"avg_latency_ms"`
-	AvgTtftMs    int64   `json:"avg_ttft_ms"`
+	Ts              int64   `json:"ts"`
+	ProbeCount      int64   `json:"probe_count"`
+	SuccessCount    int64   `json:"success_count"`
+	SuccessRate     float64 `json:"success_rate"`
+	AvgLatencyMs    int64   `json:"avg_latency_ms"`
+	AvgTtftMs       int64   `json:"avg_ttft_ms"`
+	TotalChannels   int     `json:"total_channels"`
+	CheckedChannels int     `json:"checked_channels"`
+	HealthyChannels int     `json:"healthy_channels"`
 }
 
 type GroupProbeSummary struct {

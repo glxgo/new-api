@@ -16,16 +16,26 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { GroupProbeSummary } from '@/features/performance-metrics/types'
+import type {
+  GroupProbeSummary,
+  ProbeSeriesPoint,
+} from '@/features/performance-metrics/types'
 
 export type ProbeTone = 'healthy' | 'degraded' | 'unhealthy' | 'unknown'
 
-export function probeHealthyPercentage(probe?: GroupProbeSummary): number {
-  if (!probe || probe.total_channels < 1) return 0
+export function probeSeriesHealthyPercentage(point: ProbeSeriesPoint): number {
+  if (point.total_channels < 1) return 0
   return Math.min(
     100,
-    Math.max(0, (probe.healthy_channels / probe.total_channels) * 100)
+    Math.max(0, (point.healthy_channels / point.total_channels) * 100)
   )
+}
+
+export function probeSeriesTone(point: ProbeSeriesPoint): ProbeTone {
+  if (point.total_channels < 1 || point.checked_channels < 1) return 'unknown'
+  if (point.healthy_channels < 1) return 'unhealthy'
+  if (point.healthy_channels * 2 >= point.total_channels) return 'healthy'
+  return 'degraded'
 }
 
 export function probeTone(probe?: GroupProbeSummary): ProbeTone {

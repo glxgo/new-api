@@ -59,14 +59,15 @@ func platformQuotaFromLog(row platformUsageLogRow) (int64, bool) {
 }
 
 func resolvePreDiscountQuota(quota int, other map[string]interface{}) int {
-	resolved, _ := platformQuotaFromLog(platformUsageLogRow{
-		Quota: int64(quota),
-		Other: common.MapToJsonStr(other),
-	})
+	groupRatio, ok := numberFromOther(other["group_ratio"])
+	if !ok || groupRatio <= 0 || math.IsNaN(groupRatio) || math.IsInf(groupRatio, 0) {
+		return quota
+	}
+	resolved := int(math.Round(float64(quota) / groupRatio))
 	if resolved <= 0 && quota > 0 {
 		return quota
 	}
-	return int(resolved)
+	return resolved
 }
 
 // GetPlatformUsageToday aggregates successful relay logs for the whole site.

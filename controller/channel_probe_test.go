@@ -135,6 +135,10 @@ func TestBuildGroupProbeSummariesKeepsSyntheticHealthSeparate(t *testing.T) {
 	require.Equal(t, 50.0, summaries["gpt-plus"].SuccessRate)
 	require.EqualValues(t, 800, summaries["gpt-plus"].AvgLatencyMs)
 	require.Equal(t, "upstream", summaries["gpt-plus"].LastErrorCategory)
+	require.Len(t, summaries["gpt-plus"].Series, 1)
+	require.Equal(t, 2, summaries["gpt-plus"].Series[0].TotalChannels)
+	require.Equal(t, 2, summaries["gpt-plus"].Series[0].CheckedChannels)
+	require.Equal(t, 1, summaries["gpt-plus"].Series[0].HealthyChannels)
 
 	require.Equal(t, "healthy", summaries["shared"].Status)
 	require.Equal(t, 2, summaries["shared"].TotalChannels)

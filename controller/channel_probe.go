@@ -310,12 +310,13 @@ type groupProbeAccumulator struct {
 }
 
 type probeSeriesAccumulator struct {
-	probeCount   int64
-	successCount int64
-	latencySum   int64
-	latencyCount int64
-	ttftSum      int64
-	ttftCount    int64
+	probeCount       int64
+	successCount     int64
+	latencySum       int64
+	latencyCount     int64
+	ttftSum          int64
+	ttftCount        int64
+	channelSucceeded map[int]bool
 }
 
 func classifyGroupProbeStatus(summary *perfmetrics.GroupProbeSummary) string {
@@ -439,10 +440,11 @@ func buildGroupProbeSummaries(hours int, visibleGroups []string) (map[string]*pe
 			bucketTs := record.ProbeTs - record.ProbeTs%bucketSeconds
 			bucket := acc.series[bucketTs]
 			if bucket == nil {
-				bucket = &probeSeriesAccumulator{}
+				bucket = &probeSeriesAccumulator{channelSucceeded: make(map[int]bool)}
 				acc.series[bucketTs] = bucket
 			}
 			bucket.probeCount++
+			bucket.channelSucceeded[record.ChannelId] = record.Success
 			if record.Success {
 				acc.successCount++
 				bucket.successCount++
@@ -481,10 +483,19 @@ func buildGroupProbeSummaries(hours int, visibleGroups []string) (map[string]*pe
 		sort.Slice(bucketTimestamps, func(i, j int) bool { return bucketTimestamps[i] < bucketTimestamps[j] })
 		for _, ts := range bucketTimestamps {
 			bucket := acc.series[ts]
+			healthyChannels := 0
+			for _, succeeded := range bucket.channelSucceeded {
+				if succeeded {
+					healthyChannels++
+				}
+			}
 			point := perfmetrics.ProbeSeriesPoint{
-				Ts:           ts,
-				ProbeCount:   bucket.probeCount,
-				SuccessCount: bucket.successCount,
+				Ts:              ts,
+				ProbeCount:      bucket.probeCount,
+				SuccessCount:    bucket.successCount,
+				TotalChannels:   summary.TotalChannels,
+				CheckedChannels: len(bucket.channelSucceeded),
+				HealthyChannels: healthyChannels,
 			}
 			if bucket.probeCount > 0 {
 				point.SuccessRate = float64(bucket.successCount) * 100 / float64(bucket.probeCount)

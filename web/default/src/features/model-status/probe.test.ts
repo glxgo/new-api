@@ -22,8 +22,9 @@ import type { GroupProbeSummary } from '@/features/performance-metrics/types'
 import {
   formatProbeTime,
   probeErrorLabel,
-  probeHealthyPercentage,
   probeLabel,
+  probeSeriesHealthyPercentage,
+  probeSeriesTone,
   probeTone,
 } from './probe.ts'
 
@@ -88,14 +89,31 @@ describe('model status probe helpers', () => {
     assert.equal(probeLabel(tone, probe), '部分正常')
   })
 
-  test('uses the healthy channel ratio as the status bar height', () => {
-    assert.equal(
-      probeHealthyPercentage(
-        probeSummary({ total_channels: 4, healthy_channels: 3 })
-      ),
-      75
-    )
-    assert.equal(probeHealthyPercentage(probeSummary({})), 0)
+  test('colors and sizes historical bars from channel health instead of request success rate', () => {
+    const greenPoint = {
+      ts: 1,
+      probe_count: 8,
+      success_count: 1,
+      success_rate: 12.5,
+      avg_latency_ms: 0,
+      avg_ttft_ms: 0,
+      total_channels: 4,
+      checked_channels: 4,
+      healthy_channels: 2,
+    }
+    const yellowPoint = {
+      ...greenPoint,
+      healthy_channels: 1,
+      success_rate: 100,
+    }
+    const redPoint = { ...greenPoint, healthy_channels: 0 }
+
+    assert.equal(probeSeriesHealthyPercentage(greenPoint), 50)
+    assert.equal(probeSeriesTone(greenPoint), 'healthy')
+    assert.equal(probeSeriesHealthyPercentage(yellowPoint), 25)
+    assert.equal(probeSeriesTone(yellowPoint), 'degraded')
+    assert.equal(probeSeriesHealthyPercentage(redPoint), 0)
+    assert.equal(probeSeriesTone(redPoint), 'unhealthy')
   })
 
   test('keeps a healthy single-channel group green', () => {

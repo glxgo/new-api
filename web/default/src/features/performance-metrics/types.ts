@@ -86,6 +86,9 @@ export type ProbeSeriesPoint = {
   success_rate: number
   avg_latency_ms: number
   avg_ttft_ms: number
+  total_channels: number
+  checked_channels: number
+  healthy_channels: number
 }
 
 export type GroupProbeSummary = {
