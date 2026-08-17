@@ -1420,3 +1420,13 @@
 - 本地通过 model 全量测试、全仓 Go 编译、Default TypeScript/ESLint/Prettier、10 项相关 Node 测试、Default 与 Classic 生产构建、Linux/amd64 静态构建和差异检查。生产版本为 `20260812-channel-cost-admin-self`，二进制 SHA-256 `7caab3d0c3ec3d671e7dddf013d8e9783c82f9d932736582da84f400db021b8b`，镜像 `new-api:20260812-channel-cost-admin-self`。
 - 发布按 3010 候选、Nginx 切流、旧 3000 自然排空、正式 3000 归一和候选自然排空完成；两侧切换时连接数均为 0，没有强杀请求。正式容器 healthy、0 重启，最终仅监听 3000；四个 Host-aware 源站入口各 5/5 返回新版本，主页、号池和渠道页均为 200。
 - 上线前、候选启动后和正式切换后的财务快照一致：policy v1 分润始终 12 条、合计 2,774,250 quota；policy v1 充值台账始终为 done 4 条/3,699 分和 skipped_source 1 条/200 分，员工 done 台账为 0。没有补发、回退或改写任何历史分润。完整 MySQL、Compose、Nginx、旧二进制和 inspect 备份位于 root-only `/opt/new-api-backups/release-20260812-channel-cost-admin-self-20260811-194638/`。
+
+### 2026-08-17 — 路由、日志保留与用量体验合并发布
+
+- 提交 `5e06d8d6` 已推送 `origin/main`。模型探测状态按健康渠道比例显示柱高，健康率至少 50% 为绿色、介于 0% 与 50% 为黄色、全不可用为红色，文案“延迟”改为“总耗时”；日志首 Token 耗时按 `<=6s` 绿色、`>6s && <=12s` 黄色、`>12s` 红色显示。
+- 幸运活动移除“套餐额度奖在显示面额上额外增加 $40”文案，并通过一次性迁移把所有规则版本的钱包赠金实际面额统一增加 `$10`；生产 V1/V2 的 `$5/$10/$20` 已分别变为 `$15/$20/$30`。用户侧“号池公开”只隐藏侧边栏入口，`/platform-usage` 路由和代码继续保留。
+- 分组改名现在事务性同步固定分组 Key、计划订阅分组和自定义路由步骤，提交后清理相关 Token 缓存；使用日志和使用统计新增折前额度聚合，折前价格高于实扣时以删除线显示原价并展示折后价。生产正式 canary 日志 `1195873` 记录折后 `288`、折前 `1800`，证明新字段已贯通结算、落库与展示数据源。
+- 此次同时上线此前待发布功能：消费详情保留 7 天，先聚合到 `usage_log_daily_aggregates` 再按每小时最多 20 批、每批 1000 行删除；会员/套餐分组按额度和重置时刻冻结并支持会员提前重置解冻，余额分组连续 3 次不可用后只在余额槽位内降到末尾。候选和正式各完成 20,000 行首轮归档，最终剩余旧详情约 154,714 行、聚合表 1,517 行，后续按小时继续。
+- 本地 `model/service/middleware`、controller 定向测试、28 项前端 Node 回归、Default TypeScript、Default/Classic 生产构建、全仓 Go 编译和 Linux/amd64 静态构建通过；完整 controller 包仍只有既有 `TestListModelsTokenLimitIncludesTieredBillingModel` 共享状态隔离基线，未为本次发布改写无关测试。
+- 生产版本为 `20260817-routing-usage-ux`，镜像 `new-api:20260817-routing-usage-ux`，正式二进制 `/opt/newapi/releases/new-api-20260817-routing-usage-ux-linux-amd64` SHA-256 为 `62816d2ed79ac6c94ab66e06a20a6f6dba60b9fc0e96349aa556ea56a5720f54`。3010 候选、Nginx 两次切流和两侧连接自然排空完成，候选已移除；最终只监听 3000，正式容器 healthy、0 重启、无 OOM，内存硬上限保持 8 GiB。
+- 三个生产域名各连续 5/5 返回新版本，公网主 JS SHA-256 `e081d3996c465032ce573eb95c19d6a1a3e3e9f5cf466f1277a702fe2da98fa2` 与本地一致。候选和正式公网 Responses canary 均为 HTTP 200、`response.completed/OK`，临时 Key 均已删除并复测 401；正式近期无 panic/fatal/迁移或归档失败。完整 MySQL、Compose、Nginx、旧产物及前后证据在 root-only `/opt/new-api-backups/release-20260817-routing-usage-ux-20260817T085420Z/`，21 项最终清单校验通过。
