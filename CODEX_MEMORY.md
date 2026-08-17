@@ -1431,3 +1431,11 @@
 - 生产版本为 `20260817-routing-usage-ux`，镜像 `new-api:20260817-routing-usage-ux`，正式二进制 `/opt/newapi/releases/new-api-20260817-routing-usage-ux-linux-amd64` SHA-256 为 `62816d2ed79ac6c94ab66e06a20a6f6dba60b9fc0e96349aa556ea56a5720f54`。3010 候选、Nginx 两次切流和两侧连接自然排空完成，候选已移除；最终只监听 3000，正式容器 healthy、0 重启、无 OOM，内存硬上限保持 8 GiB。
 - 三个生产域名各连续 5/5 返回新版本，公网主 JS SHA-256 `e081d3996c465032ce573eb95c19d6a1a3e3e9f5cf466f1277a702fe2da98fa2` 与本地一致。候选和正式公网 Responses canary 均为 HTTP 200、`response.completed/OK`，临时 Key 均已删除并复测 401；正式近期无 panic/fatal/迁移或归档失败。完整 MySQL、Compose、Nginx、旧产物及前后证据在 root-only `/opt/new-api-backups/release-20260817-routing-usage-ux-20260817T085420Z/`，21 项最终清单校验通过。
 - 发布后 10 分钟窗口的高频 503 经复核均为用户 512 的旧 Key 固定使用 `aihub专用分组` 后触发 `No available channel`；发布前 MySQL 备份中该分组即无任何 ability，8 月 10–12 日持久日志已有同类 luna 503，因此不是本次发布回归。该旧 Key 和分组配置未在本轮越权改动。
+
+### 2026-08-17 — 模型探测历史柱与分组折扣价格口径纠正已发布
+
+- 提交 `513dac6d` 已推送 `origin/main`。模型状态卡删除 `正常渠道` 数字旁误加的竖向占比柱；后端探测序列新增每个时间桶的 `total_channels`、`checked_channels`、`healthy_channels`，前端在原历史小柱位置按正常渠道占比控制柱高和绿/黄/红颜色。
+- `resolvePreDiscountQuota` 不再复用平台成本口径，改为 `round(实际 quota / group_ratio)`：只还原分组折扣并保留入口倍率。`GetPlatformUsageToday` 的平台成本口径及显式 `platform_base_quota` 不变。生产已把本版上线前的 257 条错误行从“同时剥离入口倍率”校正为“只剥离分组倍率”，复核剩余不匹配为 0。
+- 新增并通过模型层分组折扣、controller 探测时间桶字段和前端历史柱颜色/高度回归；Default TypeScript 与 Rsbuild 生产构建通过。完整 controller 包仍只命中既有 `TestListModelsTokenLimitIncludesTieredBillingModel` 共享状态隔离失败。
+- 生产版本 `20260817-probe-bars-group-discount` 使用提交 `513dac6d` 的 Linux/amd64 静态产物，SHA-256 `dad88dcbfb68f7fbfd1f9ac6753f41aa4fa46fe3c5a4a4575e30fb81af2ff0a1`。真实 Responses 金丝雀为 `200/completed/CANARY_OK`，新日志折前值与 `quota/group_ratio` 一致；正式容器 healthy、0 重启、无 OOM，公网模型状态分块与本地构建哈希一致。
+- 发布经 3010 候选、Nginx 切流、两侧连接自然归零和正式 3000 归一完成；候选与 3010 已清理。完整备份和回填证据在 `/opt/new-api-backups/release-20260817-probe-bars-group-discount/`。
