@@ -83,7 +83,7 @@ func TestRecordRechargeCreditSettlesFixedRechargeRatesAtomically(t *testing.T) {
 	var credit RechargeCredit
 	require.NoError(t, db.Where("source_type = ? AND source_ref = ?", RechargeSourceWalletTopUp, "cash-001").First(&credit).Error)
 	require.Equal(t, RechargeCommissionDone, credit.CommissionState)
-	require.Equal(t, RechargeCommissionPolicyV1, credit.CommissionPolicyVersion)
+	require.Equal(t, RechargeCommissionPolicyV2, credit.CommissionPolicyVersion)
 	require.NotZero(t, credit.CommissionSettledAt)
 
 	var records []DividendRecord
@@ -92,7 +92,7 @@ func TestRecordRechargeCreditSettlesFixedRechargeRatesAtomically(t *testing.T) {
 	for _, record := range records {
 		require.Zero(t, record.GrossProfit, "new commission records must not claim a profit base")
 		require.EqualValues(t, 10_000, record.SourceRechargeCents)
-		require.Equal(t, RechargeCommissionPolicyV1, record.PolicyVersion)
+		require.Equal(t, RechargeCommissionPolicyV2, record.PolicyVersion)
 	}
 
 	// Callback replay must neither duplicate audit rows nor move balances again.
@@ -129,7 +129,7 @@ func TestRechargeCommissionUsesAgentAndAdminDirectRates(t *testing.T) {
 		return err
 	}))
 
-	// Agents receive 8% from direct payers and 4% from second-level payers.
+	// Agents receive 8% from direct payers and 2% from second-level payers.
 	agent := User{Username: "agent", Role: common.RoleAgentUser, AffCode: "agent-rates", InviterId: admin.Id, AffAdminId: admin.Id}
 	require.NoError(t, db.Create(&agent).Error)
 	agentDirect := User{Username: "agent-direct", Role: common.RoleCommonUser, AffCode: "agent-direct", InviterId: agent.Id, AffAdminId: admin.Id}
@@ -149,7 +149,7 @@ func TestRechargeCommissionUsesAgentAndAdminDirectRates(t *testing.T) {
 	require.NoError(t, db.First(&refreshedAdmin, admin.Id).Error)
 	require.NoError(t, db.First(&refreshedAgent, agent.Id).Error)
 	require.Equal(t, 2_000, refreshedAdmin.DividendBalance, "15% direct plus one 5% second-level payment; third level pays nothing")
-	require.Equal(t, 1_200, refreshedAgent.DividendBalance, "8% direct plus 4% second level")
+	require.Equal(t, 1_000, refreshedAgent.DividendBalance, "8% direct plus 2% second level")
 	require.Zero(t, refreshedAgent.GiftQuota)
 }
 
@@ -250,7 +250,7 @@ func TestAdministratorAndRootOwnRechargeNeverPaysCommission(t *testing.T) {
 		var credit RechargeCredit
 		require.NoError(t, db.Where("source_ref = ?", testCase.sourceRef).First(&credit).Error)
 		require.Equal(t, RechargeCommissionSkippedRole, credit.CommissionState)
-		require.Equal(t, RechargeCommissionPolicyV1, credit.CommissionPolicyVersion)
+		require.Equal(t, RechargeCommissionPolicyV2, credit.CommissionPolicyVersion)
 	}
 	var reportableRechargeCount int64
 	require.NoError(t, db.Model(&RechargeCredit{}).
@@ -489,7 +489,7 @@ func TestRechargeCommissionCutoverRejectsPreCutoverCreditAndPaysNewCredit(t *tes
 	var after RechargeCredit
 	require.NoError(t, db.Where("source_ref = ?", "at-cutover").First(&after).Error)
 	require.Equal(t, RechargeCommissionDone, after.CommissionState)
-	require.Equal(t, RechargeCommissionPolicyV1, after.CommissionPolicyVersion)
+	require.Equal(t, RechargeCommissionPolicyV2, after.CommissionPolicyVersion)
 
 	var gotRoot, gotInviter User
 	require.NoError(t, db.First(&gotRoot, root.Id).Error)

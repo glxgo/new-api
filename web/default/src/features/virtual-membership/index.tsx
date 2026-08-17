@@ -1,3 +1,21 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -91,7 +109,7 @@ function MembershipCard({ membership }: { membership: UserVirtualMembership }) {
           <div className='mb-1 flex items-center justify-between text-xs'>
             <span className='font-medium'>周限额</span>
             <span className='text-muted-foreground tabular-nums'>
-              {membershipQuotaLabel(membership.weekly_remaining)} /{' '}
+              剩余 {membershipQuotaLabel(membership.weekly_remaining)} /{' '}
               {membershipQuotaLabel(membership.weekly_quota)}
             </span>
           </div>
@@ -105,7 +123,7 @@ function MembershipCard({ membership }: { membership: UserVirtualMembership }) {
             <div className='mb-1 flex items-center justify-between text-xs'>
               <span className='font-medium'>5 小时限额</span>
               <span className='text-muted-foreground tabular-nums'>
-                {membershipQuotaLabel(membership.five_hour_remaining)} /{' '}
+                剩余 {membershipQuotaLabel(membership.five_hour_remaining)} /{' '}
                 {membershipQuotaLabel(membership.five_hour_quota)}
               </span>
             </div>

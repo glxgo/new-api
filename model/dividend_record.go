@@ -1,7 +1,7 @@
 package model
 
 // DividendRecord is the commission audit ledger. PolicyVersion=0 rows are
-// immutable historical profit settlements; PolicyVersion=1 rows are generated
+// immutable historical profit settlements; PolicyVersion=1/2 rows are generated
 // from real paid recharge credits and always leave legacy profit fields at 0.
 type DividendRecord struct {
 	Id                  int     `json:"id" gorm:"primaryKey;autoIncrement"`
@@ -17,7 +17,7 @@ type DividendRecord struct {
 	RequestCount        int     `json:"request_count" gorm:"not null;default:0"`                      // 聚合的消费请求数
 	SourceRef           string  `json:"source_ref" gorm:"type:varchar(64);index;not null;default:''"` // 幂等/聚合键
 	CommissionKey       *string `json:"-" gorm:"type:varchar(160);uniqueIndex"`                       // 新策略幂等键；历史记录为 NULL
-	PolicyVersion       int     `json:"policy_version" gorm:"not null;default:0;index"`               // 0=历史利润结算, 1=固定充值比例
+	PolicyVersion       int     `json:"policy_version" gorm:"not null;default:0;index"`               // 0=历史利润结算, 1=首版固定比例, 2=代理二级调整为2%
 	CreatedAt           int64   `json:"created_at" gorm:"bigint"`
 }
 
@@ -28,7 +28,7 @@ func (DividendRecord) TableName() string {
 // 分润类型常量
 const (
 	DividendTypeDirect   = 1 // 普通用户直属 5%；代理直属 8%
-	DividendTypeIndirect = 2 // 普通用户二级 2%；代理二级 4%
+	DividendTypeIndirect = 2 // 普通用户二级 2%；代理二级 2%
 	DividendTypeAdmin    = 3 // 管理员直属 15%；管理员二级 5%
 	DividendTypeRoot     = 4 // 超级管理员固定 5%
 )

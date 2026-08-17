@@ -26,6 +26,8 @@ const (
 	RechargeCommissionSkippedSource = "skipped_source"
 	RechargeCommissionSkippedRole   = "skipped_role"
 	RechargeCommissionPolicyV1      = 1
+	RechargeCommissionPolicyV2      = 2
+	rechargeCommissionCurrentPolicy = RechargeCommissionPolicyV2
 )
 
 var ErrUnsupportedPaymentCurrency = errors.New("unsupported payment currency snapshot")
@@ -115,7 +117,7 @@ const (
 	rechargeCommissionOrdinaryDirectBP   int64 = 500
 	rechargeCommissionOrdinaryIndirectBP int64 = 200
 	rechargeCommissionAgentDirectBP      int64 = 800
-	rechargeCommissionAgentIndirectBP    int64 = 400
+	rechargeCommissionAgentIndirectBP    int64 = 200
 	rechargeCommissionAdminDirectBP      int64 = 1500
 	rechargeCommissionAdminIndirectBP    int64 = 500
 	rechargeCommissionRootBP             int64 = 500
@@ -259,7 +261,7 @@ func settleRechargeCommissionTx(tx *gorm.DB, buyer *User, baseQuota, amountCents
 			BatchId: batchId, UserId: recipient.Id, SourceUserId: buyer.Id,
 			Type: dividendType, GrossProfit: 0, Amount: amount,
 			SourceRechargeCents: amountCents, SourceRef: auditRef,
-			CommissionKey: &commissionKey, PolicyVersion: RechargeCommissionPolicyV1, CreatedAt: createdAt,
+			CommissionKey: &commissionKey, PolicyVersion: rechargeCommissionCurrentPolicy, CreatedAt: createdAt,
 		})
 	}
 
@@ -368,7 +370,7 @@ func SettleRechargeCreditCommissionTx(tx *gorm.DB, credit *RechargeCredit) ([]in
 	}
 	if !rechargeSourcePaysCommission(locked.SourceType) {
 		locked.CommissionState = RechargeCommissionSkippedSource
-		locked.CommissionPolicyVersion = RechargeCommissionPolicyV1
+		locked.CommissionPolicyVersion = rechargeCommissionCurrentPolicy
 		locked.CommissionSettledAt = common.GetTimestamp()
 		if err := tx.Model(&RechargeCredit{}).Where("id = ?", locked.Id).Updates(map[string]interface{}{
 			"commission_state":          locked.CommissionState,
@@ -393,7 +395,7 @@ func SettleRechargeCreditCommissionTx(tx *gorm.DB, credit *RechargeCredit) ([]in
 		// Administrator and root purchases still qualify for cumulative recharge
 		// and lucky progress, but never enter commission reports or payouts.
 		locked.CommissionState = RechargeCommissionSkippedRole
-		locked.CommissionPolicyVersion = RechargeCommissionPolicyV1
+		locked.CommissionPolicyVersion = rechargeCommissionCurrentPolicy
 		locked.CommissionSettledAt = common.GetTimestamp()
 		if err := tx.Model(&RechargeCredit{}).Where("id = ? AND commission_state = ?", locked.Id, RechargeCommissionPending).
 			Updates(map[string]interface{}{
@@ -414,7 +416,7 @@ func SettleRechargeCreditCommissionTx(tx *gorm.DB, credit *RechargeCredit) ([]in
 		return nil, err
 	}
 	locked.CommissionState = RechargeCommissionDone
-	locked.CommissionPolicyVersion = RechargeCommissionPolicyV1
+	locked.CommissionPolicyVersion = rechargeCommissionCurrentPolicy
 	locked.CommissionSettledAt = common.GetTimestamp()
 	if err := tx.Model(&RechargeCredit{}).Where("id = ? AND commission_state = ?", locked.Id, RechargeCommissionPending).
 		Updates(map[string]interface{}{

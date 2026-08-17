@@ -81,7 +81,7 @@ export function ProfitStatCards({ summary, loading }: ProfitStatCardsProps) {
     {
       label: t('邀新返利'),
       value: formatQuota(summary.affiliate_rebate),
-      description: t('普通用户 5%/2%，代理 8%/4%'),
+      description: t('普通用户 5%/2%，代理 8%/2%'),
       icon: HandCoins,
       tone: 'accent',
     },

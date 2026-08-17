@@ -121,6 +121,44 @@ func TestRechargeFiveDollarQuotaDrawAddsFortyDollars(t *testing.T) {
 	require.Equal(t, "never", model.NormalizeResetPeriod(""))
 }
 
+func TestRechargeQuotaDrawExpiresAtMidnightAndMergesSameExpiry(t *testing.T) {
+	db, user, firstCard := setupLuckyDrawTest(t, model.LuckyPrizeConfig{
+		Code: model.LuckyPrizeQuota5, DisplayUsdMicros: 5_000_000, Weight: model.LuckyWeightScale,
+	})
+	firstDraw, err := drawLuckyCardWithSource(user.Id, firstCard.Id, "merge-first", fixedLuckyRandom(0))
+	require.NoError(t, err)
+
+	secondCard := firstCard
+	secondCard.Id = 0
+	secondCard.GrantKey = fmt.Sprintf("merge-second:%d", time.Now().UnixNano())
+	secondCard.Status = model.LuckyCardAvailable
+	secondCard.ConsumedAt = 0
+	require.NoError(t, db.Create(&secondCard).Error)
+	secondDraw, err := drawLuckyCardWithSource(user.Id, secondCard.Id, "merge-second", fixedLuckyRandom(0))
+	require.NoError(t, err)
+	require.Equal(t, firstDraw.RewardSubscriptionId, secondDraw.RewardSubscriptionId)
+
+	var rewards []model.UserSubscription
+	require.NoError(t, db.Where("user_id = ? AND source = ?", user.Id, "lucky_quota").Find(&rewards).Error)
+	require.Len(t, rewards, 1)
+	reward := rewards[0]
+	require.EqualValues(t, 2*quotaFromUsdMicros(45_000_000), reward.AmountTotal)
+	require.Equal(t, "幸运大转盘 · $90 套餐额度", reward.PlanTitle)
+
+	expiresAt := time.Unix(reward.EndTime, 0).In(time.Local)
+	require.Zero(t, expiresAt.Hour())
+	require.Zero(t, expiresAt.Minute())
+	require.Zero(t, expiresAt.Second())
+	remaining := reward.EndTime - firstDraw.AwardedAt
+	require.GreaterOrEqual(t, remaining, int64(29*24*3600))
+	require.LessOrEqual(t, remaining, int64(30*24*3600))
+
+	snapshot, err := model.ParseSubscriptionPlanSnapshot(reward.PlanSnapshot)
+	require.NoError(t, err)
+	require.EqualValues(t, reward.AmountTotal, snapshot.TotalAmount)
+	require.Equal(t, reward.PlanTitle, snapshot.Title)
+}
+
 func TestResumeLuckyDrawExtendsCardsCreatedBeforeAndDuringPause(t *testing.T) {
 	db, _, card := setupLuckyDrawTest(t, model.LuckyPrizeConfig{
 		Code: model.LuckyPrizeGift5, DisplayUsdMicros: 5_000_000, Weight: model.LuckyWeightScale,

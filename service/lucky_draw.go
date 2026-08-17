@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -13,6 +14,8 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+const luckyRechargeRewardDefaultValidSeconds int64 = 30 * 24 * 3600
 
 var (
 	ErrLuckyDrawPaused      = errors.New("幸运大转盘抽奖暂时关闭")
@@ -56,6 +59,38 @@ func quotaFromUsdMicros(usdMicros int64) int64 {
 		Mul(decimal.NewFromFloat(common.QuotaPerUnit)).
 		Round(0).
 		IntPart()
+}
+
+func usdMicrosFromQuota(quota int64) int64 {
+	if quota <= 0 || common.QuotaPerUnit <= 0 {
+		return 0
+	}
+	return decimal.NewFromInt(quota).
+		Div(decimal.NewFromFloat(common.QuotaPerUnit)).
+		Mul(decimal.NewFromInt(1_000_000)).
+		Round(0).
+		IntPart()
+}
+
+func luckyQuotaPlanTitle(usdMicros int64) string {
+	amount := decimal.NewFromInt(usdMicros).Div(decimal.NewFromInt(1_000_000)).String()
+	return fmt.Sprintf("幸运大转盘 · $%s 套餐额度", amount)
+}
+
+// luckyRechargeRewardEndTime aligns wallet-card subscription prizes to local
+// midnight. The default 30-day term remains visible as 30 calendar days while
+// every draw made on the same local day shares one mergeable expiry bucket.
+func luckyRechargeRewardEndTime(now, validSeconds int64) int64 {
+	if validSeconds <= 0 {
+		validSeconds = luckyRechargeRewardDefaultValidSeconds
+	}
+	calendarDays := int((validSeconds + 24*3600 - 1) / (24 * 3600))
+	localNow := time.Unix(now, 0).In(time.Local)
+	localMidnight := time.Date(
+		localNow.Year(), localNow.Month(), localNow.Day(),
+		0, 0, 0, 0, time.Local,
+	)
+	return localMidnight.AddDate(0, 0, calendarDays).Unix()
 }
 
 func buildLuckyPlanSnapshot(base *model.SubscriptionPlan, title string, total, cap int64, group string, durationSeconds int64, resetPeriod string) (string, error) {
@@ -130,8 +165,47 @@ func awardQuotaPrizeTx(tx *gorm.DB, card *model.LuckyCard, rule *model.LuckyRule
 	draw.AwardedQuota = quota
 
 	if card.PoolType == model.LuckyPoolRecharge {
-		end := now + rule.RechargeRewardValidSeconds
-		title := fmt.Sprintf("幸运大转盘 · $%d 套餐额度", actualUsd/1_000_000)
+		end := luckyRechargeRewardEndTime(now, rule.RechargeRewardValidSeconds)
+		var bucket model.LuckyRewardBucket
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("user_id = ? AND source_subscription_id = 0 AND effective_end_time = ?", card.UserId, end).
+			First(&bucket).Error
+		if err == nil {
+			var reward model.UserSubscription
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("id = ? AND user_id = ? AND source = ? AND end_time = ?", bucket.RewardSubscriptionId, card.UserId, "lucky_quota", end).
+				First(&reward).Error; err != nil {
+				return err
+			}
+			newTotal := reward.AmountTotal + quota
+			title := luckyQuotaPlanTitle(usdMicrosFromQuota(newTotal))
+			plan, parseErr := model.ParseSubscriptionPlanSnapshot(reward.PlanSnapshot)
+			if parseErr != nil {
+				plan = nil
+			}
+			snapshot, snapshotErr := buildLuckyPlanSnapshot(
+				plan, title, newTotal, 0, rule.ActivityGroup, end-reward.StartTime, model.SubscriptionResetNever,
+			)
+			if snapshotErr != nil {
+				return snapshotErr
+			}
+			if updateErr := tx.Model(&model.UserSubscription{}).
+				Where("id = ? AND user_id = ?", reward.Id, card.UserId).
+				Updates(map[string]interface{}{
+					"amount_total":  newTotal,
+					"plan_title":    title,
+					"plan_snapshot": snapshot,
+				}).Error; updateErr != nil {
+				return updateErr
+			}
+			draw.RewardSubscriptionId = reward.Id
+			return nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
+		title := luckyQuotaPlanTitle(actualUsd)
 		snapshot, err := buildLuckyPlanSnapshot(
 			nil, title, quota, 0, rule.ActivityGroup, end-now, model.SubscriptionResetNever,
 		)
@@ -143,6 +217,14 @@ func awardQuotaPrizeTx(tx *gorm.DB, card *model.LuckyCard, rule *model.LuckyRule
 			rule.ActivityGroup, "lucky_quota", draw.Id, 0, nil,
 		)
 		if err != nil {
+			return err
+		}
+		bucket = model.LuckyRewardBucket{
+			UserId: card.UserId, SourceSubscriptionId: 0,
+			EffectiveEndTime: end, RewardSubscriptionId: sub.Id,
+			CreatedAt: now, UpdatedAt: now,
+		}
+		if err := tx.Create(&bucket).Error; err != nil {
 			return err
 		}
 		draw.RewardSubscriptionId = sub.Id

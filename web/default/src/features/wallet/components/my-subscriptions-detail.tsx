@@ -265,6 +265,9 @@ export function MySubscriptionsDetail() {
                             {t('Period Quota')}
                           </span>
                           <span className='text-[10px]'>
+                            <span className='text-muted-foreground'>
+                              {t('Remaining')}{' '}
+                            </span>
                             <span className='text-primary text-xs font-bold'>
                               {formatQuota(remainAmount)}
                             </span>
@@ -296,6 +299,9 @@ export function MySubscriptionsDetail() {
                             {t('Total Cap')}
                           </span>
                           <span className='text-[10px]'>
+                            <span className='text-muted-foreground'>
+                              {t('Remaining')}{' '}
+                            </span>
                             <span className='text-primary text-xs font-bold'>
                               {formatQuota(capRemain)}
                             </span>
