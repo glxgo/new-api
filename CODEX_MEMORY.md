@@ -1439,3 +1439,12 @@
 - 新增并通过模型层分组折扣、controller 探测时间桶字段和前端历史柱颜色/高度回归；Default TypeScript 与 Rsbuild 生产构建通过。完整 controller 包仍只命中既有 `TestListModelsTokenLimitIncludesTieredBillingModel` 共享状态隔离失败。
 - 生产版本 `20260817-probe-bars-group-discount` 使用提交 `513dac6d` 的 Linux/amd64 静态产物，SHA-256 `dad88dcbfb68f7fbfd1f9ac6753f41aa4fa46fe3c5a4a4575e30fb81af2ff0a1`。真实 Responses 金丝雀为 `200/completed/CANARY_OK`，新日志折前值与 `quota/group_ratio` 一致；正式容器 healthy、0 重启、无 OOM，公网模型状态分块与本地构建哈希一致。
 - 发布经 3010 候选、Nginx 切流、两侧连接自然归零和正式 3000 归一完成；候选与 3010 已清理。完整备份和回填证据在 `/opt/new-api-backups/release-20260817-probe-bars-group-discount/`。
+
+### 2026-08-17 — 幸运套餐合并、用量“剩余”文案与代理二级 2% 已发布
+
+- 提交 `af9436ca1` 已推送 `origin/main`。四处订阅/虚拟会员用量卡在周期额度和总额度的剩余值前加“剩余”；系统设置与分润看板同步把代理口径改为直属 8%、二级 2%。
+- `RechargeCommissionPolicyV2=2` 成为新充值当前策略，代理二级 BP 从 400 改为 200；历史已完成的 policy v1 台账和分润记录不回填、不扣回。返利定向测试验证代理收到 8% 直属加 2% 二级。
+- 余额幸运卡套餐使用本地自然日归一：默认 30 天，到期日 `00:00`；以用户和到期时刻建立 `LuckyRewardBucket`，后续同到期奖励复用同一 `UserSubscription` 并原子累加 `amount_total`、标题和 `plan_snapshot`。测试验证两次 `$45` 奖励合并为单张 `$90` 套餐，快照额度一致。
+- 本地幸运/分润定向 Go 测试、Default TypeScript、目标 ESLint/Prettier、额度文案 Node 测试和 Rsbuild 构建通过。完整 model 包的既有 `TestAdministratorRechargeCountsCommissionAndLuckyProgressOnce` 仍可独立复现失败，未纳入本次修改。
+- 生产 `20260817-lucky-merge-agent2` 的 Linux/amd64 静态二进制 SHA-256 为 `36c1c01def4f85c212654907ab8ed802f0a6d327b2381fa1fe6358fbea74f475`。候选与正式真实 Responses 均为 `200/response.completed/OK`；正式容器 healthy、0 重启、无 OOM、8 GiB，3010 候选已清理，四个源站 Host 路由各 5/5 返回新版本。
+- 公网三个现役域名返回新版本；`token.glxgo.xin` 的权威 A 记录仍为旧路径 `192.227.176.124`，公网 `/api/status` 版本为空，但强制解析到新服务器时为新版本。本轮未修改 DNS 或旧服务器。发布备份位于 `/opt/new-api-backups/release-20260817-lucky-merge-agent2/`。
