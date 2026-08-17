@@ -18,7 +18,11 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { getThroughputColor, resolveFirstTokenMs } from './timing.ts'
+import {
+  getFirstTokenTone,
+  getThroughputColor,
+  resolveFirstTokenMs,
+} from './timing.ts'
 
 describe('getThroughputColor', () => {
   test('uses red below 10 tokens per second', () => {
@@ -49,5 +53,14 @@ describe('resolveFirstTokenMs', () => {
   test('rejects missing or invalid timing values', () => {
     assert.equal(resolveFirstTokenMs(undefined), null)
     assert.equal(resolveFirstTokenMs({ upstream_frt: 0, frt: 4250 }), null)
+  })
+})
+
+describe('getFirstTokenTone', () => {
+  test('uses the inclusive 6 and 12 second boundaries', () => {
+    assert.equal(getFirstTokenTone(6), 'success')
+    assert.equal(getFirstTokenTone(6.001), 'warning')
+    assert.equal(getFirstTokenTone(12), 'warning')
+    assert.equal(getFirstTokenTone(12.001), 'danger')
   })
 })

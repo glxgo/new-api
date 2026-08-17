@@ -233,14 +233,14 @@ function renderUseTime(type, t) {
 function renderFirstUseTime(type, t) {
   let time = parseFloat(type) / 1000.0;
   time = time.toFixed(1);
-  if (time < 3) {
+  if (time <= 6) {
     return (
       <Tag color='green' shape='circle'>
         {' '}
         {time} s{' '}
       </Tag>
     );
-  } else if (time < 10) {
+  } else if (time <= 12) {
     return (
       <Tag color='orange' shape='circle'>
         {' '}

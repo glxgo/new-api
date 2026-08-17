@@ -96,6 +96,12 @@ export function buildWheelSegments(
         label: `$${formatUsd(actualUsdMicros)} 套餐额度`,
       }
     }
+    if (prize.code.startsWith('gift_')) {
+      return {
+        ...prize,
+        label: `$${formatUsd(prize.display_usd_micros)} 钱包赠金`,
+      }
+    }
     return {
       ...prize,
       label: PRIZE_NAMES[prize.code] || prize.code,

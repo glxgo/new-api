@@ -113,8 +113,9 @@ func GetOptions(c *gin.Context) {
 }
 
 type OptionUpdateRequest struct {
-	Key   string `json:"key"`
-	Value any    `json:"value"`
+	Key          string            `json:"key"`
+	Value        any               `json:"value"`
+	GroupRenames map[string]string `json:"group_renames,omitempty"`
 }
 
 func UpdateOption(c *gin.Context) {
@@ -371,7 +372,11 @@ func UpdateOption(c *gin.Context) {
 			return
 		}
 	}
-	err = model.UpdateOption(option.Key, option.Value.(string))
+	if option.Key == "GroupRatio" && len(option.GroupRenames) > 0 {
+		err = model.UpdateGroupRatioWithRenames(option.Value.(string), option.GroupRenames)
+	} else {
+		err = model.UpdateOption(option.Key, option.Value.(string))
+	}
 	if err != nil {
 		common.ApiError(c, err)
 		return

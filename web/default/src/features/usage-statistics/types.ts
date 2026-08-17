@@ -25,6 +25,7 @@ export interface UsageStatisticsSummary {
   error_count: number
   success_rate: number
   quota: number
+  pre_discount_quota: number
   wallet_quota: number
   subscription_quota: number
   virtual_membership_quota: number

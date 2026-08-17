@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
 import { Activity, Gauge, Layers, ReceiptText, Waypoints } from 'lucide-react'
@@ -33,7 +34,7 @@ const route = getRouteApi('/_authenticated/usage-logs/$section')
 
 function StatCard(props: {
   label: string
-  value: string | number
+  value: ReactNode
   helper?: string
   inlineHelper?: boolean
   icon: React.ComponentType<{ className?: string }>
@@ -124,7 +125,20 @@ export function CommonLogsStats(props: CommonLogsStatsProps) {
       />
       <StatCard
         label={t('Total Usage')}
-        value={sensitiveVisible ? formatLogQuota(stats?.quota || 0) : '••••'}
+        value={
+          sensitiveVisible ? (
+            <span className='inline-flex flex-wrap items-baseline gap-2'>
+              {(stats?.pre_discount_quota || 0) > (stats?.quota || 0) && (
+                <span className='text-muted-foreground text-sm font-normal line-through'>
+                  {formatLogQuota(stats?.pre_discount_quota || 0)}
+                </span>
+              )}
+              <span>{formatLogQuota(stats?.quota || 0)}</span>
+            </span>
+          ) : (
+            '••••'
+          )
+        }
         icon={Waypoints}
       />
       <StatCard

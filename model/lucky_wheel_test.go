@@ -143,6 +143,36 @@ func TestLuckyPrizeProbabilityMigrationPublishesNewRuleWithoutRewritingHistory(t
 	require.Equal(t, ruleCount, repeatedCount, "startup migration must be idempotent")
 }
 
+func TestLuckyWalletGiftBonusMigrationAddsTenDollarsOnce(t *testing.T) {
+	db := setupLuckyWheelTestDB(t)
+
+	require.NoError(t, EnsureLuckyWalletGiftBonus20260817())
+	var campaign LuckyCampaign
+	require.NoError(t, db.Where("code = ?", LuckyCampaignCode).First(&campaign).Error)
+	var active LuckyRuleSet
+	require.NoError(t, db.First(&active, campaign.ActiveRuleSetId).Error)
+
+	for _, raw := range []string{active.SubscriptionPool, active.RechargePool} {
+		pool, err := ParseLuckyPool(raw)
+		require.NoError(t, err)
+		for _, prize := range pool {
+			switch prize.Code {
+			case LuckyPrizeGift5:
+				require.EqualValues(t, 15_000_000, prize.DisplayUsdMicros)
+			case LuckyPrizeGift10:
+				require.EqualValues(t, 20_000_000, prize.DisplayUsdMicros)
+			case LuckyPrizeGift20:
+				require.EqualValues(t, 30_000_000, prize.DisplayUsdMicros)
+			}
+		}
+	}
+
+	checksum := active.Checksum
+	require.NoError(t, EnsureLuckyWalletGiftBonus20260817())
+	require.NoError(t, db.First(&active, active.Id).Error)
+	require.Equal(t, checksum, active.Checksum, "migration must not add the bonus twice")
+}
+
 func TestLuckyThresholdProgressAndRechargeIdempotency(t *testing.T) {
 	db := setupLuckyWheelTestDB(t)
 	require.EqualValues(t, 5_000, LuckyThresholdCents(1))

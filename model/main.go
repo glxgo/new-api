@@ -267,6 +267,7 @@ func migrateDB() error {
 		&Redemption{},
 		&Ability{},
 		&Log{},
+		&UsageLogDailyAggregate{},
 		&Midjourney{},
 		&TopUp{},
 		&QuotaData{},
@@ -339,6 +340,9 @@ func migrateDB() error {
 	if err := EnsureLuckyPrizeProbability20260811(); err != nil {
 		return err
 	}
+	if err := EnsureLuckyWalletGiftBonus20260817(); err != nil {
+		return err
+	}
 	if err := EnsureDefaultAPIIngressProfiles(); err != nil {
 		return err
 	}
@@ -364,6 +368,7 @@ func migrateDBFast() error {
 		{&Redemption{}, "Redemption"},
 		{&Ability{}, "Ability"},
 		{&Log{}, "Log"},
+		{&UsageLogDailyAggregate{}, "UsageLogDailyAggregate"},
 		{&Midjourney{}, "Midjourney"},
 		{&TopUp{}, "TopUp"},
 		{&QuotaData{}, "QuotaData"},
@@ -456,6 +461,9 @@ func migrateDBFast() error {
 	if err := EnsureLuckyPrizeProbability20260811(); err != nil {
 		return err
 	}
+	if err := EnsureLuckyWalletGiftBonus20260817(); err != nil {
+		return err
+	}
 	if err := EnsureDefaultAPIIngressProfiles(); err != nil {
 		return err
 	}
@@ -476,7 +484,7 @@ func migrateDBFast() error {
 
 func migrateLOGDB() error {
 	var err error
-	if err = LOG_DB.AutoMigrate(&Log{}); err != nil {
+	if err = LOG_DB.AutoMigrate(&Log{}, &UsageLogDailyAggregate{}); err != nil {
 		return err
 	}
 	return nil

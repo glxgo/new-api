@@ -58,6 +58,17 @@ func platformQuotaFromLog(row platformUsageLogRow) (int64, bool) {
 	return common.PlatformBaseQuota(row.Quota, groupRatio, ingressOriginal)
 }
 
+func resolvePreDiscountQuota(quota int, other map[string]interface{}) int {
+	resolved, _ := platformQuotaFromLog(platformUsageLogRow{
+		Quota: int64(quota),
+		Other: common.MapToJsonStr(other),
+	})
+	if resolved <= 0 && quota > 0 {
+		return quota
+	}
+	return int(resolved)
+}
+
 // GetPlatformUsageToday aggregates successful relay logs for the whole site.
 // It scans only the bounded current-day window so the calculation remains
 // portable across SQLite, MySQL and PostgreSQL JSON implementations.

@@ -25,7 +25,7 @@ func setupUsageStatisticsTestDB(t *testing.T) *gorm.DB {
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&Log{}, &UserSubscription{}))
+	require.NoError(t, db.AutoMigrate(&Log{}, &UsageLogDailyAggregate{}, &UserSubscription{}))
 	DB = db
 	LOG_DB = db
 
@@ -57,7 +57,7 @@ func TestGetUserUsageStatisticsAggregatesRequestHealthCacheAndBilling(t *testing
 	logs := []Log{
 		{
 			UserId: 1, CreatedAt: 110, Type: LogTypeConsume, ModelName: "gpt-test",
-			Quota: 100, PromptTokens: 100, CacheTokens: 30, CompletionTokens: 20,
+			Quota: 100, PreDiscountQuota: 200, PromptTokens: 100, CacheTokens: 30, CompletionTokens: 20,
 			BillingSource: "wallet",
 		},
 		{
@@ -82,6 +82,7 @@ func TestGetUserUsageStatisticsAggregatesRequestHealthCacheAndBilling(t *testing
 	require.EqualValues(t, 1, stats.Summary.ErrorCount)
 	require.InDelta(t, 75, stats.Summary.SuccessRate, 0.001)
 	require.EqualValues(t, 350, stats.Summary.Quota)
+	require.EqualValues(t, 450, stats.Summary.PreDiscountQuota)
 	require.EqualValues(t, 100, stats.Summary.WalletQuota)
 	require.EqualValues(t, 200, stats.Summary.SubscriptionQuota)
 	require.EqualValues(t, 50, stats.Summary.VirtualMembershipQuota)

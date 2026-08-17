@@ -41,6 +41,136 @@ type TokenRouteStep struct {
 	UpdatedAt     int64  `json:"updated_at" gorm:"type:bigint;not null"`
 }
 
+type TokenRouteQuotaAvailability struct {
+	Usable  bool
+	ResetAt int64
+}
+
+func routeQuotaRequiredAmount(requiredAmount int64) int64 {
+	if requiredAmount <= 0 {
+		return 1
+	}
+	return requiredAmount
+}
+
+func subscriptionRouteQuotaAvailability(userId int, step TokenRouteStep, requiredAmount int64) (TokenRouteQuotaAvailability, error) {
+	var result TokenRouteQuotaAvailability
+	now := GetDBTimestamp()
+	amount := routeQuotaRequiredAmount(requiredAmount)
+	var subscriptions []UserSubscription
+	query := DB.Where("user_id = ? AND status = ? AND start_time <= ? AND end_time > ? AND allowed_group = ?",
+		userId, "active", now, now, strings.TrimSpace(step.GroupName))
+	if step.SelectionMode == TokenRouteSelectionInstance {
+		query = query.Where("id = ?", step.SourceId)
+	}
+	if err := query.Order("end_time asc, id asc").Find(&subscriptions).Error; err != nil {
+		return result, err
+	}
+	for i := range subscriptions {
+		sub := &subscriptions[i]
+		capUsable := sub.AmountCap <= 0 || sub.AmountCapUsed+amount <= sub.AmountCap
+		cycleResetDue := sub.NextResetTime > 0 && sub.NextResetTime <= now
+		cycleUsed := sub.AmountUsed
+		if cycleResetDue {
+			cycleUsed = 0
+		}
+		cycleUsable := sub.AmountTotal <= 0 || cycleUsed+amount <= sub.AmountTotal
+		if capUsable && cycleUsable {
+			return TokenRouteQuotaAvailability{Usable: true}, nil
+		}
+		readyAt := sub.EndTime
+		if capUsable && !cycleUsable && sub.NextResetTime > now {
+			readyAt = sub.NextResetTime
+		}
+		if readyAt > now && (result.ResetAt == 0 || readyAt < result.ResetAt) {
+			result.ResetAt = readyAt
+		}
+	}
+	return result, nil
+}
+
+func virtualMembershipReadyAt(membership *UserVirtualMembership, amount, now int64) (bool, int64) {
+	if membership == nil || membership.Status != VirtualMembershipStatusActive || membership.StartTime > now || membership.EndTime <= now {
+		return false, 0
+	}
+	weeklyBlocked := membership.WeeklyQuota > 0 && membership.WeeklyUsed+amount > membership.WeeklyQuota
+	fiveHourBlocked := membership.FiveHourActive && membership.FiveHourQuota > 0 && membership.FiveHourUsed+amount > membership.FiveHourQuota
+	if !weeklyBlocked && !fiveHourBlocked {
+		return true, 0
+	}
+	readyAt := int64(0)
+	if weeklyBlocked {
+		readyAt = membership.WeeklyResetAt
+	}
+	if fiveHourBlocked && membership.FiveHourResetAt > readyAt {
+		readyAt = membership.FiveHourResetAt
+	}
+	if readyAt <= now {
+		readyAt = 0
+	}
+	return false, readyAt
+}
+
+func virtualMembershipRouteQuotaAvailability(userId int, modelName string, step TokenRouteStep, requiredAmount int64) (TokenRouteQuotaAvailability, error) {
+	var result TokenRouteQuotaAvailability
+	amount := routeQuotaRequiredAmount(requiredAmount)
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		now := GetDBTimestamp()
+		var memberships []UserVirtualMembership
+		query := tx.Set("gorm:query_option", "FOR UPDATE").
+			Where("user_id = ? AND status = ? AND start_time <= ? AND end_time > ?",
+				userId, VirtualMembershipStatusActive, now, now)
+		group := strings.TrimSpace(step.GroupName)
+		if group == VirtualMembershipDefaultAllowedGroup {
+			query = query.Where("(allowed_group = ? OR allowed_group = '')", group)
+		} else {
+			query = query.Where("allowed_group = ?", group)
+		}
+		if step.SelectionMode == TokenRouteSelectionInstance {
+			query = query.Where("id = ?", step.SourceId)
+		}
+		if err := query.Order("weekly_reset_at asc, end_time asc, id asc").Find(&memberships).Error; err != nil {
+			return err
+		}
+		for i := range memberships {
+			membership := &memberships[i]
+			if err := virtualMembershipResetIfDue(tx, membership, now); err != nil {
+				return err
+			}
+			if modelName != "" && !virtualMembershipAllowsModel(membership, modelName) {
+				continue
+			}
+			usable, readyAt := virtualMembershipReadyAt(membership, amount, now)
+			if usable {
+				result.Usable = true
+				result.ResetAt = 0
+				return nil
+			}
+			if readyAt > 0 && (result.ResetAt == 0 || readyAt < result.ResetAt) {
+				result.ResetAt = readyAt
+			}
+		}
+		return nil
+	})
+	return result, err
+}
+
+// GetTokenRouteQuotaAvailability returns both current usability and the first
+// ledger reset that can make an entitlement route usable again. Wallet routes
+// intentionally have no quota freeze; their runtime policy is ordering-only.
+func GetTokenRouteQuotaAvailability(userId int, modelName string, step TokenRouteStep, requiredAmount int64) (TokenRouteQuotaAvailability, error) {
+	switch step.FundingSource {
+	case TokenRouteSourceSubscription:
+		return subscriptionRouteQuotaAvailability(userId, step, requiredAmount)
+	case TokenRouteSourceVirtualMembership:
+		return virtualMembershipRouteQuotaAvailability(userId, modelName, step, requiredAmount)
+	case TokenRouteSourceWallet:
+		return TokenRouteQuotaAvailability{Usable: true}, nil
+	default:
+		return TokenRouteQuotaAvailability{}, errors.New("API Key 消耗路由资金来源无效")
+	}
+}
+
 func NormalizeTokenRoutingMode(mode string) string {
 	if strings.TrimSpace(mode) == TokenRoutingModeCustom {
 		return TokenRoutingModeCustom

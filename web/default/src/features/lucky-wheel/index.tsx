@@ -112,6 +112,9 @@ function prizeResultText(draw: LuckyDraw) {
   if (draw.prize_type.startsWith('quota_') && draw.actual_usd_micros > 0) {
     return `$${draw.actual_usd_micros / 1_000_000} 套餐额度`
   }
+  if (draw.prize_type.startsWith('gift_') && draw.actual_usd_micros > 0) {
+    return `$${draw.actual_usd_micros / 1_000_000} 钱包赠金`
+  }
   return PRIZE_NAMES[draw.prize_type] || draw.prize_type
 }
 
@@ -612,10 +615,8 @@ export function LuckyWheel() {
                         <strong className='text-foreground dark:text-[#fff4ed]'>
                           充值来源卡：
                         </strong>
-                        套餐额度奖在显示面额上额外增加 $
-                        {(publicRule?.recharge_bonus_usd_micros || 0) /
-                          1_000_000}
-                        ，有效期固定 30 天；不会抽中套餐双倍卡或全额重置卡。
+                        套餐额度奖有效期固定 30
+                        天；不会抽中套餐双倍卡或全额重置卡。
                       </p>
                       <p>
                         <strong className='text-foreground dark:text-[#fff4ed]'>

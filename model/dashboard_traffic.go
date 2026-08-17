@@ -4,20 +4,30 @@ package model
 // to build dashboard traffic statistics. Error logs are deliberately excluded
 // by GetDashboardTrafficRecords, so they never inflate dashboard RPM.
 type DashboardTrafficRecord struct {
-	UserId    int
-	ChannelId int
-	CreatedAt int64
-	UseTime   int
-	Quota     int
-	Cost      int
+	UserId       int
+	ChannelId    int
+	CreatedAt    int64
+	UseTime      int
+	Quota        int
+	Cost         int
+	RequestCount int64
+	Aggregated   bool
 }
 
 func GetDashboardTrafficRecords(userId int, startTime, endTime int64) ([]DashboardTrafficRecord, error) {
 	records := make([]DashboardTrafficRecord, 0)
-	tx := LOG_DB.Table("logs").
-		Select("user_id, channel_id, created_at, use_time, quota, cost").
-		Where("type = ?", LogTypeConsume).
-		Where("created_at >= ? AND created_at < ?", startTime, endTime)
+	startBucket := usageLogAggregateBucketStart(startTime)
+	raw := LOG_DB.Raw(`
+		SELECT user_id, channel_id, created_at, use_time, quota, cost, 1 AS request_count, ? AS aggregated
+		FROM logs WHERE type = ? AND created_at >= ? AND created_at < ?
+		UNION ALL
+		SELECT user_id, channel_id, last_log_at AS created_at, use_time, quota, cost, request_count, ? AS aggregated
+		FROM usage_log_daily_aggregates
+		WHERE type = ? AND bucket_start >= ? AND bucket_start < ?`,
+		false, LogTypeConsume, startTime, endTime,
+		true, LogTypeConsume, startBucket, endTime,
+	)
+	tx := LOG_DB.Table("(?) AS dashboard_usage_rows", raw)
 	if userId > 0 {
 		tx = tx.Where("user_id = ?", userId)
 	}

@@ -17,7 +17,7 @@ func TestGetUserFinancialConsumeDaily(t *testing.T) {
 		&gorm.Config{},
 	)
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&Log{}))
+	require.NoError(t, db.AutoMigrate(&Log{}, &UsageLogDailyAggregate{}))
 	LOG_DB = db
 	t.Cleanup(func() { LOG_DB = previousLogDB })
 

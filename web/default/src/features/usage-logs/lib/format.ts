@@ -25,7 +25,7 @@ import {
 } from '@/features/pricing/lib/billing-expr'
 import type { UsageLog } from '../data/schema'
 import type { LogOtherData } from '../types'
-import { getThroughputColor } from './timing'
+import { getFirstTokenTone, getThroughputColor } from './timing'
 
 export { normalizeTierLabel }
 export { getThroughputColor } from './timing'
@@ -124,9 +124,7 @@ export function getTimeColor(
 export function getFirstResponseTimeColor(
   seconds: number
 ): 'success' | 'warning' | 'danger' {
-  if (seconds < 5) return 'success'
-  if (seconds < 10) return 'warning'
-  return 'danger'
+  return getFirstTokenTone(seconds)
 }
 
 /**

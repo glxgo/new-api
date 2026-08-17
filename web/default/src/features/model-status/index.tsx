@@ -45,6 +45,7 @@ import { ChannelProbeDialog } from './components/channel-probe-dialog'
 import {
   formatProbeTime,
   probeErrorLabel,
+  probeHealthyPercentage,
   probeLabel,
   probeTone,
 } from './probe'
@@ -123,6 +124,15 @@ function ProbeStatusBand({ summary }: { summary?: GroupCacheSummary }) {
   const probe = summary?.probe
   const tone = probeTone(probe)
   const series = probe?.series ?? []
+  const healthyPercentage = probeHealthyPercentage(probe)
+  const probeFillClass =
+    tone === 'unhealthy'
+      ? 'bg-destructive'
+      : tone === 'degraded'
+        ? 'bg-warning'
+        : tone === 'healthy'
+          ? 'bg-success'
+          : 'bg-muted-foreground/35'
 
   return (
     <div className='bg-muted/15 rounded-xl border border-dashed p-3'>
@@ -160,13 +170,27 @@ function ProbeStatusBand({ summary }: { summary?: GroupCacheSummary }) {
             </p>
           </div>
         </div>
-        <div className='shrink-0 text-right'>
-          <p className='font-mono text-sm font-semibold tabular-nums'>
-            {probe?.total_channels
-              ? `${probe.healthy_channels} / ${probe.total_channels}`
-              : '—'}
-          </p>
-          <p className='text-muted-foreground mt-0.5 text-[9px]'>正常渠道</p>
+        <div className='flex shrink-0 items-end gap-2 text-right'>
+          <div
+            className='bg-muted/50 relative h-8 w-2 overflow-hidden rounded-full'
+            aria-label={`健康渠道占比 ${healthyPercentage.toFixed(0)}%`}
+          >
+            <span
+              className={cn(
+                'absolute inset-x-0 bottom-0 rounded-full transition-[height] duration-300',
+                probeFillClass
+              )}
+              style={{ height: `${healthyPercentage}%` }}
+            />
+          </div>
+          <div>
+            <p className='font-mono text-sm font-semibold tabular-nums'>
+              {probe?.total_channels
+                ? `${probe.healthy_channels} / ${probe.total_channels}`
+                : '—'}
+            </p>
+            <p className='text-muted-foreground mt-0.5 text-[9px]'>正常渠道</p>
+          </div>
         </div>
       </div>
 
@@ -265,7 +289,7 @@ function GroupHealthCard({
       <div className='grid grid-cols-3 divide-x border-b'>
         <div className='px-4 py-3'>
           <div className='text-muted-foreground flex items-center gap-1.5 text-[10px]'>
-            <Clock3 className='size-3' /> 延迟
+            <Clock3 className='size-3' /> 总耗时
           </div>
           <p className='mt-1.5 font-mono text-sm font-semibold tabular-nums'>
             {metric((summary?.avg_latency_ms ?? 0) / 1000, 's', 2)}

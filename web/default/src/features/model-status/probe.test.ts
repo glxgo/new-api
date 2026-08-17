@@ -22,6 +22,7 @@ import type { GroupProbeSummary } from '@/features/performance-metrics/types'
 import {
   formatProbeTime,
   probeErrorLabel,
+  probeHealthyPercentage,
   probeLabel,
   probeTone,
 } from './probe.ts'
@@ -74,7 +75,7 @@ describe('model status probe helpers', () => {
     assert.equal(probeLabel(tone, probe), '部分正常')
   })
 
-  test('keeps a multi-channel group green when one healthy channel remains', () => {
+  test('marks a group yellow when fewer than half of its channels are healthy', () => {
     const probe = probeSummary({
       status: 'degraded',
       total_channels: 3,
@@ -83,8 +84,18 @@ describe('model status probe helpers', () => {
       unhealthy_channels: 2,
     })
     const tone = probeTone(probe)
-    assert.equal(tone, 'healthy')
+    assert.equal(tone, 'degraded')
     assert.equal(probeLabel(tone, probe), '部分正常')
+  })
+
+  test('uses the healthy channel ratio as the status bar height', () => {
+    assert.equal(
+      probeHealthyPercentage(
+        probeSummary({ total_channels: 4, healthy_channels: 3 })
+      ),
+      75
+    )
+    assert.equal(probeHealthyPercentage(probeSummary({})), 0)
   })
 
   test('keeps a healthy single-channel group green', () => {
@@ -111,7 +122,7 @@ describe('model status probe helpers', () => {
     assert.equal(probeLabel(tone, probe), '服务异常')
   })
 
-  test('keeps unconfirmed all-channel failures in the warning state', () => {
+  test('marks the group red when every checked channel is unavailable', () => {
     const probe = probeSummary({
       status: 'degraded',
       total_channels: 2,
@@ -119,8 +130,8 @@ describe('model status probe helpers', () => {
       degraded_channels: 2,
     })
     const tone = probeTone(probe)
-    assert.equal(tone, 'degraded')
-    assert.equal(probeLabel(tone, probe), '状态确认中')
+    assert.equal(tone, 'unhealthy')
+    assert.equal(probeLabel(tone, probe), '服务异常')
   })
 
   test('formats public labels without exposing channel details', () => {

@@ -38,7 +38,7 @@ export interface StatCardDetail {
 
 interface StatCardProps {
   title: string
-  value: string | number
+  value: ReactNode
   description: string
   icon: LucideIcon
   sparkline?: number[]

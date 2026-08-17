@@ -56,7 +56,7 @@ func TestSumUsedQuotaCachesIdenticalFiltersBriefly(t *testing.T) {
 		"",
 	)
 	require.NoError(t, err)
-	require.Equal(t, Stat{Quota: 125, Rpm: 1, Tpm: 30, Tokens: 70}, first)
+	require.Equal(t, Stat{Quota: 125, PreDiscountQuota: 125, Rpm: 1, Tpm: 30, Tokens: 70}, first)
 
 	secondLog := baseLog
 	secondLog.Id = 0
@@ -87,5 +87,5 @@ func TestSumUsedQuotaCachesIdenticalFiltersBriefly(t *testing.T) {
 		"",
 	)
 	require.NoError(t, err)
-	require.Equal(t, Stat{Quota: 175, Rpm: 2, Tpm: 60, Tokens: 100}, freshFilter)
+	require.Equal(t, Stat{Quota: 175, PreDiscountQuota: 175, Rpm: 2, Tpm: 60, Tokens: 100}, freshFilter)
 }

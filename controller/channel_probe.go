@@ -322,12 +322,11 @@ func classifyGroupProbeStatus(summary *perfmetrics.GroupProbeSummary) string {
 	if summary == nil || summary.TotalChannels < 1 || summary.CheckedChannels < 1 {
 		return "unknown"
 	}
-	if summary.HealthyChannels >= 1 {
-		return model.ChannelProbeStatusHealthy
-	}
-	if summary.CheckedChannels == summary.TotalChannels &&
-		summary.UnhealthyChannels == summary.TotalChannels {
+	if summary.CheckedChannels == summary.TotalChannels && summary.HealthyChannels == 0 {
 		return model.ChannelProbeStatusUnhealthy
+	}
+	if summary.HealthyChannels*2 >= summary.TotalChannels {
+		return model.ChannelProbeStatusHealthy
 	}
 	return model.ChannelProbeStatusDegraded
 }

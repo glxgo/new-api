@@ -32,6 +32,7 @@ export type SystemOptionsResponse = {
 export type UpdateOptionRequest = {
   key: string
   value: string | boolean | number
+  group_renames?: Record<string, string>
 }
 
 export type UpdateOptionResponse = {

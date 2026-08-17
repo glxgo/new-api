@@ -43,11 +43,12 @@ type trafficInterval struct {
 }
 
 type dashboardTrafficAccumulator struct {
-	requestCount int64
-	billedQuota  int64
-	costQuota    int64
-	minuteCounts map[int64]int
-	intervals    []trafficInterval
+	requestCount      int64
+	timedRequestCount int64
+	billedQuota       int64
+	costQuota         int64
+	minuteCounts      map[int64]int
+	intervals         []trafficInterval
 }
 
 func newDashboardTrafficAccumulator() *dashboardTrafficAccumulator {
@@ -77,9 +78,20 @@ func (a *dashboardTrafficAccumulator) add(record model.DashboardTrafficRecord, r
 		end = rangeEnd
 	}
 
-	a.requestCount++
+	requestCount := record.RequestCount
+	if requestCount <= 0 {
+		requestCount = 1
+	}
+	a.requestCount += requestCount
 	a.billedQuota += int64(record.Quota)
 	a.costQuota += int64(record.Cost)
+	if record.Aggregated {
+		// Compacted rows intentionally retain financial/request totals but no
+		// request-level timestamps, so exact RPM/concurrency remains a 7-day
+		// detailed metric instead of being reconstructed from invented data.
+		return
+	}
+	a.timedRequestCount += requestCount
 	a.minuteCounts[start/60]++
 	if end > start {
 		a.intervals = append(a.intervals, trafficInterval{start: start, end: end})
@@ -94,7 +106,7 @@ func (a *dashboardTrafficAccumulator) summary() DashboardTrafficSummary {
 		CostQuota:     a.costQuota,
 	}
 	if result.ActiveMinutes > 0 {
-		result.AvgRPM = float64(result.RequestCount) / float64(result.ActiveMinutes)
+		result.AvgRPM = float64(a.timedRequestCount) / float64(result.ActiveMinutes)
 	}
 	for _, count := range a.minuteCounts {
 		if count > result.PeakRPM {
@@ -174,14 +186,24 @@ func addRecordToDaily(
 	// Keep amount attribution on the completion day, while RPM follows request
 	// start. Requests crossing midnight are split into each day's concurrency
 	// interval below.
-	accumulator.requestCount++
-	accumulator.minuteCounts[requestStart/60]++
+	requestCount := record.RequestCount
+	if requestCount <= 0 {
+		requestCount = 1
+	}
+	accumulator.requestCount += requestCount
+	if !record.Aggregated {
+		accumulator.timedRequestCount += requestCount
+		accumulator.minuteCounts[requestStart/60]++
+	}
 	completionDay := dayStartFor(record.CreatedAt, location)
 	if costAccumulator := daily[completionDay]; costAccumulator != nil {
 		costAccumulator.billedQuota += int64(record.Quota)
 		costAccumulator.costQuota += int64(record.Cost)
 	}
 
+	if record.Aggregated {
+		return
+	}
 	intervalEnd := record.CreatedAt
 	if intervalEnd <= requestStart {
 		intervalEnd = requestStart + 1

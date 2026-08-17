@@ -45,6 +45,7 @@ type Log struct {
 	TokenName            string `json:"token_name" gorm:"index;default:''"`
 	ModelName            string `json:"model_name" gorm:"index;index:index_username_model_name,priority:1;default:''"`
 	Quota                int    `json:"quota" gorm:"default:0"`
+	PreDiscountQuota     int    `json:"pre_discount_quota" gorm:"default:0;column:pre_discount_quota"`
 	PromptTokens         int    `json:"prompt_tokens" gorm:"default:0"`
 	CacheTokens          int    `json:"cache_tokens" gorm:"default:0"` // prompt cache 命中 token(个人缓存率用)
 	CompletionTokens     int    `json:"completion_tokens" gorm:"default:0"`
@@ -397,6 +398,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		TokenName:        params.TokenName,
 		ModelName:        params.ModelName,
 		Quota:            params.Quota,
+		PreDiscountQuota: resolvePreDiscountQuota(params.Quota, params.Other),
 		Cost:             params.Cost,
 		PaidQuota:        params.PaidQuota,
 		PaidGiftQuota:    params.PaidGiftQuota,
@@ -489,6 +491,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 		TokenName:           tokenName,
 		ModelName:           params.ModelName,
 		Quota:               params.Quota,
+		PreDiscountQuota:    resolvePreDiscountQuota(params.Quota, params.Other),
 		Cost:                params.Cost,
 		PaidQuota:           params.PaidQuota,
 		PaidGiftQuota:       params.PaidGiftQuota,
@@ -524,12 +527,19 @@ type FinancialConsumeDaily struct {
 // operation's balance snapshot.
 // Streaming avoids loading an unbounded 30-day request history into memory.
 func GetUserFinancialConsumeDaily(userId int, startTimestamp int64, endTimestamp int64) ([]FinancialConsumeDaily, error) {
-	rows, err := LOG_DB.Model(&Log{}).
-		Select("created_at, quota, balance_after").
-		Where("user_id = ? AND type = ? AND created_at >= ? AND created_at < ?",
-			userId, LogTypeConsume, startTimestamp, endTimestamp).
-		Order("created_at ASC, id ASC").
-		Rows()
+	startBucket := usageLogAggregateBucketStart(startTimestamp)
+	rows, err := LOG_DB.Raw(`
+		SELECT created_at, quota, balance_after
+		FROM logs
+		WHERE user_id = ? AND type = ? AND created_at >= ? AND created_at < ?
+		UNION ALL
+		SELECT last_log_at AS created_at, quota, balance_after
+		FROM usage_log_daily_aggregates
+		WHERE user_id = ? AND type = ? AND bucket_start >= ? AND bucket_start < ?
+		ORDER BY created_at ASC`,
+		userId, LogTypeConsume, startTimestamp, endTimestamp,
+		userId, LogTypeConsume, startBucket, endTimestamp,
+	).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -706,10 +716,11 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 }
 
 type Stat struct {
-	Quota  int   `json:"quota"`
-	Rpm    int   `json:"rpm"`
-	Tpm    int   `json:"tpm"`
-	Tokens int64 `json:"tokens"`
+	Quota            int64 `json:"quota"`
+	PreDiscountQuota int64 `json:"pre_discount_quota"`
+	Rpm              int   `json:"rpm"`
+	Tpm              int   `json:"tpm"`
+	Tokens           int64 `json:"tokens"`
 }
 
 const (
@@ -777,7 +788,7 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 
 func queryUsedQuota(startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string) (stat Stat, err error) {
 	tx := LOG_DB.Table("logs").Select(
-		"sum(quota) quota, coalesce(sum(prompt_tokens), 0) + coalesce(sum(completion_tokens), 0) tokens",
+		"coalesce(sum(quota), 0) quota, coalesce(sum(CASE WHEN pre_discount_quota > 0 THEN pre_discount_quota ELSE quota END), 0) pre_discount_quota, coalesce(sum(prompt_tokens), 0) + coalesce(sum(completion_tokens), 0) tokens",
 	)
 
 	// 为rpm和tpm创建单独的查询

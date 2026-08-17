@@ -17,6 +17,7 @@ type UsageStatisticsSummary struct {
 	ErrorCount             int64   `json:"error_count"`
 	SuccessRate            float64 `json:"success_rate"`
 	Quota                  int64   `json:"quota"`
+	PreDiscountQuota       int64   `json:"pre_discount_quota"`
 	WalletQuota            int64   `json:"wallet_quota"`
 	SubscriptionQuota      int64   `json:"subscription_quota"`
 	VirtualMembershipQuota int64   `json:"virtual_membership_quota"`
@@ -68,19 +69,21 @@ type UsageStatistics struct {
 
 func usageStatisticsAggregateSelect() string {
 	return fmt.Sprintf(`
-		COALESCE(SUM(CASE WHEN type = %d THEN 1 ELSE 0 END), 0) AS success_count,
-		COALESCE(SUM(CASE WHEN type = %d THEN 1 ELSE 0 END), 0) AS error_count,
+		COALESCE(SUM(CASE WHEN type = %d THEN request_count ELSE 0 END), 0) AS success_count,
+		COALESCE(SUM(CASE WHEN type = %d THEN request_count ELSE 0 END), 0) AS error_count,
 		COALESCE(SUM(CASE WHEN type = %d THEN quota ELSE 0 END), 0) AS quota,
+		COALESCE(SUM(CASE WHEN type = %d THEN pre_discount_quota ELSE 0 END), 0) AS pre_discount_quota,
 		COALESCE(SUM(CASE WHEN type = %d AND COALESCE(billing_source, '') = 'subscription' THEN quota ELSE 0 END), 0) AS subscription_quota,
 		COALESCE(SUM(CASE WHEN type = %d AND COALESCE(billing_source, '') = 'virtual_membership' THEN quota ELSE 0 END), 0) AS virtual_membership_quota,
 		COALESCE(SUM(CASE WHEN type = %d AND COALESCE(billing_source, '') IN ('', 'wallet') THEN quota ELSE 0 END), 0) AS wallet_quota,
 		COALESCE(SUM(CASE WHEN type = %d THEN prompt_tokens ELSE 0 END), 0) AS prompt_tokens,
 		COALESCE(SUM(CASE WHEN type = %d AND prompt_tokens > 0 THEN cache_tokens ELSE 0 END), 0) AS cache_tokens,
-		COALESCE(SUM(CASE WHEN type = %d AND prompt_tokens > 0 THEN CASE WHEN cache_tokens > prompt_tokens THEN prompt_tokens + cache_tokens ELSE prompt_tokens END ELSE 0 END), 0) AS effective_prompt,
+		COALESCE(SUM(CASE WHEN type = %d THEN effective_prompt_tokens ELSE 0 END), 0) AS effective_prompt,
 		COALESCE(SUM(CASE WHEN type = %d THEN completion_tokens ELSE 0 END), 0) AS completion_tokens,
 		COALESCE(SUM(CASE WHEN type = %d THEN prompt_tokens + completion_tokens ELSE 0 END), 0) AS total_tokens`,
 		LogTypeConsume,
 		LogTypeError,
+		LogTypeConsume,
 		LogTypeConsume,
 		LogTypeConsume,
 		LogTypeConsume,
@@ -104,10 +107,26 @@ func usageStatisticsBucketExpression(bucketSeconds int64) string {
 }
 
 func usageStatisticsBaseQuery(userID int, startTime, endTime int64) *gorm.DB {
-	return LOG_DB.Table("logs").
-		Where("user_id = ?", userID).
-		Where("created_at >= ? AND created_at < ?", startTime, endTime).
-		Where("type IN ?", []int{LogTypeConsume, LogTypeError})
+	startBucket := usageLogAggregateBucketStart(startTime)
+	raw := LOG_DB.Raw(`
+		SELECT created_at, user_id, type, quota,
+			CASE WHEN pre_discount_quota > 0 THEN pre_discount_quota ELSE quota END AS pre_discount_quota,
+			billing_source, prompt_tokens,
+			cache_tokens, completion_tokens, model_name, subscription_id, 1 AS request_count,
+			CASE WHEN prompt_tokens > 0 THEN CASE WHEN cache_tokens > prompt_tokens THEN prompt_tokens + cache_tokens ELSE prompt_tokens END ELSE 0 END AS effective_prompt_tokens
+		FROM logs
+		WHERE user_id = ? AND created_at >= ? AND created_at < ? AND type IN (?, ?)
+		UNION ALL
+		SELECT bucket_start AS created_at, user_id, type, quota,
+			CASE WHEN pre_discount_quota > 0 THEN pre_discount_quota ELSE quota END AS pre_discount_quota,
+			billing_source, prompt_tokens,
+			cache_tokens, completion_tokens, model_name, subscription_id, request_count, effective_prompt_tokens
+		FROM usage_log_daily_aggregates
+		WHERE user_id = ? AND bucket_start >= ? AND bucket_start < ? AND type IN (?, ?)`,
+		userID, startTime, endTime, LogTypeConsume, LogTypeError,
+		userID, startBucket, endTime, LogTypeConsume, LogTypeError,
+	)
+	return LOG_DB.Table("(?) AS usage_rows", raw)
 }
 
 func fillUsageStatisticsSeries(
@@ -197,12 +216,12 @@ func GetUserUsageStatistics(userID int, startTime, endTime, bucketSeconds int64)
 	bucketExpr := usageStatisticsBucketExpression(bucketSeconds)
 	seriesSelect := fmt.Sprintf(`
 		%s AS bucket,
-		COALESCE(SUM(CASE WHEN type = %d THEN 1 ELSE 0 END), 0) AS success_count,
-		COALESCE(SUM(CASE WHEN type = %d THEN 1 ELSE 0 END), 0) AS error_count,
+		COALESCE(SUM(CASE WHEN type = %d THEN request_count ELSE 0 END), 0) AS success_count,
+		COALESCE(SUM(CASE WHEN type = %d THEN request_count ELSE 0 END), 0) AS error_count,
 		COALESCE(SUM(CASE WHEN type = %d THEN quota ELSE 0 END), 0) AS quota,
 		COALESCE(SUM(CASE WHEN type = %d THEN prompt_tokens + completion_tokens ELSE 0 END), 0) AS total_tokens,
 		COALESCE(SUM(CASE WHEN type = %d AND prompt_tokens > 0 THEN cache_tokens ELSE 0 END), 0) AS cache_tokens,
-		COALESCE(SUM(CASE WHEN type = %d AND prompt_tokens > 0 THEN CASE WHEN cache_tokens > prompt_tokens THEN prompt_tokens + cache_tokens ELSE prompt_tokens END ELSE 0 END), 0) AS effective_prompt_tokens`,
+		COALESCE(SUM(CASE WHEN type = %d THEN effective_prompt_tokens ELSE 0 END), 0) AS effective_prompt_tokens`,
 		bucketExpr,
 		LogTypeConsume,
 		LogTypeError,
@@ -223,7 +242,7 @@ func GetUserUsageStatistics(userID int, startTime, endTime, bucketSeconds int64)
 
 	modelSelect := `
 		CASE WHEN model_name = '' THEN 'unknown' ELSE model_name END AS model_name,
-		COUNT(*) AS request_count,
+		COALESCE(SUM(request_count), 0) AS request_count,
 		COALESCE(SUM(quota), 0) AS quota,
 		COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
 		COALESCE(SUM(CASE WHEN prompt_tokens > 0 THEN cache_tokens ELSE 0 END), 0) AS cache_tokens,
@@ -241,7 +260,7 @@ func GetUserUsageStatistics(userID int, startTime, endTime, bucketSeconds int64)
 
 	subscriptionSelect := `
 		subscription_id,
-		COUNT(*) AS request_count,
+		COALESCE(SUM(request_count), 0) AS request_count,
 		COALESCE(SUM(quota), 0) AS quota`
 	if err := usageStatisticsBaseQuery(userID, startTime, endTime).
 		Where("type = ? AND billing_source = ?", LogTypeConsume, "subscription").

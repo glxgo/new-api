@@ -675,7 +675,7 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 			return nil, types.NewError(errors.New("API Key 消耗路由资金来源无效"), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
 		}
 		if routeErr != nil && routeErr.GetErrorCode() == types.ErrorCodeInsufficientUserQuota {
-			MarkCurrentTokenRouteQuotaUnavailable(c)
+			MarkCurrentTokenRouteQuotaUnavailable(c, int64(preConsumedQuota))
 		}
 		return session, routeErr
 	}

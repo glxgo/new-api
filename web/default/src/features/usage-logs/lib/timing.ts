@@ -16,6 +16,14 @@ export function getThroughputColor(
   return 'danger'
 }
 
+export function getFirstTokenTone(
+  seconds: number
+): 'success' | 'warning' | 'danger' {
+  if (seconds <= 6) return 'success'
+  if (seconds <= 12) return 'warning'
+  return 'danger'
+}
+
 export function resolveFirstTokenMs(
   other: LogOtherData | null | undefined
 ): number | null {

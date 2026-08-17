@@ -20,18 +20,23 @@ import type { GroupProbeSummary } from '@/features/performance-metrics/types'
 
 export type ProbeTone = 'healthy' | 'degraded' | 'unhealthy' | 'unknown'
 
+export function probeHealthyPercentage(probe?: GroupProbeSummary): number {
+  if (!probe || probe.total_channels < 1) return 0
+  return Math.min(
+    100,
+    Math.max(0, (probe.healthy_channels / probe.total_channels) * 100)
+  )
+}
+
 export function probeTone(probe?: GroupProbeSummary): ProbeTone {
   if (!probe || probe.total_channels < 1 || probe.checked_channels < 1)
     return 'unknown'
-  // 1. 该组有任何一个渠道正常 → 绿
-  if (probe.healthy_channels >= 1) return 'healthy'
-  // 3. 该组所有渠道 3 次以上不正常 → 红
   if (
     probe.checked_channels === probe.total_channels &&
-    probe.unhealthy_channels === probe.total_channels
+    !probe.healthy_channels
   )
     return 'unhealthy'
-  // 2. 该组所有渠道都不正常（1~3 次，非全部 unhealthy）→ 黄
+  if (probe.healthy_channels * 2 >= probe.total_channels) return 'healthy'
   return 'degraded'
 }
 

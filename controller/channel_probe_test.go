@@ -68,9 +68,9 @@ func TestClassifyGroupProbeStatusByRemainingHealthyChannels(t *testing.T) {
 			expected: model.ChannelProbeStatusHealthy,
 		},
 		{
-			name:     "one remaining channel keeps the group healthy",
+			name:     "less than half healthy marks the group degraded",
 			summary:  &perfmetrics.GroupProbeSummary{TotalChannels: 3, CheckedChannels: 3, HealthyChannels: 1, UnhealthyChannels: 2},
-			expected: model.ChannelProbeStatusHealthy,
+			expected: model.ChannelProbeStatusDegraded,
 		},
 		{
 			name:     "all confirmed failures are unhealthy",
@@ -78,9 +78,9 @@ func TestClassifyGroupProbeStatusByRemainingHealthyChannels(t *testing.T) {
 			expected: model.ChannelProbeStatusUnhealthy,
 		},
 		{
-			name:     "unconfirmed failures stay degraded",
+			name:     "all unavailable channels are unhealthy",
 			summary:  &perfmetrics.GroupProbeSummary{TotalChannels: 2, CheckedChannels: 2, DegradedChannels: 2},
-			expected: model.ChannelProbeStatusDegraded,
+			expected: model.ChannelProbeStatusUnhealthy,
 		},
 		{
 			name:     "unchecked groups stay unknown",

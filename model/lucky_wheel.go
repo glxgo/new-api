@@ -606,6 +606,66 @@ func EnsureLuckyPrizeProbability20260811() error {
 	})
 }
 
+const luckyWalletGiftBonus20260817MigrationKey = "LuckyWalletGiftBonus20260817MigratedV1"
+
+func addLuckyWalletGiftBonus(raw string) (string, error) {
+	var pool []LuckyPrizeConfig
+	if err := common.UnmarshalJsonStr(raw, &pool); err != nil {
+		return "", err
+	}
+	for i := range pool {
+		switch pool[i].Code {
+		case LuckyPrizeGift5, LuckyPrizeGift10, LuckyPrizeGift20:
+			pool[i].DisplayUsdMicros += 10_000_000
+		}
+	}
+	if err := validateLuckyPool(pool, true); err != nil {
+		return "", err
+	}
+	encoded, err := common.Marshal(pool)
+	return string(encoded), err
+}
+
+// EnsureLuckyWalletGiftBonus20260817 applies the owner-selected +$10 wallet
+// gift policy to every rule version, including cards already issued against a
+// historical rule. The marker makes the additive migration strictly one-shot.
+func EnsureLuckyWalletGiftBonus20260817() error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var marker Option
+		if err := tx.Where(commonKeyCol+" = ?", luckyWalletGiftBonus20260817MigrationKey).First(&marker).Error; err == nil {
+			return nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
+		var rules []LuckyRuleSet
+		if err := tx.Find(&rules).Error; err != nil {
+			return err
+		}
+		for i := range rules {
+			subscriptionPool, err := addLuckyWalletGiftBonus(rules[i].SubscriptionPool)
+			if err != nil {
+				return fmt.Errorf("update lucky subscription gift amounts: %w", err)
+			}
+			rechargePool, err := addLuckyWalletGiftBonus(rules[i].RechargePool)
+			if err != nil {
+				return fmt.Errorf("update lucky recharge gift amounts: %w", err)
+			}
+			rules[i].SubscriptionPool = subscriptionPool
+			rules[i].RechargePool = rechargePool
+			RefreshLuckyRuleChecksum(&rules[i])
+			if err := tx.Model(&LuckyRuleSet{}).Where("id = ?", rules[i].Id).Updates(map[string]interface{}{
+				"subscription_pool": rules[i].SubscriptionPool,
+				"recharge_pool":     rules[i].RechargePool,
+				"checksum":          rules[i].Checksum,
+			}).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Create(&Option{Key: luckyWalletGiftBonus20260817MigrationKey, Value: "true"}).Error
+	})
+}
+
 func GetLuckyCampaignTx(tx *gorm.DB, lock bool) (*LuckyCampaign, *LuckyRuleSet, error) {
 	if tx == nil {
 		tx = DB

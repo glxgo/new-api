@@ -31,6 +31,7 @@ import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
 import { GroupPricingPreviewCard } from './group-pricing-preview-card'
 import { GroupRatioForm } from './group-ratio-form'
+import { detectSingleGroupRename } from './group-renames'
 import { ModelRatioForm } from './model-ratio-form'
 import { ToolPriceSettings } from './tool-price-settings'
 import { UpstreamRatioSync } from './upstream-ratio-sync'
@@ -390,8 +391,20 @@ export function RatioSettingsCard({
 
       for (const key of updates) {
         const apiKey = apiKeyMap[key] || key
-        await updateOption.mutateAsync({ key: apiKey, value: normalized[key] })
+        await updateOption.mutateAsync({
+          key: apiKey,
+          value: normalized[key],
+          ...(key === 'GroupRatio'
+            ? {
+                group_renames: detectSingleGroupRename(
+                  groupNormalizedDefaults.current.GroupRatio,
+                  normalized.GroupRatio
+                ),
+              }
+            : {}),
+        })
       }
+      groupNormalizedDefaults.current = normalized
     },
     [updateOption]
   )

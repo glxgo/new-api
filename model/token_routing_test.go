@@ -2,6 +2,7 @@ package model
 
 import (
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -48,4 +49,49 @@ func TestTokenCustomRoutePersistsExplicitGroupsAndRevision(t *testing.T) {
 		{GroupName: "wallet-plus", SelectionMode: TokenRouteSelectionAuto},
 	}, 1)
 	require.EqualError(t, err, "API Key 消耗路由策略已被其他窗口修改，请刷新后重试")
+}
+
+func TestTokenRouteQuotaAvailabilityFreezesToSubscriptionReset(t *testing.T) {
+	db := setupSubscriptionBindingTestDB(t)
+	now := common.GetTimestamp()
+	resetAt := now + 3600
+	require.NoError(t, db.Create(&UserSubscription{
+		UserId: 91, PlanId: 1, PlanTitle: "hourly", AmountTotal: 100, AmountUsed: 100,
+		StartTime: now - 60, EndTime: now + 86400, Status: "active",
+		AllowedGroup: "package-a", NextResetTime: resetAt,
+	}).Error)
+
+	availability, err := GetTokenRouteQuotaAvailability(91, "gpt-test", TokenRouteStep{
+		GroupName: "package-a", FundingSource: TokenRouteSourceSubscription,
+		SelectionMode: TokenRouteSelectionAuto,
+	}, 1)
+	require.NoError(t, err)
+	require.False(t, availability.Usable)
+	require.Equal(t, resetAt, availability.ResetAt)
+}
+
+func TestVirtualMembershipRouteDetectsEarlyReset(t *testing.T) {
+	db := setupSubscriptionBindingTestDB(t)
+	now := time.Now().Unix()
+	membership := UserVirtualMembership{
+		UserId: 92, PlanId: 1, PlanTitle: "membership", WeeklyQuota: 100, WeeklyUsed: 100,
+		WeeklyResetAt: now + 7200, StartTime: now - 60, EndTime: now + 86400,
+		Status: VirtualMembershipStatusActive, AllowedGroup: "member-a", AllowedModels: "gpt-test",
+	}
+	require.NoError(t, db.Create(&membership).Error)
+	step := TokenRouteStep{
+		GroupName: "member-a", FundingSource: TokenRouteSourceVirtualMembership,
+		SelectionMode: TokenRouteSelectionInstance, SourceId: membership.Id,
+	}
+
+	availability, err := GetTokenRouteQuotaAvailability(92, "gpt-test", step, 1)
+	require.NoError(t, err)
+	require.False(t, availability.Usable)
+	require.Equal(t, membership.WeeklyResetAt, availability.ResetAt)
+
+	require.NoError(t, db.Model(&UserVirtualMembership{}).Where("id = ?", membership.Id).Update("weekly_used", 0).Error)
+	availability, err = GetTokenRouteQuotaAvailability(92, "gpt-test", step, 1)
+	require.NoError(t, err)
+	require.True(t, availability.Usable, "an operator-triggered early membership reset must unfreeze the route")
+	require.Zero(t, availability.ResetAt)
 }
