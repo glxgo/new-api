@@ -16,6 +16,13 @@
 
 ## Current handoff
 
+### 2026-08-18 — 用户日志、模型状态、幸运大转盘与虚拟会员维护已发布
+
+- 功能提交 `221505002` 与交接文档提交 `778b019a` 已推送 `origin/main`。生产版本为 `20260818-diagnostics-wheel-membership`，Linux/amd64 静态二进制 SHA-256 为 `26665a13b81f23a0690883c88525efe21b42c68f797059dc707b2921f97c4ee9`。
+- 幸运转盘历史卡开奖已统一使用当前最新已发布规则；历史 `rule_set_id` 仅作发卡审计快照，抽奖记录保存实际规则版本与校验和。日志路由/映射、模型状态倍率与全状态分组、奖池管理/概率/切池、虚拟会员外部付款计入充值分润与转盘进度、续费和实例隐藏均已随该版本上线。
+- `site-builder` 通过 3010 候选、真实 Responses（HTTP 200、completed、无 failed/response.error）、Nginx 两次切换、连接自然排空和正式 3000 归一；三域名各 5/5 返回新版本，正式 healthy/0 重启，仅 3000 监听。完整生产备份在 `/opt/new-api-backups/release-20260818-diagnostics-wheel-membership-20260818T150118Z/`，旧容器 `new-api-old-20260818-diagnostics-wheel-membership` 停止保留回滚。
+- 生产数据库已验证新增 hidden/renewal 字段存在；MySQL/Redis 未重建。退款/拒付自动权益撤销、分润冲正和转盘负向事件状态机仍未实现，需另行设计。
+
 ### 2026-08-18 — Public pool navigation restored and released
 
 - Commit `f9476e2cf` is pushed to `origin/main`. It only restores the Default sidebar `Platform Usage` / `号池公开` entry at `/platform-usage` and its `Gauge` icon; the retained route, API, authorization and sanitization behavior are unchanged. Other dirty worktree features were excluded from the commit and clean release build.
@@ -24,14 +31,14 @@
 - Operational note: `/opt/newapi/secrets/runtime.env` contains expanded runtime values but not every Compose interpolation variable. The first off-traffic formal recreation emitted missing-variable warnings; it was never routed live and was immediately recreated from the verified candidate environment before health and real-stream acceptance. Do not treat that file alone as a complete Compose interpolation source.
 - The verified root-only backup is `/opt/new-api-backups/release-20260818-public-pool-reopen-20260818T141856Z/`; previous image/binary remain available for rollback. DNS, channels, multipliers, payments and business data were unchanged.
 
-### 2026-08-18 — 用户日志、模型状态、幸运大转盘与虚拟会员维护已提交并推送
+### 2026-08-18 — 用户日志、模型状态、幸运大转盘与虚拟会员维护代码变更说明
 
 - 用户日志现向日志所属用户展示安全的请求路径、格式转换链和“请求模型 -> 实际模型”；渠道名称/ID、重试链、亲和 Key、管理员审计与流诊断仍保持管理员可见。模型状态统一返回全部启用的状态分组及真实计费倍率（未配置回退 1），卡片不再被当前成员的定价分组过滤，分组名后展示倍率。
 - 幸运大转盘管理员端新增版本化奖池编辑器，可查看、增删、修改金额与整数权重、保存草稿、发布及查看历史；发布校验奖项可发放性、重复项和总权重 1,000,000，并以 `base_rule_set_id` 防止过期页面覆盖。用户端 Default/Classic 统一以奖池类型和当前最新已发布规则驱动轮盘及概率公示，切池不会跨池抽奖，无对应卡时只预览并禁用抽奖。所有尚未使用的历史卡也按其奖池类型使用当前最新规则开奖；卡片原 `rule_set_id` 只保留为发卡审计快照，实际抽奖记录保存本次使用的最新规则版本与校验和。
 - 抽奖继续使用 `crypto/rand` 生成 `[0, 1,000,000)` 均匀整数并按累计整数权重选择，避免浮点漂移；卡片锁、幂等、抽奖记录、发奖和消费保持同一事务，随机值与规则校验和可审计。该方案适合平台促销，但不是用户可独立验证的 commit-reveal/VRF 型“可证明公平”随机方案。
 - 外部 Epay 虚拟会员付款（含续费）复用 `RechargeCredit` 与 `LuckyRechargeEvent` 链路，真实计入充值累计、分润和大转盘进度并按来源唯一键幂等；余额购买/续费及管理员免费赠送/续费不二次累计。续费创建线性后继，未到期实例到期后生效，已到期实例立即生效，未来实例不能提前绑定或消费。订阅与虚拟会员实例均支持管理员隐藏/恢复；隐藏只影响用户展示，不影响后台、账务、绑定或运行时消费。
 - 新增迁移字段为 `user_subscriptions.hidden`、`user_virtual_memberships.hidden`、`user_virtual_memberships.renewed_from_id` 唯一索引和 `virtual_membership_orders.renew_from_membership_id` 索引。相关 model/controller/service 测试、定向 race、21 项前端回归、Default TypeScript/构建、Classic 构建、全仓 Go 编译、格式与 diff 检查均通过；完整 controller 套件仍仅保留既有共享数据库状态基线 `TestListModelsTokenLimitIncludesTieredBillingModel`。真实 MySQL/Postgres 迁移与登录态浏览器验收尚未执行；成功虚拟会员订单的退款/拒付仍缺少权益撤销、分润冲正和大转盘负向事件状态机。
-- 源码提交为 `221505002`，已推送到 `origin/main`。本轮只上传源码，未构建或发布生产制品，生产仍运行此前版本，等待单独部署授权。
+- 源码提交为 `221505002`，已推送到 `origin/main`；随后已按上方发布记录构建并上线生产。
 
 ### 2026-08-18 — Fixed-policy commission readers repaired and released
 
