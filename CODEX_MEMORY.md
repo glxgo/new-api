@@ -16,6 +16,12 @@
 
 ## Current handoff
 
+### 2026-08-18 — Recharge policy V2 settlement is correct but V1-only readers hide new commissions
+
+- Read-only production tracing for user 595 `vitawzz` proved that subscription order 93 (“周卡会员版”) completed at 2026-08-18 07:03:23 CST and atomically created done recharge credit 438 under policy 2 plus direct-referral dividend record 111054. Recipient user 27 is ordinary role 1, so the 1,225,000-quota 5% reward correctly entered `gift_quota`, not the withdrawable dividend balance. The recipient's current `gift_quota` exactly equals the two referral records sourced from `vitawzz`, proving no settlement or balance loss.
+- Commit `af9436ca1` correctly changed new writes to `RechargeCommissionPolicyV2`, but current reads in `model/dividend_record.go` (`GetDividendRecordsByRecipient`, affiliate summaries and sums) and `controller/profit.go` (profit summary and dividend records) still filter exactly `RechargeCommissionPolicyV1`. New V2 recharges therefore disappear from affiliate totals/downline/rebate-detail and commission-audit amounts even though the financial rows and balances are correct; the paid-recharge summary counts all done credits, so the admin report is internally inconsistent as well.
+- No code, database, configuration, commit or deployment change was made. A future scoped fix should include policy versions 1 and 2 in current fixed-recharge reporting while continuing to exclude policy 0 legacy profit settlements, and should add V2 regressions across all affected reader paths.
+
 ### 2026-08-11 — 控制台旧缓存 500 与登录共享限流 429 已在本地正式修复
 
 - `system-config-storage` 持久化状态现在使用版本 1；旧版本或损坏状态会先迁移，配置对象按字段深合并，货币字段逐项校验并补齐默认值，运行中的 store action 始终取当前实现而不接受持久化覆盖。顶部钱包余额渲染还会再次规范化货币配置，避免旧缓存缺字段时直接抛出 500。
