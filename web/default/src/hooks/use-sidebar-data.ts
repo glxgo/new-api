@@ -40,6 +40,7 @@ import {
   Wallet,
   Dices,
   Sparkles,
+  Gauge,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
@@ -200,6 +201,11 @@ export function useSidebarData(): SidebarData {
             title: t('Usage Statistics'),
             url: '/usage-statistics',
             icon: ChartLine,
+          },
+          {
+            title: t('Platform Usage'),
+            url: '/platform-usage',
+            icon: Gauge,
           },
           {
             title: t('Usage Logs'),
