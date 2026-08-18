@@ -16,6 +16,14 @@
 
 ## Current handoff
 
+### 2026-08-18 — Public pool navigation restored and released
+
+- Commit `f9476e2cf` is pushed to `origin/main`. It only restores the Default sidebar `Platform Usage` / `号池公开` entry at `/platform-usage` and its `Gauge` icon; the retained route, API, authorization and sanitization behavior are unchanged. Other dirty worktree features were excluded from the commit and clean release build.
+- Targeted Prettier/ESLint, complete Default TypeScript, Default/Classic production builds, clean Linux/amd64 static build and diff checks passed. Production runs version `20260818-public-pool-reopen`, binary SHA-256 `57eb1c13abcf1599a9a088805fe3f5857af72ffd24e558057dd8265d76c86e21`, and image `sha256:0105fd39d63d3622e40b653c0ceca5de6373f8c8481b99c012c1a24ffe02eb4b`.
+- Candidate 3010 and formal 3000 both passed page/auth checks plus a real streaming `gpt-5.5` Responses completion. All three public production domains returned the version 5/5 and `/platform-usage` 200. Formal is healthy, restart 0, no OOM, 8 GiB, only 3000 listens, green was removed after three zero-connection checks by container IP, and MySQL/Redis were not recreated.
+- Operational note: `/opt/newapi/secrets/runtime.env` contains expanded runtime values but not every Compose interpolation variable. The first off-traffic formal recreation emitted missing-variable warnings; it was never routed live and was immediately recreated from the verified candidate environment before health and real-stream acceptance. Do not treat that file alone as a complete Compose interpolation source.
+- The verified root-only backup is `/opt/new-api-backups/release-20260818-public-pool-reopen-20260818T141856Z/`; previous image/binary remain available for rollback. DNS, channels, multipliers, payments and business data were unchanged.
+
 ### 2026-08-18 — Fixed-policy commission readers repaired and released
 
 - Commit `2a02553c7` is pushed to `origin/main`. Affiliate totals/downline/detail, recharge-window totals, recipient/source sums, and root commission summary/detail now select every fixed-recharge policy with version >= 1. This includes current V1/V2 and future fixed-policy versions while continuing to exclude policy 0 legacy profit settlements. Model and controller regressions cover both inclusion and the legacy boundary.
