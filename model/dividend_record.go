@@ -55,7 +55,7 @@ func HasDividendRecordBySourceRef(sourceRef string) (bool, error) {
 func GetDividendRecordsByRecipient(userId int, page, pageSize int) ([]*DividendRecord, int64, error) {
 	var records []*DividendRecord
 	var total int64
-	tx := DB.Model(&DividendRecord{}).Where("user_id = ? AND type IN ? AND policy_version = ?", userId, []int{DividendTypeDirect, DividendTypeIndirect}, RechargeCommissionPolicyV1)
+	tx := DB.Model(&DividendRecord{}).Where("user_id = ? AND type IN ? AND policy_version >= ?", userId, []int{DividendTypeDirect, DividendTypeIndirect}, RechargeCommissionPolicyV1)
 	tx.Count(&total)
 	err := tx.Order("id desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&records).Error
 	return records, total, err
@@ -84,7 +84,7 @@ func GetAffiliateSourceSummaries(recipientId int, sourceUserIds []int) (map[int]
 	var recharges []rechargeRow
 	if err := DB.Model(&RechargeCredit{}).
 		Select("user_id, COALESCE(SUM(amount_cents), 0) AS amount").
-		Where("user_id IN ? AND source_type IN ? AND commission_state = ? AND commission_policy_version = ?", sourceUserIds, []string{RechargeSourceWalletTopUp, RechargeSourceSubscription, RechargeSourceVirtualMembership, RechargeSourceAdmin}, RechargeCommissionDone, RechargeCommissionPolicyV1).
+		Where("user_id IN ? AND source_type IN ? AND commission_state = ? AND commission_policy_version >= ?", sourceUserIds, []string{RechargeSourceWalletTopUp, RechargeSourceSubscription, RechargeSourceVirtualMembership, RechargeSourceAdmin}, RechargeCommissionDone, RechargeCommissionPolicyV1).
 		Group("user_id").Scan(&recharges).Error; err != nil {
 		return nil, err
 	}
@@ -101,7 +101,7 @@ func GetAffiliateSourceSummaries(recipientId int, sourceUserIds []int) (map[int]
 	var dividends []dividendRow
 	if err := DB.Model(&DividendRecord{}).
 		Select("source_user_id, COALESCE(SUM(amount), 0) AS rebate").
-		Where("user_id = ? AND source_user_id IN ? AND type IN ? AND policy_version = ?", recipientId, sourceUserIds, []int{DividendTypeDirect, DividendTypeIndirect}, RechargeCommissionPolicyV1).
+		Where("user_id = ? AND source_user_id IN ? AND type IN ? AND policy_version >= ?", recipientId, sourceUserIds, []int{DividendTypeDirect, DividendTypeIndirect}, RechargeCommissionPolicyV1).
 		Group("source_user_id").Scan(&dividends).Error; err != nil {
 		return nil, err
 	}
@@ -126,7 +126,7 @@ func GetRechargeCentsByUsersBetween(userIds []int, start, end int64) (map[int]in
 	var rows []row
 	err := DB.Model(&RechargeCredit{}).
 		Select("user_id, COALESCE(SUM(amount_cents), 0) AS amount").
-		Where("user_id IN ? AND source_type IN ? AND commission_state = ? AND commission_policy_version = ? AND created_at >= ? AND created_at < ?", userIds, []string{RechargeSourceWalletTopUp, RechargeSourceSubscription, RechargeSourceVirtualMembership, RechargeSourceAdmin}, RechargeCommissionDone, RechargeCommissionPolicyV1, start, end).
+		Where("user_id IN ? AND source_type IN ? AND commission_state = ? AND commission_policy_version >= ? AND created_at >= ? AND created_at < ?", userIds, []string{RechargeSourceWalletTopUp, RechargeSourceSubscription, RechargeSourceVirtualMembership, RechargeSourceAdmin}, RechargeCommissionDone, RechargeCommissionPolicyV1, start, end).
 		Group("user_id").Scan(&rows).Error
 	if err != nil {
 		return nil, err
@@ -141,7 +141,7 @@ func GetRechargeCentsByUsersBetween(userIds []int, start, end int64) (map[int]in
 func SumDividendByRecipient(userId int) (int64, error) {
 	var sum int64
 	err := DB.Model(&DividendRecord{}).
-		Where("user_id = ? AND type IN ? AND policy_version = ?", userId, []int{DividendTypeDirect, DividendTypeIndirect}, RechargeCommissionPolicyV1).
+		Where("user_id = ? AND type IN ? AND policy_version >= ?", userId, []int{DividendTypeDirect, DividendTypeIndirect}, RechargeCommissionPolicyV1).
 		Select("COALESCE(SUM(amount),0)").Scan(&sum).Error
 	return sum, err
 }
@@ -150,7 +150,7 @@ func SumDividendByRecipient(userId int) (int64, error) {
 func SumDividendBySource(recipientId, sourceUserId int) (int64, error) {
 	var sum int64
 	err := DB.Model(&DividendRecord{}).
-		Where("user_id = ? AND source_user_id = ? AND type IN ? AND policy_version = ?", recipientId, sourceUserId, []int{DividendTypeDirect, DividendTypeIndirect}, RechargeCommissionPolicyV1).
+		Where("user_id = ? AND source_user_id = ? AND type IN ? AND policy_version >= ?", recipientId, sourceUserId, []int{DividendTypeDirect, DividendTypeIndirect}, RechargeCommissionPolicyV1).
 		Select("COALESCE(SUM(amount),0)").Scan(&sum).Error
 	return sum, err
 }

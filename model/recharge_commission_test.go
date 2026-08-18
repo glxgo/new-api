@@ -153,6 +153,50 @@ func TestRechargeCommissionUsesAgentAndAdminDirectRates(t *testing.T) {
 	require.Zero(t, refreshedAgent.GiftQuota)
 }
 
+func TestRechargeCommissionReadersIncludeAllFixedPoliciesAndExcludeLegacy(t *testing.T) {
+	db := newRechargeCommissionTestDB(t)
+	oldDB := DB
+	DB = db
+	t.Cleanup(func() { DB = oldDB })
+
+	recipient := User{Username: "reader-recipient", Role: common.RoleCommonUser, AffCode: "reader-recipient"}
+	buyer := User{Username: "reader-buyer", Role: common.RoleCommonUser, AffCode: "reader-buyer"}
+	require.NoError(t, db.Create(&recipient).Error)
+	require.NoError(t, db.Create(&buyer).Error)
+
+	require.NoError(t, db.Create(&[]RechargeCredit{
+		{UserId: buyer.Id, AmountCents: 1_000, SourceType: RechargeSourceSubscription, SourceRef: "reader-v1", CreatedAt: 100, CommissionBaseQuota: 10_000, PaymentCurrency: "CNY", CommissionState: RechargeCommissionDone, CommissionPolicyVersion: RechargeCommissionPolicyV1},
+		{UserId: buyer.Id, AmountCents: 2_000, SourceType: RechargeSourceSubscription, SourceRef: "reader-v2", CreatedAt: 200, CommissionBaseQuota: 20_000, PaymentCurrency: "CNY", CommissionState: RechargeCommissionDone, CommissionPolicyVersion: RechargeCommissionPolicyV2},
+		{UserId: buyer.Id, AmountCents: 9_000, SourceType: RechargeSourceSubscription, SourceRef: "reader-legacy", CreatedAt: 50, CommissionBaseQuota: 90_000, PaymentCurrency: "CNY", CommissionState: RechargeCommissionLegacy, CommissionPolicyVersion: 0},
+	}).Error)
+	require.NoError(t, db.Create(&[]DividendRecord{
+		{BatchId: "reader-v1", UserId: recipient.Id, SourceUserId: buyer.Id, Type: DividendTypeDirect, Amount: 100, SourceRechargeCents: 1_000, SourceRef: "reader-v1", PolicyVersion: RechargeCommissionPolicyV1, CreatedAt: 100},
+		{BatchId: "reader-v2", UserId: recipient.Id, SourceUserId: buyer.Id, Type: DividendTypeDirect, Amount: 200, SourceRechargeCents: 2_000, SourceRef: "reader-v2", PolicyVersion: RechargeCommissionPolicyV2, CreatedAt: 200},
+		{BatchId: "reader-legacy", UserId: recipient.Id, SourceUserId: buyer.Id, Type: DividendTypeDirect, Amount: 900, SourceRechargeCents: 9_000, SourceRef: "reader-legacy", PolicyVersion: 0, CreatedAt: 50},
+	}).Error)
+
+	records, total, err := GetDividendRecordsByRecipient(recipient.Id, 1, 20)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, total)
+	require.Len(t, records, 2)
+
+	summaries, err := GetAffiliateSourceSummaries(recipient.Id, []int{buyer.Id})
+	require.NoError(t, err)
+	require.EqualValues(t, 3_000, summaries[buyer.Id].RechargeCents)
+	require.EqualValues(t, 300, summaries[buyer.Id].Rebate)
+
+	windowed, err := GetRechargeCentsByUsersBetween([]int{buyer.Id}, 0, 300)
+	require.NoError(t, err)
+	require.EqualValues(t, 3_000, windowed[buyer.Id])
+
+	totalRebate, err := SumDividendByRecipient(recipient.Id)
+	require.NoError(t, err)
+	require.EqualValues(t, 300, totalRebate)
+	buyerRebate, err := SumDividendBySource(recipient.Id, buyer.Id)
+	require.NoError(t, err)
+	require.EqualValues(t, 300, buyerRebate)
+}
+
 func TestAdministratorRechargeCreditPaysFixedCommission(t *testing.T) {
 	db := newRechargeCommissionTestDB(t)
 	oldDB, oldRedis, oldQuotaPerUnit, oldPrice := DB, common.RedisEnabled, common.QuotaPerUnit, operation_setting.Price

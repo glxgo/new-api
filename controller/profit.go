@@ -37,7 +37,7 @@ func GetProfitSummary(c *gin.Context) {
 	var amounts []typeAmount
 	model.DB.Model(&model.DividendRecord{}).
 		Select("type, COALESCE(SUM(amount),0) AS amount").
-		Where("policy_version = ? AND created_at >= ? AND created_at < ?", model.RechargeCommissionPolicyV1, start, end).
+		Where("policy_version >= ? AND created_at >= ? AND created_at < ?", model.RechargeCommissionPolicyV1, start, end).
 		Group("type").Scan(&amounts)
 	var affiliate, admin, root int64
 	for _, item := range amounts {
@@ -98,7 +98,7 @@ func GetDividendRecords(c *gin.Context) {
 		pageSize = 20
 	}
 	applyFilters := func() *gorm.DB {
-		tx := model.DB.Table("dividend_records").Where("policy_version = ?", model.RechargeCommissionPolicyV1)
+		tx := model.DB.Table("dividend_records").Where("policy_version >= ?", model.RechargeCommissionPolicyV1)
 		if v := c.Query("source_user_id"); v != "" {
 			if uid, err := strconv.Atoi(v); err == nil {
 				tx = tx.Where("source_user_id = ?", uid)
