@@ -42,9 +42,11 @@ import {
 import { SectionPageLayout } from '@/components/layout'
 import { LuckyCardManager } from './admin-card-manager'
 import { LuckyDrawHistory } from './admin-draw-history'
+import { LuckyRuleEditor } from './admin-rule-editor'
 import {
   compensateLuckyCards,
   getLuckyAdminOverview,
+  getLuckyAdminRuleSets,
   reverseLuckySource,
   setLuckyDrawPaused,
   setLuckyIssuancePaused,
@@ -60,6 +62,7 @@ interface Overview {
 
 export function LuckyWheelAdmin() {
   const [overview, setOverview] = useState<Overview | null>(null)
+  const [rules, setRules] = useState<LuckyRuleSet[]>([])
   const [busy, setBusy] = useState('')
   const [reason, setReason] = useState('')
   const [userId, setUserId] = useState('')
@@ -76,8 +79,12 @@ export function LuckyWheelAdmin() {
   const [reversalReason, setReversalReason] = useState('')
 
   const load = useCallback(async () => {
-    const response = await getLuckyAdminOverview()
-    if (response.success) setOverview(response.data)
+    const [overviewResponse, rulesResponse] = await Promise.all([
+      getLuckyAdminOverview(),
+      getLuckyAdminRuleSets(),
+    ])
+    if (overviewResponse.success) setOverview(overviewResponse.data)
+    if (rulesResponse.success) setRules(rulesResponse.data)
   }, [])
 
   useEffect(() => {
@@ -393,6 +400,13 @@ export function LuckyWheelAdmin() {
               </div>
             </CardContent>
           </Card>
+
+          <LuckyRuleEditor
+            key={overview?.active_rule.id || 0}
+            activeRule={overview?.active_rule || null}
+            rules={rules}
+            onChanged={load}
+          />
 
           <Card>
             <CardHeader>

@@ -25,6 +25,7 @@ import {
 } from '@/features/pricing/lib/billing-expr'
 import type { UsageLog } from '../data/schema'
 import type { LogOtherData } from '../types'
+import { getUserVisibleModelMapping } from './routing'
 import { getFirstTokenTone, getThroughputColor } from './timing'
 
 export { normalizeTierLabel }
@@ -147,16 +148,12 @@ export function formatModelName(log: UsageLog): {
   actualModel?: string
 } {
   const other = parseLogOther(log.other)
-  const isMapped = !!(
-    other?.is_model_mapped &&
-    other?.upstream_model_name &&
-    other.upstream_model_name !== ''
-  )
+  const mapping = getUserVisibleModelMapping(log.model_name, other)
 
   return {
     name: log.model_name,
-    isMapped,
-    actualModel: isMapped ? other.upstream_model_name : undefined,
+    isMapped: mapping !== null,
+    actualModel: mapping?.actualModel,
   }
 }
 

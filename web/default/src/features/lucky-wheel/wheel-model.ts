@@ -39,18 +39,20 @@ export interface WheelSegment extends LuckyPrize {
 
 export function selectLuckyRules(
   rules: LuckyRuleSet[],
-  currentRuleId?: number,
-  selectedCardRuleId?: number
+  currentRuleId?: number
 ) {
   const publicRule = rules.find((rule) => rule.id === currentRuleId) || rules[0]
-  const drawRule =
-    rules.find((rule) => rule.id === selectedCardRuleId) || publicRule
+  const drawRule = publicRule
   return { drawRule, publicRule }
 }
 
-function availableCards(cards: LuckyCard[]) {
+function availableCards(cards: LuckyCard[], poolType?: LuckyCard['pool_type']) {
   return cards
-    .filter((card) => card.status === 'available')
+    .filter(
+      (card) =>
+        card.status === 'available' &&
+        (poolType === undefined || card.pool_type === poolType)
+    )
     .sort((a, b) => a.expires_at - b.expires_at || a.id - b.id)
 }
 
@@ -68,11 +70,37 @@ export function chooseAvailableCardId(cards: LuckyCard[], currentId: string) {
   return available[0] ? String(available[0].id) : ''
 }
 
+export function chooseAvailableCardIdForPool(
+  cards: LuckyCard[],
+  currentId: string,
+  poolType: LuckyCard['pool_type']
+) {
+  const available = availableCards(cards, poolType)
+  if (available.some((card) => String(card.id) === currentId)) {
+    return currentId
+  }
+  return available[0] ? String(available[0].id) : ''
+}
+
 export function chooseNextAvailableCardId(
   cards: LuckyCard[],
   currentId: string
 ) {
   const available = availableCards(cards)
+  const currentIndex = available.findIndex(
+    (card) => String(card.id) === currentId
+  )
+  if (available.length <= 1) return ''
+  if (currentIndex < 0) return available[0] ? String(available[0].id) : ''
+  return String(available[(currentIndex + 1) % available.length]?.id || '')
+}
+
+export function chooseNextAvailableCardIdForPool(
+  cards: LuckyCard[],
+  currentId: string,
+  poolType: LuckyCard['pool_type']
+) {
+  const available = availableCards(cards, poolType)
   const currentIndex = available.findIndex(
     (card) => String(card.id) === currentId
   )

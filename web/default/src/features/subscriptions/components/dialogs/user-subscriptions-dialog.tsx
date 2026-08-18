@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarClock, Plus, RefreshCw } from 'lucide-react'
+import { CalendarClock, Eye, EyeOff, Plus, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { formatQuota } from '@/lib/format'
@@ -54,6 +54,7 @@ import {
   renewUserSubscription,
   invalidateUserSubscription,
   deleteUserSubscription,
+  setUserSubscriptionHidden,
 } from '../../api'
 import { formatTimestamp } from '../../lib'
 import type { PlanRecord, UserSubscriptionRecord } from '../../types'
@@ -114,6 +115,9 @@ export function UserSubscriptionsDialog(props: Props) {
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [actionSubmitting, setActionSubmitting] = useState(false)
+  const [visibilitySubmittingId, setVisibilitySubmittingId] = useState<
+    number | null
+  >(null)
   const [plans, setPlans] = useState<PlanRecord[]>([])
   const [subs, setSubs] = useState<UserSubscriptionRecord[]>([])
   const [selectedPlanId, setSelectedPlanId] = useState<string>('')
@@ -234,6 +238,25 @@ export function UserSubscriptionsDialog(props: Props) {
     }
   }
 
+  const toggleVisibility = async (
+    sub: UserSubscriptionRecord['subscription']
+  ) => {
+    if (visibilitySubmittingId !== null) return
+    setVisibilitySubmittingId(sub.id)
+    try {
+      const res = await setUserSubscriptionHidden(sub.id, !sub.hidden)
+      if (res.success) {
+        toast.success(sub.hidden ? '已恢复用户端展示' : '已从用户端隐藏')
+        await loadData()
+        props.onSuccess?.()
+      }
+    } catch {
+      toast.error(t('Operation failed'))
+    } finally {
+      setVisibilitySubmittingId(null)
+    }
+  }
+
   return (
     <>
       <Sheet open={props.open} onOpenChange={props.onOpenChange}>
@@ -337,6 +360,11 @@ export function UserSubscriptionsDialog(props: Props) {
                         <div className='text-muted-foreground text-sm'>
                           {t('Source')}: {sub.source || '-'}
                         </div>
+                        {sub.hidden && (
+                          <div className='mt-1 text-xs text-amber-600'>
+                            用户端已隐藏
+                          </div>
+                        )}
                       </div>
                     )
                   },
@@ -431,6 +459,19 @@ export function UserSubscriptionsDialog(props: Props) {
 
                     return (
                       <div className='flex flex-wrap justify-end gap-1'>
+                        <Button
+                          size='sm'
+                          variant='outline'
+                          disabled={visibilitySubmittingId !== null}
+                          onClick={() => void toggleVisibility(sub)}
+                        >
+                          {sub.hidden ? (
+                            <Eye className='mr-1 h-3.5 w-3.5' />
+                          ) : (
+                            <EyeOff className='mr-1 h-3.5 w-3.5' />
+                          )}
+                          {sub.hidden ? '恢复展示' : '隐藏'}
+                        </Button>
                         <Button
                           size='sm'
                           variant='outline'

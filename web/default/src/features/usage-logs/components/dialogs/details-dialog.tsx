@@ -59,6 +59,7 @@ import {
   getPriorityBillingAmounts,
   getPriorityBillingSummary,
 } from '../../lib/priority-billing'
+import { getUserVisibleRequestRouting } from '../../lib/routing'
 import { resolveFirstTokenMs } from '../../lib/timing'
 import {
   getLogTypeConfig,
@@ -577,18 +578,12 @@ export function DetailsDialog(props: DetailsDialogProps) {
       ].filter(Boolean) as Array<{ label: string; value: string }>)
     : []
 
-  const conversionChain =
-    other && Array.isArray(other.request_conversion)
-      ? other.request_conversion.filter(Boolean)
-      : []
+  const requestRouting = getUserVisibleRequestRouting(props.log.type, other)
+  const conversionChain = requestRouting?.conversionChain ?? []
   const conversionLabel =
     conversionChain.length <= 1
       ? t('Native format')
       : conversionChain.join(' -> ')
-  const showConversion =
-    props.isAdmin &&
-    props.log.type !== 6 &&
-    (other?.request_path || conversionChain.length > 0)
 
   const useChannel = other?.admin_info?.use_channel
   const channelChain =
@@ -737,8 +732,8 @@ export function DetailsDialog(props: DetailsDialogProps) {
           )}
         </div>
 
-        {/* Request conversion (admin only, not for refund) */}
-        {showConversion && (
+        {/* Safe request route/conversion is visible to both owner and admin. */}
+        {requestRouting && (
           <DetailSection label={t('Request Conversion')}>
             <div className='relative min-w-0'>
               <Button
@@ -756,10 +751,10 @@ export function DetailsDialog(props: DetailsDialogProps) {
                 )}
               </Button>
               <div className='min-w-0 space-y-1 pr-6'>
-                {other?.request_path && (
+                {requestRouting.requestPath && (
                   <DetailRow
                     label={t('Path')}
-                    value={other.request_path}
+                    value={requestRouting.requestPath}
                     mono
                   />
                 )}

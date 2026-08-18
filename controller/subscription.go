@@ -67,7 +67,7 @@ func GetSubscriptionSelf(c *gin.Context) {
 	pref := common.NormalizeBillingPreference(settingMap.BillingPreference)
 
 	// Get all subscriptions (including expired)
-	allSubscriptions, err := model.GetAllUserSubscriptions(userId)
+	allSubscriptions, err := model.GetUserFacingSubscriptionHistory(userId)
 	if err != nil {
 		allSubscriptions = []model.SubscriptionSummary{}
 	}
@@ -546,6 +546,28 @@ func AdminRenewUserSubscription(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, preview)
+}
+
+// AdminSetUserSubscriptionVisibility hides or restores one quota card without
+// changing the subscription's entitlement, billing, or historical records.
+func AdminSetUserSubscriptionVisibility(c *gin.Context) {
+	subId, _ := strconv.Atoi(c.Param("id"))
+	if subId <= 0 {
+		common.ApiErrorMsg(c, "无效的订阅ID")
+		return
+	}
+	var req struct {
+		Hidden *bool `json:"hidden"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Hidden == nil {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	if err := model.SetUserSubscriptionHidden(subId, *req.Hidden); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"hidden": *req.Hidden})
 }
 
 // AdminInvalidateUserSubscription cancels a user subscription immediately.

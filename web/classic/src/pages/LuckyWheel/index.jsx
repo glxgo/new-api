@@ -107,6 +107,7 @@ const LuckyWheel = () => {
   const [draws, setDraws] = useState([]);
   const [rules, setRules] = useState([]);
   const [cardId, setCardId] = useState();
+  const [poolType, setPoolType] = useState('recharge');
   const [drawing, setDrawing] = useState(false);
   const [rotation, setRotation] = useState(0);
   const [pendingResult, setPendingResult] = useState(null);
@@ -114,7 +115,7 @@ const LuckyWheel = () => {
   const [result, setResult] = useState(null);
   const [rulesVisible, setRulesVisible] = useState(false);
 
-  const load = async (preferredCardId) => {
+  const load = async (preferredCardId, preferredPoolType) => {
     const [statusRes, cardsRes, drawsRes, rulesRes] = await Promise.all([
       API.get('/api/lucky-wheel/status'),
       API.get('/api/lucky-wheel/cards?page=1&page_size=100'),
@@ -128,11 +129,16 @@ const LuckyWheel = () => {
     const available = (cardsRes.data.data?.items || [])
       .filter((card) => card.status === 'available')
       .sort((a, b) => a.expires_at - b.expires_at || a.id - b.id);
-    setCardId((current) =>
-      available.some((card) => card.id === (preferredCardId || current))
-        ? preferredCardId || current
-        : available[0]?.id,
-    );
+    const currentPoolType = preferredPoolType || poolType;
+    const candidates =
+      preferredCardId === undefined
+        ? available
+        : available.filter((card) => card.pool_type === currentPoolType);
+    const currentId = preferredCardId === undefined ? cardId : preferredCardId;
+    const nextCard =
+      candidates.find((card) => card.id === currentId) || candidates[0];
+    setCardId(nextCard?.id);
+    if (nextCard) setPoolType(nextCard.pool_type);
   };
 
   useEffect(() => {
@@ -146,13 +152,16 @@ const LuckyWheel = () => {
         .sort((a, b) => a.expires_at - b.expires_at),
     [cards],
   );
-  const selectedCard = availableCards.find((card) => card.id === cardId);
+  const poolCards = availableCards.filter(
+    (card) => card.pool_type === poolType,
+  );
+  const selectedCard = poolCards.find((card) => card.id === cardId);
   const selectedRule =
-    rules.find((rule) => rule.id === selectedCard?.rule_set_id) || rules[0];
+    rules.find((rule) => rule.id === status?.rule_set_id) || rules[0];
   let visiblePool = [];
   try {
     visiblePool = JSON.parse(
-      selectedCard?.pool_type === 'recharge'
+      poolType === 'recharge'
         ? selectedRule?.recharge_pool || '[]'
         : selectedRule?.subscription_pool || '[]',
     );
@@ -161,15 +170,30 @@ const LuckyWheel = () => {
   }
   const wheelSegments = buildWheelSegments(
     visiblePool,
-    selectedCard?.pool_type || 'subscription',
+    poolType,
     selectedRule?.recharge_bonus_usd_micros || 0,
   );
   const wheelLabelByCode = new Map(
     wheelSegments.map((prize) => [prize.code, prize.label]),
   );
 
+  const canDraw =
+    Boolean(selectedCard) &&
+    selectedCard?.pool_type === poolType &&
+    wheelSegments.length > 0 &&
+    !status?.campaign?.draw_paused;
+
+  const changePoolType = (nextPoolType) => {
+    if (drawing || nextPoolType === poolType) return;
+    setPoolType(nextPoolType);
+    setCardId(
+      availableCards.find((card) => card.pool_type === nextPoolType)?.id,
+    );
+    setResult(null);
+  };
+
   const draw = async () => {
-    if (!cardId || drawing || status?.campaign?.draw_paused) return;
+    if (!canDraw || drawing) return;
     setDrawing(true);
     try {
       const response = await API.post('/api/lucky-wheel/draws', {
@@ -189,12 +213,10 @@ const LuckyWheel = () => {
         throw new Error('抽奖结果不在当前幸运卡奖池中');
       }
       setPendingResult(response.data.data);
-      const currentIndex = availableCards.findIndex(
-        (card) => card.id === cardId,
-      );
+      const currentIndex = poolCards.findIndex((card) => card.id === cardId);
       setPendingNextCardId(
-        availableCards.length > 1
-          ? availableCards[(currentIndex + 1) % availableCards.length]?.id
+        poolCards.length > 1
+          ? poolCards[(currentIndex + 1) % poolCards.length]?.id
           : undefined,
       );
       setRotation((value) =>
@@ -214,7 +236,7 @@ const LuckyWheel = () => {
     setPendingNextCardId(undefined);
     setDrawing(false);
     try {
-      await load(nextCardId);
+      await load(nextCardId || null, poolType);
       showSuccess('奖励已经发放，下一张幸运卡已自动选中');
     } catch (error) {
       showError(`奖励已发放，但幸运卡列表刷新失败：${error.message}`);
@@ -267,6 +289,53 @@ const LuckyWheel = () => {
               </Typography.Title>
               <Typography.Text type='tertiary'>
                 抽奖结果由服务端安全随机产生
+              </Typography.Text>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: 6,
+                  width: 420,
+                  maxWidth: '88vw',
+                  margin: '18px auto 0',
+                  padding: 5,
+                  border: '1px solid rgba(166,76,43,.2)',
+                  borderRadius: 12,
+                  background: 'rgba(255,255,255,.58)',
+                }}
+              >
+                {[
+                  ['recharge', '充值幸运卡奖池'],
+                  ['subscription', '套餐幸运卡奖池'],
+                ].map(([type, label]) => (
+                  <button
+                    key={type}
+                    type='button'
+                    aria-pressed={poolType === type}
+                    disabled={drawing}
+                    onClick={() => changePoolType(type)}
+                    style={{
+                      border: 0,
+                      borderRadius: 9,
+                      padding: '9px 10px',
+                      color: poolType === type ? '#fff' : '#7c402c',
+                      background: poolType === type ? '#c94f2b' : 'transparent',
+                      fontWeight: 650,
+                      cursor: drawing ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <Typography.Text
+                type='tertiary'
+                size='small'
+                style={{ display: 'block', marginTop: 8 }}
+              >
+                {selectedCard
+                  ? `已选卡 #${selectedCard.id} · 当前最新规则 V${selectedRule?.version || '—'}`
+                  : `当前仅预览 V${selectedRule?.version || '—'} 奖池；暂无该类型可用卡，抽奖已禁用`}
               </Typography.Text>
               <div
                 style={{
@@ -350,7 +419,7 @@ const LuckyWheel = () => {
                   type='button'
                   aria-label={drawing ? '好运正在揭晓' : '点击好运开始抽奖'}
                   title={drawing ? '好运正在揭晓' : '点击中心也可以开始抽奖'}
-                  disabled={!cardId || status?.campaign?.draw_paused || drawing}
+                  disabled={!canDraw || drawing}
                   onClick={draw}
                   style={{
                     position: 'absolute',
@@ -369,10 +438,7 @@ const LuckyWheel = () => {
                     boxShadow: 'inset 0 2px 9px rgba(120,30,10,.24)',
                     transform: 'translate(-50%, -50%)',
                     zIndex: 2,
-                    cursor:
-                      !cardId || status?.campaign?.draw_paused || drawing
-                        ? 'not-allowed'
-                        : 'pointer',
+                    cursor: !canDraw || drawing ? 'not-allowed' : 'pointer',
                   }}
                 >
                   {drawing ? '揭晓中' : '好运'}
@@ -383,7 +449,7 @@ const LuckyWheel = () => {
                 placeholder='选择一张幸运卡'
                 style={{ width: 360, maxWidth: '70%' }}
                 onChange={setCardId}
-                optionList={availableCards.map((card) => ({
+                optionList={poolCards.map((card) => ({
                   value: card.id,
                   label: `#${card.id} · ${
                     sourceNames[card.source_type] || card.source_type
@@ -395,7 +461,7 @@ const LuckyWheel = () => {
                 type='danger'
                 size='large'
                 loading={drawing}
-                disabled={!cardId || status?.campaign?.draw_paused || drawing}
+                disabled={!canDraw || drawing}
                 onClick={draw}
                 style={{ marginLeft: 12 }}
               >
@@ -464,6 +530,9 @@ const LuckyWheel = () => {
         footer={null}
         title='活动规则与奖池概率'
       >
+        <Typography.Paragraph type='tertiary'>
+          所有幸运卡均使用当前活动最新已发布规则；这里的概率与转盘及服务端抽奖完全一致。
+        </Typography.Paragraph>
         {visiblePool.map((prize) => (
           <div
             key={prize.code}
@@ -484,7 +553,8 @@ const LuckyWheel = () => {
         ))}
         <Typography.Paragraph type='tertiary' style={{ marginTop: 16 }}>
           套餐来源奖励跟随来源套餐分组与剩余有效期；充值来源套餐额度会在显示面额上额外增加
-          $60。钱包赠金永久有效，但不能用于购买订阅套餐。
+          ${(selectedRule?.recharge_bonus_usd_micros || 0) / 1000000}
+          。钱包赠金永久有效，但不能用于购买订阅套餐。
         </Typography.Paragraph>
       </Modal>
     </div>

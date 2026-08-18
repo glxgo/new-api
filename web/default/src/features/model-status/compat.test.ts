@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import {
+  formatStatusGroupRatio,
   hasCompleteHealthMetrics,
   resolveModelStatusGroups,
   summarizeAvailabilitySeries,
@@ -41,36 +42,39 @@ describe('resolveModelStatusGroups', () => {
     assert.deepEqual(groups, ['套餐专用分组'])
   })
 
-  test('merges new endpoint groups and pricing groups without duplicates', () => {
-    const groups = resolveModelStatusGroups(
-      {
-        available_groups: ['default', '套餐专用分组'],
-        groups: [],
-      },
-      ['套餐专用分组', 'vip']
-    )
+  test('uses the shared status endpoint instead of member-specific pricing groups', () => {
+    const groups = resolveModelStatusGroups({
+      available_groups: ['default', '套餐专用分组'],
+      groups: [],
+    })
 
-    assert.deepEqual(groups, ['default', '套餐专用分组', 'vip'])
+    assert.deepEqual(groups, ['default', '套餐专用分组'])
   })
 
   test('never exposes the internal auto routing group as a status card', () => {
-    const groups = resolveModelStatusGroups(
-      {
-        available_groups: ['auto', 'default'],
-        groups: [
-          {
-            group: 'auto',
-            cache_rate: 0,
-            request_count: 1,
-            cache_tokens: 0,
-            prompt_tokens: 0,
-          },
-        ],
-      },
-      ['auto', '套餐专用分组']
-    )
+    const groups = resolveModelStatusGroups({
+      available_groups: ['auto', 'default'],
+      groups: [
+        {
+          group: 'auto',
+          cache_rate: 0,
+          request_count: 1,
+          cache_tokens: 0,
+          prompt_tokens: 0,
+        },
+      ],
+    })
 
-    assert.deepEqual(groups, ['default', '套餐专用分组'])
+    assert.deepEqual(groups, ['default'])
+  })
+})
+
+describe('formatStatusGroupRatio', () => {
+  test('formats integer and fractional billing multipliers compactly', () => {
+    assert.equal(formatStatusGroupRatio(1), '1')
+    assert.equal(formatStatusGroupRatio(1.75), '1.75')
+    assert.equal(formatStatusGroupRatio(1.234567), '1.2346')
+    assert.equal(formatStatusGroupRatio(undefined), '—')
   })
 })
 

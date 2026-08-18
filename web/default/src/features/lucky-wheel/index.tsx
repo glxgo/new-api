@@ -72,7 +72,8 @@ import {
   buildWheelBackground,
   buildWheelSegments,
   chooseAvailableCardId,
-  chooseNextAvailableCardId,
+  chooseAvailableCardIdForPool,
+  chooseNextAvailableCardIdForPool,
   formatPrizeProbability,
   getTargetRotation,
   getWheelLabelRotation,
@@ -148,54 +149,44 @@ export function LuckyWheel() {
         .sort((a, b) => a.expires_at - b.expires_at || a.id - b.id),
     [cards]
   )
-  const selectedCard = availableCards.find(
+  const selectedCardFromId = availableCards.find(
     (card) => String(card.id) === selectedCardId
   )
-  const { drawRule, publicRule } = selectLuckyRules(
-    rules,
-    status?.rule_set_id,
-    selectedCard?.rule_set_id
+  const selectedCard =
+    selectedCardFromId?.pool_type === poolPreviewType
+      ? selectedCardFromId
+      : undefined
+  const poolCards = availableCards.filter(
+    (card) => card.pool_type === poolPreviewType
   )
+  const { drawRule } = selectLuckyRules(rules, status?.rule_set_id)
   const visiblePool = useMemo(
     () =>
-      selectedCard?.pool_type === 'recharge'
+      poolPreviewType === 'recharge'
         ? parsePool(drawRule?.recharge_pool)
         : parsePool(drawRule?.subscription_pool),
-    [
-      drawRule?.recharge_pool,
-      drawRule?.subscription_pool,
-      selectedCard?.pool_type,
-    ]
+    [drawRule?.recharge_pool, drawRule?.subscription_pool, poolPreviewType]
   )
   const wheelSegments = useMemo(
     () =>
       buildWheelSegments(
         visiblePool,
-        selectedCard?.pool_type || 'subscription',
+        poolPreviewType,
         drawRule?.recharge_bonus_usd_micros || 0
       ),
-    [drawRule?.recharge_bonus_usd_micros, selectedCard?.pool_type, visiblePool]
-  )
-  const previewPool = useMemo(
-    () =>
-      poolPreviewType === 'recharge'
-        ? parsePool(publicRule?.recharge_pool)
-        : parsePool(publicRule?.subscription_pool),
-    [publicRule?.recharge_pool, publicRule?.subscription_pool, poolPreviewType]
+    [drawRule?.recharge_bonus_usd_micros, poolPreviewType, visiblePool]
   )
   const previewLabels = useMemo(
-    () =>
-      new Map(
-        buildWheelSegments(
-          previewPool,
-          poolPreviewType,
-          publicRule?.recharge_bonus_usd_micros || 0
-        ).map((prize) => [prize.code, prize.label])
-      ),
-    [publicRule?.recharge_bonus_usd_micros, poolPreviewType, previewPool]
+    () => new Map(wheelSegments.map((prize) => [prize.code, prize.label])),
+    [wheelSegments]
   )
+  const canDraw =
+    Boolean(selectedCard) &&
+    selectedCard?.pool_type === poolPreviewType &&
+    wheelSegments.length > 0 &&
+    !status?.campaign.draw_paused
 
-  async function refresh(preferredCardId = '', requestedDrawPage = 1) {
+  async function refresh(preferredCardId?: string, requestedDrawPage = 1) {
     setLoadError(false)
     const [statusResult, cardsResult, drawsResult, rulesResult] =
       await Promise.allSettled([
@@ -219,12 +210,19 @@ export function LuckyWheel() {
       setRules(rulesResult.value.data)
     }
     if (cardsResult.status === 'fulfilled' && cardsResult.value.success) {
-      setSelectedCardId((current) =>
-        chooseAvailableCardId(
-          cardsResult.value.data.items,
-          preferredCardId || current
-        )
+      const nextCardId =
+        preferredCardId === undefined
+          ? chooseAvailableCardId(cardsResult.value.data.items, selectedCardId)
+          : chooseAvailableCardIdForPool(
+              cardsResult.value.data.items,
+              preferredCardId,
+              poolPreviewType
+            )
+      setSelectedCardId(nextCardId)
+      const nextCard = cardsResult.value.data.items.find(
+        (card) => String(card.id) === nextCardId
       )
+      if (nextCard) setPoolPreviewType(nextCard.pool_type)
     }
     const results = [statusResult, cardsResult, drawsResult, rulesResult]
     if (
@@ -251,8 +249,7 @@ export function LuckyWheel() {
   }, [])
 
   async function handleDraw() {
-    if (drawing || loading || !selectedCard || status?.campaign.draw_paused)
-      return
+    if (drawing || loading || !selectedCard || !canDraw) return
     setDrawing(true)
     setResult(null)
     try {
@@ -273,7 +270,11 @@ export function LuckyWheel() {
       }
       setPendingResult(draw)
       setPendingNextCardId(
-        chooseNextAvailableCardId(availableCards, selectedCardId)
+        chooseNextAvailableCardIdForPool(
+          availableCards,
+          selectedCardId,
+          poolPreviewType
+        )
       )
       setRotation((current) =>
         getTargetRotation(current, prizeIndex, wheelSegments.length)
@@ -282,6 +283,19 @@ export function LuckyWheel() {
       // The global API handler already shows the concrete server error.
       setDrawing(false)
     }
+  }
+
+  function changePoolType(nextPoolType: LuckyCard['pool_type']) {
+    if (drawing || nextPoolType === poolPreviewType) return
+    setPoolPreviewType(nextPoolType)
+    setSelectedCardId(chooseAvailableCardIdForPool(cards, '', nextPoolType))
+    setResult(null)
+  }
+
+  function selectCard(card: LuckyCard) {
+    if (drawing) return
+    setPoolPreviewType(card.pool_type)
+    setSelectedCardId(String(card.id))
   }
 
   async function finishDrawReveal() {
@@ -398,6 +412,42 @@ export function LuckyWheel() {
                   结果由服务端安全随机产生，转盘动画只负责揭晓惊喜
                 </p>
 
+                <div className='mt-6 grid w-full max-w-lg grid-cols-2 gap-1 rounded-xl border border-[#df744d]/25 bg-white/60 p-1 dark:border-[#f08a61]/30 dark:bg-black/20'>
+                  <button
+                    type='button'
+                    aria-pressed={poolPreviewType === 'recharge'}
+                    disabled={drawing}
+                    onClick={() => changePoolType('recharge')}
+                    className={cn(
+                      'rounded-lg px-3 py-2.5 text-sm font-semibold transition-[background-color,color,box-shadow] disabled:cursor-not-allowed disabled:opacity-60',
+                      poolPreviewType === 'recharge'
+                        ? 'bg-[#c94f2b] text-white shadow-sm'
+                        : 'text-[#8b513c] hover:bg-white/70 dark:text-[#e8b7a3] dark:hover:bg-white/5'
+                    )}
+                  >
+                    充值幸运卡奖池
+                  </button>
+                  <button
+                    type='button'
+                    aria-pressed={poolPreviewType === 'subscription'}
+                    disabled={drawing}
+                    onClick={() => changePoolType('subscription')}
+                    className={cn(
+                      'rounded-lg px-3 py-2.5 text-sm font-semibold transition-[background-color,color,box-shadow] disabled:cursor-not-allowed disabled:opacity-60',
+                      poolPreviewType === 'subscription'
+                        ? 'bg-[#c94f2b] text-white shadow-sm'
+                        : 'text-[#8b513c] hover:bg-white/70 dark:text-[#e8b7a3] dark:hover:bg-white/5'
+                    )}
+                  >
+                    套餐幸运卡奖池
+                  </button>
+                </div>
+                <p className='mt-2 text-center text-xs text-[#9a624d] dark:text-[#cda999]'>
+                  {selectedCard
+                    ? `已选卡 #${selectedCard.id} · 当前最新规则 V${drawRule?.version || '—'}`
+                    : `当前仅预览 V${drawRule?.version || '—'} 奖池；暂无该类型可用卡，抽奖已禁用`}
+                </p>
+
                 <div className='relative mt-8 grid place-items-center'>
                   <div className='absolute top-[-11px] z-20 h-0 w-0 border-x-[14px] border-t-[26px] border-x-transparent border-t-[#7b2413] drop-shadow-sm' />
                   <div
@@ -444,12 +494,7 @@ export function LuckyWheel() {
                     type='button'
                     aria-label={drawing ? '好运正在揭晓' : '点击好运开始抽奖'}
                     title={drawing ? '好运正在揭晓' : '点击中心也可以开始抽奖'}
-                    disabled={
-                      drawing ||
-                      loading ||
-                      !selectedCard ||
-                      status?.campaign.draw_paused
-                    }
+                    disabled={drawing || loading || !canDraw}
                     onClick={handleDraw}
                     className={cn(
                       'absolute top-1/2 left-1/2 z-10 grid size-[96px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-[7px] border-[#ffd297] bg-[#e65f36] text-white shadow-inner transition-[transform,filter] hover:scale-[1.04] hover:brightness-105 focus-visible:ring-4 focus-visible:ring-[#7b2413]/35 focus-visible:outline-none active:scale-95 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:brightness-100 sm:size-[125px]',
@@ -468,16 +513,19 @@ export function LuckyWheel() {
                 <div className='mt-8 flex w-full max-w-lg flex-col gap-3 sm:flex-row'>
                   <Select
                     value={selectedCardId}
-                    onValueChange={(value) =>
-                      value !== null && setSelectedCardId(value)
-                    }
-                    disabled={availableCards.length === 0 || drawing}
+                    onValueChange={(value) => {
+                      const card = poolCards.find(
+                        (item) => String(item.id) === value
+                      )
+                      if (card) selectCard(card)
+                    }}
+                    disabled={poolCards.length === 0 || drawing}
                   >
                     <SelectTrigger className='h-11 flex-1 bg-white/85 dark:border-[#8a4a35]/60 dark:bg-[#2a1812] dark:text-[#fff4ed]'>
                       <SelectValue placeholder='选择一张幸运卡' />
                     </SelectTrigger>
                     <SelectContent>
-                      {availableCards.map((card) => (
+                      {poolCards.map((card) => (
                         <SelectItem key={card.id} value={String(card.id)}>
                           #{card.id} ·{' '}
                           {sourceNames[card.source_type] || card.source_type}·{' '}
@@ -488,12 +536,7 @@ export function LuckyWheel() {
                   </Select>
                   <Button
                     className='h-11 bg-[#c94f2b] px-9 text-white hover:bg-[#ad3e20]'
-                    disabled={
-                      drawing ||
-                      loading ||
-                      !selectedCard ||
-                      status?.campaign.draw_paused
-                    }
+                    disabled={drawing || loading || !canDraw}
                     onClick={handleDraw}
                   >
                     {drawing ? '好运正在揭晓…' : '立即抽奖'}
@@ -549,46 +592,18 @@ export function LuckyWheel() {
                         >
                           活动规则与奖池概率
                         </h3>
-                        {publicRule && (
+                        {drawRule && (
                           <Badge variant='secondary'>
-                            当前公示版本 V{publicRule.version}
+                            当前奖池版本 V{drawRule.version}
                           </Badge>
                         )}
                       </div>
                       <p className='text-muted-foreground mt-1 text-sm dark:text-[#d6b4a6]'>
-                        这里公示当前活动最新版；历史卡实际抽奖仍严格按发卡时绑定的规则执行。
+                        所有幸运卡均使用当前活动最新已发布规则；这里的概率与上方转盘及服务端抽奖完全一致。
                       </p>
                     </div>
-                    <div className='mb-4 grid grid-cols-2 gap-1 rounded-xl border border-[#df744d]/20 bg-[#fff7ef] p-1 dark:border-[#f08a61]/25 dark:bg-black/20'>
-                      <button
-                        type='button'
-                        aria-pressed={poolPreviewType === 'recharge'}
-                        onClick={() => setPoolPreviewType('recharge')}
-                        className={cn(
-                          'rounded-lg px-3 py-2 text-sm font-semibold transition-[background-color,color,box-shadow]',
-                          poolPreviewType === 'recharge'
-                            ? 'bg-[#c94f2b] text-white shadow-sm'
-                            : 'text-[#8b513c] hover:bg-white/70 dark:text-[#e8b7a3] dark:hover:bg-white/5'
-                        )}
-                      >
-                        余额幸运卡
-                      </button>
-                      <button
-                        type='button'
-                        aria-pressed={poolPreviewType === 'subscription'}
-                        onClick={() => setPoolPreviewType('subscription')}
-                        className={cn(
-                          'rounded-lg px-3 py-2 text-sm font-semibold transition-[background-color,color,box-shadow]',
-                          poolPreviewType === 'subscription'
-                            ? 'bg-[#c94f2b] text-white shadow-sm'
-                            : 'text-[#8b513c] hover:bg-white/70 dark:text-[#e8b7a3] dark:hover:bg-white/5'
-                        )}
-                      >
-                        套餐幸运卡
-                      </button>
-                    </div>
                     <div className='grid gap-2 sm:grid-cols-2'>
-                      {previewPool.map((prize) => (
+                      {visiblePool.map((prize) => (
                         <div
                           key={prize.code}
                           className='flex items-center justify-between rounded-lg border px-3 py-2.5 text-[#512719] dark:border-[#f08a61]/25 dark:bg-[#3a2118]/70 dark:text-[#fff4ed]'
@@ -653,7 +668,7 @@ export function LuckyWheel() {
                     {availableCards.slice(0, 3).map((card) => (
                       <button
                         key={card.id}
-                        onClick={() => setSelectedCardId(String(card.id))}
+                        onClick={() => selectCard(card)}
                         className={cn(
                           'flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition-colors',
                           selectedCardId === String(card.id)

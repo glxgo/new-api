@@ -262,7 +262,7 @@ func TestPreConsumeVirtualMembershipAutoUsesEarliestUsableResetAndRestoresPriori
 	require.EqualValues(t, 2, recordCount)
 }
 
-func TestListUserVirtualMembershipsReturnsOnlyCurrentActiveInstances(t *testing.T) {
+func TestListUserVirtualMembershipsReturnsCurrentAndScheduledActiveInstances(t *testing.T) {
 	db := setupVirtualMembershipTestDB(t)
 	now := common.GetTimestamp()
 	memberships := []UserVirtualMembership{
@@ -279,8 +279,8 @@ func TestListUserVirtualMembershipsReturnsOnlyCurrentActiveInstances(t *testing.
 	if err != nil {
 		t.Fatalf("list memberships: %v", err)
 	}
-	if len(got) != 1 || got[0].PlanTitle != "active" {
-		t.Fatalf("memberships = %#v, want only active", got)
+	if len(got) != 2 || got[0].PlanTitle != "future" || got[1].PlanTitle != "active" {
+		t.Fatalf("memberships = %#v, want current and scheduled active instances", got)
 	}
 	var elapsed UserVirtualMembership
 	if err := db.Where("plan_title = ?", "elapsed").First(&elapsed).Error; err != nil {
@@ -431,6 +431,179 @@ func TestVirtualMembershipBalanceAndAdminGrantDoNotCreateCashRecharge(t *testing
 	require.Zero(t, topupLogCount, "free administrator grants must not appear as paid recharge")
 }
 
+func TestVirtualMembershipVisibilityIsPresentationOnlyAndIncludesScheduledRenewal(t *testing.T) {
+	db := setupVirtualMembershipTestDB(t)
+	now := common.GetTimestamp()
+	visible := UserVirtualMembership{
+		UserId: 81, PlanId: 1, PlanTitle: "visible", Status: VirtualMembershipStatusActive,
+		StartTime: now - 60, EndTime: now + 3600, WeeklyQuota: 100,
+		AllowedGroup: VirtualMembershipDefaultAllowedGroup,
+	}
+	hidden := UserVirtualMembership{
+		UserId: 81, PlanId: 2, PlanTitle: "hidden", Hidden: true, Status: VirtualMembershipStatusActive,
+		StartTime: now - 60, EndTime: now + 3600, WeeklyQuota: 100,
+		AllowedGroup: VirtualMembershipDefaultAllowedGroup,
+	}
+	scheduled := UserVirtualMembership{
+		UserId: 81, PlanId: 3, PlanTitle: "scheduled", Status: VirtualMembershipStatusActive,
+		StartTime: now + 3600, EndTime: now + 7200, WeeklyQuota: 100,
+		AllowedGroup: VirtualMembershipDefaultAllowedGroup,
+	}
+	require.NoError(t, db.Create(&[]*UserVirtualMembership{&visible, &hidden, &scheduled}).Error)
+
+	listed, err := ListUserVirtualMemberships(81)
+	require.NoError(t, err)
+	require.Len(t, listed, 2)
+	require.ElementsMatch(t, []string{"visible", "scheduled"}, []string{listed[0].PlanTitle, listed[1].PlanTitle})
+
+	require.NoError(t, ValidateVirtualMembershipForToken(81, VirtualMembershipDefaultAllowedGroup, hidden.Id, true), "hidden membership remains a valid funding source")
+	require.Error(t, ValidateVirtualMembershipForToken(81, VirtualMembershipDefaultAllowedGroup, scheduled.Id, true), "scheduled renewal is visible but unusable before start_time")
+	require.Error(t, PreConsumeVirtualMembershipForToken("scheduled-too-early", 81, "gpt-test", 10, VirtualMembershipDefaultAllowedGroup, scheduled.Id))
+	var scheduledAfterAttempt UserVirtualMembership
+	require.NoError(t, db.First(&scheduledAfterAttempt, scheduled.Id).Error)
+	require.Zero(t, scheduledAfterAttempt.WeeklyUsed)
+	require.NoError(t, SetVirtualMembershipHidden(visible.Id, true))
+	require.NoError(t, SetVirtualMembershipHidden(visible.Id, true))
+	listed, err = ListUserVirtualMemberships(81)
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	require.Equal(t, "scheduled", listed[0].PlanTitle)
+
+	admin, err := ListAdminVirtualMemberships()
+	require.NoError(t, err)
+	require.Len(t, admin, 3, "administrator list retains hidden instances")
+}
+
+func TestVirtualMembershipBalanceAndAdminRenewalsCreateLinearSuccessorsWithoutCashEvents(t *testing.T) {
+	db := setupVirtualMembershipTestDB(t)
+	require.NoError(t, db.AutoMigrate(
+		&VirtualMembershipOrder{}, &RechargeCredit{}, &DividendRecord{}, &Log{},
+	))
+	oldLogDB := LOG_DB
+	LOG_DB = db
+	t.Cleanup(func() { LOG_DB = oldLogDB })
+	user := User{
+		Username: "vm-renew-user", Status: common.UserStatusEnabled,
+		AffCode: "vm-renew-user", Quota: int(500 * common.QuotaPerUnit),
+	}
+	require.NoError(t, db.Create(&user).Error)
+	plan := VirtualMembershipPlan{
+		Code: "vm-renew", Title: "VM renew", PriceAmount: 10,
+		DurationDays: 30, WeeklyQuota: 100, Enabled: true,
+	}
+	require.NoError(t, db.Create(&plan).Error)
+	now := common.GetTimestamp()
+	source := UserVirtualMembership{
+		UserId: user.Id, PlanId: plan.Id, PlanTitle: plan.Title, PlanCode: plan.Code,
+		GroupSize: 1, WeeklyQuota: 100, Status: VirtualMembershipStatusActive,
+		StartTime: now - 3600, EndTime: now + 7200,
+		AllowedGroup: VirtualMembershipDefaultAllowedGroup,
+	}
+	require.NoError(t, db.Create(&source).Error)
+
+	order, successor, err := PurchaseVirtualMembershipWithBalanceRenewal(user.Id, plan.Id, 1, source.Id)
+	require.NoError(t, err)
+	require.Equal(t, SubscriptionDividendSkippedSource, order.DividendState)
+	require.NotNil(t, order.RenewFromMembershipId)
+	require.Equal(t, source.Id, *order.RenewFromMembershipId)
+	require.NotNil(t, successor.RenewedFromId)
+	require.Equal(t, source.Id, *successor.RenewedFromId)
+	require.Equal(t, source.EndTime, successor.StartTime)
+	require.Greater(t, successor.EndTime, successor.StartTime)
+
+	_, _, err = PurchaseVirtualMembershipWithBalanceRenewal(user.Id, plan.Id, 1, source.Id)
+	require.ErrorIs(t, err, ErrVirtualMembershipRenewalExists)
+
+	secondSource := UserVirtualMembership{
+		UserId: user.Id, PlanId: plan.Id, PlanTitle: plan.Title, PlanCode: plan.Code,
+		GroupSize: 1, WeeklyQuota: 100, Status: VirtualMembershipStatusExpired,
+		StartTime: now - 7200, EndTime: now - 3600,
+		AllowedGroup: VirtualMembershipDefaultAllowedGroup,
+	}
+	require.NoError(t, db.Create(&secondSource).Error)
+	adminOrder, adminSuccessor, err := AdminRenewVirtualMembership(secondSource.Id)
+	require.NoError(t, err)
+	require.Zero(t, adminOrder.Money)
+	require.Equal(t, VirtualMembershipAdminGrant, adminOrder.PaymentProvider)
+	require.Equal(t, SubscriptionDividendSkippedSource, adminOrder.DividendState)
+	require.False(t, adminOrder.LuckyEligible)
+	require.Zero(t, adminOrder.LuckyRuleSetId)
+	require.NotNil(t, adminSuccessor.RenewedFromId)
+	require.Equal(t, secondSource.Id, *adminSuccessor.RenewedFromId)
+	require.GreaterOrEqual(t, adminSuccessor.StartTime, now)
+
+	var creditCount, dividendCount int64
+	require.NoError(t, db.Model(&RechargeCredit{}).Count(&creditCount).Error)
+	require.NoError(t, db.Model(&DividendRecord{}).Count(&dividendCount).Error)
+	require.Zero(t, creditCount, "balance and administrator renewal are not new cash recharge events")
+	require.Zero(t, dividendCount)
+}
+
+func TestVirtualMembershipEpayRenewalCarriesSourceAndCompletesExactlyOnce(t *testing.T) {
+	db := setupSubscriptionChannelCostTestDB(t)
+	require.NoError(t, db.AutoMigrate(
+		&VirtualMembershipPlan{}, &VirtualMembershipOrder{}, &UserVirtualMembership{},
+		&RechargeCredit{}, &DividendRecord{}, &Log{}, &TopUp{},
+		&LuckyCampaign{}, &LuckyRuleSet{}, &LuckyCard{}, &LuckyDraw{},
+		&LuckyRechargeEvent{}, &LuckyRechargeProgress{}, &LuckyRewardBucket{},
+		&LuckyPausePeriod{}, &SubscriptionConsumptionPriority{}, &Option{},
+	))
+	oldLogDB := LOG_DB
+	LOG_DB = db
+	t.Cleanup(func() { LOG_DB = oldLogDB })
+	require.NoError(t, EnsureDefaultLuckyCampaign())
+	require.NoError(t, db.Model(&LuckyCampaign{}).Where("code = ?", LuckyCampaignCode).Updates(map[string]interface{}{"issuance_paused": false, "draw_paused": false}).Error)
+	root := User{Username: "vm-renew-root", Role: common.RoleRootUser, AffCode: "vm-renew-root"}
+	inviter := User{Username: "vm-renew-inviter", Role: common.RoleCommonUser, AffCode: "vm-renew-inviter"}
+	require.NoError(t, db.Create(&root).Error)
+	require.NoError(t, db.Create(&inviter).Error)
+	buyer := User{Username: "vm-renew-buyer", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, AffCode: "vm-renew-buyer", InviterId: inviter.Id}
+	require.NoError(t, db.Create(&buyer).Error)
+	plan := VirtualMembershipPlan{Code: "vm-renew-epay", Title: "VM renew Epay", PriceAmount: 70, DurationDays: 30, WeeklyQuota: 100, Enabled: true}
+	require.NoError(t, db.Create(&plan).Error)
+	now := common.GetTimestamp()
+	source := UserVirtualMembership{UserId: buyer.Id, PlanId: plan.Id, PlanTitle: plan.Title, PlanCode: plan.Code, GroupSize: 1, Status: VirtualMembershipStatusActive, StartTime: now - 60, EndTime: now + 3600}
+	require.NoError(t, db.Create(&source).Error)
+
+	order, err := CreateVirtualMembershipEpayRenewalOrder(buyer.Id, plan.Id, 1, "vm-renew-epay-order", "alipay", source.Id)
+	require.NoError(t, err)
+	require.NotNil(t, order.RenewFromMembershipId)
+	actual, err := NewPaymentSnapshotFromMoney(order.Money, "CNY")
+	require.NoError(t, err)
+	require.NoError(t, CompleteVirtualMembershipOrder(order.TradeNo, "paid", PaymentProviderEpay, "alipay", actual))
+	require.NoError(t, CompleteVirtualMembershipOrder(order.TradeNo, "paid-again", PaymentProviderEpay, "alipay", actual))
+
+	var successors []UserVirtualMembership
+	require.NoError(t, db.Where("renewed_from_id = ?", source.Id).Find(&successors).Error)
+	require.Len(t, successors, 1)
+	require.Equal(t, source.EndTime, successors[0].StartTime)
+	var credits []RechargeCredit
+	require.NoError(t, db.Where("source_type = ? AND source_ref = ?", RechargeSourceVirtualMembership, order.TradeNo).Find(&credits).Error)
+	require.Len(t, credits, 1, "callback replay must not duplicate recharge, commission, or lucky progress")
+}
+
+func TestClosedVirtualMembershipPaymentCreatesNoRechargeOrCommission(t *testing.T) {
+	db := setupVirtualMembershipTestDB(t)
+	require.NoError(t, db.AutoMigrate(
+		&VirtualMembershipOrder{}, &RechargeCredit{}, &DividendRecord{},
+	))
+	user := User{Username: "vm-closed-user", Status: common.UserStatusEnabled, AffCode: "vm-closed-user"}
+	require.NoError(t, db.Create(&user).Error)
+	plan := VirtualMembershipPlan{Code: "vm-closed", Title: "VM closed", PriceAmount: 70, DurationDays: 30, WeeklyQuota: 100, Enabled: true}
+	require.NoError(t, db.Create(&plan).Error)
+	order, err := CreateVirtualMembershipEpayOrder(user.Id, plan.Id, 1, "vm-closed-order", "alipay")
+	require.NoError(t, err)
+	require.NoError(t, ExpireVirtualMembershipOrder(order.TradeNo, PaymentProviderEpay))
+
+	var membershipCount, creditCount, dividendCount int64
+	require.NoError(t, db.Model(&UserVirtualMembership{}).Count(&membershipCount).Error)
+	require.NoError(t, db.Model(&RechargeCredit{}).Count(&creditCount).Error)
+	require.NoError(t, db.Model(&DividendRecord{}).Count(&dividendCount).Error)
+	require.Zero(t, membershipCount)
+	require.Zero(t, creditCount)
+	require.Zero(t, dividendCount)
+}
+
 func TestEnsureVirtualMembershipGroupRegisteredAddsNonSelectableRoutingGroup(t *testing.T) {
 	db := setupVirtualMembershipTestDB(t)
 	if err := db.AutoMigrate(&Option{}); err != nil {
@@ -491,7 +664,7 @@ func TestEnsureVirtualMembershipGroupRegisteredAddsNonSelectableRoutingGroup(t *
 
 func TestAdminDeleteVirtualMembershipUnbindsTokensAndPreservesAudit(t *testing.T) {
 	db := setupVirtualMembershipTestDB(t)
-	if err := db.AutoMigrate(&Token{}, &VirtualMembershipPreConsumeRecord{}); err != nil {
+	if err := db.AutoMigrate(&Token{}, &VirtualMembershipPreConsumeRecord{}, &VirtualMembershipOrder{}); err != nil {
 		t.Fatalf("migrate delete dependencies: %v", err)
 	}
 	user := User{Username: "delete-member", Status: common.UserStatusEnabled}
@@ -552,7 +725,7 @@ func TestAdminDeleteVirtualMembershipUnbindsTokensAndPreservesAudit(t *testing.T
 
 func TestAdminDeleteVirtualMembershipBlocksPendingSettlement(t *testing.T) {
 	db := setupVirtualMembershipTestDB(t)
-	if err := db.AutoMigrate(&Token{}, &VirtualMembershipPreConsumeRecord{}); err != nil {
+	if err := db.AutoMigrate(&Token{}, &VirtualMembershipPreConsumeRecord{}, &VirtualMembershipOrder{}); err != nil {
 		t.Fatalf("migrate delete dependencies: %v", err)
 	}
 	membership := UserVirtualMembership{

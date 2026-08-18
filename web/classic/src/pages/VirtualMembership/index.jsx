@@ -31,6 +31,7 @@ import {
 import { API, showError, showSuccess } from '../../helpers';
 
 const VirtualMembership = () => {
+  const [renderedAt] = useState(() => Date.now() / 1000);
   const [page, setPage] = useState({
     announcement: '',
     plans: [],
@@ -64,7 +65,25 @@ const VirtualMembership = () => {
   }, []);
 
   const openPurchase = (plan, groupSize) => {
-    setPurchase({ plan, groupSize });
+    setPurchase({ plan, groupSize, renewFromMembershipId: null });
+    setPaymentMethod(
+      page.epay_methods?.[0]?.type
+        ? `epay:${page.epay_methods[0].type}`
+        : 'balance',
+    );
+  };
+
+  const openRenewal = (membership) => {
+    const plan = page.plans?.find((item) => item.id === membership.plan_id);
+    if (!plan) {
+      showError(new Error('当前会员方案已下架，请联系管理员续费'));
+      return;
+    }
+    setPurchase({
+      plan,
+      groupSize: membership.group_size,
+      renewFromMembershipId: membership.id,
+    });
     setPaymentMethod(
       page.epay_methods?.[0]?.type
         ? `epay:${page.epay_methods[0].type}`
@@ -80,9 +99,12 @@ const VirtualMembership = () => {
         const res = await API.post('/api/virtual-membership/balance/pay', {
           plan_id: purchase.plan.id,
           group_size: purchase.groupSize,
+          renew_from_membership_id: purchase.renewFromMembershipId || undefined,
         });
         if (res.data?.success) {
-          showSuccess('虚拟会员已开通');
+          showSuccess(
+            purchase.renewFromMembershipId ? '续费已创建' : '虚拟会员已开通',
+          );
           setPurchase(null);
           await load();
         }
@@ -93,6 +115,7 @@ const VirtualMembership = () => {
         plan_id: purchase.plan.id,
         group_size: purchase.groupSize,
         payment_method: selectedEpayMethod,
+        renew_from_membership_id: purchase.renewFromMembershipId || undefined,
       });
       if (res.data?.message === 'success' && res.data?.url) {
         const form = document.createElement('form');
@@ -153,7 +176,7 @@ const VirtualMembership = () => {
           />
         )}
         <Modal
-          title='立即购买'
+          title={purchase?.renewFromMembershipId ? '续费虚拟会员' : '立即购买'}
           visible={!!purchase}
           onCancel={() => setPurchase(null)}
           onOk={confirmPurchase}
@@ -225,7 +248,13 @@ const VirtualMembership = () => {
                 <Card
                   key={item.id}
                   title={item.plan_title}
-                  headerExtraContent={<Tag color='green'>生效中</Tag>}
+                  headerExtraContent={
+                    <Tag
+                      color={item.start_time > renderedAt ? 'orange' : 'green'}
+                    >
+                      {item.start_time > renderedAt ? '待生效' : '生效中'}
+                    </Tag>
+                  }
                 >
                   <div className='space-y-3'>
                     <div>
@@ -249,8 +278,26 @@ const VirtualMembership = () => {
                       </div>
                     )}
                     <p className='text-xs text-gray-500'>
-                      有效期至 {new Date(item.end_time * 1000).toLocaleString()}
+                      {item.start_time > renderedAt ? '生效时间' : '有效期至'}{' '}
+                      {new Date(
+                        (item.start_time > renderedAt
+                          ? item.start_time
+                          : item.end_time) * 1000,
+                      ).toLocaleString()}
                     </p>
+                    <Button
+                      theme='borderless'
+                      className='w-full'
+                      disabled={
+                        page.memberships.some(
+                          (candidate) => candidate.renewed_from_id === item.id,
+                        ) ||
+                        !page.plans.some((plan) => plan.id === item.plan_id)
+                      }
+                      onClick={() => openRenewal(item)}
+                    >
+                      续费
+                    </Button>
                   </div>
                 </Card>
               ))}

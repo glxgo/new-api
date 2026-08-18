@@ -147,6 +147,17 @@ export async function deleteUserSubscription(
   return res.data
 }
 
+export async function setUserSubscriptionHidden(
+  subId: number,
+  hidden: boolean
+): Promise<ApiResponse<{ hidden: boolean }>> {
+  const res = await api.patch(
+    `/api/subscription/admin/user_subscriptions/${subId}/visibility`,
+    { hidden }
+  )
+  return res.data
+}
+
 // ============================================================================
 // User-facing Subscription Payment
 // ============================================================================

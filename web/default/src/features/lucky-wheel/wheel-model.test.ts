@@ -22,7 +22,9 @@ import type { LuckyCard, LuckyPrize, LuckyRuleSet } from './types.ts'
 import {
   buildWheelSegments,
   chooseAvailableCardId,
+  chooseAvailableCardIdForPool,
   chooseNextAvailableCardId,
+  chooseNextAvailableCardIdForPool,
   formatPrizeProbability,
   getReadableLabelRotation,
   getTargetRotation,
@@ -30,11 +32,16 @@ import {
   selectLuckyRules,
 } from './wheel-model.ts'
 
-function card(id: number, status = 'available', expiresAt = id): LuckyCard {
+function card(
+  id: number,
+  status = 'available',
+  expiresAt = id,
+  poolType: LuckyCard['pool_type'] = 'subscription'
+): LuckyCard {
   return {
     id,
     rule_set_id: 1,
-    pool_type: 'subscription',
+    pool_type: poolType,
     source_type: 'subscription_purchase',
     source_ref: '',
     source_subscription_id: 1,
@@ -47,11 +54,24 @@ function card(id: number, status = 'available', expiresAt = id): LuckyCard {
 function rule(id: number, version: number): LuckyRuleSet {
   return {
     id,
+    campaign_id: 1,
+    base_rule_set_id: id - 1,
     version,
+    status: version === 2 ? 'active' : 'retired',
     subscription_pool: '[]',
     recharge_pool: '[]',
+    threshold_config: '[]',
     recharge_bonus_usd_micros: 40_000_000,
+    recharge_card_valid_seconds: 30 * 86400,
+    recharge_reward_valid_seconds: 30 * 86400,
+    crazy_card_valid_seconds: 5 * 3600,
+    crazy_card_quota_usd_micros: 600_000_000,
     activity_group: 'default',
+    checksum: `checksum-${id}`,
+    published_at: 1,
+    effective_at: 1,
+    created_by: 1,
+    created_at: 1,
   }
 }
 
@@ -79,6 +99,46 @@ describe('lucky wheel model', () => {
     assert.equal(chooseNextAvailableCardId(cards, '66'), '67')
     assert.equal(chooseNextAvailableCardId(cards, '67'), '16')
     assert.equal(chooseNextAvailableCardId([card(66)], '66'), '')
+  })
+
+  test('switching pools selects only a matching card and clears selection when none exists', () => {
+    const cards = [
+      card(21, 'available', 40, 'subscription'),
+      card(22, 'available', 20, 'recharge'),
+      card(23, 'available', 30, 'recharge'),
+    ]
+
+    assert.equal(chooseAvailableCardIdForPool(cards, '21', 'recharge'), '22')
+    assert.equal(chooseAvailableCardIdForPool(cards, '22', 'recharge'), '22')
+    assert.equal(
+      chooseAvailableCardIdForPool(
+        [card(21, 'available', 40, 'subscription')],
+        '21',
+        'recharge'
+      ),
+      ''
+    )
+  })
+
+  test('after a draw it never advances from one pool into the other pool', () => {
+    const cards = [
+      card(31, 'available', 10, 'recharge'),
+      card(32, 'available', 20, 'subscription'),
+      card(33, 'available', 30, 'recharge'),
+    ]
+
+    assert.equal(
+      chooseNextAvailableCardIdForPool(cards, '31', 'recharge'),
+      '33'
+    )
+    assert.equal(
+      chooseNextAvailableCardIdForPool(cards, '33', 'recharge'),
+      '31'
+    )
+    assert.equal(
+      chooseNextAvailableCardIdForPool(cards, '32', 'subscription'),
+      ''
+    )
   })
 
   test('builds the wheel from the selected pool and shows recharge quota with its real award', () => {
@@ -134,12 +194,12 @@ describe('lucky wheel model', () => {
     assert.equal(formatPrizeProbability(1_500), '0.150')
   })
 
-  test('discloses the current campaign rule while an old card keeps its immutable draw rule', () => {
+  test('uses the current campaign rule even when the selected card was issued under an old rule', () => {
     const oldRule = rule(1, 1)
     const currentRule = rule(2, 2)
 
-    assert.deepEqual(selectLuckyRules([oldRule, currentRule], 2, 1), {
-      drawRule: oldRule,
+    assert.deepEqual(selectLuckyRules([oldRule, currentRule], 2), {
+      drawRule: currentRule,
       publicRule: currentRule,
     })
   })

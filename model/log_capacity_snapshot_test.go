@@ -44,7 +44,7 @@ func TestFormatUserLogsKeepsUserCapacitySnapshot(t *testing.T) {
 		UserConcurrencyLimit: 8,
 		UserRPM:              7,
 		UserRPMLimit:         12,
-		Other:                `{"admin_info":{"channel":8},"audit_info":{"operator":1},"stream_status":"completed","safe":"visible"}`,
+		Other:                `{"admin_info":{"channel":8},"audit_info":{"operator":1},"stream_status":"completed","request_path":"/v1/responses","request_conversion":["OpenAI Responses","Claude Messages"],"is_model_mapped":true,"upstream_model_name":"gpt-5.6-terra","safe":"visible"}`,
 	}}
 
 	formatUserLogs(logs, 10)
@@ -58,6 +58,10 @@ func TestFormatUserLogsKeepsUserCapacitySnapshot(t *testing.T) {
 	other, err := common.StrToMap(logs[0].Other)
 	require.NoError(t, err)
 	require.Equal(t, "visible", other["safe"])
+	require.Equal(t, "/v1/responses", other["request_path"])
+	require.Equal(t, []interface{}{"OpenAI Responses", "Claude Messages"}, other["request_conversion"])
+	require.Equal(t, true, other["is_model_mapped"])
+	require.Equal(t, "gpt-5.6-terra", other["upstream_model_name"])
 	require.NotContains(t, other, "admin_info")
 	require.NotContains(t, other, "audit_info")
 	require.NotContains(t, other, "stream_status")

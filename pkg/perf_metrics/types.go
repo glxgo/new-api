@@ -117,6 +117,7 @@ type GroupProbeSummary struct {
 type GroupSummaryAllResult struct {
 	Groups          []GroupCacheSummary `json:"groups"`
 	AvailableGroups []string            `json:"available_groups,omitempty"`
+	GroupRatios     map[string]float64  `json:"group_ratios,omitempty"`
 }
 
 // GroupChannelScope describes which final channels may serve each public model

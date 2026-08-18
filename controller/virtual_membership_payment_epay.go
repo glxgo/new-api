@@ -16,9 +16,10 @@ import (
 )
 
 type VirtualMembershipEpayPayRequest struct {
-	PlanId        int    `json:"plan_id"`
-	GroupSize     int    `json:"group_size"`
-	PaymentMethod string `json:"payment_method"`
+	PlanId                int    `json:"plan_id"`
+	GroupSize             int    `json:"group_size"`
+	PaymentMethod         string `json:"payment_method"`
+	RenewFromMembershipId int    `json:"renew_from_membership_id"`
 }
 
 func VirtualMembershipRequestEpay(c *gin.Context) {
@@ -73,7 +74,10 @@ func VirtualMembershipRequestEpay(c *gin.Context) {
 		common.ApiErrorMsg(c, "当前管理员未配置支付信息")
 		return
 	}
-	order, err := model.CreateVirtualMembershipEpayOrder(c.GetInt("id"), req.PlanId, req.GroupSize, tradeNo, req.PaymentMethod)
+	order, err := model.CreateVirtualMembershipEpayRenewalOrder(
+		c.GetInt("id"), req.PlanId, req.GroupSize, tradeNo, req.PaymentMethod,
+		req.RenewFromMembershipId,
+	)
 	if err != nil {
 		common.ApiError(c, err)
 		return

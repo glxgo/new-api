@@ -480,6 +480,9 @@ type UserSubscription struct {
 	Id     int `json:"id"`
 	UserId int `json:"user_id" gorm:"index;index:idx_user_sub_active,priority:1"`
 	PlanId int `json:"plan_id" gorm:"index"`
+	// Hidden only controls user-facing quota cards. It must never change
+	// entitlement selection, billing, audit history, or administrator views.
+	Hidden bool `json:"hidden" gorm:"not null;default:false;index"`
 	// PlanSnapshot freezes the purchased entitlements for reset/runtime logic.
 	// Existing rows may be empty and continue to use the historical fallback.
 	PlanSnapshot  string `json:"-" gorm:"type:text"`
@@ -1413,13 +1416,54 @@ func GetVisibleUserSubscriptions(userId int) ([]SubscriptionSummary, error) {
 	}
 	now := common.GetTimestamp()
 	var subs []UserSubscription
-	err := DB.Where("user_id = ? AND status = ? AND end_time > ?", userId, "active", now).
+	err := DB.Where("user_id = ? AND hidden = ? AND status = ? AND end_time > ?", userId, false, "active", now).
 		Order("end_time desc, id desc").
 		Find(&subs).Error
 	if err != nil {
 		return nil, err
 	}
 	return buildSubscriptionSummaries(subs), nil
+}
+
+// GetUserFacingSubscriptionHistory returns the same historical records as the
+// legacy all-subscriptions response while respecting administrator visibility.
+// Runtime billing deliberately continues to ignore Hidden.
+func GetUserFacingSubscriptionHistory(userId int) ([]SubscriptionSummary, error) {
+	if userId <= 0 {
+		return nil, errors.New("invalid userId")
+	}
+	var subs []UserSubscription
+	err := DB.Where("user_id = ? AND hidden = ?", userId, false).
+		Order("end_time desc, id desc").
+		Find(&subs).Error
+	if err != nil {
+		return nil, err
+	}
+	return buildSubscriptionSummaries(subs), nil
+}
+
+// SetUserSubscriptionHidden is an administrator-only presentation control.
+// The row remains active and is still eligible for API-key binding and billing.
+func SetUserSubscriptionHidden(subscriptionId int, hidden bool) error {
+	if subscriptionId <= 0 {
+		return errors.New("invalid subscription id")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var subscription UserSubscription
+		if err := tx.Select("id", "hidden").First(&subscription, subscriptionId).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("订阅实例不存在")
+			}
+			return err
+		}
+		if subscription.Hidden == hidden {
+			return nil
+		}
+		return tx.Model(&UserSubscription{}).Where("id = ?", subscriptionId).Updates(map[string]interface{}{
+			"hidden":     hidden,
+			"updated_at": common.GetTimestamp(),
+		}).Error
+	})
 }
 
 // HasActiveUserSubscription returns whether the user has any active subscription.

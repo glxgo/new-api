@@ -66,29 +66,7 @@ func GetLuckyWheelRules(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	userId := c.GetInt("id")
-	var ruleIds []int64
-	if err := model.DB.Model(&model.LuckyCard{}).Where("user_id = ?", userId).
-		Distinct("rule_set_id").Pluck("rule_set_id", &ruleIds).Error; err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	seen := map[int64]struct{}{active.Id: {}}
-	ruleIds = append(ruleIds, active.Id)
-	var rules []model.LuckyRuleSet
-	if err := model.DB.Where("id IN ?", ruleIds).Order("version desc").Find(&rules).Error; err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	filtered := make([]model.LuckyRuleSet, 0, len(rules))
-	for _, rule := range rules {
-		if _, ok := seen[rule.Id]; ok && rule.Id != active.Id {
-			continue
-		}
-		seen[rule.Id] = struct{}{}
-		filtered = append(filtered, rule)
-	}
-	common.ApiSuccess(c, filtered)
+	common.ApiSuccess(c, []model.LuckyRuleSet{*active})
 }
 
 func GetMyLuckyCards(c *gin.Context) {
@@ -443,67 +421,44 @@ func AdminListLuckyRuleSets(c *gin.Context) {
 	common.ApiSuccess(c, rules)
 }
 
+type luckyRuleSetCreateRequest struct {
+	BaseRuleSetId              int64  `json:"base_rule_set_id"`
+	SubscriptionPool           string `json:"subscription_pool"`
+	RechargePool               string `json:"recharge_pool"`
+	ThresholdConfig            string `json:"threshold_config"`
+	RechargeBonusUsdMicros     int64  `json:"recharge_bonus_usd_micros"`
+	RechargeCardValidSeconds   int64  `json:"recharge_card_valid_seconds"`
+	RechargeRewardValidSeconds int64  `json:"recharge_reward_valid_seconds"`
+	CrazyCardValidSeconds      int64  `json:"crazy_card_valid_seconds"`
+	CrazyCardQuotaUsdMicros    int64  `json:"crazy_card_quota_usd_micros"`
+	ActivityGroup              string `json:"activity_group"`
+}
+
 func AdminCreateLuckyRuleSet(c *gin.Context) {
-	var req model.LuckyRuleSet
-	if err := c.ShouldBindJSON(&req); err != nil {
+	var req luckyRuleSetCreateRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.BaseRuleSetId <= 0 {
 		common.ApiErrorMsg(c, "参数错误")
 		return
 	}
-	var created model.LuckyRuleSet
-	err := model.DB.Transaction(func(tx *gorm.DB) error {
-		campaign, active, err := model.GetLuckyCampaignTx(tx, true)
-		if err != nil {
-			return err
-		}
-		var maxVersion int
-		if err := tx.Model(&model.LuckyRuleSet{}).Where("campaign_id = ?", campaign.Id).
-			Select("COALESCE(MAX(version), 0)").Scan(&maxVersion).Error; err != nil {
-			return err
-		}
-		created = req
-		created.Id = 0
-		created.CampaignId = campaign.Id
-		created.Version = maxVersion + 1
-		created.Status = "draft"
-		created.CreatedBy = c.GetInt("id")
-		created.CreatedAt = model.GetDBTimestamp()
-		if strings.TrimSpace(created.SubscriptionPool) == "" {
-			created.SubscriptionPool = active.SubscriptionPool
-		}
-		if strings.TrimSpace(created.RechargePool) == "" {
-			created.RechargePool = active.RechargePool
-		}
-		if strings.TrimSpace(created.ThresholdConfig) == "" {
-			created.ThresholdConfig = active.ThresholdConfig
-		}
-		if created.RechargeCardValidSeconds <= 0 {
-			created.RechargeCardValidSeconds = active.RechargeCardValidSeconds
-		}
-		if created.RechargeRewardValidSeconds <= 0 {
-			created.RechargeRewardValidSeconds = active.RechargeRewardValidSeconds
-		}
-		if created.RechargeBonusUsdMicros <= 0 {
-			created.RechargeBonusUsdMicros = active.RechargeBonusUsdMicros
-		}
-		if created.CrazyCardValidSeconds <= 0 {
-			created.CrazyCardValidSeconds = active.CrazyCardValidSeconds
-		}
-		if created.CrazyCardQuotaUsdMicros <= 0 {
-			created.CrazyCardQuotaUsdMicros = active.CrazyCardQuotaUsdMicros
-		}
-		if strings.TrimSpace(created.ActivityGroup) == "" {
-			created.ActivityGroup = active.ActivityGroup
-		}
-		if err := model.ValidateLuckyRuleSet(&created); err != nil {
-			return err
-		}
-		model.RefreshLuckyRuleChecksum(&created)
-		return tx.Create(&created).Error
+	created, err := model.CreateLuckyRuleSetDraft(req.BaseRuleSetId, c.GetInt("id"), model.LuckyRuleSet{
+		SubscriptionPool:           req.SubscriptionPool,
+		RechargePool:               req.RechargePool,
+		ThresholdConfig:            req.ThresholdConfig,
+		RechargeBonusUsdMicros:     req.RechargeBonusUsdMicros,
+		RechargeCardValidSeconds:   req.RechargeCardValidSeconds,
+		RechargeRewardValidSeconds: req.RechargeRewardValidSeconds,
+		CrazyCardValidSeconds:      req.CrazyCardValidSeconds,
+		CrazyCardQuotaUsdMicros:    req.CrazyCardQuotaUsdMicros,
+		ActivityGroup:              req.ActivityGroup,
 	})
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	recordManageAudit(c, "lucky.rule_create", map[string]interface{}{
+		"ruleId": created.Id, "version": created.Version,
+		"baseRuleId": created.BaseRuleSetId, "checksum": created.Checksum,
+	})
 	common.ApiSuccess(c, created)
 }
 
@@ -513,47 +468,16 @@ func AdminActivateLuckyRuleSet(c *gin.Context) {
 		common.ApiErrorMsg(c, "规则版本无效")
 		return
 	}
-	err := model.DB.Transaction(func(tx *gorm.DB) error {
-		campaign, _, err := model.GetLuckyCampaignTx(tx, true)
-		if err != nil {
-			return err
-		}
-		var rule model.LuckyRuleSet
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND campaign_id = ?", id, campaign.Id).First(&rule).Error; err != nil {
-			return err
-		}
-		if rule.Status == "active" {
-			return nil
-		}
-		if rule.Status != "draft" {
-			return errors.New("只有草稿规则可以激活")
-		}
-		if err := model.ValidateLuckyRuleSet(&rule); err != nil {
-			return err
-		}
-		model.RefreshLuckyRuleChecksum(&rule)
-		now := model.GetDBTimestamp()
-		if err := tx.Model(&model.LuckyRuleSet{}).
-			Where("campaign_id = ? AND status = ?", campaign.Id, "active").
-			Updates(map[string]interface{}{"status": "retired"}).Error; err != nil {
-			return err
-		}
-		rule.Status = "active"
-		rule.PublishedAt = now
-		rule.EffectiveAt = now
-		if err := tx.Save(&rule).Error; err != nil {
-			return err
-		}
-		campaign.ActiveRuleSetId = rule.Id
-		campaign.SettingsVersion++
-		return tx.Save(campaign).Error
-	})
+	published, err := model.ActivateLuckyRuleSet(id)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, nil)
+	recordManageAudit(c, "lucky.rule_activate", map[string]interface{}{
+		"ruleId": published.Id, "version": published.Version,
+		"baseRuleId": published.BaseRuleSetId, "checksum": published.Checksum,
+	})
+	common.ApiSuccess(c, published)
 }
 
 type consumptionOrderRequest struct {

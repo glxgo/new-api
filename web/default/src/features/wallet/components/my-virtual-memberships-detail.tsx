@@ -30,6 +30,7 @@ const quotaBarColor = (percent: number) =>
 
 export function MyVirtualMembershipsDetail() {
   const [memberships, setMemberships] = useState<UserVirtualMembership[]>([])
+  const [renderedAt] = useState(() => Date.now() / 1000)
 
   useEffect(() => {
     let active = true
@@ -79,7 +80,7 @@ export function MyVirtualMembershipsDetail() {
                 </div>
               </div>
               <span className='bg-success/10 text-success shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium'>
-                生效中
+                {membership.start_time > renderedAt ? '待生效' : '生效中'}
               </span>
             </div>
 
@@ -110,8 +111,13 @@ export function MyVirtualMembershipsDetail() {
               </div>
             </div>
             <div className='text-muted-foreground mt-3 text-[10px]'>
-              有效期至 {formatTimestampToDate(membership.end_time)} · 会员 #
-              {membership.id}
+              {membership.start_time > renderedAt ? '生效时间' : '有效期至'}{' '}
+              {formatTimestampToDate(
+                membership.start_time > renderedAt
+                  ? membership.start_time
+                  : membership.end_time
+              )}{' '}
+              · 会员 #{membership.id}
             </div>
           </div>
         ))}

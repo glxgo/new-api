@@ -100,11 +100,24 @@ export interface LuckyPrize {
 
 export interface LuckyRuleSet {
   id: number
+  campaign_id: number
+  base_rule_set_id: number
   version: number
+  status: 'draft' | 'active' | 'retired'
   subscription_pool: string
   recharge_pool: string
+  threshold_config: string
   recharge_bonus_usd_micros: number
+  recharge_card_valid_seconds: number
+  recharge_reward_valid_seconds: number
+  crazy_card_valid_seconds: number
+  crazy_card_quota_usd_micros: number
   activity_group: string
+  checksum: string
+  published_at: number
+  effective_at: number
+  created_by: number
+  created_at: number
 }
 
 export interface PageResult<T> {

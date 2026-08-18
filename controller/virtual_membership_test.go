@@ -21,14 +21,25 @@ package controller
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/require"
 )
 
 func TestVirtualMembershipInstanceResponseIncludesLifetimeUsage(t *testing.T) {
+	renewedFromId := 6
 	response := virtualMembershipInstanceResponse(&model.UserVirtualMembership{
-		Id: 7, WeeklyQuota: 1_000, WeeklyUsed: 20, LifetimeUsed: 12_345,
+		Id: 7, Hidden: true, RenewedFromId: &renewedFromId,
+		WeeklyQuota: 1_000, WeeklyUsed: 20, LifetimeUsed: 12_345,
 	})
 
 	require.EqualValues(t, 12_345, response["lifetime_used"])
+	require.Equal(t, true, response["hidden"])
+	require.Equal(t, &renewedFromId, response["renewed_from_id"])
+}
+
+func TestVirtualMembershipEpayRequestCarriesRenewalSource(t *testing.T) {
+	var req VirtualMembershipEpayPayRequest
+	require.NoError(t, common.UnmarshalJsonStr(`{"plan_id":2,"group_size":3,"payment_method":"alipay","renew_from_membership_id":17}`, &req))
+	require.Equal(t, 17, req.RenewFromMembershipId)
 }

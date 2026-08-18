@@ -33,6 +33,11 @@ const (
 	VirtualMembershipAdminGrant      = "admin_grant"
 )
 
+var (
+	ErrVirtualMembershipRenewalUnavailable = errors.New("当前虚拟会员无法续费")
+	ErrVirtualMembershipRenewalExists      = errors.New("当前虚拟会员已存在续费实例或待支付订单")
+)
+
 type VirtualMembershipSetting struct {
 	Id           int    `json:"id"`
 	Announcement string `json:"announcement" gorm:"type:text"`
@@ -100,6 +105,7 @@ type VirtualMembershipOrder struct {
 	CommissionBaseQuota        int64   `json:"commission_base_quota" gorm:"not null;default:0"`
 	ActualPaymentAmountMinor   int64   `json:"actual_payment_amount_minor" gorm:"not null;default:0"`
 	ActualPaymentCurrency      string  `json:"actual_payment_currency" gorm:"type:varchar(8);not null;default:''"`
+	RenewFromMembershipId      *int    `json:"renew_from_membership_id" gorm:"default:null;index"`
 }
 
 func setVirtualMembershipPaymentExpectation(order *VirtualMembershipOrder, snapshot PaymentSnapshot) error {
@@ -114,11 +120,15 @@ func setVirtualMembershipPaymentExpectation(order *VirtualMembershipOrder, snaps
 }
 
 type UserVirtualMembership struct {
-	Id               int    `json:"id"`
-	UserId           int    `json:"user_id" gorm:"index"`
-	PlanId           int    `json:"plan_id" gorm:"index"`
+	Id     int `json:"id"`
+	UserId int `json:"user_id" gorm:"index"`
+	PlanId int `json:"plan_id" gorm:"index"`
+	// Hidden is presentation-only. Hidden memberships remain active funding
+	// sources and stay visible to administrators and accounting queries.
+	Hidden           bool   `json:"hidden" gorm:"not null;default:false;index"`
 	OrderId          int    `json:"order_id" gorm:"index"`
 	OrderUniqueId    *int   `json:"-" gorm:"column:order_unique_id;uniqueIndex"`
+	RenewedFromId    *int   `json:"renewed_from_id" gorm:"default:null;uniqueIndex"`
 	PlanTitle        string `json:"plan_title" gorm:"type:varchar(128)"`
 	PlanCode         string `json:"plan_code" gorm:"type:varchar(64)"`
 	GroupSize        int    `json:"group_size" gorm:"not null;default:1"`
@@ -721,10 +731,76 @@ func createVirtualMembershipOrderTx(tx *gorm.DB, userId, planId, groupSize int, 
 }
 
 func CreateVirtualMembershipEpayOrder(userId, planId, groupSize int, tradeNo, paymentMethod string) (*VirtualMembershipOrder, error) {
+	return CreateVirtualMembershipEpayRenewalOrder(userId, planId, groupSize, tradeNo, paymentMethod, 0)
+}
+
+// resolveVirtualMembershipRenewalTx validates a linear renewal. User renewals
+// must use the currently enabled same plan and group tier; administrator
+// renewals may extend a disabled legacy plan but still preserve that identity.
+func resolveVirtualMembershipRenewalTx(tx *gorm.DB, userId, fromMembershipId, planId, groupSize int, lock, requireEnabled bool) (*UserVirtualMembership, *VirtualMembershipPlan, error) {
+	if tx == nil || userId <= 0 || fromMembershipId <= 0 {
+		return nil, nil, ErrVirtualMembershipRenewalUnavailable
+	}
+	query := tx.Where("id = ? AND user_id = ?", fromMembershipId, userId)
+	if lock {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	var source UserVirtualMembership
+	if err := query.First(&source).Error; err != nil {
+		return nil, nil, ErrVirtualMembershipRenewalUnavailable
+	}
+	if source.Status != VirtualMembershipStatusActive && source.Status != VirtualMembershipStatusExpired {
+		return nil, nil, ErrVirtualMembershipRenewalUnavailable
+	}
+	if source.GroupSize <= 0 {
+		source.GroupSize = 1
+	}
+	if planId > 0 && planId != source.PlanId {
+		return nil, nil, ErrVirtualMembershipRenewalUnavailable
+	}
+	if groupSize > 0 && groupSize != source.GroupSize {
+		return nil, nil, ErrVirtualMembershipRenewalUnavailable
+	}
+	var successorCount int64
+	if err := tx.Model(&UserVirtualMembership{}).Where("renewed_from_id = ?", source.Id).Count(&successorCount).Error; err != nil {
+		return nil, nil, err
+	}
+	if successorCount > 0 {
+		return nil, nil, ErrVirtualMembershipRenewalExists
+	}
+	var pendingOrderCount int64
+	if err := tx.Model(&VirtualMembershipOrder{}).
+		Where("renew_from_membership_id = ? AND status = ?", source.Id, common.TopUpStatusPending).
+		Count(&pendingOrderCount).Error; err != nil {
+		return nil, nil, err
+	}
+	if pendingOrderCount > 0 {
+		return nil, nil, ErrVirtualMembershipRenewalExists
+	}
+	plan, err := getVirtualMembershipPlanTx(tx, source.PlanId)
+	if err != nil {
+		return nil, nil, ErrVirtualMembershipRenewalUnavailable
+	}
+	if requireEnabled && !plan.Enabled {
+		return nil, nil, ErrVirtualMembershipRenewalUnavailable
+	}
+	return &source, plan, nil
+}
+
+func CreateVirtualMembershipEpayRenewalOrder(userId, planId, groupSize int, tradeNo, paymentMethod string, renewFromMembershipId int) (*VirtualMembershipOrder, error) {
 	var order *VirtualMembershipOrder
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		if renewFromMembershipId > 0 {
+			if _, _, err := resolveVirtualMembershipRenewalTx(tx, userId, renewFromMembershipId, planId, groupSize, true, true); err != nil {
+				return err
+			}
+		}
 		var err error
 		order, err = createVirtualMembershipOrderTx(tx, userId, planId, groupSize, tradeNo, paymentMethod, PaymentProviderEpay, common.TopUpStatusPending)
+		if err == nil && renewFromMembershipId > 0 {
+			order.RenewFromMembershipId = &renewFromMembershipId
+			err = tx.Model(order).Update("renew_from_membership_id", renewFromMembershipId).Error
+		}
 		return err
 	})
 	return order, err
@@ -764,6 +840,81 @@ func AdminGrantVirtualMembership(userId, planId, groupSize int) (*VirtualMembers
 		order.CompleteTime = common.GetTimestamp()
 		order.ProviderPayload = "granted_by_admin"
 		order.DividendState = SubscriptionDividendSkippedSource
+		order.LuckyRuleSetId = 0
+		order.LuckyEligible = false
+		if err := tx.Save(order).Error; err != nil {
+			return err
+		}
+		if err := createVirtualMembershipFromOrderTx(tx, order); err != nil {
+			return err
+		}
+		return tx.Where("order_id = ?", order.Id).First(&membership).Error
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return order, &membership, nil
+}
+
+// AdminRenewVirtualMembership creates one no-payment, linked successor. The
+// successor starts at the source end time (or now when already expired), so
+// administrators extend duration without overwriting usage or audit history.
+func AdminRenewVirtualMembership(fromMembershipId int) (*VirtualMembershipOrder, *UserVirtualMembership, error) {
+	if fromMembershipId <= 0 {
+		return nil, nil, ErrVirtualMembershipRenewalUnavailable
+	}
+	var order *VirtualMembershipOrder
+	var membership UserVirtualMembership
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var owner UserVirtualMembership
+		if err := tx.Select("id", "user_id", "plan_id", "group_size").First(&owner, fromMembershipId).Error; err != nil {
+			return ErrVirtualMembershipRenewalUnavailable
+		}
+		source, _, err := resolveVirtualMembershipRenewalTx(
+			tx, owner.UserId, fromMembershipId, owner.PlanId, owner.GroupSize, true, false,
+		)
+		if err != nil {
+			return err
+		}
+		tradeNo := fmt.Sprintf("vm-admin-renew-%d-%s", time.Now().UnixNano(), common.GetRandomString(6))
+		order, err = createVirtualMembershipOrderTx(
+			tx, source.UserId, source.PlanId, source.GroupSize, tradeNo,
+			VirtualMembershipAdminGrant, VirtualMembershipAdminGrant,
+			VirtualMembershipOrderSuccess,
+		)
+		if err != nil {
+			// A disabled legacy plan is still renewable by an administrator.
+			// Rebuild the order from the source snapshot if the plan was delisted.
+			var plan VirtualMembershipPlan
+			if lookupErr := tx.First(&plan, source.PlanId).Error; lookupErr != nil || plan.Enabled {
+				return err
+			}
+			plan.Enabled = true
+			price, weekly, fiveHour, concurrency, rpm, variantErr := virtualMembershipVariantWithLimits(&plan, source.GroupSize)
+			if variantErr != nil {
+				return variantErr
+			}
+			now := common.GetTimestamp()
+			order = &VirtualMembershipOrder{
+				UserId: source.UserId, PlanId: plan.Id, GroupSize: source.GroupSize,
+				Money: 0, WeeklyQuota: weekly, FiveHourQuota: fiveHour,
+				FiveHourActive: plan.FiveHourEnabled, ConcurrencyLimit: concurrency, RPMLimit: rpm,
+				DividendState: SubscriptionDividendSkippedSource, TradeNo: tradeNo,
+				PaymentMethod: VirtualMembershipAdminGrant, PaymentProvider: VirtualMembershipAdminGrant,
+				Status: VirtualMembershipOrderSuccess, CreateTime: now, CompleteTime: now,
+				PlanSnapshot: buildVirtualMembershipSnapshot(&plan, price, source.GroupSize, weekly, fiveHour, concurrency, rpm),
+			}
+			if createErr := tx.Create(order).Error; createErr != nil {
+				return createErr
+			}
+		}
+		order.Money = 0
+		order.CompleteTime = common.GetTimestamp()
+		order.ProviderPayload = "renewed_by_admin"
+		order.DividendState = SubscriptionDividendSkippedSource
+		order.LuckyRuleSetId = 0
+		order.LuckyEligible = false
+		order.RenewFromMembershipId = &source.Id
 		if err := tx.Save(order).Error; err != nil {
 			return err
 		}
@@ -826,15 +977,48 @@ func createVirtualMembershipFromOrderTx(tx *gorm.DB, order *VirtualMembershipOrd
 	if now <= 0 {
 		now = common.GetTimestamp()
 	}
+	startTime := now
+	var renewedFromId *int
+	if order.RenewFromMembershipId != nil && *order.RenewFromMembershipId > 0 {
+		var source UserVirtualMembership
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND user_id = ?", *order.RenewFromMembershipId, order.UserId).
+			First(&source).Error; err != nil {
+			return ErrVirtualMembershipRenewalUnavailable
+		}
+		if (source.Status != VirtualMembershipStatusActive && source.Status != VirtualMembershipStatusExpired) ||
+			source.PlanId != order.PlanId {
+			return ErrVirtualMembershipRenewalUnavailable
+		}
+		sourceGroupSize := source.GroupSize
+		if sourceGroupSize <= 0 {
+			sourceGroupSize = 1
+		}
+		if sourceGroupSize != order.GroupSize {
+			return ErrVirtualMembershipRenewalUnavailable
+		}
+		var successorCount int64
+		if err := tx.Model(&UserVirtualMembership{}).Where("renewed_from_id = ?", source.Id).Count(&successorCount).Error; err != nil {
+			return err
+		}
+		if successorCount > 0 {
+			return ErrVirtualMembershipRenewalExists
+		}
+		if source.EndTime > startTime {
+			startTime = source.EndTime
+		}
+		renewedFromId = &source.Id
+	}
 	membership := &UserVirtualMembership{
 		UserId: order.UserId, PlanId: order.PlanId, OrderId: order.Id,
 		OrderUniqueId: &order.Id,
+		RenewedFromId: renewedFromId,
 		PlanTitle:     snapshot.Title, PlanCode: snapshot.Code, GroupSize: order.GroupSize,
 		WeeklyQuota: order.WeeklyQuota, FiveHourQuota: order.FiveHourQuota,
 		ConcurrencyLimit: snapshot.ConcurrencyLimit, RPMLimit: snapshot.RPMLimit,
-		FiveHourActive: order.FiveHourActive, WeeklyResetAt: now + 7*86400,
-		FiveHourStart: now, FiveHourResetAt: now + 5*3600,
-		StartTime: now, EndTime: now + int64(durationDays)*86400,
+		FiveHourActive: order.FiveHourActive, WeeklyResetAt: startTime + 7*86400,
+		FiveHourStart: startTime, FiveHourResetAt: startTime + 5*3600,
+		StartTime: startTime, EndTime: startTime + int64(durationDays)*86400,
 		Status: VirtualMembershipStatusActive, AllowedModels: snapshot.AllowedModels,
 		AllowedGroup: snapshot.AllowedGroup, CreatedAt: now, UpdatedAt: now,
 	}
@@ -965,6 +1149,10 @@ func ExpireVirtualMembershipOrder(tradeNo, expectedPaymentProvider string) error
 }
 
 func PurchaseVirtualMembershipWithBalance(userId, planId, groupSize int) (*VirtualMembershipOrder, *UserVirtualMembership, error) {
+	return PurchaseVirtualMembershipWithBalanceRenewal(userId, planId, groupSize, 0)
+}
+
+func PurchaseVirtualMembershipWithBalanceRenewal(userId, planId, groupSize, renewFromMembershipId int) (*VirtualMembershipOrder, *UserVirtualMembership, error) {
 	if userId <= 0 {
 		return nil, nil, errors.New("用户不存在")
 	}
@@ -972,6 +1160,11 @@ func PurchaseVirtualMembershipWithBalance(userId, planId, groupSize int) (*Virtu
 	var order VirtualMembershipOrder
 	var membership UserVirtualMembership
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		if renewFromMembershipId > 0 {
+			if _, _, err := resolveVirtualMembershipRenewalTx(tx, userId, renewFromMembershipId, planId, groupSize, true, true); err != nil {
+				return err
+			}
+		}
 		plan, err := getVirtualMembershipPlanTx(tx, planId)
 		if err != nil {
 			return err
@@ -1004,16 +1197,32 @@ func PurchaseVirtualMembershipWithBalance(userId, planId, groupSize int) (*Virtu
 			TradeNo:       tradeNo, PaymentMethod: PaymentMethodBalance, PaymentProvider: PaymentProviderBalance, Status: VirtualMembershipOrderSuccess,
 			CreateTime: now, CompleteTime: now, PlanSnapshot: planSnapshot,
 		}
+		if renewFromMembershipId > 0 {
+			order.RenewFromMembershipId = &renewFromMembershipId
+		}
 		if err := tx.Create(&order).Error; err != nil {
 			return err
 		}
-		end := now + int64(plan.DurationDays)*86400
+		startTime := now
+		var renewedFromId *int
+		if renewFromMembershipId > 0 {
+			var source UserVirtualMembership
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&source, renewFromMembershipId).Error; err != nil {
+				return ErrVirtualMembershipRenewalUnavailable
+			}
+			if source.EndTime > startTime {
+				startTime = source.EndTime
+			}
+			renewedFromId = &source.Id
+		}
+		end := startTime + int64(plan.DurationDays)*86400
 		membership = UserVirtualMembership{
 			UserId: userId, PlanId: plan.Id, OrderId: order.Id, PlanTitle: plan.Title, PlanCode: plan.Code,
-			GroupSize: groupSize, WeeklyQuota: weekly, FiveHourQuota: fiveHour, FiveHourActive: plan.FiveHourEnabled,
+			RenewedFromId: renewedFromId,
+			GroupSize:     groupSize, WeeklyQuota: weekly, FiveHourQuota: fiveHour, FiveHourActive: plan.FiveHourEnabled,
 			ConcurrencyLimit: concurrency, RPMLimit: rpm,
-			WeeklyResetAt: now + 7*86400, FiveHourStart: now, FiveHourResetAt: now + 5*3600,
-			StartTime: now, EndTime: end, Status: VirtualMembershipStatusActive,
+			WeeklyResetAt: startTime + 7*86400, FiveHourStart: startTime, FiveHourResetAt: startTime + 5*3600,
+			StartTime: startTime, EndTime: end, Status: VirtualMembershipStatusActive,
 			AllowedModels: plan.AllowedModels, AllowedGroup: plan.AllowedGroup,
 			CreatedAt: now, UpdatedAt: now,
 		}
@@ -1037,7 +1246,7 @@ func PurchaseVirtualMembershipWithBalance(userId, planId, groupSize int) (*Virtu
 func ListUserVirtualMemberships(userId int) ([]*UserVirtualMembership, error) {
 	var memberships []*UserVirtualMembership
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("user_id = ?", userId).Order("id desc").Find(&memberships).Error; err != nil {
+		if err := tx.Where("user_id = ? AND hidden = ?", userId, false).Order("id desc").Find(&memberships).Error; err != nil {
 			return err
 		}
 		now := common.GetTimestamp()
@@ -1048,8 +1257,7 @@ func ListUserVirtualMemberships(userId int) ([]*UserVirtualMembership, error) {
 		}
 		active := memberships[:0]
 		for _, membership := range memberships {
-			if membership != nil && membership.Status == VirtualMembershipStatusActive &&
-				membership.StartTime <= now && membership.EndTime > now {
+			if membership != nil && membership.Status == VirtualMembershipStatusActive && membership.EndTime > now {
 				active = append(active, membership)
 			}
 		}
@@ -1057,6 +1265,30 @@ func ListUserVirtualMemberships(userId int) ([]*UserVirtualMembership, error) {
 		return attachVirtualMembershipLifetimeUsage(tx, memberships)
 	})
 	return memberships, err
+}
+
+// SetVirtualMembershipHidden changes only whether the instance is rendered on
+// user-facing remaining-quota pages. It does not revoke or pause consumption.
+func SetVirtualMembershipHidden(membershipId int, hidden bool) error {
+	if membershipId <= 0 {
+		return errors.New("虚拟会员不存在")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var membership UserVirtualMembership
+		if err := tx.Select("id", "hidden").First(&membership, membershipId).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("虚拟会员不存在")
+			}
+			return err
+		}
+		if membership.Hidden == hidden {
+			return nil
+		}
+		return tx.Model(&UserVirtualMembership{}).Where("id = ?", membershipId).Updates(map[string]interface{}{
+			"hidden":     hidden,
+			"updated_at": common.GetTimestamp(),
+		}).Error
+	})
 }
 
 // ListAdminVirtualMemberships returns every purchased membership with its
@@ -1137,6 +1369,22 @@ func AdminDeleteVirtualMembership(membershipId int) (int64, error) {
 		}
 		if pendingCount > 0 {
 			return errors.New("该会员存在正在结算的请求，请稍后再删除")
+		}
+		var renewalCount int64
+		if err := tx.Model(&VirtualMembershipOrder{}).
+			Where("renew_from_membership_id = ? AND status = ?", membershipId, common.TopUpStatusPending).
+			Count(&renewalCount).Error; err != nil {
+			return err
+		}
+		if renewalCount == 0 {
+			if err := tx.Model(&UserVirtualMembership{}).
+				Where("renewed_from_id = ?", membershipId).
+				Count(&renewalCount).Error; err != nil {
+				return err
+			}
+		}
+		if renewalCount > 0 {
+			return errors.New("该会员已存在续费订单或后继实例，不能删除")
 		}
 
 		if err := tx.Model(&Token{}).
@@ -1295,7 +1543,7 @@ func ValidateVirtualMembershipForToken(userId int, group string, membershipId in
 		if err := virtualMembershipResetIfDue(tx, &membership, now); err != nil {
 			return err
 		}
-		if membership.Status != VirtualMembershipStatusActive || (membership.EndTime > 0 && membership.EndTime <= now) {
+		if membership.Status != VirtualMembershipStatusActive || membership.StartTime > now || (membership.EndTime > 0 && membership.EndTime <= now) {
 			return errors.New("虚拟会员尚未生效、已结束或已失效")
 		}
 		if membership.WeeklyQuota > 0 && membership.WeeklyUsed >= membership.WeeklyQuota {
@@ -1435,6 +1683,9 @@ func preConsumeVirtualMembershipTx(tx *gorm.DB, requestId string, membershipId, 
 	}
 	if membership.Status != VirtualMembershipStatusActive {
 		return errors.New("虚拟会员已失效")
+	}
+	if membership.StartTime > now {
+		return errors.New("虚拟会员尚未生效")
 	}
 	if membership.EndTime > 0 && now >= membership.EndTime {
 		return errors.New("虚拟会员已过期")

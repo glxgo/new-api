@@ -37,6 +37,7 @@ import type {
 import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
 import type { PricingModel } from '@/features/pricing/types'
 import {
+  formatStatusGroupRatio,
   hasCompleteHealthMetrics,
   resolveModelStatusGroups,
   summarizeAvailabilitySeries,
@@ -221,6 +222,7 @@ function ProbeStatusBand({ summary }: { summary?: GroupCacheSummary }) {
 
 function GroupHealthCard({
   group,
+  groupRatio,
   description,
   summary,
   models,
@@ -230,6 +232,7 @@ function GroupHealthCard({
   onViewModels,
 }: {
   group: string
+  groupRatio?: number
   description?: string
   summary?: GroupCacheSummary
   models: PricingModel[]
@@ -247,7 +250,7 @@ function GroupHealthCard({
     <article className='border-border/70 bg-background/80 group hover:border-foreground/25 overflow-hidden rounded-2xl border transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] dark:hover:shadow-[0_8px_24px_rgba(0,0,0,0.4)]'>
       <div className='flex items-start justify-between gap-4 border-b border-dashed px-5 py-4'>
         <div className='min-w-0'>
-          <div className='flex items-center gap-2.5'>
+          <div className='flex min-w-0 items-center gap-2.5'>
             <span
               className={cn(
                 'size-2 rounded-full',
@@ -261,6 +264,9 @@ function GroupHealthCard({
             <h2 className='truncate text-lg font-semibold tracking-tight'>
               {group}
             </h2>
+            <span className='border-border/70 bg-muted/35 text-muted-foreground shrink-0 rounded-md border px-1.5 py-0.5 font-mono text-[11px] font-medium tabular-nums'>
+              ×{formatStatusGroupRatio(groupRatio)}
+            </span>
           </div>
           <p className='text-muted-foreground mt-1.5 line-clamp-1 text-xs'>
             {description || `该分组关联渠道最近${rangeName}的真实请求表现`}
@@ -392,10 +398,7 @@ export function ModelStatus() {
   )
 
   const groups = useMemo(() => {
-    const available = resolveModelStatusGroups(
-      summaryQuery.data?.data,
-      Object.keys(usableGroup)
-    )
+    const available = resolveModelStatusGroups(summaryQuery.data?.data)
     return available
       .filter((group) =>
         group.toLowerCase().includes(search.trim().toLowerCase())
@@ -405,7 +408,7 @@ export function ModelStatus() {
         const requestsB = summaryMap.get(b)?.request_count ?? 0
         return requestsB - requestsA || a.localeCompare(b)
       })
-  }, [search, summaryMap, summaryQuery.data, usableGroup])
+  }, [search, summaryMap, summaryQuery.data])
 
   const modelsByGroup = useMemo(() => {
     const map = new Map<string, PricingModel[]>()
@@ -493,6 +496,7 @@ export function ModelStatus() {
                   <GroupHealthCard
                     key={group}
                     group={group}
+                    groupRatio={summaryQuery.data?.data?.group_ratios?.[group]}
                     description={usableGroup[group]?.desc}
                     summary={summaryMap.get(group)}
                     models={modelsByGroup.get(group) ?? []}

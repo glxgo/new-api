@@ -18,16 +18,21 @@ export type AvailabilitySegment = {
 }
 
 export function resolveModelStatusGroups(
-  data: GroupSummaryAllData['data'] | undefined,
-  pricingGroups: string[] = []
+  data: GroupSummaryAllData['data'] | undefined
 ) {
   return Array.from(
     new Set([
       ...(data?.available_groups ?? []),
       ...(data?.groups ?? []).map((summary) => summary.group),
-      ...pricingGroups,
     ])
   ).filter((group) => Boolean(group) && group.toLowerCase() !== 'auto')
+}
+
+export function formatStatusGroupRatio(ratio: number | undefined): string {
+  if (ratio == null || !Number.isFinite(ratio)) return '—'
+  return ratio % 1 === 0
+    ? ratio.toFixed(0)
+    : ratio.toFixed(4).replace(/\.?0+$/, '')
 }
 
 export function hasCompleteHealthMetrics(

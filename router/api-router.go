@@ -215,6 +215,8 @@ func SetApiRouter(router *gin.Engine) {
 			virtualMembershipAdminRoute.POST("/reset", controller.AdminResetVirtualMemberships)
 			virtualMembershipAdminRoute.GET("/memberships", controller.AdminListVirtualMemberships)
 			virtualMembershipAdminRoute.POST("/memberships", controller.AdminGrantVirtualMembership)
+			virtualMembershipAdminRoute.POST("/memberships/:id/renew", controller.AdminRenewVirtualMembership)
+			virtualMembershipAdminRoute.PATCH("/memberships/:id/visibility", controller.AdminSetVirtualMembershipVisibility)
 			virtualMembershipAdminRoute.DELETE("/memberships/:id", controller.AdminDeleteVirtualMembership)
 			virtualMembershipAdminRoute.GET("/orders", controller.AdminListVirtualMembershipOrders)
 		}
@@ -286,6 +288,7 @@ func SetApiRouter(router *gin.Engine) {
 			subscriptionAdminRoute.GET("/users/:id/subscriptions", controller.AdminListUserSubscriptions)
 			subscriptionAdminRoute.POST("/users/:id/subscriptions", controller.AdminCreateUserSubscription)
 			subscriptionAdminRoute.POST("/user_subscriptions/:id/renew", controller.AdminRenewUserSubscription)
+			subscriptionAdminRoute.PATCH("/user_subscriptions/:id/visibility", controller.AdminSetUserSubscriptionVisibility)
 			subscriptionAdminRoute.POST("/user_subscriptions/:id/invalidate", controller.AdminInvalidateUserSubscription)
 			subscriptionAdminRoute.DELETE("/user_subscriptions/:id", controller.AdminDeleteUserSubscription)
 		}

@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -38,6 +39,22 @@ func TestVisibleStatusGroupsFollowSelectedCanaryChannels(t *testing.T) {
 	)
 
 	require.Equal(t, []string{"auto", "shared", "套餐专用分组"}, groups)
+}
+
+func TestVisibleStatusGroupRatiosOnlyExposeStatusGroups(t *testing.T) {
+	original := ratio_setting.GetGroupRatioCopy()
+	originalJSON, err := common.Marshal(original)
+	require.NoError(t, err)
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1,"status-only":1.75,"internal":9}`))
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(string(originalJSON)))
+	})
+
+	require.Equal(t, map[string]float64{
+		"default":     1,
+		"status-only": 1.75,
+		"missing":     1,
+	}, visibleStatusGroupRatios([]string{"default", "status-only", "missing"}))
 }
 
 func TestClassifyChannelProbeError(t *testing.T) {

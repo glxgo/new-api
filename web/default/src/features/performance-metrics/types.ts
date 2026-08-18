@@ -114,5 +114,6 @@ export type GroupSummaryAllData = {
   data: {
     groups: GroupCacheSummary[]
     available_groups?: string[]
+    group_ratios?: Record<string, number>
   }
 }

@@ -65,6 +65,7 @@ func GetPerfMetricsGroupSummary(c *gin.Context) {
 		})
 		return
 	}
+	result.GroupRatios = visibleStatusGroupRatios(activeGroups)
 	probeSummaries, err := buildGroupProbeSummaries(hours, activeGroups)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -93,6 +94,18 @@ func GetPerfMetricsGroupSummary(c *gin.Context) {
 		"success": true,
 		"data":    result,
 	})
+}
+
+// visibleStatusGroupRatios returns only the public status-card groups. It is
+// intentionally independent from the requesting user's usable pricing groups,
+// so every member sees the same status cards and their actual billing ratios.
+func visibleStatusGroupRatios(groups []string) map[string]float64 {
+	ratios := make(map[string]float64, len(groups))
+	for _, group := range groups {
+		// Match relay billing semantics: an unconfigured group falls back to 1.
+		ratios[group] = ratio_setting.GetGroupRatio(group)
+	}
+	return ratios
 }
 
 func loadPerfMetricChannelScopes(activeGroups []string) ([]perfmetrics.GroupChannelScope, error) {

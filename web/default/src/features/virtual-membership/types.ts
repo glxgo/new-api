@@ -62,6 +62,8 @@ export interface UserVirtualMembership {
   id: number
   plan_id: number
   order_id: number
+  hidden?: boolean
+  renewed_from_id?: number | null
   plan_title: string
   plan_code: string
   group_size: number

@@ -500,7 +500,7 @@ func drawLuckyCardWithSource(userId int, cardId int64, idempotencyKey string, ra
 		if !errors.Is(existing.Error, gorm.ErrRecordNotFound) {
 			return existing.Error
 		}
-		campaign, _, err := model.GetLuckyCampaignTx(tx, true)
+		campaign, rule, err := model.GetLuckyCampaignTx(tx, true)
 		if err != nil {
 			return err
 		}
@@ -515,10 +515,6 @@ func drawLuckyCardWithSource(userId int, cardId int64, idempotencyKey string, ra
 		now := model.GetDBTimestamp()
 		if card.Status != model.LuckyCardAvailable || card.ExpiresAt <= now {
 			return ErrLuckyCardUnavailable
-		}
-		var rule model.LuckyRuleSet
-		if err := tx.First(&rule, card.RuleSetId).Error; err != nil {
-			return err
 		}
 		rawPool := rule.SubscriptionPool
 		if card.PoolType == model.LuckyPoolRecharge {
@@ -548,7 +544,7 @@ func drawLuckyCardWithSource(userId int, cardId int64, idempotencyKey string, ra
 		}
 		switch prize.Code {
 		case model.LuckyPrizeQuota5, model.LuckyPrizeQuota10, model.LuckyPrizeQuota20, model.LuckyPrizeQuota30, model.LuckyPrizeQuota50, model.LuckyPrizeQuota100:
-			err = awardQuotaPrizeTx(tx, &card, &rule, &result, prize, now)
+			err = awardQuotaPrizeTx(tx, &card, rule, &result, prize, now)
 		case model.LuckyPrizeGift5, model.LuckyPrizeGift10, model.LuckyPrizeGift20:
 			err = awardGiftPrizeTx(tx, &card, &result, prize)
 		case model.LuckyPrizeDouble:
@@ -562,7 +558,7 @@ func drawLuckyCardWithSource(userId int, cardId int64, idempotencyKey string, ra
 			}
 			err = awardFullResetPrizeTx(tx, &card, &result, now)
 		case model.LuckyPrizeCrazy5H:
-			err = awardCrazyPrizeTx(tx, &card, &rule, &result, now)
+			err = awardCrazyPrizeTx(tx, &card, rule, &result, now)
 		default:
 			err = fmt.Errorf("unknown lucky prize: %s", prize.Code)
 		}

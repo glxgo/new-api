@@ -106,6 +106,45 @@ func TestRechargeGiftDrawIsAtomicAndIdempotent(t *testing.T) {
 	require.EqualValues(t, quotaFromUsdMicros(5_000_000), stored.GiftQuota)
 }
 
+func TestDrawUsesLatestActiveRuleForHistoricalCards(t *testing.T) {
+	db, user, historicalCard := setupLuckyDrawTest(t, model.LuckyPrizeConfig{
+		Code: model.LuckyPrizeGift5, DisplayUsdMicros: 5_000_000, Weight: model.LuckyWeightScale,
+	})
+	var campaign model.LuckyCampaign
+	require.NoError(t, db.First(&campaign, historicalCard.CampaignId).Error)
+	poolJSON, err := common.Marshal([]model.LuckyPrizeConfig{{
+		Code: model.LuckyPrizeGift10, DisplayUsdMicros: 10_000_000, Weight: model.LuckyWeightScale,
+	}})
+	require.NoError(t, err)
+	currentRule := model.LuckyRuleSet{
+		CampaignId: campaign.Id, BaseRuleSetId: historicalCard.RuleSetId,
+		Version: 2, Status: "active", SubscriptionPool: string(poolJSON), RechargePool: string(poolJSON),
+		ThresholdConfig: "[]", RechargeBonusUsdMicros: 40_000_000,
+		RechargeRewardValidSeconds: 30 * 24 * 3600, RechargeCardValidSeconds: 30 * 24 * 3600,
+		CrazyCardValidSeconds: 5 * 3600, CrazyCardQuotaUsdMicros: 600_000_000,
+		ActivityGroup: "套餐专用分组", Checksum: "current-checksum",
+	}
+	require.NoError(t, db.Create(&currentRule).Error)
+	require.NoError(t, db.Model(&model.LuckyRuleSet{}).Where("id = ?", historicalCard.RuleSetId).
+		Update("status", "retired").Error)
+	require.NoError(t, db.Model(&campaign).Update("active_rule_set_id", currentRule.Id).Error)
+
+	currentCard := historicalCard
+	currentCard.Id = 0
+	currentCard.RuleSetId = currentRule.Id
+	currentCard.GrantKey = fmt.Sprintf("current-rule:%d", time.Now().UnixNano())
+	require.NoError(t, db.Create(&currentCard).Error)
+
+	historicalDraw, err := drawLuckyCardWithSource(user.Id, historicalCard.Id, "historical-rule", fixedLuckyRandom(0))
+	require.NoError(t, err)
+	require.Equal(t, model.LuckyPrizeGift10, historicalDraw.PrizeType)
+	require.Equal(t, currentRule.Id, historicalDraw.RuleSetId)
+	currentDraw, err := drawLuckyCardWithSource(user.Id, currentCard.Id, "current-rule", fixedLuckyRandom(0))
+	require.NoError(t, err)
+	require.Equal(t, model.LuckyPrizeGift10, currentDraw.PrizeType)
+	require.Equal(t, currentRule.Id, currentDraw.RuleSetId)
+}
+
 func TestRechargeFiveDollarQuotaDrawAddsFortyDollars(t *testing.T) {
 	db, user, card := setupLuckyDrawTest(t, model.LuckyPrizeConfig{
 		Code: model.LuckyPrizeQuota5, DisplayUsdMicros: 5_000_000, Weight: model.LuckyWeightScale,

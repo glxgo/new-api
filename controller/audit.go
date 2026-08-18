@@ -49,6 +49,8 @@ var auditContentTemplates = map[string]string{
 	"redemption.create": "Created ${count} redemption codes named ${name} (${quota} each)",
 
 	"lucky.source_reversal": "Registered lucky-wheel source reversal for ${sourceType} ${tradeNo}",
+	"lucky.rule_create":     "Created lucky-wheel rule draft v${version} from rule ${baseRuleId}",
+	"lucky.rule_activate":   "Activated lucky-wheel rule v${version} (ID: ${ruleId})",
 }
 
 // auditContentEN 按 action 模板渲染英文兜底文本；未登记的 action 退回 action 本身。

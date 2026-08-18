@@ -86,7 +86,18 @@ function UsageBar({
   )
 }
 
-function MembershipCard({ membership }: { membership: UserVirtualMembership }) {
+function MembershipCard({
+  membership,
+  onRenew,
+  renewalAvailable,
+  renderedAt,
+}: {
+  membership: UserVirtualMembership
+  onRenew: () => void
+  renewalAvailable: boolean
+  renderedAt: number
+}) {
+  const scheduled = membership.start_time > renderedAt
   return (
     <div className='bg-card/90 rounded-xl border p-4 shadow-sm'>
       <div className='flex items-start justify-between gap-3'>
@@ -101,7 +112,11 @@ function MembershipCard({ membership }: { membership: UserVirtualMembership }) {
           </p>
         </div>
         <span className='shrink-0 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600'>
-          {membership.status === 'active' ? '生效中' : membership.status}
+          {scheduled
+            ? '待生效'
+            : membership.status === 'active'
+              ? '生效中'
+              : membership.status}
         </span>
       </div>
       <div className='mt-3 space-y-3'>
@@ -155,8 +170,21 @@ function MembershipCard({ membership }: { membership: UserVirtualMembership }) {
         </div>
       </div>
       <p className='text-muted-foreground mt-3 text-[11px]'>
-        有效期至 {formatTimestampToDate(membership.end_time)}
+        {scheduled
+          ? `生效时间 ${formatTimestampToDate(membership.start_time)}`
+          : `有效期至 ${formatTimestampToDate(membership.end_time)}`}
       </p>
+      <Button
+        type='button'
+        variant='outline'
+        size='sm'
+        className='mt-3 w-full'
+        disabled={!renewalAvailable}
+        onClick={onRenew}
+      >
+        <RefreshCw className='size-3.5' />
+        {renewalAvailable ? '续费' : '已续费或方案已下架'}
+      </Button>
     </div>
   )
 }
@@ -171,6 +199,7 @@ function VirtualMembershipPurchaseDialog({
   epayMethods,
   userQuota,
   onConfirm,
+  renewal = false,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -179,6 +208,7 @@ function VirtualMembershipPurchaseDialog({
   epayMethods: { type: string; name?: string }[]
   userQuota: number
   onConfirm: (payment: PaymentSelection) => Promise<boolean>
+  renewal?: boolean
 }) {
   const { currency } = useSystemConfig()
   const [selectedEpayMethod, setSelectedEpayMethod] = useState('')
@@ -232,8 +262,12 @@ function VirtualMembershipPurchaseDialog({
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
-      title='立即购买'
-      description='请选择付款方式，确认后将进入对应的支付流程。'
+      title={renewal ? '续费虚拟会员' : '立即购买'}
+      description={
+        renewal
+          ? '续费实例将在当前会员到期后自动生效，不会覆盖当前用量。'
+          : '请选择付款方式，确认后将进入对应的支付流程。'
+      }
       contentClassName='max-sm:w-[calc(100vw-1.5rem)] sm:max-w-md'
       bodyClassName='space-y-4'
     >
@@ -440,11 +474,15 @@ function PlanCard({
 
 export function VirtualMembership() {
   const userQuota = useAuthStore((state) => state.auth.user?.quota ?? 0)
+  const [renderedAt] = useState(() => Date.now() / 1000)
   const [refresh, setRefresh] = useState(0)
   const [purchasePlan, setPurchasePlan] =
     useState<VirtualMembershipPlan | null>(null)
   const [purchaseGroupSize, setPurchaseGroupSize] = useState(1)
   const [purchaseOpen, setPurchaseOpen] = useState(false)
+  const [renewFromMembershipId, setRenewFromMembershipId] = useState<
+    number | null
+  >(null)
   const { data, isLoading } = useQuery({
     queryKey: ['virtual-membership-page', refresh],
     queryFn: getVirtualMembershipPage,
@@ -454,10 +492,32 @@ export function VirtualMembership() {
     () => page?.memberships ?? [],
     [page?.memberships]
   )
+  const renewedSourceIds = useMemo(
+    () =>
+      new Set(
+        memberships
+          .map((membership) => membership.renewed_from_id)
+          .filter((id): id is number => typeof id === 'number' && id > 0)
+      ),
+    [memberships]
+  )
 
   const openPurchase = (plan: VirtualMembershipPlan, groupSize: number) => {
     setPurchasePlan(plan)
     setPurchaseGroupSize(groupSize)
+    setRenewFromMembershipId(null)
+    setPurchaseOpen(true)
+  }
+
+  const openRenewal = (membership: UserVirtualMembership) => {
+    const plan = page?.plans.find((item) => item.id === membership.plan_id)
+    if (!plan) {
+      toast.error('当前会员方案已下架，请联系管理员续费')
+      return
+    }
+    setPurchasePlan(plan)
+    setPurchaseGroupSize(membership.group_size)
+    setRenewFromMembershipId(membership.id)
     setPurchaseOpen(true)
   }
 
@@ -468,9 +528,10 @@ export function VirtualMembership() {
         const result = await purchaseVirtualMembership({
           plan_id: purchasePlan.id,
           group_size: purchaseGroupSize,
+          renew_from_membership_id: renewFromMembershipId ?? undefined,
         })
         if (result.success) {
-          toast.success('虚拟会员已开通')
+          toast.success(renewFromMembershipId ? '续费已创建' : '虚拟会员已开通')
           setRefresh((value) => value + 1)
           return true
         }
@@ -482,6 +543,7 @@ export function VirtualMembership() {
         plan_id: purchasePlan.id,
         group_size: purchaseGroupSize,
         payment_method: payment.method,
+        renew_from_membership_id: renewFromMembershipId ?? undefined,
       })
       if (result.message !== 'success' || !result.url) {
         toast.error(result.message || '支付请求失败')
@@ -559,7 +621,18 @@ export function VirtualMembership() {
                 <h2 className='mb-3 text-lg font-semibold'>我的虚拟会员</h2>
                 <div className='grid gap-3 md:grid-cols-2 xl:grid-cols-3'>
                   {memberships.map((item) => (
-                    <MembershipCard key={item.id} membership={item} />
+                    <MembershipCard
+                      key={item.id}
+                      membership={item}
+                      renewalAvailable={
+                        !renewedSourceIds.has(item.id) &&
+                        Boolean(
+                          page?.plans.some((plan) => plan.id === item.plan_id)
+                        )
+                      }
+                      onRenew={() => openRenewal(item)}
+                      renderedAt={renderedAt}
+                    />
                   ))}
                 </div>
               </div>
@@ -593,6 +666,7 @@ export function VirtualMembership() {
         epayMethods={page?.epay_methods ?? []}
         userQuota={userQuota}
         onConfirm={handlePurchase}
+        renewal={renewFromMembershipId !== null}
       />
     </>
   )

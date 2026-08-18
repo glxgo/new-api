@@ -96,6 +96,36 @@ export async function getLuckyAdminOverview() {
   ).data
 }
 
+export async function getLuckyAdminRuleSets() {
+  return (
+    await api.get<ApiResponse<LuckyRuleSet[]>>(
+      '/api/lucky-wheel/admin/rule-sets',
+      { disableDuplicate: true }
+    )
+  ).data
+}
+
+export async function createLuckyRuleSet(data: {
+  base_rule_set_id: number
+  subscription_pool: string
+  recharge_pool: string
+}) {
+  return (
+    await api.post<ApiResponse<LuckyRuleSet>>(
+      '/api/lucky-wheel/admin/rule-sets',
+      data
+    )
+  ).data
+}
+
+export async function activateLuckyRuleSet(id: number) {
+  return (
+    await api.post<ApiResponse<LuckyRuleSet>>(
+      `/api/lucky-wheel/admin/rule-sets/${id}/activate`
+    )
+  ).data
+}
+
 export interface LuckyAdminDrawFilters {
   keyword?: string
   prize_type?: string

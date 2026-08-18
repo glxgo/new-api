@@ -88,6 +88,70 @@ func TestLuckyPrizePoolsTotalExactlyOneMillion(t *testing.T) {
 	require.EqualValues(t, LuckyWeightScale, rechargeWeight)
 }
 
+func TestValidateLuckyRuleSetRejectsUnknownAndUnfulfillablePrizes(t *testing.T) {
+	db := setupLuckyWheelTestDB(t)
+	var campaign LuckyCampaign
+	require.NoError(t, db.Where("code = ?", LuckyCampaignCode).First(&campaign).Error)
+	var active LuckyRuleSet
+	require.NoError(t, db.First(&active, campaign.ActiveRuleSetId).Error)
+
+	unknown := active
+	unknown.SubscriptionPool = `[{"code":"mystery_prize","display_usd_micros":1000000,"weight":1000000}]`
+	require.ErrorContains(t, ValidateLuckyRuleSet(&unknown), "unsupported lucky prize")
+
+	unfulfillable := active
+	unfulfillable.SubscriptionPool = `[{"code":"gift_5","display_usd_micros":0,"weight":1000000}]`
+	require.ErrorContains(t, ValidateLuckyRuleSet(&unfulfillable), "positive display amount")
+
+	misleadingSpecial := active
+	misleadingSpecial.SubscriptionPool = `[{"code":"crazy_5h","display_usd_micros":1000000,"weight":1000000}]`
+	require.ErrorContains(t, ValidateLuckyRuleSet(&misleadingSpecial), "zero display amount")
+}
+
+func TestLuckyRulePublishingPreservesHistoryAndRejectsStaleDraft(t *testing.T) {
+	db := setupLuckyWheelTestDB(t)
+	var campaign LuckyCampaign
+	require.NoError(t, db.Where("code = ?", LuckyCampaignCode).First(&campaign).Error)
+	var active LuckyRuleSet
+	require.NoError(t, db.First(&active, campaign.ActiveRuleSetId).Error)
+	historicalCard := LuckyCard{
+		UserId: 81, CampaignId: campaign.Id, RuleSetId: active.Id,
+		PoolType: LuckyPoolRecharge, SourceType: "test", SourceRef: "historical",
+		GrantKey: "historical-admin-edit", Status: LuckyCardAvailable,
+		ExpiresAt: common.GetTimestamp() + 3600,
+	}
+	require.NoError(t, db.Create(&historicalCard).Error)
+
+	first, err := CreateLuckyRuleSetDraft(active.Id, 7, LuckyRuleSet{
+		SubscriptionPool: active.SubscriptionPool,
+		RechargePool:     active.RechargePool,
+	})
+	require.NoError(t, err)
+	second, err := CreateLuckyRuleSetDraft(active.Id, 8, LuckyRuleSet{
+		SubscriptionPool: active.SubscriptionPool,
+		RechargePool:     active.RechargePool,
+	})
+	require.NoError(t, err)
+	require.Equal(t, active.Id, first.BaseRuleSetId)
+	require.Equal(t, active.Id, second.BaseRuleSetId)
+
+	published, err := ActivateLuckyRuleSet(first.Id)
+	require.NoError(t, err)
+	require.Equal(t, "active", published.Status)
+	require.NoError(t, db.First(&campaign, campaign.Id).Error)
+	require.Equal(t, first.Id, campaign.ActiveRuleSetId)
+	require.NoError(t, db.First(&historicalCard, historicalCard.Id).Error)
+	require.Equal(t, active.Id, historicalCard.RuleSetId)
+
+	_, err = ActivateLuckyRuleSet(second.Id)
+	require.ErrorIs(t, err, ErrLuckyRuleVersionConflict)
+	_, err = CreateLuckyRuleSetDraft(active.Id, 9, LuckyRuleSet{
+		SubscriptionPool: active.SubscriptionPool,
+		RechargePool:     active.RechargePool,
+	})
+	require.ErrorIs(t, err, ErrLuckyRuleVersionConflict)
+}
+
 func TestLuckyPrizeProbabilityMigrationPublishesNewRuleWithoutRewritingHistory(t *testing.T) {
 	db := setupLuckyWheelTestDB(t)
 	var campaign LuckyCampaign

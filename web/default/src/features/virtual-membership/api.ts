@@ -35,6 +35,7 @@ export async function getVirtualMembershipPage(): Promise<
 export async function purchaseVirtualMembership(data: {
   plan_id: number
   group_size: number
+  renew_from_membership_id?: number
 }): Promise<
   ApiResponse<{ order: unknown; membership: UserVirtualMembership }>
 > {
@@ -46,6 +47,7 @@ export async function payVirtualMembershipEpay(data: {
   plan_id: number
   group_size: number
   payment_method: string
+  renew_from_membership_id?: number
 }): Promise<ApiResponse<Record<string, string>> & { url?: string }> {
   const res = await api.post('/api/virtual-membership/epay/pay', data)
   return {
@@ -123,6 +125,28 @@ export async function deleteAdminVirtualMembership(
 ): Promise<ApiResponse<{ unbound_tokens: number }>> {
   const res = await api.delete(
     `/api/virtual-membership/admin/memberships/${membershipId}`
+  )
+  return res.data
+}
+
+export async function renewAdminVirtualMembership(
+  membershipId: number
+): Promise<
+  ApiResponse<{ order_id: number; membership: UserVirtualMembership }>
+> {
+  const res = await api.post(
+    `/api/virtual-membership/admin/memberships/${membershipId}/renew`
+  )
+  return res.data
+}
+
+export async function setAdminVirtualMembershipHidden(
+  membershipId: number,
+  hidden: boolean
+): Promise<ApiResponse<{ hidden: boolean }>> {
+  const res = await api.patch(
+    `/api/virtual-membership/admin/memberships/${membershipId}/visibility`,
+    { hidden }
   )
   return res.data
 }

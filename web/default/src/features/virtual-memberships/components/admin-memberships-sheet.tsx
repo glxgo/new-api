@@ -20,6 +20,8 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   Clock3,
+  Eye,
+  EyeOff,
   Gauge,
   RefreshCw,
   Search,
@@ -67,7 +69,9 @@ import {
 import {
   deleteAdminVirtualMembership,
   getAdminVirtualMemberships,
+  renewAdminVirtualMembership,
   resetAdminVirtualMemberships,
+  setAdminVirtualMembershipHidden,
 } from '@/features/virtual-membership/api'
 import type { AdminVirtualMembership } from '@/features/virtual-membership/types'
 import { GrantMembershipDialog } from './grant-membership-dialog'
@@ -180,12 +184,23 @@ export function AdminMembershipsSheet({
     useState<AdminVirtualMembership | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [resettingId, setResettingId] = useState<number | null>(null)
+  const [renewingId, setRenewingId] = useState<number | null>(null)
+  const [visibilityId, setVisibilityId] = useState<number | null>(null)
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['admin-virtual-memberships'],
     queryFn: getAdminVirtualMemberships,
     enabled: open,
   })
   const memberships = useMemo(() => data?.data ?? [], [data?.data])
+  const renewedSourceIds = useMemo(
+    () =>
+      new Set(
+        memberships
+          .map((membership) => membership.renewed_from_id)
+          .filter((id): id is number => typeof id === 'number' && id > 0)
+      ),
+    [memberships]
+  )
   const filtered = useMemo(() => {
     const keyword = query.trim().toLocaleLowerCase()
     return memberships.filter((membership) => {
@@ -257,6 +272,47 @@ export function AdminMembershipsSheet({
       await refetch()
     } finally {
       setResettingId(null)
+    }
+  }
+
+  const renewMembership = async (membership: AdminVirtualMembership) => {
+    if (
+      renewingId !== null ||
+      !window.confirm(
+        `确认免费为 ${membership.display_name || membership.username || `用户 #${membership.user_id}`} 续费 ${membership.plan_title} 吗？新实例将在当前会员到期后生效，不会计入充值、分润或大转盘进度。`
+      )
+    )
+      return
+    setRenewingId(membership.id)
+    try {
+      const result = await renewAdminVirtualMembership(membership.id)
+      if (!result.success) {
+        toast.error(result.message || '续费虚拟会员失败')
+        return
+      }
+      toast.success('已创建免费续费实例')
+      await refetch()
+    } finally {
+      setRenewingId(null)
+    }
+  }
+
+  const toggleVisibility = async (membership: AdminVirtualMembership) => {
+    if (visibilityId !== null) return
+    setVisibilityId(membership.id)
+    try {
+      const result = await setAdminVirtualMembershipHidden(
+        membership.id,
+        !membership.hidden
+      )
+      if (!result.success) {
+        toast.error(result.message || '更新展示状态失败')
+        return
+      }
+      toast.success(membership.hidden ? '已恢复用户端展示' : '已从用户端隐藏')
+      await refetch()
+    } finally {
+      setVisibilityId(null)
     }
   }
 
@@ -408,6 +464,11 @@ export function AdminMembershipsSheet({
                                 : `${membership.group_size} 人档`}{' '}
                               · 会员 #{membership.id}
                             </p>
+                            {membership.hidden && (
+                              <p className='mt-1 text-[10px] font-medium text-amber-600'>
+                                用户端已隐藏
+                              </p>
+                            )}
                           </TableCell>
                           <TableCell className='align-top'>
                             <QuotaCell
@@ -459,6 +520,46 @@ export function AdminMembershipsSheet({
                                   )}
                                 />
                                 重置额度
+                              </Button>
+                              <Button
+                                type='button'
+                                variant='ghost'
+                                size='sm'
+                                className='h-7 px-2 text-xs text-blue-700 hover:bg-blue-500/10 hover:text-blue-700'
+                                disabled={
+                                  renewingId !== null ||
+                                  renewedSourceIds.has(membership.id) ||
+                                  membership.status === 'cancelled'
+                                }
+                                onClick={() => void renewMembership(membership)}
+                              >
+                                <RefreshCw
+                                  className={cn(
+                                    'size-3.5',
+                                    renewingId === membership.id &&
+                                      'animate-spin'
+                                  )}
+                                />
+                                {renewedSourceIds.has(membership.id)
+                                  ? '已续费'
+                                  : '续费'}
+                              </Button>
+                              <Button
+                                type='button'
+                                variant='ghost'
+                                size='sm'
+                                className='h-7 px-2 text-xs'
+                                disabled={visibilityId !== null}
+                                onClick={() =>
+                                  void toggleVisibility(membership)
+                                }
+                              >
+                                {membership.hidden ? (
+                                  <Eye className='size-3.5' />
+                                ) : (
+                                  <EyeOff className='size-3.5' />
+                                )}
+                                {membership.hidden ? '恢复展示' : '隐藏'}
                               </Button>
                               <Button
                                 type='button'

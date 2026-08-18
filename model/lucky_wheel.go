@@ -74,6 +74,7 @@ type LuckyPrizeConfig struct {
 type LuckyRuleSet struct {
 	Id                         int64  `json:"id"`
 	CampaignId                 int64  `json:"campaign_id" gorm:"uniqueIndex:idx_lucky_rule_version,priority:1;index"`
+	BaseRuleSetId              int64  `json:"base_rule_set_id" gorm:"index;not null;default:0"`
 	Version                    int    `json:"version" gorm:"uniqueIndex:idx_lucky_rule_version,priority:2"`
 	Status                     string `json:"status" gorm:"type:varchar(32);index"`
 	SubscriptionPool           string `json:"subscription_pool" gorm:"type:text;not null"`
@@ -376,6 +377,19 @@ func validateLuckyPool(pool []LuckyPrizeConfig, allowSubscriptionOnly bool) erro
 		if !allowSubscriptionOnly && (prize.Code == LuckyPrizeDouble || prize.Code == LuckyPrizeFullReset) {
 			return fmt.Errorf("recharge pool contains subscription-only prize: %s", prize.Code)
 		}
+		switch prize.Code {
+		case LuckyPrizeQuota5, LuckyPrizeQuota10, LuckyPrizeQuota20, LuckyPrizeQuota30,
+			LuckyPrizeQuota50, LuckyPrizeQuota100, LuckyPrizeGift5, LuckyPrizeGift10, LuckyPrizeGift20:
+			if prize.DisplayUsdMicros <= 0 {
+				return fmt.Errorf("lucky prize %s requires a positive display amount", prize.Code)
+			}
+		case LuckyPrizeDouble, LuckyPrizeFullReset, LuckyPrizeCrazy5H:
+			if prize.DisplayUsdMicros != 0 {
+				return fmt.Errorf("lucky prize %s requires a zero display amount", prize.Code)
+			}
+		default:
+			return fmt.Errorf("unsupported lucky prize: %s", prize.Code)
+		}
 		seen[prize.Code] = struct{}{}
 		total += prize.Weight
 	}
@@ -417,6 +431,134 @@ func ValidateLuckyRuleSet(rule *LuckyRuleSet) error {
 		return errors.New("invalid lucky rule amounts, durations, or activity group")
 	}
 	return nil
+}
+
+var (
+	ErrLuckyRuleVersionConflict = errors.New("幸运大转盘规则已更新，请刷新后重试")
+	ErrLuckyRuleNotDraft        = errors.New("只有草稿规则可以激活")
+)
+
+// CreateLuckyRuleSetDraft always forks the current active rule. Requiring the
+// caller's baseRuleSetId prevents one administrator from silently publishing
+// an editor opened before another administrator's change.
+func CreateLuckyRuleSetDraft(baseRuleSetId int64, operatorId int, input LuckyRuleSet) (*LuckyRuleSet, error) {
+	if baseRuleSetId <= 0 {
+		return nil, ErrLuckyRuleVersionConflict
+	}
+	var created LuckyRuleSet
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		campaign, active, err := GetLuckyCampaignTx(tx, true)
+		if err != nil {
+			return err
+		}
+		if active.Id != baseRuleSetId {
+			return ErrLuckyRuleVersionConflict
+		}
+		var maxVersion int
+		if err := tx.Model(&LuckyRuleSet{}).Where("campaign_id = ?", campaign.Id).
+			Select("COALESCE(MAX(version), 0)").Scan(&maxVersion).Error; err != nil {
+			return err
+		}
+		created = input
+		created.Id = 0
+		created.CampaignId = campaign.Id
+		created.BaseRuleSetId = active.Id
+		created.Version = maxVersion + 1
+		created.Status = "draft"
+		created.PublishedAt = 0
+		created.EffectiveAt = 0
+		created.CreatedBy = operatorId
+		created.CreatedAt = GetDBTimestamp()
+		if strings.TrimSpace(created.SubscriptionPool) == "" {
+			created.SubscriptionPool = active.SubscriptionPool
+		}
+		if strings.TrimSpace(created.RechargePool) == "" {
+			created.RechargePool = active.RechargePool
+		}
+		if strings.TrimSpace(created.ThresholdConfig) == "" {
+			created.ThresholdConfig = active.ThresholdConfig
+		}
+		if created.RechargeCardValidSeconds <= 0 {
+			created.RechargeCardValidSeconds = active.RechargeCardValidSeconds
+		}
+		if created.RechargeRewardValidSeconds <= 0 {
+			created.RechargeRewardValidSeconds = active.RechargeRewardValidSeconds
+		}
+		if created.RechargeBonusUsdMicros <= 0 {
+			created.RechargeBonusUsdMicros = active.RechargeBonusUsdMicros
+		}
+		if created.CrazyCardValidSeconds <= 0 {
+			created.CrazyCardValidSeconds = active.CrazyCardValidSeconds
+		}
+		if created.CrazyCardQuotaUsdMicros <= 0 {
+			created.CrazyCardQuotaUsdMicros = active.CrazyCardQuotaUsdMicros
+		}
+		if strings.TrimSpace(created.ActivityGroup) == "" {
+			created.ActivityGroup = active.ActivityGroup
+		}
+		if err := ValidateLuckyRuleSet(&created); err != nil {
+			return err
+		}
+		RefreshLuckyRuleChecksum(&created)
+		return tx.Create(&created).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &created, nil
+}
+
+// ActivateLuckyRuleSet atomically retires the current version and publishes a
+// draft only when it still descends from that current version. A card keeps its
+// issuance RuleSetId for audit, while draws always resolve the campaign's latest
+// active rule.
+func ActivateLuckyRuleSet(id int64) (*LuckyRuleSet, error) {
+	if id <= 0 {
+		return nil, errors.New("规则版本无效")
+	}
+	var published LuckyRuleSet
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		campaign, active, err := GetLuckyCampaignTx(tx, true)
+		if err != nil {
+			return err
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND campaign_id = ?", id, campaign.Id).First(&published).Error; err != nil {
+			return err
+		}
+		if published.Status == "active" && published.Id == campaign.ActiveRuleSetId {
+			return nil
+		}
+		if published.Status != "draft" {
+			return ErrLuckyRuleNotDraft
+		}
+		if published.BaseRuleSetId > 0 && published.BaseRuleSetId != active.Id {
+			return ErrLuckyRuleVersionConflict
+		}
+		if err := ValidateLuckyRuleSet(&published); err != nil {
+			return err
+		}
+		RefreshLuckyRuleChecksum(&published)
+		now := GetDBTimestamp()
+		if err := tx.Model(&LuckyRuleSet{}).
+			Where("campaign_id = ? AND status = ?", campaign.Id, "active").
+			Updates(map[string]interface{}{"status": "retired"}).Error; err != nil {
+			return err
+		}
+		published.Status = "active"
+		published.PublishedAt = now
+		published.EffectiveAt = now
+		if err := tx.Save(&published).Error; err != nil {
+			return err
+		}
+		campaign.ActiveRuleSetId = published.Id
+		campaign.SettingsVersion++
+		return tx.Save(campaign).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &published, nil
 }
 
 func RefreshLuckyRuleChecksum(rule *LuckyRuleSet) {
@@ -544,11 +686,10 @@ func EnsureLuckyRechargeBonusForty() error {
 const luckyPrizeProbability20260811MigrationKey = "LuckyPrizeProbability20260811MigratedV1"
 
 // EnsureLuckyPrizeProbability20260811 publishes the owner-selected
-// subscription-card probability table as a new immutable rule version. Cards
-// already issued keep their original RuleSetId, while newly eligible orders
-// and newly issued cards use the new active rule. The recharge-card pool is
-// intentionally copied unchanged because it cannot award subscription-only
-// double/reset prizes.
+// subscription-card probability table as a new immutable rule version. Existing
+// cards keep their issuance snapshot for audit but draw from this new active
+// rule. The recharge-card pool is intentionally copied unchanged because it
+// cannot award subscription-only double/reset prizes.
 func EnsureLuckyPrizeProbability20260811() error {
 	return DB.Transaction(func(tx *gorm.DB) error {
 		var marker Option
@@ -576,6 +717,7 @@ func EnsureLuckyPrizeProbability20260811() error {
 			now := GetDBTimestamp()
 			next := *active
 			next.Id = 0
+			next.BaseRuleSetId = active.Id
 			next.Version = maxVersion + 1
 			next.Status = "active"
 			next.SubscriptionPool = string(desiredJSON)

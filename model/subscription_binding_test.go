@@ -57,6 +57,7 @@ func TestGetVisibleUserSubscriptionsIncludesFutureAndExcludesExpired(t *testing.
 	subscriptions := []UserSubscription{
 		{UserId: 27, PlanId: 1, PlanTitle: "current", Status: "active", StartTime: now - 60, EndTime: now + 3600},
 		{UserId: 27, PlanId: 2, PlanTitle: "future", Status: "active", StartTime: now + 3600, EndTime: now + 7200},
+		{UserId: 27, PlanId: 6, PlanTitle: "hidden-active", Hidden: true, Status: "active", StartTime: now - 60, EndTime: now + 3600},
 		{UserId: 27, PlanId: 3, PlanTitle: "elapsed", Status: "active", StartTime: now - 7200, EndTime: now - 3600},
 		{UserId: 27, PlanId: 4, PlanTitle: "expired", Status: "expired", StartTime: now - 7200, EndTime: now - 3600},
 		{UserId: 28, PlanId: 5, PlanTitle: "other-user", Status: "active", StartTime: now - 60, EndTime: now + 3600},
@@ -71,8 +72,35 @@ func TestGetVisibleUserSubscriptionsIncludesFutureAndExcludesExpired(t *testing.
 
 	active, err := GetAllActiveUserSubscriptions(27)
 	require.NoError(t, err)
-	require.Len(t, active, 1, "future subscriptions must be visible but not usable before start_time")
-	require.Equal(t, "current", active[0].Subscription.PlanTitle)
+	require.Len(t, active, 2, "hidden changes presentation only; future subscriptions remain unusable before start_time")
+	require.ElementsMatch(t, []string{"current", "hidden-active"}, []string{active[0].Subscription.PlanTitle, active[1].Subscription.PlanTitle})
+
+	history, err := GetUserFacingSubscriptionHistory(27)
+	require.NoError(t, err)
+	require.Len(t, history, 4)
+	for _, item := range history {
+		require.NotEqual(t, "hidden-active", item.Subscription.PlanTitle)
+	}
+}
+
+func TestSetUserSubscriptionHiddenPreservesRuntimeEligibility(t *testing.T) {
+	db := setupSubscriptionBindingTestDB(t)
+	now := common.GetTimestamp()
+	sub := UserSubscription{
+		UserId: 91, PlanId: 1, PlanTitle: "hide-only", Status: "active",
+		StartTime: now - 60, EndTime: now + 3600, AmountTotal: 100,
+	}
+	require.NoError(t, db.Create(&sub).Error)
+	require.NoError(t, SetUserSubscriptionHidden(sub.Id, true))
+	require.NoError(t, SetUserSubscriptionHidden(sub.Id, true), "visibility updates are idempotent across database affected-row semantics")
+
+	visible, err := GetVisibleUserSubscriptions(sub.UserId)
+	require.NoError(t, err)
+	require.Empty(t, visible)
+	active, err := GetAllActiveUserSubscriptions(sub.UserId)
+	require.NoError(t, err)
+	require.Len(t, active, 1)
+	require.True(t, active[0].Subscription.Hidden)
 }
 
 func TestHasSubscriptionPlanByGroupReservesPackageGroup(t *testing.T) {

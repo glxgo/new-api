@@ -76,6 +76,7 @@ func virtualMembershipInstanceResponse(membership *model.UserVirtualMembership) 
 	}
 	return gin.H{
 		"id": membership.Id, "plan_id": membership.PlanId, "order_id": membership.OrderId,
+		"hidden": membership.Hidden, "renewed_from_id": membership.RenewedFromId,
 		"plan_title": membership.PlanTitle, "plan_code": membership.PlanCode, "group_size": membership.GroupSize,
 		"weekly_quota": membership.WeeklyQuota, "weekly_used": membership.WeeklyUsed,
 		"weekly_remaining":  maxInt64(membership.WeeklyQuota - membership.WeeklyUsed),
@@ -153,8 +154,9 @@ func PurchaseVirtualMembership(c *gin.Context) {
 		return
 	}
 	var req struct {
-		PlanId    int `json:"plan_id" binding:"required"`
-		GroupSize int `json:"group_size"`
+		PlanId                int `json:"plan_id" binding:"required"`
+		GroupSize             int `json:"group_size"`
+		RenewFromMembershipId int `json:"renew_from_membership_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ApiErrorMsg(c, "参数错误")
@@ -163,7 +165,7 @@ func PurchaseVirtualMembership(c *gin.Context) {
 	if req.GroupSize == 0 {
 		req.GroupSize = 1
 	}
-	order, membership, err := model.PurchaseVirtualMembershipWithBalance(c.GetInt("id"), req.PlanId, req.GroupSize)
+	order, membership, err := model.PurchaseVirtualMembershipWithBalanceRenewal(c.GetInt("id"), req.PlanId, req.GroupSize, req.RenewFromMembershipId)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -361,6 +363,43 @@ func AdminDeleteVirtualMembership(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, gin.H{"unbound_tokens": unboundTokens})
+}
+
+func AdminRenewVirtualMembership(c *gin.Context) {
+	if !requirePaymentCompliance(c) {
+		return
+	}
+	membershipId, _ := strconv.Atoi(c.Param("id"))
+	if membershipId <= 0 {
+		common.ApiErrorMsg(c, "无效的虚拟会员ID")
+		return
+	}
+	order, membership, err := model.AdminRenewVirtualMembership(membershipId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"order_id": order.Id, "membership": virtualMembershipInstanceResponse(membership)})
+}
+
+func AdminSetVirtualMembershipVisibility(c *gin.Context) {
+	membershipId, _ := strconv.Atoi(c.Param("id"))
+	if membershipId <= 0 {
+		common.ApiErrorMsg(c, "无效的虚拟会员ID")
+		return
+	}
+	var req struct {
+		Hidden *bool `json:"hidden"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Hidden == nil {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	if err := model.SetVirtualMembershipHidden(membershipId, *req.Hidden); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"hidden": *req.Hidden})
 }
 
 func AdminListVirtualMembershipOrders(c *gin.Context) {
