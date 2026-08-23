@@ -326,10 +326,12 @@ func IsMainlandIPWhitelisted(ip net.IP) bool {
 	}
 	var row MainlandIPAllowlist
 	now := time.Now().Unix()
-	err := DB.Model(&MainlandIPAllowlist{}).
+	// Use Find instead of First so the expected cache-miss path does not emit
+	// a noisy gorm.ErrRecordNotFound error for every non-whitelisted request.
+	result := DB.Model(&MainlandIPAllowlist{}).
 		Where("ip = ? AND prefix_length = ? AND status = ? AND (expires_at = 0 OR expires_at > ?)", ipValue, prefixLength, MainlandIPAllowlistStatusActive, now).
-		Order("id desc").First(&row).Error
-	if err != nil {
+		Order("id desc").Limit(1).Find(&row)
+	if result.Error != nil || result.RowsAffected == 0 {
 		return false
 	}
 	// Re-check the current operator-granted identity as a defence in depth
