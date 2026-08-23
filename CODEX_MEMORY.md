@@ -1635,3 +1635,10 @@
 - 生产产物由 `155d6c360` 构建为 Linux/amd64 静态二进制，SHA-256 `1f0ee5720e4999e6f1bd15aca52b865b36987c8444cde9148d35c7256947c00b`，部署到 site-builder `/opt/newapi/releases/new-api-20260824-all-155d6c360-linux-amd64`；正式 compose SHA-256 `005427ce0064030cdd2c50df87057e6e5db857a773fc09cae7ee83f6684a3076`，两次发布备份已保留。
 - 线上 schema 已包含 `mainland_ip_allowlists`、`user_identities`、`virtual_membership_reset_orders` 及支付商品名/金额快照和 `active_reset_credits` 字段。生产 policy 已恢复 mainland Web block 为 true（config version 3），compose 显式配置可信代理网段；GeoIP 加载成功。正式容器 healthy、重启 0、仅监听 3000，MySQL/Redis 未重建；版本与 Default theme 通过回环和公开状态检查。
 - 线上业务回归已覆盖 CN Web 451 + 企业/教育 CTA、CN API 200、非 CN/未知 IP Web 放行、未授权新管理 API 401，以及前端 chunk 中累计充值、总额度/重置周期、主动重置、ENTERPRISE、usage 搜索和分润入口标记。未进行真实扣款，支付接口只做代码/边界验证。
+
+### 2026-08-24 — Classic 订阅实例管理补齐并完成最终发布
+
+- 主 agent 审核发现 Classic 主题缺少订阅购买实例列表；提交 `9525b8079` 新增 SideSheet 入口和复用 `/api/subscription/admin/subscribers` 的本地搜索/分页/刷新列表，前端二次过滤未开始、已过期、周期额度耗尽和总额度耗尽实例，并展示周期剩余、总额度已用/总额、重置周期、下次重置、有效期和状态。
+- Classic 定向 Prettier/ESLint/build、Default build、Go 定向 model/service/controller 测试、虚拟会员 race 以及顺序 `go test -vet=off ./... -run '^$'` 全部通过。一次与前端构建并行导致的 embed 资源假失败已在构建完成后顺序重跑通过。
+- 提交 `9525b8079` 已发布到 site-builder：产物 `/opt/newapi/releases/new-api-20260824-all-9525b8079-linux-amd64`，SHA-256 `65fff4270fbad98fad492e39623d4d05589206003495e50e72ec14cbd500b20c`；compose SHA-256 `7b4bdd41e28f4db6920b34e45642dc33378d389dfb35c1e1aaa2818dedd2885f`；备份 `/opt/newapi/backups/release-20260824-all-9525b8079-20260823T220335Z/`。只重建 new-api，MySQL/Redis 未重建，正式仍只监听 127.0.0.1:3000。
+- 线上 policy 仍为 mainland block=true/config version 3，`GEOIP_TRUSTED_PROXIES` 保留，GeoIP 加载成功。回环/公开状态为版本 `20260824-all-9525b8079`、theme `default`；CN 451 + 企业/教育 CTA、CN API 200、非 CN/未知 IP 200、未授权管理 API 401、Default/Classic 资源 marker 均通过。未进行真实扣款；`origin/main` 在记忆提交后应与 HEAD 同步。
