@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/Calcium-Ion/go-epay/epay"
@@ -20,6 +21,10 @@ type VirtualMembershipEpayPayRequest struct {
 	GroupSize             int    `json:"group_size"`
 	PaymentMethod         string `json:"payment_method"`
 	RenewFromMembershipId int    `json:"renew_from_membership_id"`
+}
+
+type VirtualMembershipResetEpayPayRequest struct {
+	PaymentMethod string `json:"payment_method"`
 }
 
 func VirtualMembershipRequestEpay(c *gin.Context) {
@@ -82,9 +87,13 @@ func VirtualMembershipRequestEpay(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	productName := order.ProductNameSnapshot
+	if productName == "" {
+		productName = model.PaymentProductNameForVirtualMembership(plan.Title)
+	}
 	uri, params, err := client.Purchase(&epay.PurchaseArgs{
 		Type: req.PaymentMethod, ServiceTradeNo: tradeNo,
-		Name: fmt.Sprintf("VM:%s", plan.Title), Money: fmt.Sprintf("%.2f", order.Money),
+		Name: productName, Money: model.FormatPaymentGatewayAmount(order.Money),
 		Device: epay.PC, NotifyUrl: notifyURL, ReturnUrl: returnURL,
 	})
 	if err != nil {
@@ -93,6 +102,67 @@ func VirtualMembershipRequestEpay(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "success", "data": params, "url": uri})
+}
+
+// VirtualMembershipActiveResetRequestEpay starts the optional one-credit
+// add-on payment. The amount is resolved from the membership's immutable
+// purchase snapshot inside the model transaction (30%), not from a mutable
+// current plan price supplied by the browser.
+func VirtualMembershipActiveResetRequestEpay(c *gin.Context) {
+	if !requirePaymentCompliance(c) {
+		return
+	}
+	membershipId, _ := strconv.Atoi(c.Param("id"))
+	var req VirtualMembershipResetEpayPayRequest
+	if err := c.ShouldBindJSON(&req); err != nil || membershipId <= 0 {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	if !operation_setting.ContainsPayMethod(req.PaymentMethod) {
+		common.ApiErrorMsg(c, "支付方式不存在")
+		return
+	}
+	client := GetEpayClient()
+	if client == nil {
+		common.ApiErrorMsg(c, "当前管理员未配置支付信息")
+		return
+	}
+	callbackAddress := service.GetCallbackAddress()
+	returnURL, err := url.Parse(paymentReturnPath("/console/virtual-membership?pay=success"))
+	if err != nil {
+		common.ApiErrorMsg(c, "回调地址配置错误")
+		return
+	}
+	notifyURL, err := url.Parse(callbackAddress + "/api/virtual-membership/epay/notify")
+	if err != nil {
+		common.ApiErrorMsg(c, "回调地址配置错误")
+		return
+	}
+	tradeNo := fmt.Sprintf("VMRESETUSR%dNO%s", c.GetInt("id"), fmt.Sprintf("%s%d", common.GetRandomString(6), time.Now().Unix()))
+	order, err := model.CreateVirtualMembershipResetEpayOrder(
+		c.GetInt("id"), membershipId, tradeNo, req.PaymentMethod, "虚拟会员主动重置次数",
+	)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	paymentMethod := order.PaymentMethod
+	if paymentMethod == "" {
+		paymentMethod = req.PaymentMethod
+	}
+	uri, params, err := client.Purchase(&epay.PurchaseArgs{
+		Type: paymentMethod, ServiceTradeNo: order.TradeNo,
+		Name: order.ProductNameSnapshot, Money: model.FormatPaymentGatewayAmount(order.Money),
+		Device: epay.PC, NotifyUrl: notifyURL, ReturnUrl: returnURL,
+	})
+	if err != nil {
+		// Purchase only builds the provider URL; when it fails no provider order
+		// exists, so close the local ledger row and let the user retry cleanly.
+		_ = model.ExpireVirtualMembershipResetOrder(order.TradeNo, model.PaymentProviderEpay)
+		common.ApiErrorMsg(c, "拉起支付失败")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "success", "data": params, "url": uri, "price": order.Money})
 }
 
 func readEpayCallbackParams(c *gin.Context) map[string]string {
@@ -134,7 +204,7 @@ func VirtualMembershipEpayNotify(c *gin.Context) {
 		_, _ = c.Writer.Write([]byte("fail"))
 		return
 	}
-	if err := model.CompleteVirtualMembershipOrder(verifyInfo.ServiceTradeNo, common.GetJsonString(verifyInfo), model.PaymentProviderEpay, verifyInfo.Type, actual); err != nil {
+	if err := model.CompleteVirtualMembershipPayment(verifyInfo.ServiceTradeNo, common.GetJsonString(verifyInfo), model.PaymentProviderEpay, verifyInfo.Type, actual); err != nil {
 		_, _ = c.Writer.Write([]byte("fail"))
 		return
 	}
@@ -171,7 +241,7 @@ func VirtualMembershipEpayReturn(c *gin.Context) {
 		c.Redirect(http.StatusFound, paymentReturnPath("/console/virtual-membership?pay=fail"))
 		return
 	}
-	if err := model.CompleteVirtualMembershipOrder(verifyInfo.ServiceTradeNo, common.GetJsonString(verifyInfo), model.PaymentProviderEpay, verifyInfo.Type, actual); err != nil {
+	if err := model.CompleteVirtualMembershipPayment(verifyInfo.ServiceTradeNo, common.GetJsonString(verifyInfo), model.PaymentProviderEpay, verifyInfo.Type, actual); err != nil {
 		c.Redirect(http.StatusFound, failURL)
 		return
 	}

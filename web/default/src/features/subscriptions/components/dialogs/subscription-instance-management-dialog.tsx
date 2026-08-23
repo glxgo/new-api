@@ -7,7 +7,7 @@ published by the Free Software Foundation, either version 3 of the
 License, or (at your option) any later version.
 */
 import { useEffect, useMemo, useState } from 'react'
-import { KeyRound, Link2, Unlink2 } from 'lucide-react'
+import { EyeOff, KeyRound, Link2, Unlink2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { parseQuotaFromDollars, quotaUnitsToDollars } from '@/lib/format'
@@ -20,6 +20,7 @@ import { Dialog } from '@/components/dialog'
 import {
   getSubscriptionTokenBindings,
   replaceSubscriptionTokenBindings,
+  setSelfSubscriptionHidden,
 } from '../../api'
 import type {
   SubscriptionTokenBindingItem,
@@ -50,6 +51,7 @@ export function SubscriptionInstanceManagementDialog({
   const [allowSameGroup, setAllowSameGroup] = useState(false)
   const [allowWallet, setAllowWallet] = useState(false)
   const [walletLimit, setWalletLimit] = useState(0)
+  const [hiding, setHiding] = useState(false)
 
   useEffect(() => {
     if (!open || !subscription?.id) return
@@ -159,6 +161,25 @@ export function SubscriptionInstanceManagementDialog({
       toast.error(t('Request failed'))
     } finally {
       setSaving(false)
+    }
+  }
+
+  const hideSubscription = async () => {
+    if (!subscription?.id) return
+    setHiding(true)
+    try {
+      const res = await setSelfSubscriptionHidden(subscription.id, true)
+      if (!res.success) {
+        toast.error(res.message || t('Update failed'))
+        return
+      }
+      toast.success('已隐藏该套餐，可联系管理员恢复展示')
+      await onSaved?.()
+      onOpenChange(false)
+    } catch {
+      toast.error(t('Request failed'))
+    } finally {
+      setHiding(false)
     }
   }
 
@@ -358,6 +379,26 @@ export function SubscriptionInstanceManagementDialog({
               </p>
             </div>
           )}
+        </div>
+
+        <div className='border-warning/30 bg-warning/5 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3'>
+          <div className='min-w-0'>
+            <div className='text-sm font-medium'>管理剩余用量展示</div>
+            <div className='text-muted-foreground text-xs'>
+              只从你的剩余用量页面隐藏，不会影响额度、绑定或实际使用。
+            </div>
+          </div>
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            className='gap-1.5'
+            onClick={hideSubscription}
+            disabled={hiding || saving}
+          >
+            <EyeOff className='size-3.5' />
+            {hiding ? '处理中…' : '隐藏此套餐'}
+          </Button>
         </div>
 
         {reviewing && (

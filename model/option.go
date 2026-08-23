@@ -8,6 +8,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/commission_setting"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/performance_setting"
@@ -189,6 +190,9 @@ func InitOptionMap() {
 	common.OptionMap["AutomaticDisableStatusCodes"] = operation_setting.AutomaticDisableStatusCodesToString()
 	common.OptionMap["AutomaticRetryStatusCodes"] = operation_setting.AutomaticRetryStatusCodesToString()
 	common.OptionMap["ExposeRatioEnabled"] = strconv.FormatBool(ratio_setting.IsExposeRatioEnabled())
+	for key, value := range commission_setting.Values() {
+		common.OptionMap[key] = strconv.FormatInt(value, 10)
+	}
 
 	// 自动添加所有注册的模型配置
 	modelConfigs := config.GlobalConfig.ExportAllConfigs()
@@ -269,6 +273,15 @@ func UpdateOptionsBulk(values map[string]string) error {
 	return nil
 }
 
+// GetOptionValue 读取指定 option 键的值；不存在时返回错误，调用方按空处理。
+func GetOptionValue(key string) (string, error) {
+	var option Option
+	if err := DB.Where(optionKeyWhereClause(), key).First(&option).Error; err != nil {
+		return "", err
+	}
+	return option.Value, nil
+}
+
 // migrateGroupModelPricingV1 一次性迁移(2026-06-22, plan mellow-growing-waterfall.md):
 // 清空废弃的分组独立模型价 GroupModelRatio/Price/Cost。本次重构改为「全局官方价 × 分组
 // 售价倍率(GroupRatio) × 分组成本倍率(GroupCostRatio)」模式, 旧的按分组逐模型覆盖价不再生效。
@@ -328,6 +341,12 @@ func updateOptionMap(key string, value string) (err error) {
 		common.OptionMap = make(map[string]string)
 	}
 	common.OptionMap[key] = value
+	if _, ok := commission_setting.Values()[key]; ok {
+		if err := commission_setting.Apply(key, value); err != nil {
+			return err
+		}
+		return nil
+	}
 
 	// 检查是否是模型配置 - 使用更规范的方式处理
 	if handleConfigUpdate(key, value) {

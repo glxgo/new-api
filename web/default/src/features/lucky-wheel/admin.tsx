@@ -391,12 +391,8 @@ export function LuckyWheelAdmin() {
                 </div>
               </div>
               <div className='bg-muted/40 rounded-lg p-3'>
-                <div className='text-muted-foreground'>充值额度附加</div>
-                <div className='mt-1 font-semibold'>
-                  +$
-                  {(overview?.active_rule.recharge_bonus_usd_micros || 0) /
-                    1_000_000}
-                </div>
+                <div className='text-muted-foreground'>充值卡奖励</div>
+                <div className='mt-1 font-semibold'>抽到什么送什么</div>
               </div>
             </CardContent>
           </Card>

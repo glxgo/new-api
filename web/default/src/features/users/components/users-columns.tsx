@@ -32,6 +32,7 @@ import { GroupBadge } from '@/components/group-badge'
 import { LongText } from '@/components/long-text'
 import { StatusBadge } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
+import { IdentityBadge } from '@/features/identity/identity-badge'
 import {
   USER_STATUS,
   USER_STATUSES,
@@ -110,6 +111,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
                   </TooltipContent>
                 </Tooltip>
               )}
+              <IdentityBadge identityType={row.original.identity_type} />
             </div>
             {displayName && displayName !== username && (
               <LongText className='text-muted-foreground max-w-[180px] text-xs'>

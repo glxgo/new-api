@@ -119,7 +119,7 @@ func TestAdministratorRechargeCountsCommissionAndLuckyProgressOnce(t *testing.T)
 	var progress LuckyRechargeProgress
 	require.NoError(t, db.First(&progress, user.Id).Error)
 	require.EqualValues(t, 10_000, progress.EligibleCents)
-	require.EqualValues(t, 2, progress.HighestAwardedStage)
+	require.EqualValues(t, 3, progress.HighestAwardedStage)
 	var creditCount, dividendCount, luckyEventCount, topupLogCount int64
 	require.NoError(t, db.Model(&RechargeCredit{}).Where("source_type = ? AND source_ref = ?", RechargeSourceAdmin, "admin-request-1").Count(&creditCount).Error)
 	require.NoError(t, db.Model(&DividendRecord{}).Where("source_ref = ?", RechargeCommissionSourceRef(RechargeSourceAdmin, "admin-request-1")).Count(&dividendCount).Error)

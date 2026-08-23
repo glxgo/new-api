@@ -44,6 +44,10 @@ const VirtualMembership = () => {
   const [purchase, setPurchase] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState('balance');
   const [paying, setPaying] = useState(false);
+  const [manageMembership, setManageMembership] = useState(null);
+  const [manageHiding, setManageHiding] = useState(false);
+  const [restoringId, setRestoringId] = useState(null);
+  const [resettingId, setResettingId] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -71,6 +75,130 @@ const VirtualMembership = () => {
         ? `epay:${page.epay_methods[0].type}`
         : 'balance',
     );
+  };
+
+  const hideMembership = async (membershipId) => {
+    try {
+      const res = await API.patch(
+        `/api/virtual-membership/${membershipId}/visibility`,
+        { hidden: true },
+      );
+      if (res.data?.success) {
+        showSuccess('已隐藏该会员，可联系管理员恢复展示');
+        await load();
+      } else {
+        showError(res.data?.message || '隐藏失败');
+      }
+    } catch (error) {
+      showError(error);
+    }
+  };
+
+  const hideFromManage = async () => {
+    if (!manageMembership?.id) return;
+    setManageHiding(true);
+    try {
+      await hideMembership(manageMembership.id);
+      setManageMembership(null);
+    } finally {
+      setManageHiding(false);
+    }
+  };
+
+  const restoreMembership = async (membershipId) => {
+    setRestoringId(membershipId);
+    try {
+      const res = await API.patch(
+        `/api/virtual-membership/${membershipId}/visibility`,
+        { hidden: false },
+      );
+      if (res.data?.success) {
+        showSuccess('已恢复展示');
+        await load();
+      } else {
+        showError(res.data?.message || '恢复展示失败');
+      }
+    } catch (error) {
+      showError(error);
+    } finally {
+      setRestoringId(null);
+    }
+  };
+
+  const submitEpayForm = (payload) => {
+    if (!payload?.url) return false;
+    const form = document.createElement('form');
+    form.action = payload.url;
+    form.method = 'POST';
+    const isSafari =
+      typeof navigator !== 'undefined' &&
+      /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    if (!isSafari) form.target = '_blank';
+    Object.entries(payload.data || {}).forEach(([key, value]) => {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = key;
+      input.value = String(value);
+      form.appendChild(input);
+    });
+    document.body.appendChild(form);
+    form.submit();
+    form.remove();
+    return true;
+  };
+
+  const activeReset = async (membership) => {
+    if (resettingId !== null) return;
+    setResettingId(membership.id);
+    try {
+      if (Number(membership.active_reset_credits || 0) > 0) {
+        if (
+          !window.confirm(
+            '确认立即重置该虚拟会员的周限额和 5 小时限额吗？将消耗 1 次主动重置次数。',
+          )
+        )
+          return;
+        const res = await API.post(
+          `/api/virtual-membership/${membership.id}/reset`,
+        );
+        if (res.data?.success) {
+          showSuccess('已主动重置额度');
+          await load();
+        } else {
+          showError(new Error(res.data?.message || '主动重置失败'));
+        }
+        return;
+      }
+      const method = page.epay_methods?.[0]?.type;
+      const price = Number(membership.active_reset_price_amount || 0);
+      if (!method) {
+        showError(new Error('当前未配置易支付方式'));
+        return;
+      }
+      if (price < 0.01) {
+        showError(new Error('主动重置价格暂不可用，请联系管理员'));
+        return;
+      }
+      if (
+        !window.confirm(
+          `主动重置次数不足，是否购买 1 次？价格 ¥${price.toFixed(2)}`,
+        )
+      )
+        return;
+      const res = await API.post(
+        `/api/virtual-membership/${membership.id}/reset/epay`,
+        { payment_method: method },
+      );
+      if (res.data?.message !== 'success' || !submitEpayForm(res.data)) {
+        showError(new Error(res.data?.message || '支付请求失败'));
+        return;
+      }
+      showSuccess('支付页面已打开，支付成功后将获得 1 次主动重置');
+    } catch (error) {
+      showError(error);
+    } finally {
+      setResettingId(null);
+    }
   };
 
   const openRenewal = (membership) => {
@@ -285,18 +413,74 @@ const VirtualMembership = () => {
                           : item.end_time) * 1000,
                       ).toLocaleString()}
                     </p>
+                    <div className='grid grid-cols-2 gap-2'>
+                      <Button
+                        theme='outline'
+                        className='w-full'
+                        onClick={() => setManageMembership(item)}
+                      >
+                        管理
+                      </Button>
+                      <Button
+                        theme='borderless'
+                        className='w-full'
+                        disabled={
+                          page.memberships.some(
+                            (candidate) =>
+                              candidate.renewed_from_id === item.id,
+                          ) ||
+                          !page.plans.some((plan) => plan.id === item.plan_id)
+                        }
+                        onClick={() => openRenewal(item)}
+                      >
+                        续费
+                      </Button>
+                    </div>
                     <Button
-                      theme='borderless'
-                      className='w-full'
+                      theme='outline'
+                      className='mt-2 w-full'
+                      loading={resettingId === item.id}
                       disabled={
-                        page.memberships.some(
-                          (candidate) => candidate.renewed_from_id === item.id,
-                        ) ||
-                        !page.plans.some((plan) => plan.id === item.plan_id)
+                        item.start_time > renderedAt || item.status !== 'active'
                       }
-                      onClick={() => openRenewal(item)}
+                      onClick={() => activeReset(item)}
                     >
-                      续费
+                      {Number(item.active_reset_credits || 0) > 0
+                        ? `主动重置（剩余 ${item.active_reset_credits} 次）`
+                        : `购买主动重置次数（¥${Number(item.active_reset_price_amount || 0).toFixed(2)}）`}
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
+        {page.hidden_memberships?.length > 0 && (
+          <div>
+            <h2 className='mb-3 text-lg font-semibold'>已隐藏的虚拟会员</h2>
+            <div className='grid gap-4 md:grid-cols-2'>
+              {page.hidden_memberships.map((item) => (
+                <Card
+                  key={item.id}
+                  title={item.plan_title}
+                  headerExtraContent={
+                    <Tag color='grey' size='small'>
+                      已隐藏
+                    </Tag>
+                  }
+                >
+                  <div className='space-y-3'>
+                    <p className='text-xs text-gray-500'>
+                      有效期至 {new Date(item.end_time * 1000).toLocaleString()}{' '}
+                      · 会员 #{item.id}
+                    </p>
+                    <Button
+                      theme='outline'
+                      className='w-full'
+                      loading={restoringId === item.id}
+                      onClick={() => restoreMembership(item.id)}
+                    >
+                      恢复展示
                     </Button>
                   </div>
                 </Card>
@@ -386,6 +570,60 @@ const VirtualMembership = () => {
           )}
         </div>
       </div>
+      <Modal
+        title='管理虚拟会员'
+        visible={Boolean(manageMembership)}
+        onCancel={() => setManageMembership(null)}
+        footer={
+          <div className='flex items-center justify-end gap-2'>
+            <Button
+              theme='borderless'
+              onClick={() => setManageMembership(null)}
+            >
+              取消
+            </Button>
+            <Button
+              theme='solid'
+              type='danger'
+              loading={manageHiding}
+              onClick={hideFromManage}
+            >
+              隐藏此会员
+            </Button>
+          </div>
+        }
+        width={460}
+      >
+        {manageMembership && (
+          <div className='space-y-3'>
+            <div className='flex items-center justify-between text-sm'>
+              <span className='text-gray-500'>方案</span>
+              <span className='font-medium'>{manageMembership.plan_title}</span>
+            </div>
+            <div className='flex items-center justify-between text-sm'>
+              <span className='text-gray-500'>购买档位</span>
+              <span className='font-medium'>
+                {manageMembership.group_size === 1
+                  ? '单独购买'
+                  : `${manageMembership.group_size} 人团`}
+              </span>
+            </div>
+            <div className='flex items-center justify-between text-sm'>
+              <span className='text-gray-500'>会员编号</span>
+              <span className='font-medium'>#{manageMembership.id}</span>
+            </div>
+            <div className='flex items-center justify-between text-sm'>
+              <span className='text-gray-500'>有效期至</span>
+              <span className='font-medium'>
+                {new Date(manageMembership.end_time * 1000).toLocaleString()}
+              </span>
+            </div>
+            <div className='rounded-lg border border-orange-200 bg-orange-50 p-3 text-xs text-orange-700'>
+              只从你的剩余用量页面隐藏，不会影响额度、绑定或实际使用。
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };

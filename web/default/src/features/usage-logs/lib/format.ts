@@ -317,6 +317,11 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'option.payment_compliance': 'Confirmed payment compliance',
   'option.reset_ratio': 'Reset model ratios',
   'option.clear_affinity_cache': 'Cleared channel affinity cache',
+  // Access policy
+  'access_policy.update':
+    'Updated mainland China web access policy (version {{version}})',
+  'access_policy.rollback':
+    'Rolled back mainland China web access policy (version {{version}})',
   // Custom OAuth
   'custom_oauth.create': 'Created a custom OAuth provider',
   'custom_oauth.update': 'Updated a custom OAuth provider',

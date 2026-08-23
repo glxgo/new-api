@@ -108,6 +108,35 @@ const UserInfoHeader = ({ t, userState }) => {
                     <Tag size='large' shape='circle' style={{ color: 'white' }}>
                       ID: {userState?.user?.id}
                     </Tag>
+                    {userState?.user?.identity_type === 'enterprise' && (
+                      <Tag
+                        size='large'
+                        shape='circle'
+                        style={{
+                          background: '#151515',
+                          border: '1px solid #c9a45b',
+                          color: '#e5c477',
+                          fontWeight: 700,
+                          letterSpacing: '0.12em',
+                        }}
+                      >
+                        ENTERPRISE
+                      </Tag>
+                    )}
+                    {userState?.user?.identity_type === 'education' && (
+                      <Tag
+                        size='large'
+                        shape='circle'
+                        style={{
+                          background: '#fff',
+                          border: '1px solid #111',
+                          color: '#2563eb',
+                          fontWeight: 600,
+                        }}
+                      >
+                        student
+                      </Tag>
+                    )}
                   </div>
                 </div>
               </div>

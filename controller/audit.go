@@ -31,6 +31,12 @@ var auditContentTemplates = map[string]string{
 	"user.security_reset":   "Cleared automatic API security restrictions and reset the effective warning count",
 	"option.update":         "Updated system setting ${key}",
 
+	"access_policy.update":           "Updated mainland China web access policy (version ${version})",
+	"access_policy.rollback":         "Rolled back mainland China web access policy (version ${version})",
+	"user.identity_update":           "Updated user identity from ${from} to ${to} (ID: ${id})",
+	"mainland_ip_whitelist.revoke":   "Revoked mainland IP allowlist entry ${id}",
+	"mainland_ip_whitelist.self_add": "Added the current IP to the user's mainland allowlist (${address_family})",
+
 	"channel.create":             "Created channel ${name} (type ${type}, count ${count})",
 	"channel.update":             "Updated channel ${name} (ID: ${id})",
 	"channel.delete":             "Deleted channel ${name} (ID: ${id})",

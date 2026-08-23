@@ -299,6 +299,8 @@ func migrateDB() error {
 		&TopUpCoupon{},
 		&TopUpCouponUse{},
 		&UserSecurityIncident{},
+		&UserIdentity{},
+		&MainlandIPAllowlist{},
 		&LuckyCampaign{},
 		&LuckyRuleSet{},
 		&LuckyCard{},
@@ -312,6 +314,7 @@ func migrateDB() error {
 		&VirtualMembershipSetting{},
 		&VirtualMembershipPlan{},
 		&VirtualMembershipOrder{},
+		&VirtualMembershipResetOrder{},
 		&UserVirtualMembership{},
 		&VirtualMembershipPreConsumeRecord{},
 		&UserAnnouncementRead{},
@@ -331,10 +334,16 @@ func migrateDB() error {
 			return err
 		}
 	}
+	if _, err := NormalizePurchaseAnchoredSubscriptionResets(); err != nil {
+		return err
+	}
 	if err := EnsureDefaultLuckyCampaign(); err != nil {
 		return err
 	}
 	if err := EnsureLuckyRechargeBonusForty(); err != nil {
+		return err
+	}
+	if err := EnsureLuckyRechargeCardPolicy20260820(); err != nil {
 		return err
 	}
 	if err := EnsureLuckyPrizeProbability20260811(); err != nil {
@@ -400,6 +409,8 @@ func migrateDBFast() error {
 		{&TopUpCoupon{}, "TopUpCoupon"},
 		{&TopUpCouponUse{}, "TopUpCouponUse"},
 		{&UserSecurityIncident{}, "UserSecurityIncident"},
+		{&UserIdentity{}, "UserIdentity"},
+		{&MainlandIPAllowlist{}, "MainlandIPAllowlist"},
 		{&LuckyCampaign{}, "LuckyCampaign"},
 		{&LuckyRuleSet{}, "LuckyRuleSet"},
 		{&LuckyCard{}, "LuckyCard"},
@@ -413,6 +424,7 @@ func migrateDBFast() error {
 		{&VirtualMembershipSetting{}, "VirtualMembershipSetting"},
 		{&VirtualMembershipPlan{}, "VirtualMembershipPlan"},
 		{&VirtualMembershipOrder{}, "VirtualMembershipOrder"},
+		{&VirtualMembershipResetOrder{}, "VirtualMembershipResetOrder"},
 		{&UserVirtualMembership{}, "UserVirtualMembership"},
 		{&VirtualMembershipPreConsumeRecord{}, "VirtualMembershipPreConsumeRecord"},
 		{&UserAnnouncementRead{}, "UserAnnouncementRead"},
@@ -452,10 +464,16 @@ func migrateDBFast() error {
 			return err
 		}
 	}
+	if _, err := NormalizePurchaseAnchoredSubscriptionResets(); err != nil {
+		return err
+	}
 	if err := EnsureDefaultLuckyCampaign(); err != nil {
 		return err
 	}
 	if err := EnsureLuckyRechargeBonusForty(); err != nil {
+		return err
+	}
+	if err := EnsureLuckyRechargeCardPolicy20260820(); err != nil {
 		return err
 	}
 	if err := EnsureLuckyPrizeProbability20260811(); err != nil {

@@ -28,6 +28,7 @@ import { NoticeSection } from '../maintenance/notice-section'
 import { SidebarModulesSection } from '../maintenance/sidebar-modules-section'
 import type { SiteSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { AccessPolicySection } from './access-policy-section'
 import { SITE_DEFAULT_SECTION, type SiteSectionId } from './section-meta'
 
 const SITE_SECTIONS = [
@@ -96,6 +97,11 @@ const SITE_SECTIONS = [
         />
       )
     },
+  },
+  {
+    id: 'access-policy',
+    titleKey: 'Access Policy',
+    build: () => <AccessPolicySection />,
   },
 ] as const
 

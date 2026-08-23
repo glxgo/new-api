@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useContext, useEffect } from 'react';
+import { Tag } from '@douyinfe/semi-ui';
 import { getRelativeTime } from '../../helpers';
 import { UserContext } from '../../context/User';
 import { StatusContext } from '../../context/Status';
@@ -160,6 +161,46 @@ const Dashboard = () => {
         loading={dashboardData.loading}
         t={dashboardData.t}
       />
+
+      {userState?.user?.identity_type &&
+        userState.user.identity_type !== 'none' && (
+          <div
+            className='mb-4 flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-sm'
+            style={{
+              borderColor: '#e6cf9b',
+              background: 'linear-gradient(90deg,#fffdf8,#f6ecd5)',
+              color: '#5b461d',
+            }}
+          >
+            <div className='min-w-0 flex-1 text-sm font-semibold'>
+              {dashboardData.t('欢迎回来')}，{userState.user.username}；
+              {userState.user.identity_type === 'enterprise'
+                ? dashboardData.t('企业身份已识别，祝你今天使用顺利。')
+                : dashboardData.t('教育身份已识别，祝你今天使用顺利。')}
+            </div>
+            <Tag
+              size='small'
+              shape='circle'
+              style={
+                userState.user.identity_type === 'enterprise'
+                  ? {
+                      background: '#151515',
+                      color: '#e5c477',
+                      border: '1px solid #c9a45b',
+                    }
+                  : {
+                      background: '#fff',
+                      color: '#2563eb',
+                      border: '1px solid #111',
+                    }
+              }
+            >
+              {userState.user.identity_type === 'enterprise'
+                ? 'ENTERPRISE'
+                : 'student'}
+            </Tag>
+          </div>
+        )}
 
       <SearchModal
         searchModalVisible={dashboardData.searchModalVisible}

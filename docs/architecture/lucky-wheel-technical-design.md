@@ -119,7 +119,7 @@ lucky_draws + 奖励订阅/赠金流水
 | `subscription_pool` | text | 订阅来源奖池 JSON |
 | `recharge_pool` | text | 充值来源奖池 JSON |
 | `threshold_config` | text | 充值阶梯 JSON |
-| `recharge_bonus_usd_micros` | bigint | 固定额外 60 美元，使用微美元避免浮点 |
+| `recharge_bonus_usd_micros` | bigint | 已废弃，固定为 0；奖项配置金额即实际发放金额 |
 | `recharge_card_valid_seconds` | bigint | 30 天 |
 | `recharge_reward_valid_seconds` | bigint | 30 天 |
 | `crazy_card_valid_seconds` | bigint | 5 小时 |
@@ -390,22 +390,10 @@ SupersededById               *int
 
 ```go
 func LuckyThresholdCents(stage int64) int64 {
-    switch stage {
-    case 1:
-        return 5_000
-    case 2:
-        return 10_000
-    case 3:
-        return 20_000
-    case 4:
-        return 40_000
-    case 5:
-        return 60_000
-    case 6:
-        return 80_000
-    default:
-        return 80_000 + (stage-6)*20_000
+    if stage < 1 {
+        stage = 1
     }
+    return stage * 3_000
 }
 ```
 
@@ -975,7 +963,7 @@ Classic 至少提供功能等价的：
 3. 更新 SQLite 的 `ensureSubscriptionPlanTableSQLite`；
 4. AutoMigrate 支持 MySQL、PostgreSQL、SQLite；
 5. 创建两个不可购买的系统奖励模板；
-6. 不回填历史充值进度；
+6. 规则切换时将历史充值进度清零，用户从 0 元按新规则重新累计；
 7. 不给历史订阅订单补发幸运卡；
 8. 不把历史周期重置追溯为幸运卡。
 

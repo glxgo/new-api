@@ -153,10 +153,7 @@ func createLuckySubscriptionTx(
 }
 
 func awardQuotaPrizeTx(tx *gorm.DB, card *model.LuckyCard, rule *model.LuckyRuleSet, draw *model.LuckyDraw, prize model.LuckyPrizeConfig, now int64) error {
-	actualUsd := prize.DisplayUsdMicros
-	if card.PoolType == model.LuckyPoolRecharge {
-		actualUsd += rule.RechargeBonusUsdMicros
-	}
+	actualUsd := prize.AwardUsdMicros()
 	quota := quotaFromUsdMicros(actualUsd)
 	if quota <= 0 {
 		return errors.New("invalid lucky quota award")
@@ -290,7 +287,7 @@ func awardQuotaPrizeTx(tx *gorm.DB, card *model.LuckyCard, rule *model.LuckyRule
 }
 
 func awardGiftPrizeTx(tx *gorm.DB, card *model.LuckyCard, draw *model.LuckyDraw, prize model.LuckyPrizeConfig) error {
-	quota := quotaFromUsdMicros(prize.DisplayUsdMicros)
+	quota := quotaFromUsdMicros(prize.AwardUsdMicros())
 	if quota <= 0 {
 		return errors.New("invalid lucky gift award")
 	}
@@ -302,7 +299,7 @@ func awardGiftPrizeTx(tx *gorm.DB, card *model.LuckyCard, draw *model.LuckyDraw,
 	if result.RowsAffected != 1 {
 		return errors.New("lucky draw user not found")
 	}
-	draw.ActualUsdMicros = prize.DisplayUsdMicros
+	draw.ActualUsdMicros = prize.AwardUsdMicros()
 	draw.AwardedQuota = quota
 	draw.GiftQuotaAwarded = quota
 	return nil
@@ -535,8 +532,8 @@ func drawLuckyCardWithSource(userId int, cardId int64, idempotencyKey string, ra
 		result = model.LuckyDraw{
 			UserId: userId, CardId: card.Id, RuleSetId: rule.Id,
 			IdempotencyKey: idempotencyKey, RandomValue: randomValue,
-			PrizeType: prize.Code, DisplayUsdMicros: prize.DisplayUsdMicros,
-			ActualUsdMicros: prize.DisplayUsdMicros, RuleChecksum: rule.Checksum,
+			PrizeType: prize.Code, DisplayUsdMicros: prize.AwardUsdMicros(),
+			ActualUsdMicros: prize.AwardUsdMicros(), RuleChecksum: rule.Checksum,
 			Status: "awarded", AwardedAt: now,
 		}
 		if err := tx.Create(&result).Error; err != nil {

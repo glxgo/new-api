@@ -28,6 +28,8 @@ func SetWebRouter(router *gin.Engine, assets ThemeAssets) {
 
 	router.Use(gzip.Gzip(gzip.DefaultCompression))
 	router.Use(middleware.GlobalWebRateLimit())
+	// 中国大陆网页访问限制（PRD v0.4）：仅作用于网页路由，API 不受影响。
+	router.Use(middleware.MainlandWebAccessBlock())
 	router.Use(middleware.Cache())
 	router.Use(static.Serve("/", themeFS))
 	router.NoRoute(func(c *gin.Context) {

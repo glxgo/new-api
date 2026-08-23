@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useContext, useEffect, useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   API,
@@ -57,11 +57,13 @@ import {
   IconEdit,
 } from '@douyinfe/semi-icons';
 import UserBindingManagementModal from './UserBindingManagementModal';
+import { UserContext } from '../../../../context/User';
 
 const { Text, Title } = Typography;
 
 const EditUserModal = (props) => {
   const { t } = useTranslation();
+  const [userState] = useContext(UserContext);
   const userId = props.editingUser.id;
   const [loading, setLoading] = useState(true);
   const [adjustModalOpen, setAdjustModalOpen] = useState(false);
@@ -94,6 +96,7 @@ const EditUserModal = (props) => {
     quota_amount: 0,
     group: 'default',
     remark: '',
+    identity_type: 'none',
   });
 
   const fetchGroups = async () => {
@@ -157,6 +160,16 @@ const EditUserModal = (props) => {
     const res = await API.put(url, payload);
     const { success, message } = res.data;
     if (success) {
+      if (userId && values.identity_type && userState?.user?.role >= 100) {
+        const identityRes = await API.put(`/api/user/${userId}/identity`, {
+          identity_type: values.identity_type,
+        });
+        if (!identityRes.data?.success) {
+          showError(identityRes.data?.message || t('身份更新失败'));
+          setLoading(false);
+          return;
+        }
+      }
       showSuccess(t('用户信息更新成功！'));
       props.refresh();
       props.handleClose();
@@ -170,7 +183,11 @@ const EditUserModal = (props) => {
   const adjustQuota = async () => {
     const quotaVal = parseInt(adjustQuotaLocal) || 0;
     if (quotaVal <= 0 && adjustMode !== 'override') return;
-    if (adjustMode === 'override' && (adjustQuotaLocal === '' || adjustQuotaLocal == null)) return;
+    if (
+      adjustMode === 'override' &&
+      (adjustQuotaLocal === '' || adjustQuotaLocal == null)
+    )
+      return;
     setAdjustLoading(true);
     try {
       const res = await API.post('/api/user/manage', {
@@ -368,6 +385,23 @@ const EditUserModal = (props) => {
                         />
                       </Col>
 
+                      <Col span={24}>
+                        <Form.Select
+                          field='identity_type'
+                          label={t('企业 / 教育身份')}
+                          optionList={[
+                            { label: t('无身份'), value: 'none' },
+                            { label: 'ENTERPRISE', value: 'enterprise' },
+                            { label: 'student', value: 'education' },
+                          ]}
+                          disabled={userState?.user?.role < 100}
+                          placeholder={t('请选择身份')}
+                        />
+                        <div className='text-xs text-gray-500 mt-1'>
+                          {t('仅超级管理员可授予或撤销该身份')}
+                        </div>
+                      </Col>
+
                       <Col span={10}>
                         <Form.InputNumber
                           field='quota_amount'
@@ -401,7 +435,10 @@ const EditUserModal = (props) => {
                             ? `▾ ${t('收起原生额度输入')}`
                             : `▸ ${t('使用原生额度输入')}`}
                         </div>
-                        <div style={{ display: showQuotaInput ? 'block' : 'none' }} className='mt-2'>
+                        <div
+                          style={{ display: showQuotaInput ? 'block' : 'none' }}
+                          className='mt-2'
+                        >
                           <Form.InputNumber
                             field='quota'
                             label={t('额度')}
@@ -539,7 +576,10 @@ const EditUserModal = (props) => {
             ? `▾ ${t('收起原生额度输入')}`
             : `▸ ${t('使用原生额度输入')}`}
         </div>
-        <div style={{ display: showAdjustQuotaRaw ? 'block' : 'none' }} className='mt-2'>
+        <div
+          style={{ display: showAdjustQuotaRaw ? 'block' : 'none' }}
+          className='mt-2'
+        >
           <div className='mb-1'>
             <Text size='small'>{t('额度')}</Text>
           </div>

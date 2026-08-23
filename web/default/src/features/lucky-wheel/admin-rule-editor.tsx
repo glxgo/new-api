@@ -69,6 +69,22 @@ function defaultDisplayAmount(code: string) {
   return Number(match[1]) * 1_000_000
 }
 
+function formatUsdMicros(micros: number) {
+  return (micros / 1_000_000).toLocaleString('en-US', {
+    maximumFractionDigits: 2,
+  })
+}
+
+function prizeDisplayName(prize: LuckyPrize) {
+  if (prize.code.startsWith('quota_')) {
+    return `$${formatUsdMicros(prize.display_usd_micros)} 套餐额度`
+  }
+  if (prize.code.startsWith('gift_')) {
+    return `$${formatUsdMicros(prize.display_usd_micros)} 钱包赠金`
+  }
+  return PRIZE_NAMES[prize.code] || prize.code
+}
+
 function isFixedReward(code: string) {
   return (
     code === 'subscription_double' ||
@@ -232,6 +248,7 @@ export function LuckyRuleEditor({
           </AlertTitle>
           <AlertDescription>
             后端使用 1,000,000 份整数权重；只有精确合计 100% 才允许保存或发布。
+            这里的金额同时决定用户实际获得的额度，充值来源奖池抽到什么就发放什么。
           </AlertDescription>
         </Alert>
 
@@ -239,7 +256,7 @@ export function LuckyRuleEditor({
           <div className='min-w-[720px]'>
             <div className='text-muted-foreground bg-muted/35 grid grid-cols-[minmax(180px,1.2fr)_minmax(150px,.8fr)_minmax(160px,.8fr)_48px] gap-3 border-b px-4 py-2 text-xs font-semibold'>
               <span>奖项</span>
-              <span>公示金额（美元）</span>
+              <span>发放金额 / 公示金额（美元）</span>
               <span>概率（%）</span>
               <span />
             </div>
@@ -249,9 +266,7 @@ export function LuckyRuleEditor({
                 className='grid grid-cols-[minmax(180px,1.2fr)_minmax(150px,.8fr)_minmax(160px,.8fr)_48px] items-center gap-3 border-b px-4 py-3 last:border-b-0'
               >
                 <div>
-                  <div className='font-medium'>
-                    {PRIZE_NAMES[prize.code] || prize.code}
-                  </div>
+                  <div className='font-medium'>{prizeDisplayName(prize)}</div>
                   <code className='text-muted-foreground text-xs'>
                     {prize.code}
                   </code>
@@ -288,7 +303,7 @@ export function LuckyRuleEditor({
                   type='button'
                   size='icon'
                   variant='ghost'
-                  aria-label={`删除 ${PRIZE_NAMES[prize.code] || prize.code}`}
+                  aria-label={`删除 ${prizeDisplayName(prize)}`}
                   onClick={() =>
                     setPool(pool.filter((_, row) => row !== index))
                   }
@@ -329,14 +344,6 @@ export function LuckyRuleEditor({
             添加
           </Button>
         </div>
-
-        {poolType === 'recharge' && (
-          <p className='text-muted-foreground text-xs leading-relaxed'>
-            充值来源的“套餐额度”实际发放金额还会叠加当前规则的 +$
-            {(activeRule?.recharge_bonus_usd_micros || 0) / 1_000_000}{' '}
-            活动加成。
-          </p>
-        )}
 
         <div className='flex flex-wrap justify-end gap-3 border-t pt-5'>
           <Button

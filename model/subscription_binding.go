@@ -138,7 +138,9 @@ func validateSubscriptionForTokenTx(tx *gorm.DB, userId int, group string, subsc
 		if sub.Status != "active" || sub.StartTime > now || sub.EndTime <= now {
 			return nil, ErrTokenSubscriptionNotUsable
 		}
-		if sub.AmountTotal > 0 && sub.AmountUsed >= sub.AmountTotal {
+		plan, _ := planForUserSubscriptionTx(tx, &sub)
+		cycleResetDue := subscriptionResetBoundaryDueFor(&sub, plan, now)
+		if sub.AmountTotal > 0 && sub.AmountUsed >= sub.AmountTotal && !cycleResetDue {
 			return nil, ErrTokenSubscriptionNotUsable
 		}
 		if sub.AmountCap > 0 && sub.AmountCapUsed >= sub.AmountCap {

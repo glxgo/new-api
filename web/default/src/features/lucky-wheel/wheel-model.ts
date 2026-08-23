@@ -111,17 +111,13 @@ export function chooseNextAvailableCardIdForPool(
 
 export function buildWheelSegments(
   pool: LuckyPrize[],
-  poolType: LuckyCard['pool_type'],
-  rechargeBonusUsdMicros: number
+  _poolType: LuckyCard['pool_type']
 ): WheelSegment[] {
   return pool.map((prize) => {
     if (prize.code.startsWith('quota_')) {
-      const actualUsdMicros =
-        prize.display_usd_micros +
-        (poolType === 'recharge' ? rechargeBonusUsdMicros : 0)
       return {
         ...prize,
-        label: `$${formatUsd(actualUsdMicros)} 套餐额度`,
+        label: `$${formatUsd(prize.display_usd_micros)} 套餐额度`,
       }
     }
     if (prize.code.startsWith('gift_')) {

@@ -77,9 +77,46 @@ func TestGetVisibleUserSubscriptionsIncludesFutureAndExcludesExpired(t *testing.
 
 	history, err := GetUserFacingSubscriptionHistory(27)
 	require.NoError(t, err)
-	require.Len(t, history, 4)
+	require.Len(t, history, 5, "history includes hidden instances so owners can restore them")
+	var hiddenHistory *UserSubscription
 	for _, item := range history {
-		require.NotEqual(t, "hidden-active", item.Subscription.PlanTitle)
+		if item.Subscription.PlanTitle == "hidden-active" {
+			hiddenHistory = item.Subscription
+		}
+	}
+	require.NotNil(t, hiddenHistory, "hidden-active must appear in user-facing history")
+	require.True(t, hiddenHistory.Hidden, "hidden-active must keep its Hidden flag")
+}
+
+func TestGetSubscriptionSubscriberInstancesOnlyReturnsUsableQuota(t *testing.T) {
+	db := setupSubscriptionBindingTestDB(t)
+	now := common.GetTimestamp()
+	user := User{Username: "subscriber-admin-list"}
+	require.NoError(t, db.Create(&user).Error)
+	instances := []UserSubscription{
+		{UserId: user.Id, PlanId: 1, PlanTitle: "usable", Status: "active", StartTime: now - 60, EndTime: now + 3600, AmountTotal: 100, AmountUsed: 40},
+		{UserId: user.Id, PlanId: 2, PlanTitle: "cycle-exhausted", Status: "active", StartTime: now - 60, EndTime: now + 3600, AmountTotal: 100, AmountUsed: 100, NextResetTime: now + 300},
+		{UserId: user.Id, PlanId: 3, PlanTitle: "cycle-reset-due", Status: "active", StartTime: now - 60, EndTime: now + 3600, AmountTotal: 100, AmountUsed: 100, NextResetTime: now - 1},
+		{UserId: user.Id, PlanId: 4, PlanTitle: "total-exhausted", Status: "active", StartTime: now - 60, EndTime: now + 3600, AmountCap: 500, AmountCapUsed: 500},
+		{UserId: user.Id, PlanId: 5, PlanTitle: "expired", Status: "expired", StartTime: now - 3600, EndTime: now - 60, AmountTotal: 100, AmountUsed: 0},
+		{UserId: user.Id, PlanId: 6, PlanTitle: "cancelled", Status: "cancelled", StartTime: now - 60, EndTime: now + 3600, AmountTotal: 100, AmountUsed: 0},
+		{UserId: user.Id, PlanId: 7, PlanTitle: "unlimited", Status: "active", StartTime: now - 60, EndTime: now + 3600},
+	}
+	require.NoError(t, db.Create(&instances).Error)
+
+	results, err := GetSubscriptionSubscriberInstances()
+	require.NoError(t, err)
+	require.Len(t, results, 3)
+	require.ElementsMatch(t, []string{"usable", "cycle-reset-due", "unlimited"}, []string{
+		results[0].PlanTitle,
+		results[1].PlanTitle,
+		results[2].PlanTitle,
+	})
+	for _, result := range results {
+		if result.PlanTitle == "usable" {
+			require.EqualValues(t, 100, result.AmountTotal)
+			require.EqualValues(t, 40, result.AmountUsed)
+		}
 	}
 }
 
@@ -101,6 +138,23 @@ func TestSetUserSubscriptionHiddenPreservesRuntimeEligibility(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, active, 1)
 	require.True(t, active[0].Subscription.Hidden)
+}
+
+func TestSetUserSubscriptionHiddenForUserRequiresOwnership(t *testing.T) {
+	db := setupSubscriptionBindingTestDB(t)
+	now := common.GetTimestamp()
+	sub := UserSubscription{
+		UserId: 91, PlanId: 1, PlanTitle: "self-hide", Status: "active",
+		StartTime: now - 60, EndTime: now + 3600,
+	}
+	require.NoError(t, db.Create(&sub).Error)
+	require.Error(t, SetUserSubscriptionHiddenForUser(sub.Id, 92, true))
+	var unchanged UserSubscription
+	require.NoError(t, db.First(&unchanged, sub.Id).Error)
+	require.False(t, unchanged.Hidden)
+	require.NoError(t, SetUserSubscriptionHiddenForUser(sub.Id, 91, true))
+	require.NoError(t, db.First(&unchanged, sub.Id).Error)
+	require.True(t, unchanged.Hidden)
 }
 
 func TestHasSubscriptionPlanByGroupReservesPackageGroup(t *testing.T) {

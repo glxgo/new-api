@@ -52,6 +52,7 @@ import {
   CardStaggerContainer,
   CardStaggerItem,
 } from '@/components/page-transition'
+import { IdentityWelcomeBanner } from '@/features/identity/identity-welcome-banner'
 import { fetchTokenKey, getApiKeys } from '@/features/keys/api'
 import type { ApiKey } from '@/features/keys/types'
 import {
@@ -611,6 +612,7 @@ export function OverviewDashboard() {
 
   return (
     <div className='flex flex-col gap-4'>
+      <IdentityWelcomeBanner />
       {setupGuideExpanded ? (
         <CardStaggerContainer className='grid items-stretch gap-4 @5xl/content:grid-cols-[minmax(0,1fr)_22rem]'>
           <CardStaggerItem className='bg-card h-full overflow-hidden rounded-2xl border shadow-xs'>

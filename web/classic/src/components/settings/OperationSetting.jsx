@@ -27,6 +27,8 @@ import SettingsLog from '../../pages/Setting/Operation/SettingsLog';
 import SettingsMonitoring from '../../pages/Setting/Operation/SettingsMonitoring';
 import SettingsCreditLimit from '../../pages/Setting/Operation/SettingsCreditLimit';
 import SettingsCheckin from '../../pages/Setting/Operation/SettingsCheckin';
+import SettingsAccessPolicy from '../../pages/Setting/Operation/SettingsAccessPolicy';
+import SettingsCommission from '../../pages/Setting/Operation/SettingsCommission';
 import { API, showError, toBoolean } from '../../helpers';
 
 const OperationSetting = () => {
@@ -153,6 +155,14 @@ const OperationSetting = () => {
         {/* 签到设置 */}
         <Card style={{ marginTop: '10px' }}>
           <SettingsCheckin options={inputs} refresh={onRefresh} />
+        </Card>
+        {/* 访问策略 */}
+        <Card style={{ marginTop: '10px' }}>
+          <SettingsAccessPolicy />
+        </Card>
+        {/* 分润比例设置 */}
+        <Card style={{ marginTop: '10px' }}>
+          <SettingsCommission />
         </Card>
       </Spin>
     </>

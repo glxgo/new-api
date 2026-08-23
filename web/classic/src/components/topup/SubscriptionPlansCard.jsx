@@ -104,6 +104,9 @@ const SubscriptionPlansCard = ({
   const [orderItems, setOrderItems] = useState([]);
   const [orderLoading, setOrderLoading] = useState(false);
   const [orderSaving, setOrderSaving] = useState(false);
+  const [manageSubscription, setManageSubscription] = useState(null);
+  const [manageHiding, setManageHiding] = useState(false);
+  const [restoringId, setRestoringId] = useState(null);
 
   const epayMethods = useMemo(() => getEpayMethods(payMethods), [payMethods]);
 
@@ -361,6 +364,54 @@ const SubscriptionPlansCard = ({
     return Math.round((used / total) * 100);
   };
 
+  const hideSubscription = async (subscriptionId) => {
+    try {
+      const res = await API.patch(
+        `/api/subscription/self/instances/${subscriptionId}/visibility`,
+        { hidden: true },
+      );
+      if (res.data?.success) {
+        showSuccess('已隐藏该套餐，可联系管理员恢复展示');
+        await reloadSubscriptionSelf?.();
+      } else {
+        showError(res.data?.message || '隐藏失败');
+      }
+    } catch (e) {
+      showError('隐藏失败，请稍后重试');
+    }
+  };
+
+  const hideFromManage = async () => {
+    if (!manageSubscription?.id) return;
+    setManageHiding(true);
+    try {
+      await hideSubscription(manageSubscription.id);
+      setManageSubscription(null);
+    } finally {
+      setManageHiding(false);
+    }
+  };
+
+  const restoreSubscription = async (subscriptionId) => {
+    setRestoringId(subscriptionId);
+    try {
+      const res = await API.patch(
+        `/api/subscription/self/instances/${subscriptionId}/visibility`,
+        { hidden: false },
+      );
+      if (res.data?.success) {
+        showSuccess('已恢复展示');
+        await reloadSubscriptionSelf?.();
+      } else {
+        showError(res.data?.message || '恢复展示失败');
+      }
+    } catch (e) {
+      showError('恢复展示失败，请稍后重试');
+    } finally {
+      setRestoringId(null);
+    }
+  };
+
   const cardContent = (
     <>
       {/* 卡片头部 */}
@@ -546,12 +597,42 @@ const SubscriptionPlansCard = ({
                                 {t('已过期')}
                               </Tag>
                             )}
+                            {subscription?.hidden && (
+                              <Tag color='grey' size='small' shape='circle'>
+                                已隐藏
+                              </Tag>
+                            )}
                           </div>
-                          {isActive && (
-                            <span className='text-gray-500'>
-                              {t('剩余')} {remainDays} {t('天')}
-                            </span>
-                          )}
+                          <div className='flex items-center gap-2'>
+                            {isActive && (
+                              <span className='text-gray-500'>
+                                {t('剩余')} {remainDays} {t('天')}
+                              </span>
+                            )}
+                            {subscription?.hidden ? (
+                              <Button
+                                size='small'
+                                type='primary'
+                                theme='borderless'
+                                loading={restoringId === subscription?.id}
+                                onClick={() =>
+                                  restoreSubscription(subscription.id)
+                                }
+                              >
+                                恢复展示
+                              </Button>
+                            ) : (
+                              <Button
+                                size='small'
+                                type='tertiary'
+                                onClick={() =>
+                                  setManageSubscription(subscription)
+                                }
+                              >
+                                管理
+                              </Button>
+                            )}
+                          </div>
                         </div>
                         <div className='text-xs text-gray-500 mb-2'>
                           {isActive
@@ -901,6 +982,63 @@ const SubscriptionPlansCard = ({
             {t('调整顺序不会修改 API Key 的实例绑定，也不会移动历史消费记录。')}
           </span>
         </div>
+      </Modal>
+
+      <Modal
+        visible={Boolean(manageSubscription)}
+        title={
+          <div className='flex items-center gap-2'>
+            <KeyRound size={18} />
+            <span>{t('管理套餐')}</span>
+          </div>
+        }
+        onCancel={() => setManageSubscription(null)}
+        footer={
+          <div className='flex items-center justify-end gap-2'>
+            <Button
+              theme='borderless'
+              onClick={() => setManageSubscription(null)}
+            >
+              {t('取消')}
+            </Button>
+            <Button
+              theme='solid'
+              type='danger'
+              loading={manageHiding}
+              onClick={hideFromManage}
+            >
+              隐藏此套餐
+            </Button>
+          </div>
+        }
+        width={480}
+      >
+        {manageSubscription && (
+          <div className='space-y-3'>
+            <div className='flex items-center justify-between text-sm'>
+              <span className='text-gray-500'>套餐</span>
+              <span className='font-medium'>
+                {manageSubscription?.plan_title ||
+                  `${t('订阅')} #${manageSubscription?.id}`}
+              </span>
+            </div>
+            <div className='flex items-center justify-between text-sm'>
+              <span className='text-gray-500'>订阅编号</span>
+              <span className='font-medium'>#{manageSubscription?.id}</span>
+            </div>
+            <div className='flex items-center justify-between text-sm'>
+              <span className='text-gray-500'>有效期至</span>
+              <span className='font-medium'>
+                {new Date(
+                  (manageSubscription?.end_time || 0) * 1000,
+                ).toLocaleString()}
+              </span>
+            </div>
+            <div className='rounded-lg border border-orange-200 bg-orange-50 p-3 text-xs text-orange-700'>
+              只从你的剩余用量页面隐藏，不会影响额度、绑定或实际使用。
+            </div>
+          </div>
+        )}
       </Modal>
     </>
   );

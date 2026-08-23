@@ -28,6 +28,34 @@ import type {
   UpstreamRatiosResponse,
 } from './types'
 
+export type CommissionSettings = {
+  ordinary_direct_bp: number
+  ordinary_indirect_bp: number
+  agent_direct_bp: number
+  agent_indirect_bp: number
+  admin_direct_bp: number
+  admin_indirect_bp: number
+  root_bp: number
+}
+
+export async function getCommissionSettings() {
+  const res = await api.get<{ success: boolean; data?: CommissionSettings }>(
+    '/api/profit/settings'
+  )
+  return res.data
+}
+
+export async function updateCommissionSettings(
+  data: Partial<CommissionSettings>
+) {
+  const res = await api.put<{
+    success: boolean
+    message?: string
+    data?: CommissionSettings
+  }>('/api/profit/settings', data)
+  return res.data
+}
+
 export async function getSystemOptions() {
   const res = await api.get<SystemOptionsResponse>('/api/option/')
   return res.data
@@ -42,6 +70,64 @@ export async function confirmPaymentCompliance() {
   const res = await api.post<ConfirmPaymentComplianceResponse>(
     '/api/option/payment_compliance',
     { confirmed: true }
+  )
+  return res.data
+}
+
+export type AccessPolicyStats = {
+  block_total: number
+  unknown_total: number
+  lookup_error_total: number
+  decision_total: number
+}
+
+export type AccessPolicyData = {
+  block_mainland_web_access: boolean
+  include_hk_mo_tw: boolean
+  geoip_unknown_policy: 'allow' | 'deny'
+  geoip_db_path: string
+  geoip_db_loaded: boolean
+  geoip_db_version: string
+  config_version: number
+  stats: AccessPolicyStats
+}
+
+export type AccessPolicyResponse = {
+  success: boolean
+  message: string
+  data: AccessPolicyData
+}
+
+export type UpdateAccessPolicyRequest = {
+  block_mainland_web_access?: boolean
+  include_hk_mo_tw?: boolean
+  geoip_unknown_policy?: 'allow' | 'deny'
+}
+
+export type UpdateAccessPolicyResponse = {
+  success: boolean
+  message: string
+  data?: {
+    config_version: number
+  }
+}
+
+export async function getAccessPolicy() {
+  const res = await api.get<AccessPolicyResponse>('/api/access-policy')
+  return res.data
+}
+
+export async function updateAccessPolicy(request: UpdateAccessPolicyRequest) {
+  const res = await api.put<UpdateAccessPolicyResponse>(
+    '/api/access-policy',
+    request
+  )
+  return res.data
+}
+
+export async function rollbackAccessPolicy() {
+  const res = await api.post<UpdateAccessPolicyResponse>(
+    '/api/access-policy/rollback'
   )
   return res.data
 }

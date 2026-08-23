@@ -31,11 +31,17 @@ const (
 	VirtualMembershipRecordSettled   = "settled"
 	VirtualMembershipRecordRefunded  = "refunded"
 	VirtualMembershipAdminGrant      = "admin_grant"
+	// VirtualMembershipResetOrderType identifies an Epay order that buys one
+	// user-triggered weekly reset credit.  It deliberately uses a separate
+	// ledger table so a paid add-on can never accidentally create a second
+	// membership instance when the provider callback is replayed.
+	VirtualMembershipResetOrderType = "active_reset_credit"
 )
 
 var (
-	ErrVirtualMembershipRenewalUnavailable = errors.New("当前虚拟会员无法续费")
-	ErrVirtualMembershipRenewalExists      = errors.New("当前虚拟会员已存在续费实例或待支付订单")
+	ErrVirtualMembershipRenewalUnavailable       = errors.New("当前虚拟会员无法续费")
+	ErrVirtualMembershipRenewalExists            = errors.New("当前虚拟会员已存在续费实例或待支付订单")
+	ErrVirtualMembershipResetCreditsInsufficient = errors.New("主动重置次数不足，请先购买重置次数")
 )
 
 type VirtualMembershipSetting struct {
@@ -98,6 +104,7 @@ type VirtualMembershipOrder struct {
 	CompleteTime               int64   `json:"complete_time" gorm:"bigint"`
 	ProviderPayload            string  `json:"-" gorm:"type:text"`
 	PlanSnapshot               string  `json:"-" gorm:"type:text"`
+	ProductNameSnapshot        string  `json:"product_name_snapshot" gorm:"type:varchar(128);not null;default:''"`
 	LuckyRuleSetId             int64   `json:"lucky_rule_set_id" gorm:"index;not null;default:0"`
 	LuckyEligible              bool    `json:"lucky_eligible" gorm:"not null;default:false"`
 	ExpectedPaymentAmountMinor int64   `json:"expected_payment_amount_minor" gorm:"not null;default:0"`
@@ -106,6 +113,30 @@ type VirtualMembershipOrder struct {
 	ActualPaymentAmountMinor   int64   `json:"actual_payment_amount_minor" gorm:"not null;default:0"`
 	ActualPaymentCurrency      string  `json:"actual_payment_currency" gorm:"type:varchar(8);not null;default:''"`
 	RenewFromMembershipId      *int    `json:"renew_from_membership_id" gorm:"default:null;index"`
+}
+
+// VirtualMembershipResetOrder is an independent, idempotent payment ledger
+// for the optional user-triggered reset add-on.  Keeping it separate from
+// VirtualMembershipOrder prevents callback retries from creating memberships
+// or entering the normal recharge/commission pipeline.
+type VirtualMembershipResetOrder struct {
+	Id                         int     `json:"id"`
+	UserId                     int     `json:"user_id" gorm:"index"`
+	MembershipId               int     `json:"membership_id" gorm:"index"`
+	Credits                    int     `json:"credits" gorm:"not null;default:1"`
+	Money                      float64 `json:"money"`
+	TradeNo                    string  `json:"trade_no" gorm:"uniqueIndex;type:varchar(255)"`
+	PaymentMethod              string  `json:"payment_method" gorm:"type:varchar(50)"`
+	PaymentProvider            string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
+	Status                     string  `json:"status" gorm:"type:varchar(32);index"`
+	CreateTime                 int64   `json:"create_time" gorm:"bigint"`
+	CompleteTime               int64   `json:"complete_time" gorm:"bigint"`
+	ProviderPayload            string  `json:"-" gorm:"type:text"`
+	ProductNameSnapshot        string  `json:"product_name_snapshot" gorm:"type:varchar(255)"`
+	ExpectedPaymentAmountMinor int64   `json:"expected_payment_amount_minor" gorm:"not null;default:0"`
+	ExpectedPaymentCurrency    string  `json:"expected_payment_currency" gorm:"type:varchar(8);not null;default:''"`
+	ActualPaymentAmountMinor   int64   `json:"actual_payment_amount_minor" gorm:"not null;default:0"`
+	ActualPaymentCurrency      string  `json:"actual_payment_currency" gorm:"type:varchar(8);not null;default:''"`
 }
 
 func setVirtualMembershipPaymentExpectation(order *VirtualMembershipOrder, snapshot PaymentSnapshot) error {
@@ -119,37 +150,112 @@ func setVirtualMembershipPaymentExpectation(order *VirtualMembershipOrder, snaps
 	return nil
 }
 
+// VirtualMembershipActiveResetPrice rounds the purchased tier price to CNY
+// cents and applies the policy price of 30%.  The purchase price is a
+// snapshot; changing the current plan must not silently change an existing
+// customer's add-on price.
+func VirtualMembershipActiveResetPrice(purchasePrice float64) float64 {
+	if purchasePrice <= 0 {
+		return 0
+	}
+	return math.Round(purchasePrice*0.3*100) / 100
+}
+
+func virtualMembershipPurchasePriceTx(tx *gorm.DB, membership *UserVirtualMembership) (float64, error) {
+	if tx == nil || membership == nil {
+		return 0, errors.New("虚拟会员不存在")
+	}
+	if membership.PurchasePriceAmount > 0 {
+		return membership.PurchasePriceAmount, nil
+	}
+	// Backfill legacy instances from their immutable order first.  The order's
+	// Money already contains the selected group tier.
+	if membership.OrderId > 0 {
+		var order VirtualMembershipOrder
+		if err := tx.Select("id", "money").First(&order, membership.OrderId).Error; err == nil && order.Money > 0 {
+			return order.Money, nil
+		} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, err
+		}
+	}
+	if membership.PlanId > 0 {
+		plan, err := getVirtualMembershipPlanTx(tx, membership.PlanId)
+		if err != nil {
+			return 0, err
+		}
+		price, _, _, err := virtualMembershipVariant(plan, maxInt(membership.GroupSize, 1))
+		if err != nil {
+			return 0, err
+		}
+		return price, nil
+	}
+	return 0, errors.New("虚拟会员缺少购买价格快照")
+}
+
+func attachVirtualMembershipResetPrices(tx *gorm.DB, memberships []*UserVirtualMembership) error {
+	for _, membership := range memberships {
+		if membership == nil {
+			continue
+		}
+		price, err := virtualMembershipPurchasePriceTx(tx, membership)
+		if err != nil {
+			// Historical/manual rows may not have an order or plan anymore. Keep
+			// the membership usable and expose a zero price; the payment endpoint
+			// will still reject an unsafe purchase rather than guessing.
+			continue
+		}
+		membership.PurchasePriceAmount = price
+		membership.ActiveResetPriceAmount = VirtualMembershipActiveResetPrice(price)
+	}
+	return nil
+}
+
+func maxInt(value, fallback int) int {
+	if value < fallback {
+		return fallback
+	}
+	return value
+}
+
 type UserVirtualMembership struct {
 	Id     int `json:"id"`
 	UserId int `json:"user_id" gorm:"index"`
 	PlanId int `json:"plan_id" gorm:"index"`
 	// Hidden is presentation-only. Hidden memberships remain active funding
 	// sources and stay visible to administrators and accounting queries.
-	Hidden           bool   `json:"hidden" gorm:"not null;default:false;index"`
-	OrderId          int    `json:"order_id" gorm:"index"`
-	OrderUniqueId    *int   `json:"-" gorm:"column:order_unique_id;uniqueIndex"`
-	RenewedFromId    *int   `json:"renewed_from_id" gorm:"default:null;uniqueIndex"`
-	PlanTitle        string `json:"plan_title" gorm:"type:varchar(128)"`
-	PlanCode         string `json:"plan_code" gorm:"type:varchar(64)"`
-	GroupSize        int    `json:"group_size" gorm:"not null;default:1"`
-	WeeklyQuota      int64  `json:"weekly_quota" gorm:"type:bigint;not null;default:0"`
-	WeeklyUsed       int64  `json:"weekly_used" gorm:"type:bigint;not null;default:0"`
-	FiveHourQuota    int64  `json:"five_hour_quota" gorm:"type:bigint;not null;default:0"`
-	FiveHourUsed     int64  `json:"five_hour_used" gorm:"type:bigint;not null;default:0"`
-	FiveHourActive   bool   `json:"five_hour_active" gorm:"not null;default:false"`
-	ConcurrencyLimit int    `json:"concurrency_limit" gorm:"not null;default:0"`
-	RPMLimit         int    `json:"rpm_limit" gorm:"not null;default:0"`
-	WeeklyResetAt    int64  `json:"weekly_reset_at" gorm:"bigint;index"`
-	FiveHourStart    int64  `json:"five_hour_start" gorm:"bigint"`
-	FiveHourResetAt  int64  `json:"five_hour_reset_at" gorm:"bigint"`
-	StartTime        int64  `json:"start_time" gorm:"bigint"`
-	EndTime          int64  `json:"end_time" gorm:"bigint;index"`
-	Status           string `json:"status" gorm:"type:varchar(32);index"`
-	AllowedModels    string `json:"allowed_models" gorm:"type:text"`
-	AllowedGroup     string `json:"allowed_group" gorm:"type:varchar(64);default:''"`
-	CreatedAt        int64  `json:"created_at" gorm:"bigint"`
-	UpdatedAt        int64  `json:"updated_at" gorm:"bigint"`
-	LifetimeUsed     int64  `json:"lifetime_used" gorm:"-"`
+	Hidden        bool   `json:"hidden" gorm:"not null;default:false;index"`
+	OrderId       int    `json:"order_id" gorm:"index"`
+	OrderUniqueId *int   `json:"-" gorm:"column:order_unique_id;uniqueIndex"`
+	RenewedFromId *int   `json:"renewed_from_id" gorm:"default:null;uniqueIndex"`
+	PlanTitle     string `json:"plan_title" gorm:"type:varchar(128)"`
+	PlanCode      string `json:"plan_code" gorm:"type:varchar(64)"`
+	GroupSize     int    `json:"group_size" gorm:"not null;default:1"`
+	// PurchasePriceAmount is the immutable price snapshot for this instance's
+	// selected tier.  It is used to calculate the 30% active-reset add-on even
+	// when an administrator later edits the plan price.
+	PurchasePriceAmount float64 `json:"purchase_price_amount" gorm:"default:0"`
+	// ActiveResetCredits are one-shot user-triggered weekly reset credits. New
+	// purchases start at zero; administrators can grant credits explicitly.
+	ActiveResetCredits     int     `json:"active_reset_credits" gorm:"not null;default:0"`
+	WeeklyQuota            int64   `json:"weekly_quota" gorm:"type:bigint;not null;default:0"`
+	WeeklyUsed             int64   `json:"weekly_used" gorm:"type:bigint;not null;default:0"`
+	FiveHourQuota          int64   `json:"five_hour_quota" gorm:"type:bigint;not null;default:0"`
+	FiveHourUsed           int64   `json:"five_hour_used" gorm:"type:bigint;not null;default:0"`
+	FiveHourActive         bool    `json:"five_hour_active" gorm:"not null;default:false"`
+	ConcurrencyLimit       int     `json:"concurrency_limit" gorm:"not null;default:0"`
+	RPMLimit               int     `json:"rpm_limit" gorm:"not null;default:0"`
+	WeeklyResetAt          int64   `json:"weekly_reset_at" gorm:"bigint;index"`
+	FiveHourStart          int64   `json:"five_hour_start" gorm:"bigint"`
+	FiveHourResetAt        int64   `json:"five_hour_reset_at" gorm:"bigint"`
+	StartTime              int64   `json:"start_time" gorm:"bigint"`
+	EndTime                int64   `json:"end_time" gorm:"bigint;index"`
+	Status                 string  `json:"status" gorm:"type:varchar(32);index"`
+	AllowedModels          string  `json:"allowed_models" gorm:"type:text"`
+	AllowedGroup           string  `json:"allowed_group" gorm:"type:varchar(64);default:''"`
+	CreatedAt              int64   `json:"created_at" gorm:"bigint"`
+	UpdatedAt              int64   `json:"updated_at" gorm:"bigint"`
+	LifetimeUsed           int64   `json:"lifetime_used" gorm:"-"`
+	ActiveResetPriceAmount float64 `json:"active_reset_price_amount" gorm:"-"`
 }
 
 // AdminVirtualMembershipRecord combines a purchased entitlement with the
@@ -699,6 +805,9 @@ func createVirtualMembershipOrderTx(tx *gorm.DB, userId, planId, groupSize int, 
 	if err != nil {
 		return nil, err
 	}
+	if paymentProvider == PaymentProviderEpay {
+		price = NormalizePaymentAmount(price)
+	}
 	if price < 0.01 {
 		return nil, errors.New("虚拟会员金额过低")
 	}
@@ -710,6 +819,7 @@ func createVirtualMembershipOrderTx(tx *gorm.DB, userId, planId, groupSize int, 
 		DividendState: SubscriptionDividendPending,
 		TradeNo:       tradeNo, PaymentMethod: paymentMethod, PaymentProvider: paymentProvider,
 		Status: status, CreateTime: now, PlanSnapshot: buildVirtualMembershipSnapshot(plan, price, groupSize, weekly, fiveHour, concurrency, rpm),
+		ProductNameSnapshot: PaymentProductNameForVirtualMembership(plan.Title),
 	}
 	if campaign, rule, luckyErr := GetLuckyCampaignTx(tx, false); luckyErr == nil && !campaign.IssuancePaused {
 		order.LuckyRuleSetId = rule.Id
@@ -902,7 +1012,8 @@ func AdminRenewVirtualMembership(fromMembershipId int) (*VirtualMembershipOrder,
 				DividendState: SubscriptionDividendSkippedSource, TradeNo: tradeNo,
 				PaymentMethod: VirtualMembershipAdminGrant, PaymentProvider: VirtualMembershipAdminGrant,
 				Status: VirtualMembershipOrderSuccess, CreateTime: now, CompleteTime: now,
-				PlanSnapshot: buildVirtualMembershipSnapshot(&plan, price, source.GroupSize, weekly, fiveHour, concurrency, rpm),
+				PlanSnapshot:        buildVirtualMembershipSnapshot(&plan, price, source.GroupSize, weekly, fiveHour, concurrency, rpm),
+				ProductNameSnapshot: PaymentProductNameForVirtualMembership(plan.Title),
 			}
 			if createErr := tx.Create(order).Error; createErr != nil {
 				return createErr
@@ -1014,7 +1125,8 @@ func createVirtualMembershipFromOrderTx(tx *gorm.DB, order *VirtualMembershipOrd
 		OrderUniqueId: &order.Id,
 		RenewedFromId: renewedFromId,
 		PlanTitle:     snapshot.Title, PlanCode: snapshot.Code, GroupSize: order.GroupSize,
-		WeeklyQuota: order.WeeklyQuota, FiveHourQuota: order.FiveHourQuota,
+		PurchasePriceAmount: order.Money,
+		WeeklyQuota:         order.WeeklyQuota, FiveHourQuota: order.FiveHourQuota,
 		ConcurrencyLimit: snapshot.ConcurrencyLimit, RPMLimit: snapshot.RPMLimit,
 		FiveHourActive: order.FiveHourActive, WeeklyResetAt: startTime + 7*86400,
 		FiveHourStart: startTime, FiveHourResetAt: startTime + 5*3600,
@@ -1195,7 +1307,8 @@ func PurchaseVirtualMembershipWithBalanceRenewal(userId, planId, groupSize, rene
 			ConcurrencyLimit: concurrency, RPMLimit: rpm,
 			DividendState: SubscriptionDividendSkippedSource,
 			TradeNo:       tradeNo, PaymentMethod: PaymentMethodBalance, PaymentProvider: PaymentProviderBalance, Status: VirtualMembershipOrderSuccess,
-			CreateTime: now, CompleteTime: now, PlanSnapshot: planSnapshot,
+			ProductNameSnapshot: PaymentProductNameForVirtualMembership(plan.Title),
+			CreateTime:          now, CompleteTime: now, PlanSnapshot: planSnapshot,
 		}
 		if renewFromMembershipId > 0 {
 			order.RenewFromMembershipId = &renewFromMembershipId
@@ -1218,8 +1331,9 @@ func PurchaseVirtualMembershipWithBalanceRenewal(userId, planId, groupSize, rene
 		end := startTime + int64(plan.DurationDays)*86400
 		membership = UserVirtualMembership{
 			UserId: userId, PlanId: plan.Id, OrderId: order.Id, PlanTitle: plan.Title, PlanCode: plan.Code,
-			RenewedFromId: renewedFromId,
-			GroupSize:     groupSize, WeeklyQuota: weekly, FiveHourQuota: fiveHour, FiveHourActive: plan.FiveHourEnabled,
+			PurchasePriceAmount: price,
+			RenewedFromId:       renewedFromId,
+			GroupSize:           groupSize, WeeklyQuota: weekly, FiveHourQuota: fiveHour, FiveHourActive: plan.FiveHourEnabled,
 			ConcurrencyLimit: concurrency, RPMLimit: rpm,
 			WeeklyResetAt: startTime + 7*86400, FiveHourStart: startTime, FiveHourResetAt: startTime + 5*3600,
 			StartTime: startTime, EndTime: end, Status: VirtualMembershipStatusActive,
@@ -1244,9 +1358,25 @@ func PurchaseVirtualMembershipWithBalanceRenewal(userId, planId, groupSize, rene
 }
 
 func ListUserVirtualMemberships(userId int) ([]*UserVirtualMembership, error) {
+	return listUserVirtualMemberships(userId, false)
+}
+
+// ListHiddenUserVirtualMemberships returns only the owner-hidden instances so
+// the user can restore their presentation on the virtual-membership page.
+func ListHiddenUserVirtualMemberships(userId int) ([]*UserVirtualMembership, error) {
+	return listUserVirtualMemberships(userId, true)
+}
+
+func listUserVirtualMemberships(userId int, hidden bool) ([]*UserVirtualMembership, error) {
 	var memberships []*UserVirtualMembership
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("user_id = ? AND hidden = ?", userId, false).Order("id desc").Find(&memberships).Error; err != nil {
+		// Reset-on-read updates the complete membership row. Keep the row lock
+		// for the whole transaction so a concurrent quota consume, payment
+		// callback, or reset-credit grant cannot be overwritten by a stale
+		// snapshot while the list is being refreshed.
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("user_id = ? AND hidden = ?", userId, hidden).
+			Order("id desc").Find(&memberships).Error; err != nil {
 			return err
 		}
 		now := common.GetTimestamp()
@@ -1262,7 +1392,10 @@ func ListUserVirtualMemberships(userId int) ([]*UserVirtualMembership, error) {
 			}
 		}
 		memberships = active
-		return attachVirtualMembershipLifetimeUsage(tx, memberships)
+		if err := attachVirtualMembershipLifetimeUsage(tx, memberships); err != nil {
+			return err
+		}
+		return attachVirtualMembershipResetPrices(tx, memberships)
 	})
 	return memberships, err
 }
@@ -1291,6 +1424,35 @@ func SetVirtualMembershipHidden(membershipId int, hidden bool) error {
 	})
 }
 
+// SetVirtualMembershipHiddenForUser limits the presentation-only control to
+// the owner of the membership instance. Hidden instances remain valid funding
+// sources for runtime consumption and API-key binding.
+func SetVirtualMembershipHiddenForUser(membershipId, userId int, hidden bool) error {
+	if membershipId <= 0 || userId <= 0 {
+		return errors.New("虚拟会员不存在")
+	}
+	var membership UserVirtualMembership
+	if err := DB.Select("id", "hidden").Where("id = ? AND user_id = ?", membershipId, userId).First(&membership).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("虚拟会员不存在")
+		}
+		return err
+	}
+	if membership.Hidden == hidden {
+		return nil
+	}
+	result := DB.Model(&UserVirtualMembership{}).
+		Where("id = ? AND user_id = ?", membershipId, userId).
+		Updates(map[string]interface{}{"hidden": hidden, "updated_at": common.GetTimestamp()})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errors.New("虚拟会员不存在")
+	}
+	return nil
+}
+
 // ListAdminVirtualMemberships returns every purchased membership with its
 // owner. Lifecycle and quota resets are applied before the values are exposed
 // so the administrator sees the same current balance as the user dashboard.
@@ -1298,7 +1460,10 @@ func ListAdminVirtualMemberships() ([]*AdminVirtualMembershipRecord, error) {
 	records := make([]*AdminVirtualMembershipRecord, 0)
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var memberships []*UserVirtualMembership
-		if err := tx.Order("id desc").Find(&memberships).Error; err != nil {
+		// virtualMembershipResetIfDue may Save the full row below; lock all
+		// selected instances before applying lazy lifecycle resets.
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Order("id desc").Find(&memberships).Error; err != nil {
 			return err
 		}
 
@@ -1315,6 +1480,9 @@ func ListAdminVirtualMemberships() ([]*AdminVirtualMembershipRecord, error) {
 			}
 		}
 		if err := attachVirtualMembershipLifetimeUsage(tx, memberships); err != nil {
+			return err
+		}
+		if err := attachVirtualMembershipResetPrices(tx, memberships); err != nil {
 			return err
 		}
 
@@ -1385,6 +1553,15 @@ func AdminDeleteVirtualMembership(membershipId int) (int64, error) {
 		}
 		if renewalCount > 0 {
 			return errors.New("该会员已存在续费订单或后继实例，不能删除")
+		}
+		var pendingResetCount int64
+		if err := tx.Model(&VirtualMembershipResetOrder{}).
+			Where("membership_id = ? AND status = ?", membershipId, common.TopUpStatusPending).
+			Count(&pendingResetCount).Error; err != nil {
+			return err
+		}
+		if pendingResetCount > 0 {
+			return errors.New("该会员存在正在支付的主动重置订单，请稍后再删除")
 		}
 
 		if err := tx.Model(&Token{}).
@@ -1580,7 +1757,14 @@ func HasUsableVirtualMembershipForRoute(userId int, group, modelName string) (bo
 			return err
 		}
 		for i := range memberships {
-			membership := &memberships[i]
+			// Lock the membership before inspecting pending settlements. The
+			// request pre-consumption path takes the same row lock, so a reset
+			// cannot race a new in-flight usage hold.
+			var locked UserVirtualMembership
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, memberships[i].Id).Error; err != nil {
+				return err
+			}
+			membership := &locked
 			if err := virtualMembershipResetIfDue(tx, membership, now); err != nil {
 				return err
 			}
@@ -1880,18 +2064,330 @@ func ResetVirtualMemberships(scope VirtualMembershipResetScope) (int64, error) {
 		if code := strings.TrimSpace(strings.ToLower(scope.PlanCode)); code != "" {
 			query = query.Where("LOWER(plan_code) = ?", code)
 		}
-		result := query.Updates(map[string]interface{}{
-			"weekly_used": 0, "five_hour_used": 0, "weekly_reset_at": now + 7*86400,
-			"five_hour_start": now, "five_hour_reset_at": now + 5*3600, "updated_at": now,
-		})
-		affected = result.RowsAffected
-		return result.Error
+		// Hold each selected membership row for the duration of the reset
+		// transaction. The usage pre-consume path takes the same row lock, so a
+		// request cannot create a pending settlement between the count check and
+		// the quota reset update.
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+		var memberships []UserVirtualMembership
+		if err := query.Find(&memberships).Error; err != nil {
+			return err
+		}
+		for i := range memberships {
+			membership := &memberships[i]
+			// A pending pre-consumption still has to be settled against the
+			// current window. Skipping that row avoids resetting usage under an
+			// in-flight request; the next administrator reset can handle it.
+			var pendingCount int64
+			if err := tx.Model(&VirtualMembershipPreConsumeRecord{}).
+				Where("membership_id = ? AND status = ?", membership.Id, VirtualMembershipRecordPending).
+				Count(&pendingCount).Error; err != nil {
+				return err
+			}
+			if pendingCount > 0 {
+				continue
+			}
+			result := tx.Model(&UserVirtualMembership{}).Where("id = ?", membership.Id).
+				Updates(map[string]interface{}{
+					"weekly_used": 0, "five_hour_used": 0, "weekly_reset_at": now + 7*86400,
+					"five_hour_start": now, "five_hour_reset_at": now + 5*3600, "updated_at": now,
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			affected += result.RowsAffected
+		}
+		return nil
 	})
 	return affected, err
 }
 
 func ResetAllVirtualMemberships() (int64, error) {
 	return ResetVirtualMemberships(VirtualMembershipResetScope{})
+}
+
+// GrantVirtualMembershipResetCredits atomically adds user-triggered reset
+// credits to one membership.  It is intentionally ownership-agnostic because
+// the caller is protected by the administrator route; the row lock makes two
+// concurrent grants deterministic.
+func GrantVirtualMembershipResetCredits(membershipId, credits int) (*UserVirtualMembership, error) {
+	if membershipId <= 0 || credits <= 0 {
+		return nil, errors.New("主动重置次数必须大于 0")
+	}
+	var membership UserVirtualMembership
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&membership, membershipId).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("虚拟会员不存在")
+			}
+			return err
+		}
+		now := common.GetTimestamp()
+		result := tx.Model(&UserVirtualMembership{}).Where("id = ?", membershipId).
+			Updates(map[string]interface{}{
+				"active_reset_credits": gorm.Expr("active_reset_credits + ?", credits),
+				"updated_at":           now,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errors.New("虚拟会员不存在")
+		}
+		membership.ActiveResetCredits += credits
+		membership.UpdatedAt = now
+		if price, priceErr := virtualMembershipPurchasePriceTx(tx, &membership); priceErr == nil {
+			membership.PurchasePriceAmount = price
+			membership.ActiveResetPriceAmount = VirtualMembershipActiveResetPrice(price)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &membership, nil
+}
+
+// ActiveResetVirtualMembership consumes one administrator-granted credit and
+// performs the same reset as ResetVirtualMemberships: weekly and optional
+// five-hour usage are cleared, and both reset anchors move from the action
+// time.  Ownership and lifecycle are checked inside the locking transaction.
+func ActiveResetVirtualMembership(userId, membershipId int) (*UserVirtualMembership, error) {
+	if userId <= 0 || membershipId <= 0 {
+		return nil, errors.New("虚拟会员不存在")
+	}
+	var membership UserVirtualMembership
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND user_id = ?", membershipId, userId).First(&membership).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("虚拟会员不存在")
+			}
+			return err
+		}
+		now := common.GetTimestamp()
+		if membership.Status != VirtualMembershipStatusActive || membership.StartTime > now || (membership.EndTime > 0 && membership.EndTime <= now) {
+			return errors.New("虚拟会员尚未生效、已结束或已失效")
+		}
+		if membership.ActiveResetCredits <= 0 {
+			return ErrVirtualMembershipResetCreditsInsufficient
+		}
+		var pendingCount int64
+		if err := tx.Model(&VirtualMembershipPreConsumeRecord{}).
+			Where("membership_id = ? AND status = ?", membershipId, VirtualMembershipRecordPending).
+			Count(&pendingCount).Error; err != nil {
+			return err
+		}
+		if pendingCount > 0 {
+			return errors.New("该会员存在正在结算的请求，请稍后再主动重置")
+		}
+		membership.WeeklyUsed = 0
+		membership.WeeklyResetAt = now + 7*86400
+		// Keep the exact same timestamp semantics as the administrator reset,
+		// including clearing dormant 5-hour fields for future plan edits.
+		membership.FiveHourUsed = 0
+		membership.FiveHourStart = now
+		membership.FiveHourResetAt = now + 5*3600
+		membership.ActiveResetCredits--
+		membership.UpdatedAt = now
+		if price, priceErr := virtualMembershipPurchasePriceTx(tx, &membership); priceErr == nil {
+			membership.PurchasePriceAmount = price
+			membership.ActiveResetPriceAmount = VirtualMembershipActiveResetPrice(price)
+		}
+		return tx.Save(&membership).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &membership, nil
+}
+
+// GetVirtualMembershipActiveResetPrice resolves the immutable tier price and
+// applies the 30% add-on rule. It is used by both the user endpoint and the
+// payment-order creation path, so display and settlement cannot diverge.
+func GetVirtualMembershipActiveResetPrice(userId, membershipId int) (float64, error) {
+	if userId <= 0 || membershipId <= 0 {
+		return 0, errors.New("虚拟会员不存在")
+	}
+	var membership UserVirtualMembership
+	err := DB.Where("id = ? AND user_id = ?", membershipId, userId).First(&membership).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, errors.New("虚拟会员不存在")
+		}
+		return 0, err
+	}
+	price, err := virtualMembershipPurchasePriceTx(DB, &membership)
+	if err != nil {
+		return 0, err
+	}
+	resetPrice := VirtualMembershipActiveResetPrice(price)
+	if resetPrice < 0.01 {
+		return 0, errors.New("主动重置价格无效")
+	}
+	return resetPrice, nil
+}
+
+// CreateVirtualMembershipResetEpayOrder creates at most one pending add-on
+// order for a membership. Reusing an existing pending order makes browser
+// retries and double-clicks idempotent before the provider callback arrives.
+func CreateVirtualMembershipResetEpayOrder(userId, membershipId int, tradeNo, paymentMethod, _ string) (*VirtualMembershipResetOrder, error) {
+	if userId <= 0 || membershipId <= 0 || strings.TrimSpace(tradeNo) == "" {
+		return nil, errors.New("主动重置订单参数无效")
+	}
+	var order *VirtualMembershipResetOrder
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var membership UserVirtualMembership
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND user_id = ?", membershipId, userId).First(&membership).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("虚拟会员不存在")
+			}
+			return err
+		}
+		now := common.GetTimestamp()
+		if membership.Status != VirtualMembershipStatusActive || membership.StartTime > now || (membership.EndTime > 0 && membership.EndTime <= now) {
+			return errors.New("虚拟会员尚未生效、已结束或已失效")
+		}
+		if membership.ActiveResetCredits > 0 {
+			return errors.New("已有主动重置次数，请先使用现有次数")
+		}
+		var pending VirtualMembershipResetOrder
+		if result := tx.Where("membership_id = ? AND user_id = ? AND status = ?", membershipId, userId, common.TopUpStatusPending).Order("id desc").First(&pending); result.Error == nil {
+			order = &pending
+			return nil
+		} else if !errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return result.Error
+		}
+		price, priceErr := virtualMembershipPurchasePriceTx(tx, &membership)
+		if priceErr != nil {
+			return priceErr
+		}
+		price = VirtualMembershipActiveResetPrice(price)
+		price = NormalizePaymentAmount(price)
+		if price < 0.01 {
+			return errors.New("主动重置价格无效")
+		}
+		snapshot, snapshotErr := NewPaymentSnapshotFromMoney(price, "CNY")
+		if snapshotErr != nil {
+			return snapshotErr
+		}
+		// Product names are gateway-facing audit data.  Always derive them from
+		// the server-side plan snapshot; never trust a browser/internal caller's
+		// free-form label (including on a retry of a pending order).
+		title := strings.TrimSpace(membership.PlanTitle)
+		if title == "" && membership.PlanId > 0 {
+			if plan, planErr := getVirtualMembershipPlanTx(tx, membership.PlanId); planErr == nil {
+				title = plan.Title
+			}
+		}
+		productName := PaymentProductNameForVirtualMembershipReset(title)
+		order = &VirtualMembershipResetOrder{
+			UserId: userId, MembershipId: membershipId, Credits: 1, Money: price,
+			TradeNo: tradeNo, PaymentMethod: paymentMethod, PaymentProvider: PaymentProviderEpay,
+			Status: common.TopUpStatusPending, CreateTime: now, ProductNameSnapshot: productName,
+			ExpectedPaymentAmountMinor: snapshot.AmountMinor, ExpectedPaymentCurrency: snapshot.Currency,
+		}
+		return tx.Create(order).Error
+	})
+	return order, err
+}
+
+func ExpireVirtualMembershipResetOrder(tradeNo, expectedPaymentProvider string) error {
+	if strings.TrimSpace(tradeNo) == "" {
+		return errors.New("tradeNo is empty")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var order VirtualMembershipResetOrder
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("trade_no = ?", tradeNo).First(&order).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("主动重置订单不存在")
+			}
+			return err
+		}
+		if expectedPaymentProvider != "" && order.PaymentProvider != expectedPaymentProvider {
+			return ErrPaymentMethodMismatch
+		}
+		if order.Status == common.TopUpStatusPending {
+			order.Status = VirtualMembershipOrderClosed
+			order.CompleteTime = common.GetTimestamp()
+			return tx.Save(&order).Error
+		}
+		return nil
+	})
+}
+
+func CompleteVirtualMembershipResetOrder(tradeNo, providerPayload, expectedPaymentProvider, actualPaymentMethod string, paymentSnapshots ...PaymentSnapshot) error {
+	if strings.TrimSpace(tradeNo) == "" {
+		return errors.New("tradeNo is empty")
+	}
+	if len(paymentSnapshots) != 1 {
+		return errors.New("verified payment snapshot is required")
+	}
+	actual, err := NewPaymentSnapshotFromMinor(paymentSnapshots[0].AmountMinor, paymentSnapshots[0].Currency)
+	if err != nil {
+		return err
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var order VirtualMembershipResetOrder
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("trade_no = ?", tradeNo).First(&order).Error; err != nil {
+			return errors.New("主动重置订单不存在")
+		}
+		if expectedPaymentProvider != "" && order.PaymentProvider != expectedPaymentProvider {
+			return ErrPaymentMethodMismatch
+		}
+		if err := ValidatePaymentSnapshot(order.ExpectedPaymentAmountMinor, order.ExpectedPaymentCurrency, actual); err != nil {
+			return err
+		}
+		if order.ActualPaymentAmountMinor > 0 && (order.ActualPaymentAmountMinor != actual.AmountMinor || !strings.EqualFold(order.ActualPaymentCurrency, actual.Currency)) {
+			return ErrPaymentSnapshotMismatch
+		}
+		if order.Status == common.TopUpStatusSuccess {
+			return nil
+		}
+		if order.Status != common.TopUpStatusPending {
+			return errors.New("主动重置订单状态无效")
+		}
+		var membership UserVirtualMembership
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", order.MembershipId, order.UserId).First(&membership).Error; err != nil {
+			return errors.New("虚拟会员不存在")
+		}
+		credits := order.Credits
+		if credits <= 0 {
+			credits = 1
+		}
+		membership.ActiveResetCredits += credits
+		membership.UpdatedAt = common.GetTimestamp()
+		if err := tx.Save(&membership).Error; err != nil {
+			return err
+		}
+		order.ActualPaymentAmountMinor = actual.AmountMinor
+		order.ActualPaymentCurrency = actual.Currency
+		order.Status = VirtualMembershipOrderSuccess
+		order.CompleteTime = common.GetTimestamp()
+		if providerPayload != "" {
+			order.ProviderPayload = providerPayload
+		}
+		if actualPaymentMethod != "" {
+			order.PaymentMethod = actualPaymentMethod
+		}
+		return tx.Save(&order).Error
+	})
+}
+
+// CompleteVirtualMembershipPayment dispatches a verified provider callback
+// to the correct idempotent ledger. Existing membership orders keep their
+// original settlement behavior; reset add-ons never create memberships.
+func CompleteVirtualMembershipPayment(tradeNo, providerPayload, expectedPaymentProvider, actualPaymentMethod string, paymentSnapshots ...PaymentSnapshot) error {
+	var resetOrder VirtualMembershipResetOrder
+	err := DB.Select("id").Where("trade_no = ?", tradeNo).First(&resetOrder).Error
+	if err == nil {
+		return CompleteVirtualMembershipResetOrder(tradeNo, providerPayload, expectedPaymentProvider, actualPaymentMethod, paymentSnapshots...)
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	return CompleteVirtualMembershipOrder(tradeNo, providerPayload, expectedPaymentProvider, actualPaymentMethod, paymentSnapshots...)
 }
 
 func EnsureVirtualMembershipMigrations() error {

@@ -301,12 +301,15 @@ type SubscriptionOrder struct {
 	PlanId int     `json:"plan_id" gorm:"index"`
 	Money  float64 `json:"money"`
 
-	TradeNo         string `json:"trade_no" gorm:"unique;type:varchar(255);index"`
-	PaymentMethod   string `json:"payment_method" gorm:"type:varchar(50)"`
-	PaymentProvider string `json:"payment_provider" gorm:"type:varchar(50);default:''"`
-	Status          string `json:"status"`
-	CreateTime      int64  `json:"create_time"`
-	CompleteTime    int64  `json:"complete_time"`
+	TradeNo string `json:"trade_no" gorm:"unique;type:varchar(255);index"`
+	// ProductNameSnapshot is captured at order creation and is display/audit
+	// metadata only; payment callbacks never trust or recalculate it.
+	ProductNameSnapshot string `json:"product_name_snapshot" gorm:"type:varchar(128);not null;default:''"`
+	PaymentMethod       string `json:"payment_method" gorm:"type:varchar(50)"`
+	PaymentProvider     string `json:"payment_provider" gorm:"type:varchar(50);default:''"`
+	Status              string `json:"status"`
+	CreateTime          int64  `json:"create_time"`
+	CompleteTime        int64  `json:"complete_time"`
 
 	ProviderPayload                string `json:"provider_payload" gorm:"type:text"`
 	PlanSnapshot                   string `json:"plan_snapshot" gorm:"type:text"`
@@ -446,15 +449,16 @@ func NewSubscriptionOrderFromPlan(userId int, plan *SubscriptionPlan, tradeNo, p
 		return nil, err
 	}
 	order := &SubscriptionOrder{
-		UserId:          userId,
-		PlanId:          plan.Id,
-		Money:           plan.PriceAmount,
-		TradeNo:         tradeNo,
-		PaymentMethod:   paymentMethod,
-		PaymentProvider: paymentProvider,
-		Status:          common.TopUpStatusPending,
-		CreateTime:      common.GetTimestamp(),
-		PlanSnapshot:    snapshot,
+		UserId:              userId,
+		PlanId:              plan.Id,
+		Money:               plan.PriceAmount,
+		TradeNo:             tradeNo,
+		ProductNameSnapshot: PaymentProductNameForSubscription(plan.Title),
+		PaymentMethod:       paymentMethod,
+		PaymentProvider:     paymentProvider,
+		Status:              common.TopUpStatusPending,
+		CreateTime:          common.GetTimestamp(),
+		PlanSnapshot:        snapshot,
 	}
 	if paymentProvider == PaymentProviderEpay {
 		paymentSnapshot, snapshotErr := NewPaymentSnapshotFromMoney(plan.PriceAmount, "CNY")
@@ -591,7 +595,12 @@ func GetLuckySubscriptionProgress(userId int, now int64) (LuckySubscriptionProgr
 			NormalizeResetPeriod(plan.QuotaResetPeriod) == SubscriptionResetNever {
 			continue
 		}
-		nextCardAt := subscription.NextResetTime
+		var nextCardAt int64
+		if subscriptionUsesPurchaseResetAnchorFor(subscription, plan) && subscription.StartTime > 0 {
+			_, nextCardAt = purchaseAnchoredResetSchedule(plan, subscription.StartTime, subscription.EndTime, now)
+		} else {
+			nextCardAt = subscription.NextResetTime
+		}
 		if nextCardAt <= 0 {
 			baseUnix := subscription.LastResetTime
 			if baseUnix <= 0 {
@@ -662,6 +671,18 @@ func NormalizePlanVersion(v string) string {
 	}
 }
 
+// subscriptionBusinessLocation is the single calendar used for subscription
+// reset boundaries. Persisted values remain Unix timestamps, while daily and
+// weekly boundaries are calculated from the purchase/start wall-clock time in
+// Asia/Shanghai rather than from server midnight or a fixed UTC offset.
+var subscriptionBusinessLocation = func() *time.Location {
+	location, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return time.Local
+	}
+	return location
+}()
+
 func calcNextResetTime(base time.Time, plan *SubscriptionPlan, endUnix int64, startUnix int64) int64 {
 	if plan == nil {
 		return 0
@@ -670,11 +691,14 @@ func calcNextResetTime(base time.Time, plan *SubscriptionPlan, endUnix int64, st
 	if period == SubscriptionResetNever {
 		return 0
 	}
+	base = base.In(subscriptionBusinessLocation)
 	var next time.Time
 	switch period {
 	case SubscriptionResetDaily:
-		next = time.Date(base.Year(), base.Month(), base.Day(), 0, 0, 0, 0, base.Location()).
-			AddDate(0, 0, 1)
+		// A daily quota window starts when the instance becomes effective. The
+		// next boundary is the same local wall-clock time on the following day;
+		// midnight alignment would create an eighth window for late purchases.
+		next = base.AddDate(0, 0, 1)
 	case SubscriptionResetWeekly:
 		// 所有卡(周卡/月卡/季卡/年卡)都从订阅(付款)日起每 7 天一周期, 不对齐周一。
 		// 单月卡(duration_value=1)特殊: 前 3 周各重置一次(start+7/+14/+21),
@@ -699,10 +723,160 @@ func calcNextResetTime(base time.Time, plan *SubscriptionPlan, endUnix int64, st
 	default:
 		return 0
 	}
-	if endUnix > 0 && next.Unix() > endUnix {
+	// A boundary at the exact expiry instant cannot open another usable
+	// window. Treat it as no next reset so a 7-day daily card has exactly
+	// seven windows (purchase + six resets).
+	if endUnix > 0 && next.Unix() >= endUnix {
 		return 0
 	}
 	return next.Unix()
+}
+
+// subscriptionUsesPurchaseResetAnchor identifies the reset periods whose
+// phase is part of the purchased entitlement.  Daily and weekly quotas must
+// stay aligned to the original effective timestamp; monthly/custom periods
+// retain their existing anchor semantics for backwards compatibility.
+func subscriptionUsesPurchaseResetAnchor(plan *SubscriptionPlan) bool {
+	if plan == nil {
+		return false
+	}
+	period := NormalizeResetPeriod(plan.QuotaResetPeriod)
+	return period == SubscriptionResetDaily || period == SubscriptionResetWeekly
+}
+
+// subscriptionUsesPurchaseResetAnchorFor applies the purchase-time phase to
+// ordinary paid entitlements.  Lucky double rewards are the one deliberate
+// exception: their reset timestamps are copied from the source subscription
+// so the reward follows the source cycle, even though the reward row itself is
+// created at draw time.
+func subscriptionUsesPurchaseResetAnchorFor(sub *UserSubscription, plan *SubscriptionPlan) bool {
+	if sub != nil && strings.EqualFold(strings.TrimSpace(sub.Source), "lucky_double") {
+		return false
+	}
+	return subscriptionUsesPurchaseResetAnchor(plan)
+}
+
+// purchaseAnchoredResetSchedule returns the current purchase-aligned cycle
+// and its next boundary without mutating a subscription.  The returned last
+// value is the purchase/start timestamp before the first boundary, matching
+// newly-created instances' LastResetTime semantics.
+func purchaseAnchoredResetSchedule(plan *SubscriptionPlan, startUnix, endUnix, now int64) (lastUnix, nextUnix int64) {
+	if plan == nil || startUnix <= 0 {
+		return 0, 0
+	}
+	lastUnix = startUnix
+	base := time.Unix(startUnix, 0).In(subscriptionBusinessLocation)
+	nextUnix = calcNextResetTime(base, plan, endUnix, startUnix)
+	// A long-running subscription can legitimately cross many daily windows
+	// while the process is down. Keep a hard bound so malformed data cannot turn
+	// a request or startup migration into an unbounded loop.
+	for attempts := 0; nextUnix > 0 && nextUnix <= now && attempts < 4096; attempts++ {
+		lastUnix = nextUnix
+		base = time.Unix(nextUnix, 0).In(subscriptionBusinessLocation)
+		nextUnix = calcNextResetTime(base, plan, endUnix, startUnix)
+	}
+	return lastUnix, nextUnix
+}
+
+// isPurchaseResetBoundary reports whether ts is either the purchase timestamp
+// or one of the daily/weekly boundaries generated from it.  This is used to
+// detect rows written by the legacy midnight scheduler: those rows are
+// internally self-consistent but have the wrong phase relative to StartTime.
+func isPurchaseResetBoundary(ts, startUnix, endUnix int64, plan *SubscriptionPlan) bool {
+	if ts <= 0 || startUnix <= 0 || plan == nil {
+		return true
+	}
+	if ts == startUnix {
+		return true
+	}
+	base := time.Unix(startUnix, 0).In(subscriptionBusinessLocation)
+	for attempts := 0; attempts < 4096; attempts++ {
+		next := calcNextResetTime(base, plan, endUnix, startUnix)
+		if next <= 0 || next > ts {
+			return false
+		}
+		if next == ts {
+			return true
+		}
+		base = time.Unix(next, 0).In(subscriptionBusinessLocation)
+	}
+	return false
+}
+
+// normalizePurchaseAnchoredSubscriptionResetTx repairs a legacy daily/weekly
+// row whose reset phase is still midnight (or otherwise no longer matches the
+// purchase timestamp).  It deliberately does not issue historical lucky
+// cards: old midnight cycles may already have issued cards, so replaying every
+// elapsed purchase-aligned boundary would duplicate rewards.  The next real
+// boundary is handled by the normal reset path and remains eligible for one
+// card.
+func normalizePurchaseAnchoredSubscriptionResetTx(tx *gorm.DB, sub *UserSubscription, plan *SubscriptionPlan, now int64) (bool, error) {
+	if tx == nil || sub == nil || !subscriptionUsesPurchaseResetAnchorFor(sub, plan) || sub.StartTime <= 0 {
+		return false, nil
+	}
+	if !purchaseResetPhaseNeedsRepair(sub, plan) {
+		return false, nil
+	}
+	desiredLast, desiredNext := purchaseAnchoredResetSchedule(plan, sub.StartTime, sub.EndTime, now)
+	if desiredLast == 0 {
+		return false, nil
+	}
+	changed := sub.LastResetTime != desiredLast || sub.NextResetTime != desiredNext
+	if !changed {
+		return false, nil
+	}
+	// If the newly-aligned boundary has already passed the legacy last-reset
+	// phase, discard only the current-cycle counter.  The lifetime cap remains
+	// untouched and continues to prevent over-entitlement.
+	if desiredLast > sub.LastResetTime {
+		sub.AmountUsed = 0
+	}
+	sub.LastResetTime = desiredLast
+	sub.NextResetTime = desiredNext
+	sub.UpdatedAt = common.GetTimestamp()
+	if err := tx.Save(sub).Error; err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func purchaseResetPhaseNeedsRepair(sub *UserSubscription, plan *SubscriptionPlan) bool {
+	if sub == nil || !subscriptionUsesPurchaseResetAnchorFor(sub, plan) || sub.StartTime <= 0 {
+		return false
+	}
+	return !(isPurchaseResetBoundary(sub.LastResetTime, sub.StartTime, sub.EndTime, plan) &&
+		isPurchaseResetBoundary(sub.NextResetTime, sub.StartTime, sub.EndTime, plan))
+}
+
+func subscriptionResetBoundaryDue(lastReset, nextReset, startUnix, endUnix int64, plan *SubscriptionPlan, now int64) bool {
+	if nextReset > 0 && nextReset <= now {
+		return true
+	}
+	if lastReset <= 0 && nextReset <= 0 {
+		return false
+	}
+	if !subscriptionUsesPurchaseResetAnchor(plan) || startUnix <= 0 {
+		return false
+	}
+	desiredLast, _ := purchaseAnchoredResetSchedule(plan, startUnix, endUnix, now)
+	return desiredLast > lastReset
+}
+
+func subscriptionResetBoundaryDueFor(sub *UserSubscription, plan *SubscriptionPlan, now int64) bool {
+	if sub == nil {
+		return false
+	}
+	if next := sub.NextResetTime; next > 0 && next <= now {
+		return true
+	}
+	if sub.LastResetTime <= 0 && sub.NextResetTime <= 0 {
+		return false
+	}
+	if !subscriptionUsesPurchaseResetAnchorFor(sub, plan) || sub.StartTime <= 0 {
+		return false
+	}
+	desiredLast, _ := purchaseAnchoredResetSchedule(plan, sub.StartTime, sub.EndTime, now)
+	return desiredLast > sub.LastResetTime
 }
 
 func GetSubscriptionPlanById(id int) (*SubscriptionPlan, error) {
@@ -1014,6 +1188,9 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if !plan.Enabled {
 			// still allow completion for already purchased orders
 		}
+		if strings.TrimSpace(order.ProductNameSnapshot) == "" {
+			order.ProductNameSnapshot = PaymentProductNameForSubscription(plan.Title)
+		}
 		revenueQuota, quotaErr := calcSubscriptionBalanceQuota(order.Money)
 		if quotaErr != nil {
 			return quotaErr
@@ -1114,6 +1291,7 @@ func upsertSubscriptionTopUpTx(tx *gorm.DB, order *SubscriptionOrder) error {
 				Amount:                     0,
 				Money:                      order.Money,
 				TradeNo:                    order.TradeNo,
+				ProductNameSnapshot:        order.ProductNameSnapshot,
 				PaymentMethod:              order.PaymentMethod,
 				PaymentProvider:            order.PaymentProvider,
 				ExpectedPaymentAmountMinor: order.ExpectedPaymentAmountMinor,
@@ -1133,6 +1311,9 @@ func upsertSubscriptionTopUpTx(tx *gorm.DB, order *SubscriptionOrder) error {
 		return err
 	}
 	topup.Money = order.Money
+	if strings.TrimSpace(topup.ProductNameSnapshot) == "" {
+		topup.ProductNameSnapshot = order.ProductNameSnapshot
+	}
 	topup.PaymentProvider = order.PaymentProvider
 	topup.ExpectedPaymentAmountMinor = order.ExpectedPaymentAmountMinor
 	topup.ExpectedPaymentCurrency = order.ExpectedPaymentCurrency
@@ -1426,14 +1607,15 @@ func GetVisibleUserSubscriptions(userId int) ([]SubscriptionSummary, error) {
 }
 
 // GetUserFacingSubscriptionHistory returns the same historical records as the
-// legacy all-subscriptions response while respecting administrator visibility.
+// legacy all-subscriptions response. Hidden instances are included with their
+// Hidden flag so the owner can restore presentation on the subscription page.
 // Runtime billing deliberately continues to ignore Hidden.
 func GetUserFacingSubscriptionHistory(userId int) ([]SubscriptionSummary, error) {
 	if userId <= 0 {
 		return nil, errors.New("invalid userId")
 	}
 	var subs []UserSubscription
-	err := DB.Where("user_id = ? AND hidden = ?", userId, false).
+	err := DB.Where("user_id = ?", userId).
 		Order("end_time desc, id desc").
 		Find(&subs).Error
 	if err != nil {
@@ -1464,6 +1646,35 @@ func SetUserSubscriptionHidden(subscriptionId int, hidden bool) error {
 			"updated_at": common.GetTimestamp(),
 		}).Error
 	})
+}
+
+// SetUserSubscriptionHiddenForUser is the self-service counterpart to the
+// administrator visibility control. Ownership is part of the update predicate
+// so a user can never hide another user's subscription by guessing an ID.
+func SetUserSubscriptionHiddenForUser(subscriptionId, userId int, hidden bool) error {
+	if subscriptionId <= 0 || userId <= 0 {
+		return errors.New("invalid subscription id")
+	}
+	var subscription UserSubscription
+	if err := DB.Select("id", "hidden").Where("id = ? AND user_id = ?", subscriptionId, userId).First(&subscription).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("订阅实例不存在")
+		}
+		return err
+	}
+	if subscription.Hidden == hidden {
+		return nil
+	}
+	result := DB.Model(&UserSubscription{}).
+		Where("id = ? AND user_id = ?", subscriptionId, userId).
+		Updates(map[string]interface{}{"hidden": hidden, "updated_at": common.GetTimestamp()})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errors.New("订阅实例不存在")
+	}
+	return nil
 }
 
 // HasActiveUserSubscription returns whether the user has any active subscription.
@@ -1518,7 +1729,8 @@ func HasUsableUserSubscriptionByGroup(userId int, group string) (bool, error) {
 		if sub.AmountCap > 0 && sub.AmountCapUsed >= sub.AmountCap {
 			continue
 		}
-		if sub.NextResetTime > 0 && sub.NextResetTime <= now {
+		plan, _ := planForUserSubscriptionTx(DB, sub)
+		if subscriptionResetBoundaryDueFor(sub, plan, now) {
 			return true, nil
 		}
 		if sub.AmountTotal <= 0 || sub.AmountUsed < sub.AmountTotal {
@@ -1583,6 +1795,182 @@ type SubscriberSummary struct {
 	Username    string `json:"username" gorm:"column:username"`
 	TotalCount  int    `json:"total_count" gorm:"column:total_count"`
 	ActiveCount int    `json:"active_count" gorm:"column:active_count"`
+}
+
+// AdminSubscriptionSubscriber is one purchased subscription instance with
+// its owner identity and live quota/reset fields. It is intentionally a
+// dedicated projection so the administrator view never needs a second
+// user-by-user lookup.
+type AdminSubscriptionSubscriber struct {
+	Id                      int    `json:"id"`
+	UserId                  int    `json:"user_id"`
+	Username                string `json:"username"`
+	DisplayName             string `json:"display_name"`
+	Email                   string `json:"email"`
+	PlanId                  int    `json:"plan_id"`
+	PlanTitle               string `json:"plan_title"`
+	PlanVersion             string `json:"plan_version"`
+	Remark                  string `json:"remark"`
+	Hidden                  bool   `json:"hidden"`
+	Status                  string `json:"status"`
+	Source                  string `json:"source"`
+	StartTime               int64  `json:"start_time"`
+	EndTime                 int64  `json:"end_time"`
+	AmountTotal             int64  `json:"amount_total"`
+	AmountUsed              int64  `json:"amount_used"`
+	AmountCap               int64  `json:"amount_cap"`
+	AmountCapUsed           int64  `json:"amount_cap_used"`
+	AllowedGroup            string `json:"allowed_group"`
+	QuotaResetPeriod        string `json:"quota_reset_period"`
+	QuotaResetCustomSeconds int64  `json:"quota_reset_custom_seconds,omitempty"`
+	NextResetTime           int64  `json:"next_reset_time"`
+	ResetDue                bool   `json:"reset_due,omitempty"`
+	LuckyCardDisabled       bool   `json:"lucky_card_disabled"`
+	PlanSnapshot            string `json:"-" gorm:"column:plan_snapshot"`
+	LastResetTime           int64  `json:"-" gorm:"column:last_reset_time"`
+}
+
+// GetSubscriptionSubscriberInstances returns currently usable purchased
+// instances for the root-only subscription management sheet. Expired,
+// cancelled, and quota-exhausted instances are intentionally omitted. A
+// cycle whose reset time has arrived remains visible until the maintenance
+// worker persists the reset, because it is usable again at that boundary.
+func GetSubscriptionSubscriberInstances() ([]AdminSubscriptionSubscriber, error) {
+	var results []AdminSubscriptionSubscriber
+	now := GetDBTimestamp()
+	err := DB.Model(&UserSubscription{}).
+		Select("user_subscriptions.id, user_subscriptions.user_id, users.username, users.display_name, users.email, user_subscriptions.plan_id, user_subscriptions.plan_title, user_subscriptions.remark, user_subscriptions.hidden, user_subscriptions.status, user_subscriptions.source, user_subscriptions.start_time, user_subscriptions.end_time, user_subscriptions.amount_total, user_subscriptions.amount_used, user_subscriptions.amount_cap, user_subscriptions.amount_cap_used, user_subscriptions.allowed_group, user_subscriptions.last_reset_time, user_subscriptions.next_reset_time, user_subscriptions.lucky_card_disabled, user_subscriptions.plan_snapshot").
+		Joins("JOIN users ON users.id = user_subscriptions.user_id").
+		Where("user_subscriptions.status = ? AND user_subscriptions.start_time <= ? AND user_subscriptions.end_time > ?", "active", now, now).
+		Where("(user_subscriptions.amount_cap <= 0 OR user_subscriptions.amount_cap_used < user_subscriptions.amount_cap)").
+		Order("user_subscriptions.end_time ASC, user_subscriptions.id DESC").
+		Find(&results).Error
+	if err != nil {
+		return nil, err
+	}
+	// Legacy instances may not have a frozen title/version/reset period.
+	// Hydrate those values once without changing the persisted purchase
+	// snapshot. New instances use the immutable plan snapshot first, so later
+	// administrator edits cannot rewrite what was sold.
+	missing := make([]int, 0)
+	byID := make(map[int]SubscriptionPlan)
+	for _, item := range results {
+		if strings.TrimSpace(item.PlanTitle) == "" || strings.TrimSpace(item.PlanVersion) == "" || strings.TrimSpace(item.PlanSnapshot) == "" {
+			missing = append(missing, item.PlanId)
+		}
+	}
+	if len(missing) > 0 {
+		var plans []SubscriptionPlan
+		if err := DB.Select("id, title, plan_version").Where("id IN ?", missing).Find(&plans).Error; err != nil {
+			return nil, err
+		}
+		byID = make(map[int]SubscriptionPlan, len(plans))
+		for _, plan := range plans {
+			byID[plan.Id] = plan
+		}
+		for i := range results {
+			if plan, ok := byID[results[i].PlanId]; ok {
+				if strings.TrimSpace(results[i].PlanTitle) == "" {
+					results[i].PlanTitle = plan.Title
+				}
+				if strings.TrimSpace(results[i].PlanVersion) == "" {
+					results[i].PlanVersion = NormalizePlanVersion(plan.PlanVersion)
+				}
+			}
+		}
+	}
+	usableResults := make([]AdminSubscriptionSubscriber, 0, len(results))
+	for i := range results {
+		item := &results[i]
+		var plan *SubscriptionPlan
+		if strings.TrimSpace(item.PlanSnapshot) != "" {
+			plan, _ = ParseSubscriptionPlanSnapshot(item.PlanSnapshot)
+		}
+		if plan == nil {
+			if fallback, ok := byID[item.PlanId]; ok {
+				plan = &fallback
+			}
+		}
+		if plan == nil && item.PlanId > 0 {
+			plan, _ = getSubscriptionPlanByIdTx(nil, item.PlanId)
+		}
+		if plan == nil {
+			item.QuotaResetPeriod = SubscriptionResetNever
+			item.QuotaResetCustomSeconds = 0
+			item.ResetDue = item.NextResetTime > 0 && item.NextResetTime <= now
+			item.NextResetTime = 0
+			if item.AmountTotal <= 0 || item.AmountUsed < item.AmountTotal || item.ResetDue {
+				usableResults = append(usableResults, *item)
+			}
+			continue
+		}
+		item.QuotaResetPeriod = NormalizeResetPeriod(plan.QuotaResetPeriod)
+		if item.QuotaResetPeriod == SubscriptionResetCustom {
+			item.QuotaResetCustomSeconds = plan.QuotaResetCustomSeconds
+		} else {
+			item.QuotaResetCustomSeconds = 0
+		}
+		item.ResetDue = subscriptionResetBoundaryDueFor(
+			&UserSubscription{
+				LastResetTime: item.LastResetTime,
+				NextResetTime: item.NextResetTime,
+				StartTime:     item.StartTime,
+				EndTime:       item.EndTime,
+				Source:        item.Source,
+			},
+			plan,
+			now,
+		)
+		item.NextResetTime = projectSubscriptionNextResetTime(item, plan, now)
+		if item.AmountTotal > 0 && item.AmountUsed >= item.AmountTotal && !item.ResetDue {
+			continue
+		}
+		usableResults = append(usableResults, *item)
+	}
+	return usableResults, nil
+}
+
+// projectSubscriptionNextResetTime computes a future display boundary without
+// mutating the subscription. Maintenance workers remain responsible for the
+// transactional quota clear; this projection simply avoids showing a stale
+// timestamp after a reset became due.
+func projectSubscriptionNextResetTime(item *AdminSubscriptionSubscriber, plan *SubscriptionPlan, now int64) int64 {
+	if item == nil || plan == nil || NormalizeResetPeriod(plan.QuotaResetPeriod) == SubscriptionResetNever {
+		return 0
+	}
+	projection := &UserSubscription{
+		LastResetTime: item.LastResetTime,
+		NextResetTime: item.NextResetTime,
+		StartTime:     item.StartTime,
+		EndTime:       item.EndTime,
+		Source:        item.Source,
+	}
+	if subscriptionUsesPurchaseResetAnchorFor(projection, plan) && item.StartTime > 0 {
+		_, next := purchaseAnchoredResetSchedule(plan, item.StartTime, item.EndTime, now)
+		return next
+	}
+	baseUnix := item.LastResetTime
+	if baseUnix <= 0 {
+		baseUnix = item.StartTime
+	}
+	if baseUnix <= 0 {
+		return 0
+	}
+	next := item.NextResetTime
+	if next > now {
+		return next
+	}
+	base := time.Unix(baseUnix, 0).In(subscriptionBusinessLocation)
+	for attempts := 0; attempts < 128; attempts++ {
+		next = calcNextResetTime(base, plan, item.EndTime, item.StartTime)
+		if next <= 0 || next > now {
+			return next
+		}
+		base = time.Unix(next, 0).In(subscriptionBusinessLocation)
+	}
+	// A malformed custom period must never turn an admin read into an
+	// unbounded loop. Treat it as no future display boundary.
+	return 0
 }
 
 // GetSubscriptionSubscribers 返回所有买过套餐的用户(含总订阅数 + 未到期数)。
@@ -1983,7 +2371,22 @@ func maybeResetUserSubscriptionWithPlanTx(tx *gorm.DB, sub *UserSubscription, pl
 	if tx == nil || sub == nil || plan == nil {
 		return errors.New("invalid reset args")
 	}
+	if normalized, err := normalizePurchaseAnchoredSubscriptionResetTx(tx, sub, plan, now); err != nil {
+		return err
+	} else if normalized {
+		// The row has just been migrated to the purchase-aligned phase.  Its
+		// current cycle counter was cleared when necessary; the next real
+		// boundary will go through the ordinary reset/reward path.
+		return nil
+	}
 	if sub.NextResetTime > 0 && sub.NextResetTime > now {
+		return nil
+	}
+	// A lifetime/total cap is independent of the cycle quota. Once it is
+	// exhausted, clearing the cycle counter (or issuing a reset reward) would
+	// create the appearance of fresh entitlement even though consumption is
+	// forbidden. Leave the exhausted instance untouched.
+	if sub.AmountCap > 0 && sub.AmountCapUsed >= sub.AmountCap {
 		return nil
 	}
 	if NormalizeResetPeriod(plan.QuotaResetPeriod) == SubscriptionResetNever {

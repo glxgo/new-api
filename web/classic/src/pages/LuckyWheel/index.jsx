@@ -168,11 +168,7 @@ const LuckyWheel = () => {
   } catch {
     visiblePool = [];
   }
-  const wheelSegments = buildWheelSegments(
-    visiblePool,
-    poolType,
-    selectedRule?.recharge_bonus_usd_micros || 0,
-  );
+  const wheelSegments = buildWheelSegments(visiblePool, poolType);
   const wheelLabelByCode = new Map(
     wheelSegments.map((prize) => [prize.code, prize.label]),
   );
@@ -494,11 +490,12 @@ const LuckyWheel = () => {
               )}
               {' / '}¥
               {(
-                (status?.recharge_progress?.next_threshold_cents || 5000) / 100
+                (status?.recharge_progress?.next_threshold_cents || 3000) / 100
               ).toFixed(2)}
             </Typography.Title>
             <Typography.Text type='tertiary'>
-              跨过多个充值档位时会一次获得全部对应幸运卡。
+              每累计充值 ¥30 获得 1 张充值来源幸运卡，进度按新规则从 0
+              开始累计。
             </Typography.Text>
           </Card>
         </Col>
@@ -552,9 +549,8 @@ const LuckyWheel = () => {
           </div>
         ))}
         <Typography.Paragraph type='tertiary' style={{ marginTop: 16 }}>
-          套餐来源奖励跟随来源套餐分组与剩余有效期；充值来源套餐额度会在显示面额上额外增加
-          ${(selectedRule?.recharge_bonus_usd_micros || 0) / 1000000}
-          。钱包赠金永久有效，但不能用于购买订阅套餐。
+          套餐来源奖励跟随来源套餐分组与剩余有效期；充值来源奖池抽到什么就发放什么。
+          钱包赠金永久有效，但不能用于购买订阅套餐。
         </Typography.Paragraph>
       </Modal>
     </div>

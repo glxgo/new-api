@@ -13,18 +13,22 @@ import (
 )
 
 type TopUp struct {
-	Id              int     `json:"id"`
-	UserId          int     `json:"user_id" gorm:"index"`
-	Amount          int64   `json:"amount"`
-	Money           float64 `json:"money"`
-	TradeNo         string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
-	PaymentMethod   string  `json:"payment_method" gorm:"type:varchar(50)"`
-	PaymentProvider string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
-	CouponId        int     `json:"coupon_id" gorm:"index;not null;default:0"`
-	CouponCode      string  `json:"coupon_code" gorm:"type:varchar(64);not null;default:''"`
-	CouponDiscount  float64 `json:"coupon_discount" gorm:"not null;default:1"`
-	CreateTime      int64   `json:"create_time"`
-	CompleteTime    int64   `json:"complete_time"`
+	Id      int     `json:"id"`
+	UserId  int     `json:"user_id" gorm:"index"`
+	Amount  int64   `json:"amount"`
+	Money   float64 `json:"money"`
+	TradeNo string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
+	// ProductNameSnapshot is the immutable, human-readable gateway product
+	// name captured when the order is created. It is metadata only and is never
+	// used for payment verification.
+	ProductNameSnapshot string  `json:"product_name_snapshot" gorm:"type:varchar(128);not null;default:''"`
+	PaymentMethod       string  `json:"payment_method" gorm:"type:varchar(50)"`
+	PaymentProvider     string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
+	CouponId            int     `json:"coupon_id" gorm:"index;not null;default:0"`
+	CouponCode          string  `json:"coupon_code" gorm:"type:varchar(64);not null;default:''"`
+	CouponDiscount      float64 `json:"coupon_discount" gorm:"not null;default:1"`
+	CreateTime          int64   `json:"create_time"`
+	CompleteTime        int64   `json:"complete_time"`
 	// BalanceAfter 充值完成后用户余额快照(quota 单位, 本金+赠金)，
 	// 仅供财务流水展示，不参与计费/扣费/退款逻辑。历史订单为 0。
 	BalanceAfter                   *int64 `json:"balance_after" gorm:"column:balance_after"`

@@ -26,6 +26,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatusBadge } from '@/components/status-badge'
+import { IdentityBadge } from '@/features/identity/identity-badge'
 import { getDisplayName } from '../lib'
 import type { UserProfile } from '../types'
 
@@ -121,6 +122,7 @@ export function ProfileHeader({ profile, loading }: ProfileHeaderProps) {
               <h1 className='truncate text-xl font-semibold tracking-tight sm:text-2xl'>
                 {displayName}
               </h1>
+              <IdentityBadge identityType={profile.identity_type} />
               <StatusBadge
                 label={roleLabel}
                 variant='neutral'

@@ -71,6 +71,39 @@ export type SubscriberSummary = {
   active_count: number
 }
 
+export interface AdminSubscriptionSubscriber {
+  id: number
+  user_id: number
+  username: string
+  display_name?: string
+  email?: string
+  plan_id: number
+  plan_title: string
+  plan_version?: string
+  remark?: string
+  hidden?: boolean
+  status: string
+  source?: string
+  start_time: number
+  end_time: number
+  amount_total: number
+  amount_used: number
+  amount_cap?: number
+  amount_cap_used?: number
+  allowed_group?: string
+  quota_reset_period?:
+    | 'never'
+    | 'daily'
+    | 'weekly'
+    | 'monthly'
+    | 'custom'
+    | string
+  quota_reset_custom_seconds?: number
+  next_reset_time?: number
+  reset_due?: boolean
+  lucky_card_disabled?: boolean
+}
+
 // ============================================================================
 // User Subscription Schema & Types
 // ============================================================================

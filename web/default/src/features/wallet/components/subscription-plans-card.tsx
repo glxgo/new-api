@@ -57,6 +57,7 @@ import {
   getPublicPlans,
   getSelfSubscriptionFull,
   getSubscriptionRenewalPreview,
+  setSelfSubscriptionHidden,
   updateBillingPreference,
 } from '@/features/subscriptions/api'
 import { SubscriptionConsumptionOrderDialog } from '@/features/subscriptions/components/dialogs/subscription-consumption-order-dialog'
@@ -139,6 +140,7 @@ export function SubscriptionPlansCard({
   const [remarkOpen, setRemarkOpen] = useState(false)
   const [consumptionOrderOpen, setConsumptionOrderOpen] = useState(false)
   const [descPlan, setDescPlan] = useState<PlanRecord | null>(null)
+  const [restoringId, setRestoringId] = useState<number | null>(null)
 
   const enableStripe = !!topupInfo?.enable_stripe_topup
   const enableCreem = !!topupInfo?.enable_creem_topup
@@ -215,6 +217,11 @@ export function SubscriptionPlansCard({
 
   const hasActive = activeSubscriptions.length > 0
   const hasAny = allSubscriptions.length > 0
+  const hiddenSubscriptions = allSubscriptions.filter(
+    (sub) =>
+      sub?.subscription?.hidden &&
+      (sub.subscription?.end_time || 0) > subscriptionReferenceTime
+  )
   const isAvailable = loading || plans.length > 0 || hasAny
   const disablePref = !hasActive
   const isSubPref =
@@ -275,6 +282,23 @@ export function SubscriptionPlansCard({
       toast.error(t('Renewal is not available'))
     } finally {
       setRenewingId(null)
+    }
+  }
+
+  const restoreSubscription = async (subscriptionId: number) => {
+    setRestoringId(subscriptionId)
+    try {
+      const res = await setSelfSubscriptionHidden(subscriptionId, false)
+      if (!res.success) {
+        toast.error(res.message || t('Update failed'))
+        return
+      }
+      toast.success('已恢复展示')
+      await fetchSelfSubscription()
+    } catch {
+      toast.error(t('Request failed'))
+    } finally {
+      setRestoringId(null)
     }
   }
 
@@ -698,6 +722,82 @@ export function SubscriptionPlansCard({
                       </div>
                     )
                   })}
+                </div>
+              </>
+            )}
+
+            {hiddenSubscriptions.length > 0 && (
+              <>
+                <Separator className='my-3' />
+                <div className='space-y-2'>
+                  <div className='flex items-center gap-2 text-xs font-medium'>
+                    <span>已隐藏的用量卡片</span>
+                    <span className='bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-[10px]'>
+                      {hiddenSubscriptions.length}
+                    </span>
+                  </div>
+                  <div className='subscription-card-grid'>
+                    {hiddenSubscriptions.map((sub) => {
+                      const subscription = sub.subscription
+                      const planTitle =
+                        subscription?.plan_title ||
+                        planTitleMap.get(subscription?.plan_id) ||
+                        ''
+                      const remainDays = getRemainingDays(sub)
+                      return (
+                        <div
+                          key={subscription?.id}
+                          className='bg-card/70 relative flex flex-col overflow-hidden rounded-lg border border-dashed p-3 opacity-80'
+                        >
+                          <div className='flex items-start justify-between gap-2'>
+                            <div className='min-w-0'>
+                              <div className='truncate text-sm font-semibold'>
+                                {planTitle ||
+                                  `${t('Subscription')} #${subscription?.id}`}
+                              </div>
+                              <div className='text-muted-foreground text-[10px]'>
+                                {t('Subscription')} #{subscription?.id}
+                              </div>
+                            </div>
+                            <span className='bg-muted text-muted-foreground shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium'>
+                              已隐藏
+                            </span>
+                          </div>
+                          <div className='text-muted-foreground mt-2 text-[10px]'>
+                            {t('Until')}{' '}
+                            {new Date(
+                              (subscription?.end_time || 0) * 1000
+                            ).toLocaleDateString()}
+                            {remainDays > 0 &&
+                              ` · ${t('{{count}} days remaining', { count: remainDays })}`}
+                          </div>
+                          <Button
+                            type='button'
+                            variant='outline'
+                            size='sm'
+                            className='mt-3 h-7 gap-1.5 text-[11px]'
+                            disabled={restoringId === subscription?.id}
+                            onClick={() => {
+                              if (subscription?.id) {
+                                restoreSubscription(subscription.id)
+                              }
+                            }}
+                          >
+                            <RotateCw
+                              className={cn(
+                                'size-3',
+                                restoringId === subscription?.id &&
+                                  'animate-spin'
+                              )}
+                            />
+                            {restoringId === subscription?.id
+                              ? '恢复中…'
+                              : '恢复展示'}
+                          </Button>
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
               </>
             )}

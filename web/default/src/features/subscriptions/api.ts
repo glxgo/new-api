@@ -26,7 +26,7 @@ import type {
   SubscriptionPayResponse,
   SubscriptionPayRequest,
   SelfSubscriptionData,
-  SubscriberSummary,
+  AdminSubscriptionSubscriber,
   SubscriptionRenewalPreview,
   SubscriptionTokenBindingItem,
   BatchSubscriptionBindingPayload,
@@ -103,7 +103,7 @@ export async function getUserSubscriptions(
 }
 
 export async function getSubscriptionSubscribers(): Promise<
-  ApiResponse<SubscriberSummary[]>
+  ApiResponse<AdminSubscriptionSubscriber[]>
 > {
   const res = await api.get('/api/subscription/admin/subscribers')
   return res.data
@@ -254,6 +254,17 @@ export async function updateSubscriptionRemark(
   const res = await api.patch(
     `/api/subscription/self/instances/${subscriptionId}/remark`,
     { remark }
+  )
+  return res.data
+}
+
+export async function setSelfSubscriptionHidden(
+  subscriptionId: number,
+  hidden: boolean
+): Promise<ApiResponse<{ hidden: boolean }>> {
+  const res = await api.patch(
+    `/api/subscription/self/instances/${subscriptionId}/visibility`,
+    { hidden }
   )
   return res.data
 }

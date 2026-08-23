@@ -24,6 +24,7 @@ import {
   Loader2,
   RefreshCw,
   ShieldCheck,
+  Settings2,
   Users,
   Zap,
 } from 'lucide-react'
@@ -48,9 +49,13 @@ import { Dialog } from '@/components/dialog'
 import { SectionPageLayout } from '@/components/layout'
 import {
   getVirtualMembershipPage,
+  activeResetVirtualMembership,
   payVirtualMembershipEpay,
+  payVirtualMembershipActiveResetEpay,
   purchaseVirtualMembership,
+  setSelfVirtualMembershipHidden,
 } from './api'
+import { VirtualMembershipManagementDialog } from './components/virtual-membership-management-dialog'
 import type { UserVirtualMembership, VirtualMembershipPlan } from './types'
 
 function quotaLabel(value: number) {
@@ -89,13 +94,19 @@ function UsageBar({
 function MembershipCard({
   membership,
   onRenew,
+  onManage,
   renewalAvailable,
   renderedAt,
+  onActiveReset,
+  resetting,
 }: {
   membership: UserVirtualMembership
   onRenew: () => void
+  onManage: () => void
   renewalAvailable: boolean
   renderedAt: number
+  onActiveReset: () => void
+  resetting: boolean
 }) {
   const scheduled = membership.start_time > renderedAt
   return (
@@ -174,16 +185,40 @@ function MembershipCard({
           ? `生效时间 ${formatTimestampToDate(membership.start_time)}`
           : `有效期至 ${formatTimestampToDate(membership.end_time)}`}
       </p>
+      <div className='mt-3 grid grid-cols-2 gap-2'>
+        <Button
+          type='button'
+          variant='outline'
+          size='sm'
+          className='rounded-xl'
+          onClick={onManage}
+        >
+          <Settings2 className='size-3.5' /> 管理
+        </Button>
+        <Button
+          type='button'
+          variant='outline'
+          size='sm'
+          className='rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white'
+          disabled={!renewalAvailable}
+          onClick={onRenew}
+        >
+          <RefreshCw className='size-3.5' />
+          {renewalAvailable ? '续费' : '已续费或方案已下架'}
+        </Button>
+      </div>
       <Button
         type='button'
         variant='outline'
         size='sm'
-        className='mt-3 w-full'
-        disabled={!renewalAvailable}
-        onClick={onRenew}
+        className='mt-2 w-full rounded-xl border-violet-500/30 text-violet-700 hover:bg-violet-500/10 hover:text-violet-700'
+        disabled={resetting || scheduled || membership.status !== 'active'}
+        onClick={onActiveReset}
       >
-        <RefreshCw className='size-3.5' />
-        {renewalAvailable ? '续费' : '已续费或方案已下架'}
+        <RefreshCw className={cn('size-3.5', resetting && 'animate-spin')} />
+        {membership.active_reset_credits > 0
+          ? `主动重置（剩余 ${membership.active_reset_credits} 次）`
+          : `购买主动重置次数（¥${(membership.active_reset_price_amount || 0).toFixed(2)}）`}
       </Button>
     </div>
   )
@@ -483,6 +518,8 @@ export function VirtualMembership() {
   const [renewFromMembershipId, setRenewFromMembershipId] = useState<
     number | null
   >(null)
+  const [restoringId, setRestoringId] = useState<number | null>(null)
+  const [resettingId, setResettingId] = useState<number | null>(null)
   const { data, isLoading } = useQuery({
     queryKey: ['virtual-membership-page', refresh],
     queryFn: getVirtualMembershipPage,
@@ -574,6 +611,104 @@ export function VirtualMembership() {
     }
   }
 
+  const [manageMembership, setManageMembership] =
+    useState<UserVirtualMembership | null>(null)
+  const [manageOpen, setManageOpen] = useState(false)
+
+  const restoreMembership = async (membershipId: number) => {
+    setRestoringId(membershipId)
+    try {
+      const response = await setSelfVirtualMembershipHidden(membershipId, false)
+      if (!response.success) {
+        toast.error(response.message || '恢复展示失败')
+        return
+      }
+      toast.success('已恢复展示')
+      setRefresh((value) => value + 1)
+    } catch {
+      toast.error('恢复展示失败，请稍后重试')
+    } finally {
+      setRestoringId(null)
+    }
+  }
+
+  const openEpayForm = (result: {
+    url?: string
+    data?: Record<string, unknown>
+  }) => {
+    if (!result.url) return false
+    const form = document.createElement('form')
+    form.action = result.url
+    form.method = 'POST'
+    const isSafari =
+      typeof navigator !== 'undefined' &&
+      /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
+    if (!isSafari) form.target = '_blank'
+    Object.entries(result.data || {}).forEach(([key, value]) => {
+      const input = document.createElement('input')
+      input.type = 'hidden'
+      input.name = key
+      input.value = String(value)
+      form.appendChild(input)
+    })
+    document.body.appendChild(form)
+    form.submit()
+    form.remove()
+    return true
+  }
+
+  const handleActiveReset = async (membership: UserVirtualMembership) => {
+    if (resettingId !== null) return
+    setResettingId(membership.id)
+    try {
+      if (membership.active_reset_credits > 0) {
+        if (
+          !window.confirm(
+            '确认立即重置该虚拟会员的周限额和 5 小时限额吗？将消耗 1 次主动重置次数。'
+          )
+        )
+          return
+        const result = await activeResetVirtualMembership(membership.id)
+        if (!result.success) {
+          toast.error(result.message || '主动重置失败')
+          return
+        }
+        toast.success('已主动重置额度')
+        setRefresh((value) => value + 1)
+        return
+      }
+      const method = page?.epay_methods?.[0]?.type
+      const price = membership.active_reset_price_amount || 0
+      if (!method) {
+        toast.error('当前未配置易支付方式')
+        return
+      }
+      if (price < 0.01) {
+        toast.error('主动重置价格暂不可用，请联系管理员')
+        return
+      }
+      if (
+        !window.confirm(
+          `主动重置次数不足，是否购买 1 次？价格 ¥${price.toFixed(2)}`
+        )
+      )
+        return
+      const result = await payVirtualMembershipActiveResetEpay({
+        membership_id: membership.id,
+        payment_method: method,
+      })
+      if (result.message !== 'success' || !openEpayForm(result)) {
+        toast.error(result.message || '支付请求失败')
+        return
+      }
+      toast.success('支付页面已打开，支付成功后将获得 1 次主动重置')
+    } catch {
+      toast.error('主动重置请求失败，请稍后重试')
+    } finally {
+      setResettingId(null)
+    }
+  }
+
   return (
     <>
       <SectionPageLayout>
@@ -631,8 +766,68 @@ export function VirtualMembership() {
                         )
                       }
                       onRenew={() => openRenewal(item)}
+                      onManage={() => {
+                        setManageMembership(item)
+                        setManageOpen(true)
+                      }}
+                      onActiveReset={() => void handleActiveReset(item)}
+                      resetting={resettingId === item.id}
                       renderedAt={renderedAt}
                     />
+                  ))}
+                </div>
+              </div>
+            )}
+            {(page?.hidden_memberships?.length ?? 0) > 0 && (
+              <div>
+                <h2 className='mb-3 flex items-center gap-2 text-lg font-semibold'>
+                  已隐藏的虚拟会员
+                  <span className='bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-xs font-medium'>
+                    {page?.hidden_memberships?.length}
+                  </span>
+                </h2>
+                <div className='grid gap-3 md:grid-cols-2 xl:grid-cols-3'>
+                  {(page?.hidden_memberships ?? []).map((item) => (
+                    <div
+                      key={item.id}
+                      className='bg-card/70 rounded-xl border border-dashed p-4 opacity-80'
+                    >
+                      <div className='flex items-start justify-between gap-3'>
+                        <div className='min-w-0'>
+                          <p className='truncate text-base font-semibold'>
+                            {item.plan_title}
+                          </p>
+                          <p className='text-muted-foreground text-xs'>
+                            {item.group_size === 1
+                              ? '单独购买'
+                              : `${item.group_size} 人团 · 自动均分额度`}
+                          </p>
+                        </div>
+                        <span className='bg-muted text-muted-foreground shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium'>
+                          已隐藏
+                        </span>
+                      </div>
+                      <p className='text-muted-foreground mt-3 text-[11px]'>
+                        有效期至 {formatTimestampToDate(item.end_time)} · 会员 #
+                        {item.id}
+                      </p>
+                      <Button
+                        type='button'
+                        variant='outline'
+                        size='sm'
+                        className='mt-3 w-full rounded-xl'
+                        disabled={restoringId === item.id}
+                        onClick={() => restoreMembership(item.id)}
+                      >
+                        <RefreshCw
+                          className={cn(
+                            'size-3.5',
+                            restoringId === item.id && 'animate-spin'
+                          )}
+                        />
+                        {restoringId === item.id ? '恢复中…' : '恢复展示'}
+                      </Button>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -667,6 +862,12 @@ export function VirtualMembership() {
         userQuota={userQuota}
         onConfirm={handlePurchase}
         renewal={renewFromMembershipId !== null}
+      />
+      <VirtualMembershipManagementDialog
+        open={manageOpen}
+        onOpenChange={setManageOpen}
+        membership={manageMembership}
+        onHidden={() => setRefresh((value) => value + 1)}
       />
     </>
   )

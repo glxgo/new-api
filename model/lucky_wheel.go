@@ -66,21 +66,33 @@ func (m *LuckyCampaign) BeforeUpdate(tx *gorm.DB) error {
 }
 
 type LuckyPrizeConfig struct {
-	Code             string `json:"code"`
-	DisplayUsdMicros int64  `json:"display_usd_micros"`
-	Weight           int64  `json:"weight"`
+	Code string `json:"code"`
+	// DisplayUsdMicros is intentionally the single source of truth for both
+	// the public amount and the amount awarded. Keeping the historical JSON
+	// name avoids breaking existing rule versions and admin clients.
+	DisplayUsdMicros int64 `json:"display_usd_micros"`
+	Weight           int64 `json:"weight"`
+}
+
+// AwardUsdMicros returns the amount that must be credited for this prize.
+// The admin editor calls this value “公示金额”, but it is not presentation-only.
+func (p LuckyPrizeConfig) AwardUsdMicros() int64 {
+	return p.DisplayUsdMicros
 }
 
 type LuckyRuleSet struct {
-	Id                         int64  `json:"id"`
-	CampaignId                 int64  `json:"campaign_id" gorm:"uniqueIndex:idx_lucky_rule_version,priority:1;index"`
-	BaseRuleSetId              int64  `json:"base_rule_set_id" gorm:"index;not null;default:0"`
-	Version                    int    `json:"version" gorm:"uniqueIndex:idx_lucky_rule_version,priority:2"`
-	Status                     string `json:"status" gorm:"type:varchar(32);index"`
-	SubscriptionPool           string `json:"subscription_pool" gorm:"type:text;not null"`
-	RechargePool               string `json:"recharge_pool" gorm:"type:text;not null"`
-	ThresholdConfig            string `json:"threshold_config" gorm:"type:text;not null"`
-	RechargeBonusUsdMicros     int64  `json:"recharge_bonus_usd_micros" gorm:"not null;default:40000000"`
+	Id               int64  `json:"id"`
+	CampaignId       int64  `json:"campaign_id" gorm:"uniqueIndex:idx_lucky_rule_version,priority:1;index"`
+	BaseRuleSetId    int64  `json:"base_rule_set_id" gorm:"index;not null;default:0"`
+	Version          int    `json:"version" gorm:"uniqueIndex:idx_lucky_rule_version,priority:2"`
+	Status           string `json:"status" gorm:"type:varchar(32);index"`
+	SubscriptionPool string `json:"subscription_pool" gorm:"type:text;not null"`
+	RechargePool     string `json:"recharge_pool" gorm:"type:text;not null"`
+	ThresholdConfig  string `json:"threshold_config" gorm:"type:text;not null"`
+	// Deprecated: recharge-card prizes are now awarded exactly as configured;
+	// this field remains for schema/API compatibility and is always zero for
+	// newly published rules.
+	RechargeBonusUsdMicros     int64  `json:"recharge_bonus_usd_micros" gorm:"not null;default:0"`
 	RechargeCardValidSeconds   int64  `json:"recharge_card_valid_seconds" gorm:"not null;default:2592000"`
 	RechargeRewardValidSeconds int64  `json:"recharge_reward_valid_seconds" gorm:"not null;default:2592000"`
 	CrazyCardValidSeconds      int64  `json:"crazy_card_valid_seconds" gorm:"not null;default:18000"`
@@ -425,7 +437,7 @@ func ValidateLuckyRuleSet(rule *LuckyRuleSet) error {
 	if err := validateLuckyPool(recharge, false); err != nil {
 		return err
 	}
-	if rule.RechargeBonusUsdMicros < 0 || rule.RechargeCardValidSeconds <= 0 ||
+	if rule.RechargeBonusUsdMicros != 0 || rule.RechargeCardValidSeconds <= 0 ||
 		rule.RechargeRewardValidSeconds <= 0 || rule.CrazyCardValidSeconds <= 0 ||
 		rule.CrazyCardQuotaUsdMicros <= 0 || strings.TrimSpace(rule.ActivityGroup) == "" {
 		return errors.New("invalid lucky rule amounts, durations, or activity group")
@@ -484,9 +496,9 @@ func CreateLuckyRuleSetDraft(baseRuleSetId int64, operatorId int, input LuckyRul
 		if created.RechargeRewardValidSeconds <= 0 {
 			created.RechargeRewardValidSeconds = active.RechargeRewardValidSeconds
 		}
-		if created.RechargeBonusUsdMicros <= 0 {
-			created.RechargeBonusUsdMicros = active.RechargeBonusUsdMicros
-		}
+		// Recharge-card awards no longer have a separate fixed bonus. Keep the
+		// legacy field zero even when an older client sends a stale value.
+		created.RechargeBonusUsdMicros = 0
 		if created.CrazyCardValidSeconds <= 0 {
 			created.CrazyCardValidSeconds = active.CrazyCardValidSeconds
 		}
@@ -575,25 +587,10 @@ func RefreshLuckyRuleChecksum(rule *LuckyRuleSet) {
 }
 
 func LuckyThresholdCents(stage int64) int64 {
-	switch stage {
-	case 1:
-		return 5_000
-	case 2:
-		return 10_000
-	case 3:
-		return 20_000
-	case 4:
-		return 40_000
-	case 5:
-		return 60_000
-	case 6:
-		return 80_000
-	default:
-		if stage < 1 {
-			return 5_000
-		}
-		return 80_000 + (stage-6)*20_000
+	if stage < 1 {
+		stage = 1
 	}
+	return stage * 3_000
 }
 
 func EnsureDefaultLuckyCampaign() error {
@@ -628,21 +625,20 @@ func EnsureDefaultLuckyCampaign() error {
 		if err != nil {
 			return err
 		}
-		thresholdJSON, err := common.Marshal([]int64{5_000, 10_000, 20_000, 40_000, 60_000, 80_000})
+		thresholdJSON, err := common.Marshal([]int64{3_000})
 		if err != nil {
 			return err
 		}
-		checksumBytes := sha256.Sum256([]byte(string(subscriptionJSON) + "|" + string(rechargeJSON)))
-		checksum := fmt.Sprintf("%x", checksumBytes)
 		rule := LuckyRuleSet{
 			CampaignId: campaign.Id, Version: 1, Status: "active",
 			SubscriptionPool: string(subscriptionJSON), RechargePool: string(rechargeJSON),
-			ThresholdConfig: string(thresholdJSON), RechargeBonusUsdMicros: 40_000_000,
+			ThresholdConfig: string(thresholdJSON), RechargeBonusUsdMicros: 0,
 			RechargeCardValidSeconds: 30 * 24 * 3600, RechargeRewardValidSeconds: 30 * 24 * 3600,
 			CrazyCardValidSeconds: 5 * 3600, CrazyCardQuotaUsdMicros: 600_000_000,
-			ActivityGroup: "套餐专用分组", Checksum: checksum,
-			PublishedAt: common.GetTimestamp(), EffectiveAt: common.GetTimestamp(),
+			ActivityGroup: "套餐专用分组",
+			PublishedAt:   common.GetTimestamp(), EffectiveAt: common.GetTimestamp(),
 		}
+		RefreshLuckyRuleChecksum(&rule)
 		if err := tx.Create(&rule).Error; err != nil {
 			return err
 		}
@@ -650,6 +646,56 @@ func EnsureDefaultLuckyCampaign() error {
 			"active_rule_set_id": rule.Id,
 			"updated_at":         common.GetTimestamp(),
 		}).Error
+	})
+}
+
+const luckyRechargeCardPolicy20260820MigrationKey = "LuckyRechargeCardPolicy20260820MigratedV1"
+
+// EnsureLuckyRechargeCardPolicy20260820 switches recharge cards to the new
+// policy: every cumulative ¥30 earns one card, and a recharge-card draw pays
+// exactly the selected prize amount without a separate bonus. Existing
+// progress is intentionally reset once; issued cards and draw history remain
+// untouched for auditability.
+func EnsureLuckyRechargeCardPolicy20260820() error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var marker Option
+		if err := tx.Where(commonKeyCol+" = ?", luckyRechargeCardPolicy20260820MigrationKey).First(&marker).Error; err == nil {
+			return nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
+		thresholdJSON, err := common.Marshal([]int64{3_000})
+		if err != nil {
+			return err
+		}
+		var rules []LuckyRuleSet
+		if err := tx.Find(&rules).Error; err != nil {
+			return err
+		}
+		for i := range rules {
+			rules[i].RechargeBonusUsdMicros = 0
+			rules[i].ThresholdConfig = string(thresholdJSON)
+			RefreshLuckyRuleChecksum(&rules[i])
+			if err := tx.Model(&LuckyRuleSet{}).Where("id = ?", rules[i].Id).Updates(map[string]interface{}{
+				"recharge_bonus_usd_micros": rules[i].RechargeBonusUsdMicros,
+				"threshold_config":          rules[i].ThresholdConfig,
+				"checksum":                  rules[i].Checksum,
+			}).Error; err != nil {
+				return err
+			}
+		}
+
+		now := common.GetTimestamp()
+		if err := tx.Model(&LuckyRechargeProgress{}).Where("1 = 1").Updates(map[string]interface{}{
+			"eligible_cents":        0,
+			"highest_awarded_stage": 0,
+			"next_threshold_cents":  3_000,
+			"updated_at":            now,
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Create(&Option{Key: luckyRechargeCardPolicy20260820MigrationKey, Value: "true"}).Error
 	})
 }
 

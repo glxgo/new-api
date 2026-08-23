@@ -95,6 +95,9 @@ export interface UserProfile {
   rpm_limit_override?: boolean
   /** Best-effort request count in the current rolling minute */
   current_rpm?: number
+  /** Operator-granted enterprise/education identity */
+  identity_type?: 'none' | 'enterprise' | 'education' | string
+  identity_label?: string
 }
 
 export interface ConcurrencyApplication {

@@ -93,7 +93,7 @@ func TestVirtualMembershipExternalPaymentCreditsRechargeLuckyProgressAndCommissi
 	var progress LuckyRechargeProgress
 	require.NoError(t, db.First(&progress, buyer.Id).Error)
 	require.EqualValues(t, 7_000, progress.EligibleCents)
-	require.EqualValues(t, 1, progress.HighestAwardedStage)
+	require.EqualValues(t, 2, progress.HighestAwardedStage)
 	var topUpCount, rechargeLogCount int64
 	require.NoError(t, db.Model(&TopUp{}).Count(&topUpCount).Error)
 	require.Zero(t, topUpCount, "a membership payment must not fabricate wallet credit")
@@ -188,7 +188,7 @@ func setupVirtualMembershipTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open test database: %v", err)
 	}
-	if err := db.AutoMigrate(&User{}, &Option{}, &VirtualMembershipPlan{}, &UserVirtualMembership{}, &VirtualMembershipPreConsumeRecord{}); err != nil {
+	if err := db.AutoMigrate(&User{}, &Option{}, &VirtualMembershipPlan{}, &VirtualMembershipOrder{}, &VirtualMembershipResetOrder{}, &UserVirtualMembership{}, &VirtualMembershipPreConsumeRecord{}); err != nil {
 		t.Fatalf("migrate test database: %v", err)
 	}
 	previousDB := DB
@@ -289,6 +289,29 @@ func TestListUserVirtualMembershipsReturnsCurrentAndScheduledActiveInstances(t *
 	if elapsed.Status != VirtualMembershipStatusExpired {
 		t.Fatalf("elapsed status = %q, want expired", elapsed.Status)
 	}
+}
+
+func TestListHiddenUserVirtualMembershipsReturnsOnlyHiddenActiveInstances(t *testing.T) {
+	db := setupVirtualMembershipTestDB(t)
+	now := common.GetTimestamp()
+	memberships := []UserVirtualMembership{
+		{UserId: 41, PlanId: 1, PlanTitle: "visible", Status: VirtualMembershipStatusActive, StartTime: now - 60, EndTime: now + 60},
+		{UserId: 41, PlanId: 1, PlanTitle: "hidden-active", Hidden: true, Status: VirtualMembershipStatusActive, StartTime: now - 60, EndTime: now + 60},
+		{UserId: 41, PlanId: 1, PlanTitle: "hidden-elapsed", Hidden: true, Status: VirtualMembershipStatusActive, StartTime: now - 120, EndTime: now - 60},
+		{UserId: 42, PlanId: 1, PlanTitle: "other-hidden", Hidden: true, Status: VirtualMembershipStatusActive, StartTime: now - 60, EndTime: now + 60},
+	}
+	require.NoError(t, db.Create(&memberships).Error)
+
+	hidden, err := ListHiddenUserVirtualMemberships(41)
+	require.NoError(t, err)
+	require.Len(t, hidden, 1, "only the owner's active hidden instance is returned")
+	require.Equal(t, "hidden-active", hidden[0].PlanTitle)
+	require.True(t, hidden[0].Hidden)
+
+	visible, err := ListUserVirtualMemberships(41)
+	require.NoError(t, err)
+	require.Len(t, visible, 1)
+	require.Equal(t, "visible", visible[0].PlanTitle)
 }
 
 func TestResetVirtualMembershipsSupportsPlanAndSingleInstance(t *testing.T) {
@@ -472,6 +495,24 @@ func TestVirtualMembershipVisibilityIsPresentationOnlyAndIncludesScheduledRenewa
 	admin, err := ListAdminVirtualMemberships()
 	require.NoError(t, err)
 	require.Len(t, admin, 3, "administrator list retains hidden instances")
+}
+
+func TestSetVirtualMembershipHiddenForUserRequiresOwnership(t *testing.T) {
+	db := setupVirtualMembershipTestDB(t)
+	now := common.GetTimestamp()
+	membership := UserVirtualMembership{
+		UserId: 81, PlanId: 1, PlanTitle: "self-hide", Status: VirtualMembershipStatusActive,
+		StartTime: now - 60, EndTime: now + 3600, WeeklyQuota: 100,
+		AllowedGroup: VirtualMembershipDefaultAllowedGroup,
+	}
+	require.NoError(t, db.Create(&membership).Error)
+	require.Error(t, SetVirtualMembershipHiddenForUser(membership.Id, 82, true))
+	var unchanged UserVirtualMembership
+	require.NoError(t, db.First(&unchanged, membership.Id).Error)
+	require.False(t, unchanged.Hidden)
+	require.NoError(t, SetVirtualMembershipHiddenForUser(membership.Id, 81, true))
+	require.NoError(t, db.First(&unchanged, membership.Id).Error)
+	require.True(t, unchanged.Hidden)
 }
 
 func TestVirtualMembershipBalanceAndAdminRenewalsCreateLinearSuccessorsWithoutCashEvents(t *testing.T) {

@@ -148,13 +148,11 @@ describe('lucky wheel model', () => {
     ]
 
     assert.deepEqual(
-      buildWheelSegments(pool, 'recharge', 40_000_000).map(
-        (item) => item.label
-      ),
-      ['$45 套餐额度', '$5 钱包赠金']
+      buildWheelSegments(pool, 'recharge').map((item) => item.label),
+      ['$5 套餐额度', '$5 钱包赠金']
     )
     assert.equal(
-      buildWheelSegments(pool, 'subscription', 40_000_000)[0]?.label,
+      buildWheelSegments(pool, 'subscription')[0]?.label,
       '$5 套餐额度'
     )
   })

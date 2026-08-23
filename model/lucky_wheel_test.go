@@ -47,6 +47,44 @@ func TestLuckyRechargeBonusMigrationChangesSixtyToFortyOnce(t *testing.T) {
 	require.EqualValues(t, 55_000_000, rule.RechargeBonusUsdMicros, "迁移完成后不得覆盖管理员后续配置")
 }
 
+func TestLuckyRechargeCardPolicyMigrationResetsProgressAndRemovesBonus(t *testing.T) {
+	db := setupLuckyWheelTestDB(t)
+	var rule LuckyRuleSet
+	require.NoError(t, db.First(&rule).Error)
+	require.NoError(t, db.Model(&rule).Updates(map[string]interface{}{
+		"recharge_bonus_usd_micros": int64(40_000_000),
+		"threshold_config":          `[5000,10000]`,
+	}).Error)
+	progress := LuckyRechargeProgress{
+		UserId: 42, EligibleCents: 12_345, HighestAwardedStage: 3,
+		NextThresholdCents: 20_000,
+	}
+	require.NoError(t, db.Create(&progress).Error)
+	card := LuckyCard{
+		UserId: 42, CampaignId: rule.CampaignId, RuleSetId: rule.Id,
+		PoolType: LuckyPoolRecharge, SourceType: "recharge_threshold", SourceRef: "old",
+		GrantKey: "old-card", Status: LuckyCardAvailable,
+		ExpiresAt: common.GetTimestamp() + 3600,
+	}
+	require.NoError(t, db.Create(&card).Error)
+
+	require.NoError(t, EnsureLuckyRechargeCardPolicy20260820())
+	require.NoError(t, db.First(&rule, rule.Id).Error)
+	require.EqualValues(t, 0, rule.RechargeBonusUsdMicros)
+	require.Equal(t, `[3000]`, rule.ThresholdConfig)
+	require.NoError(t, db.First(&progress, 42).Error)
+	require.Zero(t, progress.EligibleCents)
+	require.Zero(t, progress.HighestAwardedStage)
+	require.EqualValues(t, 3_000, progress.NextThresholdCents)
+	require.NoError(t, db.First(&card, card.Id).Error)
+	require.Equal(t, LuckyCardAvailable, card.Status, "migration must not revoke previously issued cards")
+
+	checksum := rule.Checksum
+	require.NoError(t, EnsureLuckyRechargeCardPolicy20260820())
+	require.NoError(t, db.First(&rule, rule.Id).Error)
+	require.Equal(t, checksum, rule.Checksum, "migration must be idempotent")
+}
+
 func TestLuckyPrizePoolsTotalExactlyOneMillion(t *testing.T) {
 	subscription, recharge := defaultLuckyPools()
 	require.NoError(t, validateLuckyPool(subscription, true))
@@ -239,10 +277,10 @@ func TestLuckyWalletGiftBonusMigrationAddsTenDollarsOnce(t *testing.T) {
 
 func TestLuckyThresholdProgressAndRechargeIdempotency(t *testing.T) {
 	db := setupLuckyWheelTestDB(t)
-	require.EqualValues(t, 5_000, LuckyThresholdCents(1))
-	require.EqualValues(t, 80_000, LuckyThresholdCents(6))
-	require.EqualValues(t, 100_000, LuckyThresholdCents(7))
-	require.EqualValues(t, 140_000, LuckyThresholdCents(9))
+	require.EqualValues(t, 3_000, LuckyThresholdCents(1))
+	require.EqualValues(t, 18_000, LuckyThresholdCents(6))
+	require.EqualValues(t, 21_000, LuckyThresholdCents(7))
+	require.EqualValues(t, 27_000, LuckyThresholdCents(9))
 
 	require.NoError(t, db.Model(&LuckyCampaign{}).Where("code = ?", LuckyCampaignCode).
 		Updates(map[string]interface{}{"issuance_paused": false, "draw_paused": false}).Error)
@@ -257,7 +295,7 @@ func TestLuckyThresholdProgressAndRechargeIdempotency(t *testing.T) {
 
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
 		cards, err := RecordLuckyRechargeTx(tx, &topUp)
-		require.Len(t, cards, 4)
+		require.Len(t, cards, 15)
 		return err
 	}))
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
@@ -269,12 +307,12 @@ func TestLuckyThresholdProgressAndRechargeIdempotency(t *testing.T) {
 	var progress LuckyRechargeProgress
 	require.NoError(t, db.First(&progress, user.Id).Error)
 	require.EqualValues(t, 45_000, progress.EligibleCents)
-	require.EqualValues(t, 4, progress.HighestAwardedStage)
-	require.EqualValues(t, 60_000, progress.NextThresholdCents)
+	require.EqualValues(t, 15, progress.HighestAwardedStage)
+	require.EqualValues(t, 48_000, progress.NextThresholdCents)
 
 	var count int64
 	require.NoError(t, db.Model(&LuckyCard{}).Count(&count).Error)
-	require.EqualValues(t, 4, count)
+	require.EqualValues(t, 15, count)
 
 	var issued []LuckyCard
 	require.NoError(t, db.Order("id asc").Find(&issued).Error)
@@ -292,14 +330,14 @@ func TestLuckyThresholdProgressAndRechargeIdempotency(t *testing.T) {
 		return err
 	}))
 	require.True(t, reversal.EventCreated)
-	require.EqualValues(t, 3, reversal.RevokedCards)
+	require.EqualValues(t, 14, reversal.RevokedCards)
 	require.EqualValues(t, 1, reversal.ReviewCards)
 	require.EqualValues(t, 1, reversal.ReviewDraws)
 
 	require.NoError(t, db.First(&progress, user.Id).Error)
 	require.Zero(t, progress.EligibleCents)
-	require.EqualValues(t, 4, progress.HighestAwardedStage)
-	require.EqualValues(t, 60_000, progress.NextThresholdCents)
+	require.EqualValues(t, 15, progress.HighestAwardedStage)
+	require.EqualValues(t, 48_000, progress.NextThresholdCents)
 	require.NoError(t, db.First(&draw, draw.Id).Error)
 	require.Equal(t, "review_required", draw.Status)
 
@@ -479,7 +517,7 @@ func TestLuckySubscriptionProgressUsesEarliestEligibleRealInstance(t *testing.T)
 	require.NoError(t, err)
 	require.True(t, progress.Subscribed)
 	require.True(t, progress.Eligible)
-	require.EqualValues(t, now+6*86400, progress.NextCardAt)
+	require.EqualValues(t, time.Unix(now-60, 0).In(subscriptionBusinessLocation).AddDate(0, 0, 7).Unix(), progress.NextCardAt)
 }
 
 func TestLuckySubscriptionProgressDistinguishesNoResetAndNoSubscription(t *testing.T) {

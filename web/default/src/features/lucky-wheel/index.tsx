@@ -168,13 +168,8 @@ export function LuckyWheel() {
     [drawRule?.recharge_pool, drawRule?.subscription_pool, poolPreviewType]
   )
   const wheelSegments = useMemo(
-    () =>
-      buildWheelSegments(
-        visiblePool,
-        poolPreviewType,
-        drawRule?.recharge_bonus_usd_micros || 0
-      ),
-    [drawRule?.recharge_bonus_usd_micros, poolPreviewType, visiblePool]
+    () => buildWheelSegments(visiblePool, poolPreviewType),
+    [poolPreviewType, visiblePool]
   )
   const previewLabels = useMemo(
     () => new Map(wheelSegments.map((prize) => [prize.code, prize.label])),
@@ -721,7 +716,7 @@ export function LuckyWheel() {
                       <span className='text-muted-foreground text-sm'>
                         / ¥
                         {(
-                          (progress?.next_threshold_cents ?? 5000) / 100
+                          (progress?.next_threshold_cents ?? 3000) / 100
                         ).toFixed(2)}
                       </span>
                     </div>
@@ -746,9 +741,10 @@ export function LuckyWheel() {
                   >
                     <p className='text-sm font-semibold'>累计充值发卡规则</p>
                     <ol className='text-muted-foreground mt-3 list-decimal space-y-2 pl-4 text-xs leading-relaxed'>
+                      <li>每累计充值 ¥30 获得 1 张充值来源幸运卡。</li>
                       <li>
-                        累计充值达到 ¥50、¥100、¥200、¥400、¥600、¥800 时各获得
-                        1 张；之后每增加 ¥200 再获得 1 张。
+                        本次规则切换前的充值进度已清零，按新规则从 0
+                        元重新累计。
                       </li>
                       <li>
                         一次充值跨过多个档位，会同时补发已跨过档位的全部幸运卡。

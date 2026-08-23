@@ -74,11 +74,18 @@ func virtualMembershipInstanceResponse(membership *model.UserVirtualMembership) 
 	if membership == nil {
 		return gin.H{}
 	}
+	resetPrice := membership.ActiveResetPriceAmount
+	if resetPrice <= 0 && membership.PurchasePriceAmount > 0 {
+		resetPrice = model.VirtualMembershipActiveResetPrice(membership.PurchasePriceAmount)
+	}
 	return gin.H{
 		"id": membership.Id, "plan_id": membership.PlanId, "order_id": membership.OrderId,
 		"hidden": membership.Hidden, "renewed_from_id": membership.RenewedFromId,
 		"plan_title": membership.PlanTitle, "plan_code": membership.PlanCode, "group_size": membership.GroupSize,
-		"weekly_quota": membership.WeeklyQuota, "weekly_used": membership.WeeklyUsed,
+		"purchase_price_amount":     membership.PurchasePriceAmount,
+		"active_reset_credits":      membership.ActiveResetCredits,
+		"active_reset_price_amount": resetPrice,
+		"weekly_quota":              membership.WeeklyQuota, "weekly_used": membership.WeeklyUsed,
 		"weekly_remaining":  maxInt64(membership.WeeklyQuota - membership.WeeklyUsed),
 		"weekly_percent":    model.VirtualMembershipQuotaPercent(membership.WeeklyUsed, membership.WeeklyQuota),
 		"five_hour_enabled": membership.FiveHourActive, "five_hour_quota": membership.FiveHourQuota,
@@ -133,6 +140,11 @@ func GetVirtualMembershipPage(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	hiddenMemberships, err := model.ListHiddenUserVirtualMemberships(c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	planItems := make([]gin.H, 0, len(plans))
 	for _, plan := range plans {
 		planItems = append(planItems, virtualMembershipPlanResponse(plan))
@@ -141,12 +153,51 @@ func GetVirtualMembershipPage(c *gin.Context) {
 	for _, membership := range memberships {
 		instanceItems = append(instanceItems, virtualMembershipInstanceResponse(membership))
 	}
+	hiddenInstanceItems := make([]gin.H, 0, len(hiddenMemberships))
+	for _, membership := range hiddenMemberships {
+		hiddenInstanceItems = append(hiddenInstanceItems, virtualMembershipInstanceResponse(membership))
+	}
 	common.ApiSuccess(c, gin.H{
 		"announcement": setting.Announcement, "enabled": setting.Enabled,
-		"plans": planItems, "memberships": instanceItems,
+		"plans": planItems, "memberships": instanceItems, "hidden_memberships": hiddenInstanceItems,
 		"epay_enabled": len(virtualMembershipEpayMethods()) > 0,
 		"epay_methods": virtualMembershipEpayMethods(),
 	})
+}
+
+// SetSelfVirtualMembershipVisibility changes only the owner's remaining-quota
+// card visibility; it never revokes or pauses the membership.
+func SetSelfVirtualMembershipVisibility(c *gin.Context) {
+	membershipId, _ := strconv.Atoi(c.Param("id"))
+	if membershipId <= 0 {
+		common.ApiErrorMsg(c, "无效的虚拟会员ID")
+		return
+	}
+	var req struct {
+		Hidden *bool `json:"hidden"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Hidden == nil {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	if err := model.SetVirtualMembershipHiddenForUser(membershipId, c.GetInt("id"), *req.Hidden); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"hidden": *req.Hidden})
+}
+
+// ActiveResetVirtualMembership lets a user consume one administrator-granted
+// reset credit. When no credit remains the caller receives the stable error
+// message and can start the Epay add-on flow from the same membership card.
+func ActiveResetVirtualMembership(c *gin.Context) {
+	membershipId, _ := strconv.Atoi(c.Param("id"))
+	membership, err := model.ActiveResetVirtualMembership(c.GetInt("id"), membershipId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"membership": virtualMembershipInstanceResponse(membership)})
 }
 
 func PurchaseVirtualMembership(c *gin.Context) {
@@ -349,6 +400,23 @@ func AdminGrantVirtualMembership(c *gin.Context) {
 	item := virtualMembershipInstanceResponse(membership)
 	item["user_id"] = req.UserId
 	common.ApiSuccess(c, gin.H{"order_id": order.Id, "membership": item})
+}
+
+func AdminGrantVirtualMembershipResetCredits(c *gin.Context) {
+	membershipId, _ := strconv.Atoi(c.Param("id"))
+	var req struct {
+		Credits int `json:"credits"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Credits <= 0 {
+		common.ApiErrorMsg(c, "主动重置次数必须大于 0")
+		return
+	}
+	membership, err := model.GrantVirtualMembershipResetCredits(membershipId, req.Credits)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"membership": virtualMembershipInstanceResponse(membership), "credits": membership.ActiveResetCredits})
 }
 
 func AdminDeleteVirtualMembership(c *gin.Context) {

@@ -119,6 +119,14 @@ export async function updateUser(
   return res.data
 }
 
+export async function updateUserIdentity(
+  id: number,
+  identity_type: 'none' | 'enterprise' | 'education'
+): Promise<ApiResponse<User>> {
+  const res = await api.put(`/api/user/${id}/identity`, { identity_type })
+  return res.data
+}
+
 /**
  * Delete a single user (hard delete)
  */

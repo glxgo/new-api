@@ -242,11 +242,24 @@ func RequestEpay(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "当前管理员未配置支付信息"})
 		return
 	}
+	moneyText := model.FormatPaymentGatewayAmount(payMoney)
+	// Derive the display amount from the exact two-decimal string sent to Epay
+	// so product metadata and the gateway Money field cannot diverge on a
+	// fractional-cent discount result.
+	moneyForProduct, parseMoneyErr := strconv.ParseFloat(moneyText, 64)
+	if parseMoneyErr != nil {
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "支付金额格式错误"})
+		return
+	}
+	// The gateway, order ledger, product label, and callback snapshot must all
+	// use the same two-decimal amount.
+	payMoney = moneyForProduct
+	productName := model.PaymentProductNameForTopUp(moneyForProduct)
 	uri, params, err := client.Purchase(&epay.PurchaseArgs{
 		Type:           req.PaymentMethod,
 		ServiceTradeNo: tradeNo,
-		Name:           fmt.Sprintf("TUC%d", req.Amount),
-		Money:          strconv.FormatFloat(payMoney, 'f', 2, 64),
+		Name:           productName,
+		Money:          moneyText,
 		Device:         epay.PC,
 		NotifyUrl:      notifyUrl,
 		ReturnUrl:      returnUrl,
@@ -263,16 +276,17 @@ func RequestEpay(c *gin.Context) {
 		amount = dAmount.Div(dQuotaPerUnit).IntPart()
 	}
 	topUp := &model.TopUp{
-		UserId:          id,
-		Amount:          amount,
-		Money:           payMoney,
-		TradeNo:         tradeNo,
-		PaymentMethod:   req.PaymentMethod,
-		PaymentProvider: model.PaymentProviderEpay,
-		CreateTime:      time.Now().Unix(),
-		Status:          common.TopUpStatusPending,
+		UserId:              id,
+		Amount:              amount,
+		Money:               payMoney,
+		TradeNo:             tradeNo,
+		PaymentMethod:       req.PaymentMethod,
+		PaymentProvider:     model.PaymentProviderEpay,
+		ProductNameSnapshot: productName,
+		CreateTime:          time.Now().Unix(),
+		Status:              common.TopUpStatusPending,
 	}
-	epaySnapshot, err := model.NewPaymentSnapshotFromMoney(payMoney, "CNY")
+	epaySnapshot, err := model.NewPaymentSnapshotFromDisplayAmount(moneyText, "CNY")
 	if err != nil || model.SetTopUpPaymentExpectation(topUp, epaySnapshot) != nil {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "支付金额快照失败"})
 		return
@@ -449,7 +463,11 @@ func RequestAmount(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "充值金额过低"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "success", "data": strconv.FormatFloat(payMoney, 'f', 2, 64)})
+	// Keep the preview identical to the amount sent to Epay and recorded in
+	// the payment snapshot.  In particular, decimal half-cent values must use
+	// the same round-half-up rule as RequestEpay rather than binary float
+	// formatting.
+	c.JSON(http.StatusOK, gin.H{"message": "success", "data": model.FormatPaymentGatewayAmount(payMoney)})
 }
 
 func GetUserTopUps(c *gin.Context) {

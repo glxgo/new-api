@@ -7,10 +7,23 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/commission_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+)
+
+// Deprecated compile-time defaults retained for existing tests and callers.
+// Settlement itself reads the live values from commission_setting.
+const (
+	rechargeCommissionOrdinaryDirectBP   int64 = 500
+	rechargeCommissionOrdinaryIndirectBP int64 = 200
+	rechargeCommissionAgentDirectBP      int64 = 800
+	rechargeCommissionAgentIndirectBP    int64 = 200
+	rechargeCommissionAdminDirectBP      int64 = 1500
+	rechargeCommissionAdminIndirectBP    int64 = 500
+	rechargeCommissionRootBP             int64 = 500
 )
 
 const (
@@ -111,18 +124,6 @@ func ValidatePaymentSnapshot(expectedAmountMinor int64, expectedCurrency string,
 	return nil
 }
 
-// The recharge commission policy is fixed business policy, not a pricing or
-// cost setting. Rates are basis points to avoid floating point drift.
-const (
-	rechargeCommissionOrdinaryDirectBP   int64 = 500
-	rechargeCommissionOrdinaryIndirectBP int64 = 200
-	rechargeCommissionAgentDirectBP      int64 = 800
-	rechargeCommissionAgentIndirectBP    int64 = 200
-	rechargeCommissionAdminDirectBP      int64 = 1500
-	rechargeCommissionAdminIndirectBP    int64 = 500
-	rechargeCommissionRootBP             int64 = 500
-)
-
 func RechargeCommissionSourceRef(sourceType, sourceRef string) string {
 	sourceType = strings.TrimSpace(sourceType)
 	sourceRef = strings.TrimSpace(sourceRef)
@@ -173,16 +174,16 @@ func rechargeCommissionAmount(baseQuota, basisPoints int64) int {
 
 func rechargeCommissionDirectRate(role int) int64 {
 	if role == common.RoleAgentUser {
-		return rechargeCommissionAgentDirectBP
+		return commission_setting.AgentDirectBP
 	}
-	return rechargeCommissionOrdinaryDirectBP
+	return commission_setting.OrdinaryDirectBP
 }
 
 func rechargeCommissionIndirectRate(role int) int64 {
 	if role == common.RoleAgentUser {
-		return rechargeCommissionAgentIndirectBP
+		return commission_setting.AgentIndirectBP
 	}
-	return rechargeCommissionOrdinaryIndirectBP
+	return commission_setting.OrdinaryIndirectBP
 }
 
 // RechargeCommissionReferralRates exposes the immutable referral percentages
@@ -276,13 +277,13 @@ func settleRechargeCommissionTx(tx *gorm.DB, buyer *User, baseQuota, amountCents
 	if admin != nil && admin.Role == common.RoleAdminUser {
 		switch {
 		case buyer.InviterId == admin.Id:
-			appendRecord(admin, DividendTypeAdmin, rechargeCommissionAdminDirectBP)
+			appendRecord(admin, DividendTypeAdmin, commission_setting.AdminDirectBP)
 		case inviter2Id == admin.Id:
-			appendRecord(admin, DividendTypeAdmin, rechargeCommissionAdminIndirectBP)
+			appendRecord(admin, DividendTypeAdmin, commission_setting.AdminIndirectBP)
 		}
 	}
 	if rootPtr != nil {
-		appendRecord(rootPtr, DividendTypeRoot, rechargeCommissionRootBP)
+		appendRecord(rootPtr, DividendTypeRoot, commission_setting.RootBP)
 	}
 
 	accumGift := map[int]int{}

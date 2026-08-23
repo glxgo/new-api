@@ -28,3 +28,14 @@ export async function getUsageStatistics(
   })
   return response.data
 }
+
+export async function getAdminUsageStatistics(
+  range: UsageStatisticsRange,
+  user: string
+): Promise<UsageStatisticsResponse> {
+  const response = await api.get('/api/usage-statistics/admin', {
+    params: { range, user },
+    skipErrorHandler: true,
+  })
+  return response.data
+}

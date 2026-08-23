@@ -37,6 +37,7 @@ export const userFormSchema = z.object({
   concurrency_limit_override: z.boolean(),
   rpm_limit: z.number().int().min(1).max(10000000),
   rpm_limit_override: z.boolean(),
+  identity_type: z.enum(['none', 'enterprise', 'education']),
 })
 
 export type UserFormValues = z.infer<typeof userFormSchema>
@@ -57,6 +58,7 @@ export const USER_FORM_DEFAULT_VALUES: UserFormValues = {
   concurrency_limit_override: false,
   rpm_limit: 12,
   rpm_limit_override: false,
+  identity_type: 'none',
 }
 
 // ============================================================================
@@ -109,5 +111,9 @@ export function transformUserToFormDefaults(user: User): UserFormValues {
     concurrency_limit_override: user.concurrency_limit_override,
     rpm_limit: user.rpm_limit || 12,
     rpm_limit_override: user.rpm_limit_override,
+    identity_type:
+      user.identity_type === 'enterprise' || user.identity_type === 'education'
+        ? user.identity_type
+        : 'none',
   }
 }

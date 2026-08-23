@@ -59,6 +59,41 @@ export async function payVirtualMembershipEpay(data: {
   }
 }
 
+export async function setSelfVirtualMembershipHidden(
+  membershipId: number,
+  hidden: boolean
+): Promise<ApiResponse<{ hidden: boolean }>> {
+  const res = await api.patch(
+    `/api/virtual-membership/${membershipId}/visibility`,
+    { hidden }
+  )
+  return res.data
+}
+
+export async function activeResetVirtualMembership(
+  membershipId: number
+): Promise<ApiResponse<{ membership: UserVirtualMembership }>> {
+  const res = await api.post(`/api/virtual-membership/${membershipId}/reset`)
+  return res.data
+}
+
+export async function payVirtualMembershipActiveResetEpay(data: {
+  membership_id: number
+  payment_method: string
+}): Promise<
+  ApiResponse<Record<string, string>> & { url?: string; price?: number }
+> {
+  const res = await api.post(
+    `/api/virtual-membership/${data.membership_id}/reset/epay`,
+    { payment_method: data.payment_method }
+  )
+  return {
+    ...res.data,
+    url: res.data.url || (res as unknown as { url?: string }).url,
+    price: res.data.price,
+  }
+}
+
 export async function getAdminVirtualMembershipPlans(): Promise<
   ApiResponse<VirtualMembershipPlan[]>
 > {
@@ -117,6 +152,19 @@ export async function grantAdminVirtualMembership(data: {
   ApiResponse<{ order_id: number; membership: UserVirtualMembership }>
 > {
   const res = await api.post('/api/virtual-membership/admin/memberships', data)
+  return res.data
+}
+
+export async function grantAdminVirtualMembershipResetCredits(
+  membershipId: number,
+  credits: number
+): Promise<
+  ApiResponse<{ membership: AdminVirtualMembership; credits: number }>
+> {
+  const res = await api.post(
+    `/api/virtual-membership/admin/memberships/${membershipId}/reset-credits`,
+    { credits }
+  )
   return res.data
 }
 

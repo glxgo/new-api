@@ -93,6 +93,8 @@ func SetApiRouter(router *gin.Engine) {
 			{
 				selfRoute.GET("/self/groups", controller.GetUserGroups)
 				selfRoute.GET("/self", controller.GetSelf)
+				selfRoute.GET("/self/identity-access", controller.GetSelfIdentityAccess)
+				selfRoute.POST("/self/mainland-whitelist", middleware.CriticalRateLimit(), controller.ApplyMainlandWhitelist)
 				selfRoute.GET("/models", controller.GetUserModels)
 				selfRoute.GET("/cache-rate", controller.GetUserCacheRate)
 				selfRoute.GET("/concurrency-applications", controller.GetSelfConcurrencyApplications)
@@ -159,6 +161,7 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.GET("/:id/oauth/bindings", controller.GetUserOAuthBindingsByAdmin)
 				adminRoute.DELETE("/:id/oauth/bindings/:provider_id", controller.UnbindCustomOAuthByAdmin)
 				adminRoute.DELETE("/:id/bindings/:binding_type", controller.AdminClearUserBinding)
+				adminRoute.PUT("/:id/identity", controller.UpdateUserIdentity)
 				adminRoute.GET("/:id", controller.GetUser)
 				adminRoute.POST("/", controller.CreateUser)
 				adminRoute.POST("/manage", controller.ManageUser)
@@ -182,6 +185,7 @@ func SetApiRouter(router *gin.Engine) {
 			subscriptionRoute.GET("/intro", controller.GetSubscriptionIntro)
 			subscriptionRoute.GET("/self", controller.GetSubscriptionSelf)
 			subscriptionRoute.PUT("/self/preference", controller.UpdateSubscriptionPreference)
+			subscriptionRoute.PATCH("/self/instances/:id/visibility", controller.SetSelfSubscriptionVisibility)
 			subscriptionRoute.PATCH("/self/instances/:id/remark", controller.UpdateSelfSubscriptionRemark)
 			subscriptionRoute.GET("/self/instances/:id/renewal-preview", controller.GetSelfSubscriptionRenewalPreview)
 			subscriptionRoute.GET("/self/instances/:id/keys", controller.ListSelfSubscriptionTokenBindings)
@@ -201,8 +205,11 @@ func SetApiRouter(router *gin.Engine) {
 			virtualMembershipRoute.GET("/page", controller.GetVirtualMembershipPage)
 			virtualMembershipRoute.POST("/balance/pay", middleware.CriticalRateLimit(), controller.PurchaseVirtualMembership)
 			virtualMembershipRoute.POST("/epay/pay", middleware.CriticalRateLimit(), controller.VirtualMembershipRequestEpay)
+			virtualMembershipRoute.POST("/:id/reset/epay", middleware.CriticalRateLimit(), controller.VirtualMembershipActiveResetRequestEpay)
 			virtualMembershipRoute.GET("/:id/keys", controller.ListVirtualMembershipTokens)
 			virtualMembershipRoute.PUT("/:id/keys", controller.ReplaceVirtualMembershipTokens)
+			virtualMembershipRoute.PATCH("/:id/visibility", controller.SetSelfVirtualMembershipVisibility)
+			virtualMembershipRoute.POST("/:id/reset", middleware.CriticalRateLimit(), controller.ActiveResetVirtualMembership)
 		}
 		virtualMembershipAdminRoute := apiRouter.Group("/virtual-membership/admin")
 		virtualMembershipAdminRoute.Use(middleware.AdminAuth())
@@ -215,6 +222,7 @@ func SetApiRouter(router *gin.Engine) {
 			virtualMembershipAdminRoute.POST("/reset", controller.AdminResetVirtualMemberships)
 			virtualMembershipAdminRoute.GET("/memberships", controller.AdminListVirtualMemberships)
 			virtualMembershipAdminRoute.POST("/memberships", controller.AdminGrantVirtualMembership)
+			virtualMembershipAdminRoute.POST("/memberships/:id/reset-credits", controller.AdminGrantVirtualMembershipResetCredits)
 			virtualMembershipAdminRoute.POST("/memberships/:id/renew", controller.AdminRenewVirtualMembership)
 			virtualMembershipAdminRoute.PATCH("/memberships/:id/visibility", controller.AdminSetVirtualMembershipVisibility)
 			virtualMembershipAdminRoute.DELETE("/memberships/:id", controller.AdminDeleteVirtualMembership)
@@ -320,6 +328,22 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.POST("/waffo-pancake/subscription-product-options", controller.ListWaffoPancakeSubscriptionProductOptions)
 		}
 
+		// 中国大陆网页访问限制策略（PRD v0.4）：AdminAuth 可读可改，RootAuth 由 AdminAuth 覆盖。
+		accessPolicyRoute := apiRouter.Group("/access-policy")
+		accessPolicyRoute.Use(middleware.AdminAuth())
+		{
+			accessPolicyRoute.GET("", controller.GetAccessPolicy)
+			accessPolicyRoute.PUT("", controller.UpdateAccessPolicy)
+			accessPolicyRoute.POST("/rollback", controller.RollbackAccessPolicy)
+			accessPolicyRoute.GET("/allowlists", controller.ListMainlandAllowlists)
+			accessPolicyRoute.DELETE("/allowlists/:id", controller.RevokeMainlandAllowlist)
+		}
+		// The CTA on the self-contained 451 page uses a same-origin session
+		// endpoint. GET is a static form; POST still requires a live session and
+		// trusted server-side IP resolution (username is only a confirmation).
+		apiRouter.GET("/access-policy/whitelist", controller.GetMainlandWhitelistPage)
+		apiRouter.POST("/access-policy/whitelist", middleware.CriticalRateLimit(), middleware.SessionCookieOriginGuard(), controller.ApplyMainlandWhitelistFromSession)
+
 		// 分组定价预览(2026-06-22): 管理员以上可访问, 成本/毛利字段仅 Root 返回(controller 内裁剪)。
 		apiRouter.GET("/option/pricing/group-preview", middleware.AdminAuth(), controller.GetGroupPricingPreview)
 
@@ -336,6 +360,8 @@ func SetApiRouter(router *gin.Engine) {
 		profitRoute := apiRouter.Group("/profit")
 		profitRoute.Use(middleware.RootAuth())
 		{
+			profitRoute.GET("/settings", controller.GetCommissionSettings)
+			profitRoute.PUT("/settings", controller.UpdateCommissionSettings)
 			profitRoute.GET("/summary", controller.GetProfitSummary)
 			profitRoute.GET("/dividend_records", controller.GetDividendRecords)
 		}
@@ -466,6 +492,7 @@ func SetApiRouter(router *gin.Engine) {
 
 		usageStatisticsRoute := apiRouter.Group("/usage-statistics")
 		usageStatisticsRoute.GET("/self", middleware.UserAuth(), middleware.UsageStatisticsRateLimit(), controller.GetUsageStatisticsSelf)
+		usageStatisticsRoute.GET("/admin", middleware.RootAuth(), middleware.UsageStatisticsRateLimit(), controller.GetUsageStatisticsAdmin)
 		usageStatisticsRoute.GET("/platform", middleware.UserAuth(), middleware.UsageStatisticsRateLimit(), controller.GetPlatformUsageOverview)
 
 		logRoute.Use(middleware.CORS(), middleware.CriticalRateLimit())

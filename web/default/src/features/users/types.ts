@@ -70,6 +70,8 @@ export const userSchema = z.object({
   security_suspended_until: z.number().default(0),
   security_permanent_ban: z.boolean().default(false),
   security_whitelisted: z.boolean().default(false),
+  identity_type: z.string().optional(),
+  identity_label: z.string().optional(),
 })
 export type User = z.infer<typeof userSchema>
 
@@ -123,6 +125,7 @@ export interface UserFormData {
   concurrency_limit_override?: boolean
   rpm_limit?: number
   rpm_limit_override?: boolean
+  identity_type?: 'none' | 'enterprise' | 'education'
 }
 
 export type ManageUserAction =

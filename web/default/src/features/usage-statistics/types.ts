@@ -74,6 +74,12 @@ export interface UsageStatisticsData {
   series: UsageStatisticsPoint[]
   models: UsageStatisticsModel[]
   subscriptions: UsageStatisticsSubscription[]
+  user?: {
+    id: number
+    username: string
+    display_name?: string
+    email?: string
+  }
 }
 
 export interface UsageStatisticsResponse {

@@ -110,6 +110,28 @@ func UpdateSubscriptionPreference(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"billing_preference": pref})
 }
 
+// SetSelfSubscriptionVisibility changes only the owner's user-facing quota
+// card visibility; it does not affect billing, binding, or entitlement.
+func SetSelfSubscriptionVisibility(c *gin.Context) {
+	subId, _ := strconv.Atoi(c.Param("id"))
+	if subId <= 0 {
+		common.ApiErrorMsg(c, "无效的订阅ID")
+		return
+	}
+	var req struct {
+		Hidden *bool `json:"hidden"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Hidden == nil {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	if err := model.SetUserSubscriptionHiddenForUser(subId, c.GetInt("id"), *req.Hidden); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"hidden": *req.Hidden})
+}
+
 func SubscriptionRequestBalancePay(c *gin.Context) {
 	if !requirePaymentCompliance(c) {
 		return
@@ -165,9 +187,9 @@ func AdminListSubscriptionPlans(c *gin.Context) {
 	common.ApiSuccess(c, result)
 }
 
-// GetSubscriptionSubscribers 返回所有买过套餐的用户列表(超管「订阅用户」入口)。
+// GetSubscriptionSubscribers 返回所有买过套餐的订阅实例(超管「订阅用户」入口)。
 func GetSubscriptionSubscribers(c *gin.Context) {
-	results, err := model.GetSubscriptionSubscribers()
+	results, err := model.GetSubscriptionSubscriberInstances()
 	if err != nil {
 		common.ApiError(c, err)
 		return

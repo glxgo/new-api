@@ -73,6 +73,11 @@ type User struct {
 	SecuritySuspendedUntil   int64          `json:"security_suspended_until" gorm:"not null;default:0;column:security_suspended_until;index"`
 	SecurityPermanentBan     bool           `json:"security_permanent_ban" gorm:"not null;default:false;column:security_permanent_ban;index"`
 	SecurityWhitelisted      bool           `json:"security_whitelisted" gorm:"not null;default:false;column:security_whitelisted;index"`
+	// Identity fields are populated from user_identities for response DTOs;
+	// keeping them non-persistent prevents ordinary user updates from changing
+	// an operator-granted enterprise/education identity.
+	IdentityType  string `json:"identity_type,omitempty" gorm:"-"`
+	IdentityLabel string `json:"identity_label,omitempty" gorm:"-"`
 }
 
 func (user *User) EffectiveConcurrencyLimit() int {

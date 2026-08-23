@@ -58,7 +58,7 @@ func setupLuckyDrawTest(t *testing.T, prize model.LuckyPrizeConfig) (*gorm.DB, m
 	rule := model.LuckyRuleSet{
 		CampaignId: campaign.Id, Version: 1, Status: "active",
 		SubscriptionPool: string(poolJSON), RechargePool: string(poolJSON),
-		ThresholdConfig: "[]", RechargeBonusUsdMicros: 40_000_000,
+		ThresholdConfig: "[]", RechargeBonusUsdMicros: 0,
 		RechargeRewardValidSeconds: 30 * 24 * 3600,
 		RechargeCardValidSeconds:   30 * 24 * 3600,
 		CrazyCardValidSeconds:      5 * 3600, CrazyCardQuotaUsdMicros: 600_000_000,
@@ -106,6 +106,22 @@ func TestRechargeGiftDrawIsAtomicAndIdempotent(t *testing.T) {
 	require.EqualValues(t, quotaFromUsdMicros(5_000_000), stored.GiftQuota)
 }
 
+func TestLuckyPublicAmountIsTheAwardedAmount(t *testing.T) {
+	db, user, card := setupLuckyDrawTest(t, model.LuckyPrizeConfig{
+		Code: model.LuckyPrizeGift5, DisplayUsdMicros: 7_250_000, Weight: model.LuckyWeightScale,
+	})
+
+	draw, err := drawLuckyCardWithSource(user.Id, card.Id, "public-amount-is-award", fixedLuckyRandom(0))
+	require.NoError(t, err)
+	require.EqualValues(t, 7_250_000, draw.DisplayUsdMicros)
+	require.EqualValues(t, 7_250_000, draw.ActualUsdMicros)
+	require.EqualValues(t, quotaFromUsdMicros(7_250_000), draw.GiftQuotaAwarded)
+
+	var stored model.User
+	require.NoError(t, db.First(&stored, user.Id).Error)
+	require.EqualValues(t, quotaFromUsdMicros(7_250_000), stored.GiftQuota)
+}
+
 func TestDrawUsesLatestActiveRuleForHistoricalCards(t *testing.T) {
 	db, user, historicalCard := setupLuckyDrawTest(t, model.LuckyPrizeConfig{
 		Code: model.LuckyPrizeGift5, DisplayUsdMicros: 5_000_000, Weight: model.LuckyWeightScale,
@@ -119,7 +135,7 @@ func TestDrawUsesLatestActiveRuleForHistoricalCards(t *testing.T) {
 	currentRule := model.LuckyRuleSet{
 		CampaignId: campaign.Id, BaseRuleSetId: historicalCard.RuleSetId,
 		Version: 2, Status: "active", SubscriptionPool: string(poolJSON), RechargePool: string(poolJSON),
-		ThresholdConfig: "[]", RechargeBonusUsdMicros: 40_000_000,
+		ThresholdConfig: "[]", RechargeBonusUsdMicros: 0,
 		RechargeRewardValidSeconds: 30 * 24 * 3600, RechargeCardValidSeconds: 30 * 24 * 3600,
 		CrazyCardValidSeconds: 5 * 3600, CrazyCardQuotaUsdMicros: 600_000_000,
 		ActivityGroup: "套餐专用分组", Checksum: "current-checksum",
@@ -145,17 +161,17 @@ func TestDrawUsesLatestActiveRuleForHistoricalCards(t *testing.T) {
 	require.Equal(t, currentRule.Id, currentDraw.RuleSetId)
 }
 
-func TestRechargeFiveDollarQuotaDrawAddsFortyDollars(t *testing.T) {
+func TestRechargeFiveDollarQuotaDrawAwardsExactlyFiveDollars(t *testing.T) {
 	db, user, card := setupLuckyDrawTest(t, model.LuckyPrizeConfig{
 		Code: model.LuckyPrizeQuota5, DisplayUsdMicros: 5_000_000, Weight: model.LuckyWeightScale,
 	})
 	draw, err := drawLuckyCardWithSource(user.Id, card.Id, "quota-request", fixedLuckyRandom(0))
 	require.NoError(t, err)
-	require.EqualValues(t, 45_000_000, draw.ActualUsdMicros)
+	require.EqualValues(t, 5_000_000, draw.ActualUsdMicros)
 	require.NotZero(t, draw.RewardSubscriptionId)
 	var reward model.UserSubscription
 	require.NoError(t, db.First(&reward, draw.RewardSubscriptionId).Error)
-	require.EqualValues(t, quotaFromUsdMicros(45_000_000), reward.AmountTotal)
+	require.EqualValues(t, quotaFromUsdMicros(5_000_000), reward.AmountTotal)
 	require.True(t, reward.LuckyCardDisabled)
 	require.Equal(t, "never", model.NormalizeResetPeriod(""))
 }
@@ -181,8 +197,8 @@ func TestRechargeQuotaDrawExpiresAtMidnightAndMergesSameExpiry(t *testing.T) {
 	require.NoError(t, db.Where("user_id = ? AND source = ?", user.Id, "lucky_quota").Find(&rewards).Error)
 	require.Len(t, rewards, 1)
 	reward := rewards[0]
-	require.EqualValues(t, 2*quotaFromUsdMicros(45_000_000), reward.AmountTotal)
-	require.Equal(t, "幸运大转盘 · $90 套餐额度", reward.PlanTitle)
+	require.EqualValues(t, 2*quotaFromUsdMicros(5_000_000), reward.AmountTotal)
+	require.Equal(t, "幸运大转盘 · $10 套餐额度", reward.PlanTitle)
 
 	expiresAt := time.Unix(reward.EndTime, 0).In(time.Local)
 	require.Zero(t, expiresAt.Hour())

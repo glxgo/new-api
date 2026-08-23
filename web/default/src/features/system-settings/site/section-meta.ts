@@ -21,6 +21,7 @@ export const SITE_SECTION_IDS = [
   'notice',
   'header-navigation',
   'sidebar-modules',
+  'access-policy',
 ] as const
 
 export type SiteSectionId = (typeof SITE_SECTION_IDS)[number]
@@ -30,4 +31,5 @@ export const SITE_SECTION_TITLES = {
   notice: 'System Notice',
   'header-navigation': 'Header navigation',
   'sidebar-modules': 'Sidebar modules',
+  'access-policy': 'Access Policy',
 } satisfies Record<SiteSectionId, string>

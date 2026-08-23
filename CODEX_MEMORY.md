@@ -16,6 +16,93 @@
 
 ## Current handoff
 
+### 2026-08-23 — Admin subscription list hides unusable instances and shows total-cap usage (deployed)
+
+- `GetSubscriptionSubscriberInstances` now returns only active, started, unexpired instances with remaining cycle quota or a due cycle reset, and with remaining total cap when a cap exists. Expired/cancelled/cycle-exhausted/total-cap-exhausted instances are omitted from the admin subscriber sheet.
+- Default `SubscribersDialog` keeps unlimited cycle plans explicit and adds `Total Quota: used / total` whenever `amount_cap > 0`.
+- Added SQLite regression coverage for usable, cycle-exhausted, due-reset, total-cap-exhausted, expired, cancelled and unlimited instances. Local model test, full Go build, Default TypeScript/Rsbuild build, targeted ESLint and `git diff --check` passed.
+- User explicitly requested release. Production `site-builder` now mounts `/opt/newapi/releases/new-api-subscription-availability-20260823-linux-amd64`, SHA-256 `227d6bf27261f2444fe111aaa0882de2c99c025f1ea6c0d9bdc6b3f86def1226`; the container is healthy with only port 3000 listening. Public HTML uses `index.ad13f02354.js`, and the live subscription chunk contains the new total-quota/unlimited labels. Backup: `/opt/newapi/backups/subscription-availability-20260823-182459/`.
+- This remains uncommitted and unpushed; MySQL/Redis were not recreated.
+
+### 2026-08-22 — 完整本地工作树产物已部署到真实线上 site-builder
+
+- 用户明确要求将本地尚未上线的全部改动（幸运充值卡 ¥30 规则、访问限制、会员/订阅、统计、分润及当前前端/后端/文档/测试变更）整体上线；本次从当前 dirty worktree 构建，不含未跟踪的构建缓存。
+- Default/Classic 前端生产构建、Default TypeScript 和幸运/分润/订阅定向 Go 测试（-vet=off）通过；Linux/amd64 CGO_ENABLED=0 go build 通过。Go 1.25 默认 vet 的既有动态 fmt.Errorf 检查会令全量 go test 失败，属于基线工具链诊断。
+- 修复了 model/option.go 对 commission option 的判断：只处理 7 个明确 RechargeCommission*BP 键，不再把 RechargeCommissionPolicy* 迁移哨兵误当作比例；model/subscription.go 查询排序改为兼容当前 GORM 的单参数 Order。
+- 之前误将同一产物发到已废弃的 overseas2；真实线上链路为 DMIT 线路机 → site-builder (152.53.209.90) → 127.0.0.1:3000。site-builder 当前挂载 `/opt/newapi/releases/new-api-admin-features-20260822-linux-amd64`，SHA-256 3eda1ee38cc8e2203203932e37d0eea44d377adce87f1e288ec2f840e263b48a 与本地一致，容器 healthy、3000 唯一监听，`/api/status` 成功。
+- canonical `docker-compose.formal-20260822-mainland-451-page.yml` 已更新为新二进制路径，旧配置备份与发布备份在 `/opt/newapi/backups/admin-features-20260822-161835/`。
+- 公网 `token.stellaisle.com` 已返回新前端资源哈希 `index.904b6e33c1.js`；Lucky Wheel 新规则、使用统计、订阅管理和分润比例相关异步 chunk 均已从公网取得并含新内容。
+- 未提交或推送 Git；源码 dirty 状态保留，生产镜像与本地构建结果已通过 SHA-256 对齐。
+
+### 2026-08-22 — Admin usage lookup, subscription instance list and editable commission rates are local only
+
+- Added RootAuth `GET /api/usage-statistics/admin?user=<username-or-id>&range=...`; it reuses bounded user usage aggregation and returns the matched user identity. The Default usage-statistics page exposes the lookup only to the super administrator; `/self` behavior is unchanged.
+- `/api/subscription/admin/subscribers` now returns one projection per purchased subscription instance, including owner identity, plan title, period quota used/remaining, next reset, validity and status. The Default subscriber sheet is searchable/filterable and keeps the existing per-user detail dialog on row click.
+- Recharge commission rates are now persisted basis-point options and exposed through RootAuth `GET/PUT /api/profit/settings`; future settlements read the live ordinary/agent/admin/root rates while historical records stay immutable. Default billing settings has editable percentage inputs for the super administrator.
+- Default frontend `tsc -b`, targeted ESLint, Rsbuild production build and `git diff --check` passed. Changes are uncommitted/unpushed and not deployed. The local environment has no `go`/`gofmt` executable, so backend Go compilation remains pending.
+
+### 2026-08-22 — 451 page white-screen report fixed and redeployed
+
+- The user clarified that overseas IPs were normal, while mainland-China requests hit a white screen instead of the supplied 451 visual reference. The origin response already contained HTML; the ingress issue was also corrected: only DMIT line hosts `179.255.158.9/32` and `179.255.157.43/32` are trusted for `X-Forwarded-For`, while the application still receives the resolved `$remote_addr`.
+- `middleware/mainland_block_page.go` now emits a self-contained dark card matching the reference structure, with inline CSS/SVG and no frontend asset dependency. `serveMainlandBlocked` adds explicit content length, Chinese content language, CSP and `nosniff` headers.
+- Isolated Linux/amd64 static artifact: `new-api-20260822-mainland-451-page-linux-amd64`, SHA-256 `90fe7b45bd4f0960199e6074f22260c061c1a7f5d7c3843ae68a93f277e9536c`. Candidate 3010 passed health and CN/US/HK/API probes; formal 3000 was recreated after cutover, then Nginx was normalized and the candidate removed.
+- Production runtime is `20260822-mainland-451-page`, healthy with zero restarts, only `127.0.0.1:3000` listening. All three public hosts returned the new version 5/5; trusted mainland probes returned HTTP 451 with a 5,847-byte page containing the target title, and mainland `/api/status` remained HTTP 200. The third-party GeoLite database and policy values are unchanged.
+- Follow-up backup/evidence: `/opt/new-api-backups/access-policy-realip-20260822T162723Z/`, final manifest SHA-256 `f67d54d54e0b57257da632977830d53418fd34c575a0bd687558c261cb01f77f`. Main worktree remains uncommitted/unpushed; MySQL/Redis were not recreated.
+
+### 2026-08-21 — Mainland-China web access policy deployed
+
+- A clean isolated `origin/main` worktree was used to build only the access-policy release. Linux/amd64 static artifact: `new-api-20260821-mainland-geoip-linux-amd64`, SHA-256 `dbee72c4f58c23faa12b6fe106d3781393e90f5e6672f8063eb0a1e0d304a44`. The main worktree remains dirty with unrelated local changes; this release was not committed or pushed.
+- Production `site-builder` completed candidate 3010 validation, Nginx cutover, formal 3000 recreation, Nginx normalization, connection drain and candidate removal. Runtime version is `20260821-mainland-geoip`, `new-api` is healthy with zero restarts, and only `127.0.0.1:3000` listens. MySQL/Redis were not recreated.
+- Runtime GeoIP database is the third-party `P3TERX/GeoLite.mmdb` release `2026.08.19`, mounted at `/data/GeoLite2-Country.mmdb` from `/opt/newapi/data/GeoLite2-Country.mmdb`, SHA-256 `26a2c3c3791b36303a1c70bac18320c4e6bd40950286224a38f2756c0f7d0ca2`; it is not an official MaxMind download or signature-verified artifact.
+- Live options: mainland web blocking enabled, HK/MO/TW excluded, unknown GeoIP allowed, database loaded, version `mirror-2026.08.19`. Trusted proxy CIDRs are `127.0.0.1/32,::1/128,172.18.0.1/32,172.20.0.1/32`. Nginx now overwrites `X-Forwarded-For` with `$remote_addr` in all four active/available New API configs to prevent client spoofing.
+- Public verification passed for all three production hosts: `/api/status` returned the new version 5/5 per host; unauthenticated `/api/user/self` stayed 401; spoofed mainland XFF on public web requests was not incorrectly blocked. Formal trusted-CN probes returned web 451 and API 200; container logs confirm GeoIP load and block decisions.
+- Release backup and rollback evidence: `/opt/new-api-backups/release-20260821-mainland-geoip-20260821T153803Z/`, final manifest SHA-256 `bb3cc449d235c2f5dd5da944af1924be9ef263b2c23ddd630d4b8960493640c6`.
+
+### 2026-08-21 — 第三方 GeoLite2 Country 数据已下载到本地 staging（未接入、未部署）
+
+- 用户明确接受基础拦截并授权使用第三方镜像后，从 `P3TERX/GeoLite.mmdb` GitHub Release `2026.08.19` 下载 `GeoLite2-Country.mmdb` 到 `/Users/adrian/Documents/Codex/GeoLite2-Country.mmdb`；文件 8,625,483 字节，SHA-256 `26a2c3c3791b36303a1c70bac18320c4e6bd40950286224a38f2756c0f7d0ca2`。
+- `strings` 元数据含 `MaxMind.com`、`GeoLite2-Country`；本地 Python `maxminddb` 读取样本：`114.114.114.114=CN`、`8.8.8.8=US`、`202.45.84.58=HK`、`1.34.0.1=TW`，`1.1.1.1` 无记录。使用本机缓存 Go 1.26.4 工具链做真实中间件 smoke：`defaultCountryLookup` 成功读取 MMDB；CN 网页请求返回 451，美国网页请求返回 200，带 CN XFF 的 `/api/status` 返回 200；临时真实 DB 测试已删除。
+- 该文件是第三方镜像、不是 MaxMind 官方下载或官方哈希验签；同一份文件已复制到被 Git 忽略的本地运行时目录 `new-api/data/GeoLite2-Country.mmdb`（与 staging 哈希一致），未修改源码、未提交、未推送、未部署。后续上线前仍需容器内 Go 端加载检查、真实管理 API 与公网 451/API 放行验收，并记录来源/日期/哈希和数据更新风险。
+- 当前工作树使用本机缓存 Go 1.26.4 工具链执行 `GOTOOLCHAIN=local go build -p=1 ./...` 通过；生产未改动。
+
+### 2026-08-19 — 中国大陆 IP 网页访问限制本地实现完成（未提交、未部署）
+
+- 按 PRD v0.4 实现：`setting/access_setting`（`access_policy.*` option 配置模块，默认关闭/只拦 CN/未知放行/版本号）、`middleware/mainland_block.go`（Web 路由中间件：开关开启且 GeoIP=CN 且非管理页/非静态资源 → HTTP 451 完整 HTML；API/管理页/静态资源放行；`GEOIP_TRUSTED_PROXIES` 可信代理白名单默认 `127.0.0.1/32,::1/128`，防 XFF 伪造）、`controller/access_policy.go`（AdminAuth 的 GET/PUT `/api/access-policy` 与 POST rollback，带上一版本快照与配置版本）、451 页面常量在 `middleware/mainland_block_page.go`（附录 A 文案）。
+- 依赖新增 `github.com/oschwald/maxminddb-golang v1.13.1`；GeoIP 库路径为 option `access_policy.geoip_db_path`，回退 `GEOIP_COUNTRY_DB` 或 `/data/GeoLite2-Country.mmdb`；未加载时 fail-open。
+- 前端：Default 系统设置 → 站点新增“访问策略”区块（开关二次确认、回滚、GeoIP 状态与计数）；Classic 运营设置新增访问策略卡片；Default/Classic i18n 与审计 action 模板已补。
+- 本地验证：全仓 `go build -p=1 ./...` 通过；`middleware` 新增 13 个用例（451 文案、港澳台放行、未知 fail-open、管理页/静态/API 豁免、XFF 伪造忽略与可信代理采信）全绿；Default TypeScript/生产构建、Classic 生产构建通过；Prettier/ESLint（0 error）与 `git diff --check` 通过。完整 controller 套件既有共享状态基线与本轮无关。
+- 待办（上线前）：放入 GeoLite2-Country.mmdb 并核对路径；如经 CDN 需配 `GEOIP_TRUSTED_PROXIES`；真实 DB 的管理 API 往返验收与公网 451/API 放行验收；法务核对文案链接。本轮未提交、未推送、未部署。
+
+### 2026-08-19 — Lucky wheel amount semantics and user self-hide are local changes
+
+- This change is local only: no commit, push, upload, or deployment. `LuckyPrizeConfig.display_usd_micros` is now the single source for both the public amount and the user's actual awarded balance; the recharge-pool fixed bonus remains a separate additive rule. A service regression covers the balance and draw-record amounts.
+- User-authenticated PATCH endpoints now let owners hide subscription and virtual-membership instances. Ownership is enforced and repeated requests are idempotent. Hidden remains presentation-only and is not read by billing, binding, or runtime-consumption queries. Default/Classic remaining-usage pages and management dialogs expose the control.
+- Validation passed for focused model/service Go tests, full Go build, Default TypeScript/Prettier/ESLint/production build, and Classic Prettier/ESLint/production build. The full controller package still has the known shared-state baseline `TestListModelsTokenLimitIncludesTieredBillingModel`.
+
+### 2026-08-19 — 版本 `20260819-lucky-wheel-amount-hide-self` 已上线
+
+- 已在生产正式环境完成 `site-builder` 正式切流（`new-api` 已重建，监听 `127.0.0.1:3000`）。`new-api` 端 `/api/status` 返回版本 `20260819-lucky-wheel-amount-hide-self`，健康状态 `healthy`。
+- 三个公网入口 `token.stellaisle.com` / `api.stellaisle.com` / `direct-token.stellaisle.com` 的 `GET /api/status` 已验收为 HTTP 200 且版本一致；`/api/user/self` 均为 401。
+- 发布期间清理了候选端口 `3010`（无监听）、保留旧容器用于回滚策略，Nginx 回到 3000 上游。
+- 与此发布相关快照仍在 `/opt/new-api-backups/release-20260819-lucky-wheel-amount-hide-self-20260819T113532Z/`。
+
+### 2026-08-19 — 上线后反馈修复（本地完成，未部署）
+
+- 大转盘管理员编辑器“奖项”列改为随 `display_usd_micros` 动态显示金额名称（`$X 套餐额度` / `$X 钱包赠金`），固定奖励名称不变；用户端轮盘已由 `buildWheelSegments` 使用同一字段，发布后即联动。
+- Default 数据看板 `MySubscriptionsDetail` 恢复与“订阅套餐”页一致的 `管理 / 备注 / 续费` 三入口，`管理` 打开 `SubscriptionInstanceManagementDialog`（隐藏移入弹窗），备注/续费复用既有弹窗；`MyVirtualMembershipsDetail` 的 `管理` 与虚拟会员页 `MembershipCard` 的 `管理` 均改为打开新增 `VirtualMembershipManagementDialog`，不再点击即隐藏。
+- Classic `SubscriptionPlansCard` 与 `VirtualMembership` 同步把“管理（隐藏）”改为“管理 → 弹窗 → 隐藏”。
+- 验证：Default TypeScript/Prettier/ESLint/生产构建通过，Classic Prettier/ESLint/生产构建通过，`git diff --check` 通过。无后端/数据库/路由变更；隐藏仍只影响用户展示。
+
+### 2026-08-19 — 版本 `20260819-lucky-amount-card-fix` 已上线
+
+- 生产 `site-builder` 正式容器已升级到 `20260819-lucky-amount-card-fix`（静态二进制 SHA-256 `14286bf3da0a0d1cdb8d4e06decd1618f104ae69fa30830a4b4a65b62553102b`）。发布流程：3010 候选验收（版本/健康/鉴权 401/前端资源哈希/管理弹窗标记）→ Nginx 切 3010 → 三域名公网验收 → 正式 3000 重建 → Nginx 回切 3000 → 候选连接排空并移除。
+- 三个公网入口 `/api/status` 均返回新版本，`/api/user/self` 均为 401；公网首页资源哈希与本地一致。备份在 `/opt/new-api-backups/release-20260819-lucky-amount-card-fix-20260819T1411Z/`。
+
+### 2026-08-19 — 用户自助恢复展示（本地完成，未部署）
+
+- `GetUserFacingSubscriptionHistory` 改为包含隐藏订阅（保留 `hidden` 标记），Default“订阅套餐”页据此展示“已隐藏的用量卡片”并提供“恢复展示”；虚拟会员页响应新增 `hidden_memberships`，Default/Classic 均新增“已隐藏的虚拟会员”分区和“恢复展示”。Classic 订阅列表内隐藏实例显示“已隐藏”标签 + “恢复展示”。
+- 模型新增 `ListHiddenUserVirtualMemberships`（仅当前所有者隐藏的活动实例），复用既有隐藏/恢复接口（`hidden=false`）。新增/更新 model 回归：订阅历史含隐藏实例且保留标记、隐藏虚拟会员仅返回所有者活动实例、可见列表不受影响。验证通过 model 定向测试、全仓 Go 编译、Default/Classic 前端检查与生产构建、`git diff --check`。
+
 ### 2026-08-18 — 用户日志、模型状态、幸运大转盘与虚拟会员维护已发布
 
 - 功能提交 `221505002` 与交接文档提交 `778b019a` 已推送 `origin/main`。生产版本为 `20260818-diagnostics-wheel-membership`，Linux/amd64 静态二进制 SHA-256 为 `26665a13b81f23a0690883c88525efe21b42c68f797059dc707b2921f97c4ee9`。
@@ -1486,3 +1573,56 @@
 - 本地幸运/分润定向 Go 测试、Default TypeScript、目标 ESLint/Prettier、额度文案 Node 测试和 Rsbuild 构建通过。完整 model 包的既有 `TestAdministratorRechargeCountsCommissionAndLuckyProgressOnce` 仍可独立复现失败，未纳入本次修改。
 - 生产 `20260817-lucky-merge-agent2` 的 Linux/amd64 静态二进制 SHA-256 为 `36c1c01def4f85c212654907ab8ed802f0a6d327b2381fa1fe6358fbea74f475`。候选与正式真实 Responses 均为 `200/response.completed/OK`；正式容器 healthy、0 重启、无 OOM、8 GiB，3010 候选已清理，四个源站 Host 路由各 5/5 返回新版本。
 - 公网三个现役域名返回新版本；`token.glxgo.xin` 的权威 A 记录仍为旧路径 `192.227.176.124`，公网 `/api/status` 版本为空，但强制解析到新服务器时为新版本。本轮未修改 DNS 或旧服务器。发布备份位于 `/opt/new-api-backups/release-20260817-lucky-merge-agent2/`。
+
+### 2026-08-21 — 幸运充值卡规则本地完成，未提交未部署
+
+- 充值来源幸运卡改为“抽到什么送什么”：后端不再叠加 `recharge_bonus_usd_micros`，奖池 `display_usd_micros` 即实际发放金额；旧字段保留用于 API/数据库兼容，但新规则强制为 0，管理员草稿和激活校验也禁止重新设置额外加成。
+- 累计充值门槛改为每满 ¥30（3000 分）获得 1 张，`LuckyThresholdCents(stage)` 使用 `stage*3000`。新增一次性启动迁移 `LuckyRechargeCardPolicy20260820`：将所有规则的旧加成清零、门槛配置更新为 `[3000]`，并把所有 `LuckyRechargeProgress` 的金额/已发阶段清零、下一门槛设为 3000；已发幸运卡和历史抽奖记录保留不改。
+- Default/Classic 幸运大转盘页面、管理员规则编辑器及产品/技术文档已同步新金额和 ¥30 规则。Default `tsc -b`、Default/Classic Rsbuild、幸运轮盘 Node 回归、目标 Prettier，以及 model/service 幸运规则定向 Go 测试通过；完整 model 套件仍有既有的 subscription SQLite 唯一约束失败，未因本轮改动处理。当前工作树仍包含其他窗口未提交修改，本轮未提交、未推送、未部署。
+
+### 2026-08-21 — 幸运充值卡新规则已部署
+
+- 为避免带入工作树中未验收的访问策略、会员等改动，本次生产产物从 `559d25cf` 主线隔离工作树构建，仅合入幸运大转盘后端、迁移和 Default/Classic 页面；本地 Default/Classic 构建、Lucky Node 回归、model/service 定向 Go 测试通过，Linux/amd64 静态产物校验通过。
+- 生产版本 `20260821-lucky-recharge-card`，二进制 SHA-256 `58d7e09d336e97b88d7ea2300e300511f4eb7009d6d53998883b950a74bacbd3`，正式容器挂载 `/opt/newapi/releases/new-api-20260821-lucky-recharge-card-linux-amd64` 并保持 healthy；canonical `/opt/newapi/docker-compose.final.yml` 已切到该路径，3010 候选配置保留作回滚记录但候选容器已清理。
+- 启动迁移 marker `LuckyRechargeCardPolicy20260820MigratedV1` 已持久化；所有 rule set 的 `recharge_bonus_usd_micros=0`、阈值 `[3000]`，充值进度 `eligible_cents/highest_awarded_stage=0`、`next_threshold_cents=3000`。历史抽奖与已发卡未删除。
+- 生产验收完成：候选/正式真实 Responses 均 `200/completed`，三个公网 token 域名 `/api/status` 均 200，未授权 `/v1/models` 为 401，正式只监听 3000。备份目录 `/opt/newapi/backups/20260821T092259Z-lucky-recharge-card/`；原工作树仍有其他未提交修改，本次未提交或推送代码。
+
+### 2026-08-23 — edwardtoday 周五 `fc_`/`ctc_` Responses 错误只读确认
+
+- 生产 MySQL 中用户 306（`edwardtoday`）在 2026-08-21（北京时间）记录到 36 条最终 400，错误均为 `Invalid input[N].id ... Expected an ID that begins with 'ctc'`；用户提供的 `input[61].id=fc_...` 对应 03:25:43 的渠道 36 / `gpt-5.6-luna` 请求。随后同一会话指纹在渠道 28 反复出现 `input[63].id`，并跨 `gpt-5.5/5.6-sol/terra/luna` 失败。
+- 已部署诊断把目标项标记为 `item_type=custom_tool_call`、`id_prefix=fc_`、长度 53；Responses 协议要求 custom tool call 的 item ID 使用 `ctc_`，因此这是工具调用历史项的类型与 ID 前缀不匹配，不是余额、模型额度或普通网络抖动。错误跨多个上游渠道出现，重试只会重放同一坏历史。
+- 当前全局 `global.pass_through_request_enabled=true`；`ResponsesHelper` 在直通路径读取原始请求，仅做模型映射和现有 `message/reasoning` ID 兼容处理。`NormalizeResponsesInputItemIDs` 未改写 `custom_tool_call`，所以 New API 没有制造该 `fc_` 值，也不会自动修复它。最可能的产生边界是 Codex Responses WebSocket 长会话重放与 CPA/兼容层的 WebSocket→HTTP/SSE 历史拼装；公开的 Codex issue #40039 报告了同一错误，CPA issue #4447 也记录了该兼容边界的工具项类型错配。
+- 本次仅做源码、生产日志和上游公开 issue 的只读核验；未修改代码、选项、渠道、CPA、数据库、容器或流量。临时规避是新开会话/避免继续重放该长会话；若要彻底修复，应优先升级/修复 Codex/CPA WebSocket 历史拼装并做真实工具调用回归，不能把所有 `fc_` 盲改成 `ctc_`。
+
+### 2026-08-23 — fc_/ctc_ 兼容层版本与修复候选（只读）
+
+- 当前 New API `NormalizeResponsesInputItemIDs` 只归一 message/reasoning；直通路径仍会把 `custom_tool_call` 的错误 `fc_` 原样送出，这是现状边界，不代表 New API 生成该 ID。
+- CPA 生产版本为 7.2.119；其 Codex sanitizer 也只处理 message。CLIProxyAPI 提交 `197f520`（v7.2.124）新增 `custom_tool_call`→`ctc_` 的按类型归一化，升级到至少 v7.2.124 是候选兜底；任何网关修复必须按 item type 处理并保持 call_id/引用一致，禁止全局 `fc_`→`ctc_`。
+- WebSocket `previous_response_id` 的历史回填/合并与上游 Codex 的宽松前缀校验仍需分别回归；未修改 New API 代码或生产配置。
+
+### 2026-08-23 — upstream new-api 更新对比（以 2026-06-23 为基线，只读）
+
+- upstream 基线 commit 为 `9fc9c8f1`（2026-06-23），当前 upstream `main` 为 `2d8e50bf`（2026-08-21），中间 273 个提交；最新预发布标签为 `v1.0.0-rc.25`（2026-08-18）。
+- 上游新增 Chat↔Responses 转换加固、Responses-to-Chat 重复工具调用修复、RelayKit 重构、replay 元数据和 HTTP/2 重试体处理、字段透传及 Responses 计费修复；这些不等于 `custom_tool_call` ID 前缀修复。
+- upstream `relay/responses_handler.go` 直通路径仍直接复用请求体，未出现按 item type 校验 `fc_`/`ctc_` 的逻辑；官方 #6677/#6678 只针对 `reasoning`/`rs_`，且 PR 尚 open。当前 fork 自有 `d2bcb0a59` 仅归一 generic `item_` 的 message/reasoning，不处理 custom tool。
+- 实时建站机 image/挂载为 `new-api:20260818-public-pool-reopen` + `new-api-subscription-availability-20260823-linux-amd64`，不是 6 月 23 日基线；本轮未修改代码、生产配置或部署。
+
+### 2026-08-24 — Responses `fc_`/`ctc_` 类型化兼容防线已完成候选验收
+
+- 在基于当前线上源码提交 `f9476e2c` 的隔离工作树中完成实现，并将同一补丁安全应用到主工作树本地提交 `b35265f36`：`NormalizeResponsesInputItemIDs` 仅按 `type` 修复已确认的 `custom_tool_call` + `fc_` → `ctc_` 错配，并覆盖 `function_call`/custom-tool output 的对应已知前缀错配；canonical ID、未知 ID、`call_id` 和其他字段保持不变，禁止全局字符串替换。
+- 新增 `relay/common` 回归覆盖 `fc_0a0f...` 的 custom tool item，`go test -vet=off ./relay/common ./relay` 通过；隔离工作树 `go build -p=1 ./...` 与 Linux/amd64 静态构建通过。产物 `/Users/adrian/Documents/Codex/new-api-responses-fcctc-20260824-linux-amd64` SHA-256 为 `cc737ce85a66fa3be6deaa2e8ef9b26cd94df8dba5adbd84aa85aefdd0e2575d`。
+- 生产仅完成候选阶段：产物已上传 `/opt/newapi/releases/new-api-responses-fcctc-20260824-linux-amd64`（远端哈希一致），3010 候选容器启动 healthy，候选/正式 `/api/status` 均成功；随后候选已停止删除，正式仍挂载 `new-api-subscription-availability-20260823-linux-amd64`、只监听 3000。候选前备份位于 `/opt/newapi/backups/responses-fcctc-20260823T162732Z-pre-candidate/`。
+- 尚未正式切换、未改 Nginx/Compose、未升级 CPA。因没有可安全使用的一次性 API Key，本轮未宣称真实 Responses 工具调用完成；正式切换前仍需一次真实 `custom_tool_call` 请求验证上游收到 `ctc_` 前缀。
+
+### 2026-08-24 — Responses `fc_`/`ctc_` 类型化兼容防线已正式上线
+
+- 用户提供一次性测试 Key 后，3010 候选真实验证通过：普通 Responses 为 `200/completed`；带错误 `custom_tool_call.id=fc_...` 且缺少 output 时，上游不再报 `Expected ... ctc`，而是正确提示缺少 tool output；补齐 `custom_tool_call_output` 后返回 `200/completed`。候选日志记录 `custom_tool_call=1`、`custom_tool_call_output=1`。
+- 已执行蓝绿切换：先将 `new-api.conf` 与 `api.stellaisle.com.conf` 切到 3010，等待 3000 连接归零；修正 canonical `/opt/newapi/docker-compose.final.yml` 的残留旧二进制路径并重建正式 `new-api`；正式健康后 Nginx 回切 3000，再等待候选连接归零并删除候选容器。MySQL/Redis 未重建，CPA、渠道、DNS 未修改。
+- 正式公网 `https://token.stellaisle.com/v1/responses` 使用同样的错误 `fc_` custom tool item + 配套 output 返回 `200/completed`；正式日志记录两类 item 已按类型归一。当前正式容器 healthy、重启 0，只监听 `127.0.0.1:3000`；`token/api/direct-token` 三个 `/api/status` 均成功。
+- 正式挂载 `/opt/newapi/releases/new-api-responses-fcctc-20260824-linux-amd64`，SHA-256 `cc737ce85a66fa3be6deaa2e8ef9b26cd94df8dba5adbd84aa85aefdd0e2575d`。完整切换前备份位于 `/opt/newapi/backups/responses-fcctc-20260823T165324Z-pre-cutover/`；测试 Key 未写入文件、日志或记忆，建议用户立即撤销/轮换。
+
+### 2026-08-24 — 新需求仅形成 PRD，待审核
+
+- 本轮只读检查了支付商品名、订阅重置、虚拟会员重置和 mainland Web 访问边界；未修改本仓库源码、数据库、配置、提交、推送或部署。
+- PRD 草案位于 /Users/adrian/Documents/Codex/订阅支付周期额度与企业教育身份_PRD.md，覆盖六项需求及 D1-D10 待确认决策。用户审核通过后再进入技术拆分和实现。
+- 后续生产发布目标为 site-builder（152.53.209.90），overseas2 已废弃；本轮没有触碰任何生产环境。

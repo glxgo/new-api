@@ -143,16 +143,22 @@ func setupLogin(user *model.User, c *gin.Context) {
 		return
 	}
 	recordLoginAudit(user, c)
+	identityType, identityErr := model.GetUserIdentityType(user.Id)
+	if identityErr != nil {
+		identityType = model.IdentityTypeNone
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"message": "",
 		"success": true,
 		"data": map[string]any{
-			"id":           user.Id,
-			"username":     user.Username,
-			"display_name": user.DisplayName,
-			"role":         user.Role,
-			"status":       user.Status,
-			"group":        user.Group,
+			"id":             user.Id,
+			"username":       user.Username,
+			"display_name":   user.DisplayName,
+			"role":           user.Role,
+			"status":         user.Status,
+			"group":          user.Group,
+			"identity_type":  identityType,
+			"identity_label": model.IdentityLabel(identityType),
 		},
 	})
 }
@@ -285,6 +291,9 @@ func GetAllUsers(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if err := model.PopulateUserIdentityFields(users); err != nil {
+		common.SysLog("failed to load user identities: " + err.Error())
+	}
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(users)
 
@@ -312,6 +321,9 @@ func SearchUsers(c *gin.Context) {
 	if err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	if err := model.PopulateUserIdentityFields(users); err != nil {
+		common.SysLog("failed to load user identities: " + err.Error())
 	}
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(users)
@@ -358,6 +370,9 @@ func GetUser(c *gin.Context) {
 		return
 	}
 	populateUserCapacity([]*model.User{user})
+	if err := model.PopulateUserIdentityFields([]*model.User{user}); err != nil {
+		common.SysLog("failed to load user identity: " + err.Error())
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -483,6 +498,11 @@ func GetSelf(c *gin.Context) {
 	userSetting := user.GetSetting()
 	effectiveConcurrency := user.EffectiveConcurrencyLimit()
 	effectiveRPM := user.EffectiveRPMLimit()
+	identityType, identityErr := model.GetUserIdentityType(user.Id)
+	if identityErr != nil {
+		common.SysLog("failed to load user identity: " + identityErr.Error())
+		identityType = model.IdentityTypeNone
+	}
 
 	// 构建响应数据，包含用户信息和权限
 	responseData := map[string]interface{}{
@@ -532,6 +552,8 @@ func GetSelf(c *gin.Context) {
 		"security_permanent_ban":   user.SecurityPermanentBan,
 		"security_restriction_active": user.SecurityPermanentBan ||
 			user.SecuritySuspendedUntil > time.Now().Unix(),
+		"identity_type":  identityType,
+		"identity_label": model.IdentityLabel(identityType),
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -1051,6 +1073,9 @@ func CreateUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
+		"data": gin.H{
+			"id": cleanUser.Id,
+		},
 	})
 	return
 }

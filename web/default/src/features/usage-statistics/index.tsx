@@ -31,18 +31,20 @@ import {
   Zap,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { useAuthStore } from '@/stores/auth-store'
 import {
   formatCompactNumber,
   formatNumber,
   formatQuota,
   formatTimestampToDate,
 } from '@/lib/format'
+import { ROLE } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SectionPageLayout } from '@/components/layout'
 import { StatCard } from '@/features/dashboard/components/ui/stat-card'
-import { getUsageStatistics } from './api'
+import { getAdminUsageStatistics, getUsageStatistics } from './api'
 import type {
   UsageStatisticsData,
   UsageStatisticsRange,
@@ -276,10 +278,16 @@ function SubscriptionsPanel({
 export function UsageStatistics() {
   const { t } = useTranslation()
   const [range, setRange] = useState<UsageStatisticsRange>('7d')
+  const [searchInput, setSearchInput] = useState('')
+  const [targetUser, setTargetUser] = useState('')
+  const currentUser = useAuthStore((state) => state.auth.user)
+  const isRoot = (currentUser?.role ?? 0) >= ROLE.SUPER_ADMIN
   const query = useQuery({
-    queryKey: ['usage-statistics', range],
+    queryKey: ['usage-statistics', range, targetUser],
     queryFn: async () => {
-      const response = await getUsageStatistics(range)
+      const response = targetUser
+        ? await getAdminUsageStatistics(range, targetUser)
+        : await getUsageStatistics(range)
       if (!response.success || !response.data) {
         throw new Error(response.message || 'Failed to load usage statistics')
       }
@@ -404,6 +412,49 @@ export function UsageStatistics() {
       </SectionPageLayout.Description>
       <SectionPageLayout.Content>
         <div className='h-full overflow-y-auto pb-1'>
+          {isRoot && (
+            <form
+              className='bg-card mb-3 flex flex-col gap-2 rounded-xl border p-3 sm:flex-row'
+              onSubmit={(event) => {
+                event.preventDefault()
+                setTargetUser(searchInput.trim())
+              }}
+            >
+              <div className='flex-1'>
+                <input
+                  value={searchInput}
+                  onChange={(event) => setSearchInput(event.target.value)}
+                  placeholder={t('Enter username or user ID to inspect usage')}
+                  className='bg-muted/40 border-input placeholder:text-muted-foreground/70 focus:ring-ring h-9 w-full rounded-md border px-3 text-sm outline-none focus:ring-2'
+                />
+              </div>
+              <button
+                type='submit'
+                className='bg-foreground text-background hover:bg-foreground/90 h-9 rounded-md px-4 text-sm font-medium'
+              >
+                {t('View User Usage')}
+              </button>
+              {targetUser && (
+                <button
+                  type='button'
+                  className='text-muted-foreground hover:text-foreground h-9 rounded-md px-3 text-sm'
+                  onClick={() => {
+                    setSearchInput('')
+                    setTargetUser('')
+                  }}
+                >
+                  {t('My Usage')}
+                </button>
+              )}
+            </form>
+          )}
+          {targetUser && data?.user && (
+            <div className='bg-primary/5 text-primary border-primary/15 mb-3 rounded-lg border px-3 py-2 text-sm'>
+              {t('Viewing usage for')}{' '}
+              <strong>{data.user.display_name || data.user.username}</strong> ·
+              ID {data.user.id}
+            </div>
+          )}
           <div className='mb-3 flex items-center justify-between gap-3'>
             <div className='bg-muted/60 flex rounded-lg border p-0.5'>
               {RANGE_OPTIONS.map((option) => (

@@ -67,6 +67,9 @@ export interface UserVirtualMembership {
   plan_title: string
   plan_code: string
   group_size: number
+  purchase_price_amount: number
+  active_reset_credits: number
+  active_reset_price_amount: number
   weekly_quota: number
   weekly_used: number
   weekly_remaining: number
@@ -101,6 +104,7 @@ export interface VirtualMembershipPageData {
   enabled: boolean
   plans: VirtualMembershipPlan[]
   memberships: UserVirtualMembership[]
+  hidden_memberships?: UserVirtualMembership[]
   epay_enabled?: boolean
   epay_methods?: { type: string; name?: string }[]
 }

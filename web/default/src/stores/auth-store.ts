@@ -53,6 +53,8 @@ export interface AuthUser {
   stripe_customer?: string
   sidebar_modules?: string
   permissions?: UserPermissions
+  identity_type?: 'none' | 'enterprise' | 'education' | string
+  identity_label?: string
 }
 
 interface AuthState {

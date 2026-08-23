@@ -69,6 +69,7 @@ import {
 import {
   deleteAdminVirtualMembership,
   getAdminVirtualMemberships,
+  grantAdminVirtualMembershipResetCredits,
   renewAdminVirtualMembership,
   resetAdminVirtualMemberships,
   setAdminVirtualMembershipHidden,
@@ -186,6 +187,9 @@ export function AdminMembershipsSheet({
   const [resettingId, setResettingId] = useState<number | null>(null)
   const [renewingId, setRenewingId] = useState<number | null>(null)
   const [visibilityId, setVisibilityId] = useState<number | null>(null)
+  const [grantResetCreditsId, setGrantResetCreditsId] = useState<number | null>(
+    null
+  )
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['admin-virtual-memberships'],
     queryFn: getAdminVirtualMemberships,
@@ -313,6 +317,37 @@ export function AdminMembershipsSheet({
       await refetch()
     } finally {
       setVisibilityId(null)
+    }
+  }
+
+  const grantResetCredits = async (membership: AdminVirtualMembership) => {
+    if (grantResetCreditsId !== null) return
+    const raw = window.prompt(
+      `为 ${membership.display_name || membership.username || `用户 #${membership.user_id}`} 增加主动重置次数（正整数）`,
+      '1'
+    )
+    if (raw === null) return
+    const credits = Number(raw.trim())
+    if (!Number.isSafeInteger(credits) || credits <= 0) {
+      toast.error('请输入大于 0 的整数次数')
+      return
+    }
+    setGrantResetCreditsId(membership.id)
+    try {
+      const result = await grantAdminVirtualMembershipResetCredits(
+        membership.id,
+        credits
+      )
+      if (!result.success) {
+        toast.error(result.message || '增加主动重置次数失败')
+        return
+      }
+      toast.success(
+        `已增加 ${credits} 次主动重置，当前共 ${result.data?.credits ?? 0} 次`
+      )
+      await refetch()
+    } finally {
+      setGrantResetCreditsId(null)
     }
   }
 
@@ -520,6 +555,20 @@ export function AdminMembershipsSheet({
                                   )}
                                 />
                                 重置额度
+                              </Button>
+                              <Button
+                                type='button'
+                                variant='ghost'
+                                size='sm'
+                                className='h-7 px-2 text-xs text-violet-700 hover:bg-violet-500/10 hover:text-violet-700'
+                                disabled={grantResetCreditsId !== null}
+                                onClick={() =>
+                                  void grantResetCredits(membership)
+                                }
+                              >
+                                <Gauge className='size-3.5' />
+                                加主动重置次数（
+                                {membership.active_reset_credits || 0}）
                               </Button>
                               <Button
                                 type='button'

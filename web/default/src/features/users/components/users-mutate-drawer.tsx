@@ -23,6 +23,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Pencil } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { useAuthStore } from '@/stores/auth-store'
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 import { formatQuota, parseQuotaFromDollars } from '@/lib/format'
 import { Button } from '@/components/ui/button'
@@ -63,7 +64,13 @@ import {
   sideDrawerFormClassName,
   sideDrawerHeaderClassName,
 } from '@/components/drawer-layout'
-import { createUser, updateUser, getUser, getGroups } from '../api'
+import {
+  createUser,
+  updateUser,
+  updateUserIdentity,
+  getUser,
+  getGroups,
+} from '../api'
 import { BINDING_FIELDS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
 import {
   userFormSchema,
@@ -92,6 +99,8 @@ export function UsersMutateDrawer({
   const { triggerRefresh } = useUsers()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [quotaDialogOpen, setQuotaDialogOpen] = useState(false)
+  const currentRole = useAuthStore((state) => state.auth.user?.role ?? 0)
+  const canManageIdentity = currentRole >= 100
 
   // Fetch groups
   const { data: groupsData } = useQuery({
@@ -150,6 +159,19 @@ export function UsersMutateDrawer({
         : await createUser(payload)
 
       if (result.success) {
+        const identityUserId = currentRow?.id ?? result.data?.id
+        if (identityUserId && canManageIdentity) {
+          const identityResult = await updateUserIdentity(
+            identityUserId,
+            data.identity_type
+          )
+          if (!identityResult.success) {
+            toast.error(
+              identityResult.message || t('Failed to update identity')
+            )
+            return
+          }
+        }
         toast.success(
           isUpdate
             ? t(SUCCESS_MESSAGES.USER_UPDATED)
@@ -318,6 +340,59 @@ export function UsersMutateDrawer({
                           }
                         />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </SideDrawerSection>
+
+              <SideDrawerSection>
+                <FormField
+                  control={form.control}
+                  name='identity_type'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        {t('Enterprise / Education identity')}
+                      </FormLabel>
+                      <Select
+                        items={[
+                          { value: 'none', label: t('No identity') },
+                          { value: 'enterprise', label: 'ENTERPRISE' },
+                          { value: 'education', label: 'student' },
+                        ]}
+                        onValueChange={(value) =>
+                          value !== null && field.onChange(value)
+                        }
+                        value={field.value}
+                        disabled={!canManageIdentity}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder={t('Select identity')} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent alignItemWithTrigger={false}>
+                          <SelectGroup>
+                            <SelectItem value='none'>
+                              {t('No identity')}
+                            </SelectItem>
+                            <SelectItem value='enterprise'>
+                              ENTERPRISE
+                            </SelectItem>
+                            <SelectItem value='education'>student</SelectItem>
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        {canManageIdentity
+                          ? t(
+                              'Only the super administrator can grant this operator identity.'
+                            )
+                          : t(
+                              'Identity is managed by the super administrator.'
+                            )}
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

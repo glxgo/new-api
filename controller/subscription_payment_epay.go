@@ -96,7 +96,14 @@ func SubscriptionRequestEpay(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	epaySnapshot, err := model.NewPaymentSnapshotFromMoney(plan.PriceAmount, "CNY")
+	moneyText := model.FormatPaymentGatewayAmount(plan.PriceAmount)
+	money, parseMoneyErr := strconv.ParseFloat(moneyText, 64)
+	if parseMoneyErr != nil || money < 0.01 {
+		common.ApiErrorMsg(c, "支付金额格式错误")
+		return
+	}
+	order.Money = money
+	epaySnapshot, err := model.NewPaymentSnapshotFromDisplayAmount(moneyText, "CNY")
 	if err != nil || model.SetSubscriptionOrderPaymentExpectation(order, epaySnapshot) != nil {
 		common.ApiErrorMsg(c, "支付金额快照失败")
 		return
@@ -108,8 +115,8 @@ func SubscriptionRequestEpay(c *gin.Context) {
 	uri, params, err := client.Purchase(&epay.PurchaseArgs{
 		Type:           req.PaymentMethod,
 		ServiceTradeNo: tradeNo,
-		Name:           fmt.Sprintf("SUB:%s", plan.Title),
-		Money:          strconv.FormatFloat(plan.PriceAmount, 'f', 2, 64),
+		Name:           order.ProductNameSnapshot,
+		Money:          moneyText,
 		Device:         epay.PC,
 		NotifyUrl:      notifyUrl,
 		ReturnUrl:      returnUrl,

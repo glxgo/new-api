@@ -69,7 +69,8 @@ func subscriptionRouteQuotaAvailability(userId int, step TokenRouteStep, require
 	for i := range subscriptions {
 		sub := &subscriptions[i]
 		capUsable := sub.AmountCap <= 0 || sub.AmountCapUsed+amount <= sub.AmountCap
-		cycleResetDue := sub.NextResetTime > 0 && sub.NextResetTime <= now
+		plan, _ := planForUserSubscriptionTx(DB, sub)
+		cycleResetDue := subscriptionResetBoundaryDueFor(sub, plan, now)
 		cycleUsed := sub.AmountUsed
 		if cycleResetDue {
 			cycleUsed = 0
@@ -79,8 +80,15 @@ func subscriptionRouteQuotaAvailability(userId int, step TokenRouteStep, require
 			return TokenRouteQuotaAvailability{Usable: true}, nil
 		}
 		readyAt := sub.EndTime
-		if capUsable && !cycleUsable && sub.NextResetTime > now {
-			readyAt = sub.NextResetTime
+		if capUsable && !cycleUsable {
+			candidateReset := sub.NextResetTime
+			if subscriptionUsesPurchaseResetAnchorFor(sub, plan) && sub.StartTime > 0 {
+				_, projected := purchaseAnchoredResetSchedule(plan, sub.StartTime, sub.EndTime, now)
+				candidateReset = projected
+			}
+			if candidateReset > now {
+				readyAt = candidateReset
+			}
 		}
 		if readyAt > now && (result.ResetAt == 0 || readyAt < result.ResetAt) {
 			result.ResetAt = readyAt
