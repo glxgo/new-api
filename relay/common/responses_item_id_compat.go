@@ -37,12 +37,16 @@ func isSyntheticResponsesMessageID(id string) bool {
 // ResponsesInputItemIDNormalizationReport contains only aggregate metadata;
 // it never exposes complete response item identifiers or request content.
 type ResponsesInputItemIDNormalizationReport struct {
-	Reasoning int `json:"reasoning"`
-	Message   int `json:"message"`
+	Reasoning          int `json:"reasoning"`
+	Message            int `json:"message"`
+	FunctionCall       int `json:"function_call"`
+	CustomToolCall     int `json:"custom_tool_call"`
+	FunctionCallOutput int `json:"function_call_output"`
+	CustomToolOutput   int `json:"custom_tool_call_output"`
 }
 
 func (r ResponsesInputItemIDNormalizationReport) Count() int {
-	return r.Reasoning + r.Message
+	return r.Reasoning + r.Message + r.FunctionCall + r.CustomToolCall + r.FunctionCallOutput + r.CustomToolOutput
 }
 
 func RecordResponsesInputItemIDNormalization(c *gin.Context, report ResponsesInputItemIDNormalizationReport) {
@@ -69,10 +73,9 @@ func AppendResponsesInputItemIDNormalizationAdminInfo(c *gin.Context, adminInfo 
 
 // NormalizeResponsesInputItemIDs repairs narrowly identified compatibility
 // defects emitted by some Responses-compatible providers: output items are
-// assigned a generic item_ ID, or a response-scoped resp_*_msg ID, even though
-// the item type requires a typed prefix when it is replayed as input. Keep the
-// opaque suffix and every other byte of the item; only the proven reasoning
-// and message cases are normalized.
+// assigned a generic item_ ID, a response-scoped resp_*_msg ID, or a function
+// call ID is reused for a custom tool call. Keep the opaque suffix and every
+// other byte of the item; only known type/prefix mismatches are normalized.
 func NormalizeResponsesInputItemIDs(body []byte) ([]byte, ResponsesInputItemIDNormalizationReport, error) {
 	var report ResponsesInputItemIDNormalizationReport
 	input := gjson.GetBytes(body, "input")
@@ -103,6 +106,19 @@ func NormalizeResponsesInputItemIDs(body []byte) ([]byte, ResponsesInputItemIDNo
 			normalizedID = "rs_" + strings.TrimPrefix(id, responsesGenericItemIDPrefix)
 		case strings.HasPrefix(id, responsesGenericItemIDPrefix) && len(id) > len(responsesGenericItemIDPrefix) && itemType == "message":
 			normalizedID = "msg_" + strings.TrimPrefix(id, responsesGenericItemIDPrefix)
+		case itemType == "custom_tool_call" && strings.HasPrefix(id, "fc_"):
+			// OpenAI requires custom_tool_call IDs to begin with ctc_. Some
+			// providers incorrectly reuse the fc_ prefix used by function_call.
+			// Prefix the complete opaque ID instead of replacing its bytes, which
+			// keeps this repair collision-resistant and makes the source defect
+			// observable in the diagnostic report without leaking the ID.
+			normalizedID = "ctc_" + id
+		case itemType == "custom_tool_call_output" && strings.HasPrefix(id, "fco_"):
+			normalizedID = "ctco_" + id
+		case itemType == "function_call" && strings.HasPrefix(id, "ctc_"):
+			normalizedID = "fc_" + id
+		case itemType == "function_call_output" && strings.HasPrefix(id, "ctco_"):
+			normalizedID = "fco_" + id
 		default:
 			continue
 		}
@@ -129,6 +145,14 @@ func NormalizeResponsesInputItemIDs(body []byte) ([]byte, ResponsesInputItemIDNo
 			report.Reasoning++
 		case "message":
 			report.Message++
+		case "function_call":
+			report.FunctionCall++
+		case "custom_tool_call":
+			report.CustomToolCall++
+		case "function_call_output":
+			report.FunctionCallOutput++
+		case "custom_tool_call_output":
+			report.CustomToolOutput++
 		}
 	}
 	return result, report, nil

@@ -92,9 +92,13 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		relaycommon.RecordResponsesInputItemIDNormalization(c, normalization)
 		if normalization.Count() > 0 {
 			logger.LogInfo(c, fmt.Sprintf(
-				"normalized Responses input item IDs: reasoning=%d, message=%d",
+				"normalized Responses input item IDs: reasoning=%d, message=%d, function_call=%d, custom_tool_call=%d, function_call_output=%d, custom_tool_call_output=%d",
 				normalization.Reasoning,
 				normalization.Message,
+				normalization.FunctionCall,
+				normalization.CustomToolCall,
+				normalization.FunctionCallOutput,
+				normalization.CustomToolOutput,
 			))
 		}
 		if billingErr := service.PreparePriorityBillingForOutbound(info, jsonData); billingErr != nil {
@@ -143,9 +147,13 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		relaycommon.RecordResponsesInputItemIDNormalization(c, normalization)
 		if normalization.Count() > 0 {
 			logger.LogInfo(c, fmt.Sprintf(
-				"normalized Responses input item IDs: reasoning=%d, message=%d",
+				"normalized Responses input item IDs: reasoning=%d, message=%d, function_call=%d, custom_tool_call=%d, function_call_output=%d, custom_tool_call_output=%d",
 				normalization.Reasoning,
 				normalization.Message,
+				normalization.FunctionCall,
+				normalization.CustomToolCall,
+				normalization.FunctionCallOutput,
+				normalization.CustomToolOutput,
 			))
 		}
 		if billingErr := service.PreparePriorityBillingForOutbound(info, jsonData); billingErr != nil {

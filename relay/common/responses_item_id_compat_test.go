@@ -46,6 +46,35 @@ func TestNormalizeResponsesInputItemIDsRepairsProviderResponseMessageIDs(t *test
 	require.Equal(t, "resp_0bfb033d1ff7a0ee016a72d0389fc4819bbb6ec2557d139e37_msg", gjson.GetBytes(got, "input.1.id").String())
 }
 
+func TestNormalizeResponsesInputItemIDsRepairsCustomToolCallPrefixByType(t *testing.T) {
+	body := []byte(`{
+		"input":[
+			{"type":"custom_tool_call","id":"fc_0a0f49100a7769fb016a87a42e7e108194b945110ab7f5a06d","call_id":"call_1","name":"lookup","input":"{}"},
+			{"type":"custom_tool_call","id":"ctc_already_valid","call_id":"call_2","name":"lookup","input":"{}"},
+			{"type":"function_call","id":"fc_function","call_id":"call_3","name":"lookup","arguments":"{}"},
+			{"type":"function_call","id":"ctc_wrong_type","call_id":"call_4","name":"lookup","arguments":"{}"},
+			{"type":"custom_tool_call_output","id":"fco_output","call_id":"call_5","output":"ok"},
+			{"type":"function_call_output","id":"ctco_wrong_type","call_id":"call_6","output":"ok"}
+		]
+	}`)
+
+	got, report, err := NormalizeResponsesInputItemIDs(body)
+	require.NoError(t, err)
+	require.Equal(t, ResponsesInputItemIDNormalizationReport{
+		CustomToolCall:     1,
+		FunctionCall:       1,
+		FunctionCallOutput: 1,
+		CustomToolOutput:   1,
+	}, report)
+	require.Equal(t, "ctc_fc_0a0f49100a7769fb016a87a42e7e108194b945110ab7f5a06d", gjson.GetBytes(got, "input.0.id").String())
+	require.Equal(t, "ctc_already_valid", gjson.GetBytes(got, "input.1.id").String())
+	require.Equal(t, "fc_function", gjson.GetBytes(got, "input.2.id").String())
+	require.Equal(t, "fc_ctc_wrong_type", gjson.GetBytes(got, "input.3.id").String())
+	require.Equal(t, "ctco_fco_output", gjson.GetBytes(got, "input.4.id").String())
+	require.Equal(t, "fco_ctco_wrong_type", gjson.GetBytes(got, "input.5.id").String())
+	require.Equal(t, "call_1", gjson.GetBytes(got, "input.0.call_id").String())
+}
+
 func TestNormalizeResponsesInputItemIDsLeavesUnknownAndCanonicalIDsUntouched(t *testing.T) {
 	body := []byte(`{
 		"input":[
