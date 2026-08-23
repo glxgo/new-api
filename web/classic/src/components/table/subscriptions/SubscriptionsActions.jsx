@@ -20,9 +20,22 @@ For commercial licensing, please contact support@quantumnous.com
 import React from 'react';
 import { Button } from '@douyinfe/semi-ui';
 
-const SubscriptionsActions = ({ openCreate, t, disabled = false }) => {
+const SubscriptionsActions = ({
+  openCreate,
+  openSubscribers,
+  t,
+  disabled = false,
+}) => {
   return (
     <div className='flex gap-2 w-full md:w-auto'>
+      <Button
+        type='tertiary'
+        className='w-full md:w-auto'
+        onClick={openSubscribers}
+        size='small'
+      >
+        {t('订阅实例')}
+      </Button>
       <Button
         type='primary'
         className='w-full md:w-auto'

@@ -24,6 +24,7 @@ import SubscriptionsTable from './SubscriptionsTable';
 import SubscriptionsActions from './SubscriptionsActions';
 import SubscriptionsDescription from './SubscriptionsDescription';
 import AddEditSubscriptionModal from './modals/AddEditSubscriptionModal';
+import SubscriptionSubscribersModal from './SubscriptionSubscribersModal';
 import { useSubscriptionsData } from '../../../hooks/subscriptions/useSubscriptionsData';
 import { useIsMobile } from '../../../hooks/common/useIsMobile';
 import { createCardProPagination } from '../../../helpers/utils';
@@ -36,6 +37,7 @@ const SubscriptionsPage = () => {
   const [statusState] = useContext(StatusContext);
   const enableEpay = !!statusState?.status?.enable_online_topup;
   const [complianceConfirmed, setComplianceConfirmed] = useState(true);
+  const [showSubscribers, setShowSubscribers] = useState(false);
 
   const {
     showEdit,
@@ -91,6 +93,7 @@ const SubscriptionsPage = () => {
             <div className='order-1 md:order-0 w-full md:w-auto'>
               <SubscriptionsActions
                 openCreate={openCreate}
+                openSubscribers={() => setShowSubscribers(true)}
                 t={t}
                 disabled={!complianceConfirmed}
               />
@@ -132,6 +135,12 @@ const SubscriptionsPage = () => {
           complianceConfirmed={complianceConfirmed}
         />
       </CardPro>
+
+      <SubscriptionSubscribersModal
+        visible={showSubscribers}
+        onCancel={() => setShowSubscribers(false)}
+        t={t}
+      />
     </>
   );
 };
