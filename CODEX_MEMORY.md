@@ -1626,3 +1626,12 @@
 - 本轮只读检查了支付商品名、订阅重置、虚拟会员重置和 mainland Web 访问边界；未修改本仓库源码、数据库、配置、提交、推送或部署。
 - PRD 草案位于 /Users/adrian/Documents/Codex/订阅支付周期额度与企业教育身份_PRD.md，覆盖六项需求及 D1-D10 待确认决策。用户审核通过后再进入技术拆分和实现。
 - 后续生产发布目标为 site-builder（152.53.209.90），overseas2 已废弃；本轮没有触碰任何生产环境。
+
+### 2026-08-24 — 订阅/支付/额度/身份维护实现并发布
+
+- PRD 审核通过后，代码提交 `827bd2964` 汇总了本地未上线改动：usage statistics 按用户名/用户 ID 查询、订阅实例直接列表及总额度/重置周期、支付商品名快照、日/周周期按购买时刻锚定、虚拟会员主动重置与易支付加购、分润比例后台编辑、Lucky Wheel ¥30 规则、企业/教育身份和大陆 IP 白名单，以及 Default/Classic 前端对应页面。
+- 主 agent 复核后修复 `listUserVirtualMemberships` 与 `ListAdminVirtualMemberships` 在到期重置时缺少行锁、可能覆盖并发额度/主动重置次数的问题；另将白名单未命中查询改为不记录预期的 `record not found` 错误，形成修复提交 `155d6c360`。`origin/main` 与 HEAD 均为 `155d6c360`，工作树 clean。
+- 本地验证：Go 定向 model/service/controller 测试通过；`go test -vet=off ./... -run '^$'` 全仓编译通过；虚拟会员 race 测试通过；Default/Classic 构建通过；改动文件定向 Prettier/ESLint 通过；`git diff --check` 通过。Classic 全量 lint 的历史格式告警未归因于本次改动。
+- 生产产物由 `155d6c360` 构建为 Linux/amd64 静态二进制，SHA-256 `1f0ee5720e4999e6f1bd15aca52b865b36987c8444cde9148d35c7256947c00b`，部署到 site-builder `/opt/newapi/releases/new-api-20260824-all-155d6c360-linux-amd64`；正式 compose SHA-256 `005427ce0064030cdd2c50df87057e6e5db857a773fc09cae7ee83f6684a3076`，两次发布备份已保留。
+- 线上 schema 已包含 `mainland_ip_allowlists`、`user_identities`、`virtual_membership_reset_orders` 及支付商品名/金额快照和 `active_reset_credits` 字段。生产 policy 已恢复 mainland Web block 为 true（config version 3），compose 显式配置可信代理网段；GeoIP 加载成功。正式容器 healthy、重启 0、仅监听 3000，MySQL/Redis 未重建；版本与 Default theme 通过回环和公开状态检查。
+- 线上业务回归已覆盖 CN Web 451 + 企业/教育 CTA、CN API 200、非 CN/未知 IP Web 放行、未授权新管理 API 401，以及前端 chunk 中累计充值、总额度/重置周期、主动重置、ENTERPRISE、usage 搜索和分润入口标记。未进行真实扣款，支付接口只做代码/边界验证。
