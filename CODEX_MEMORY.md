@@ -1642,3 +1642,10 @@
 - Classic 定向 Prettier/ESLint/build、Default build、Go 定向 model/service/controller 测试、虚拟会员 race 以及顺序 `go test -vet=off ./... -run '^$'` 全部通过。一次与前端构建并行导致的 embed 资源假失败已在构建完成后顺序重跑通过。
 - 提交 `9525b8079` 已发布到 site-builder：产物 `/opt/newapi/releases/new-api-20260824-all-9525b8079-linux-amd64`，SHA-256 `65fff4270fbad98fad492e39623d4d05589206003495e50e72ec14cbd500b20c`；compose SHA-256 `7b4bdd41e28f4db6920b34e45642dc33378d389dfb35c1e1aaa2818dedd2885f`；备份 `/opt/newapi/backups/release-20260824-all-9525b8079-20260823T220335Z/`。只重建 new-api，MySQL/Redis 未重建，正式仍只监听 127.0.0.1:3000。
 - 线上 policy 仍为 mainland block=true/config version 3，`GEOIP_TRUSTED_PROXIES` 保留，GeoIP 加载成功。回环/公开状态为版本 `20260824-all-9525b8079`、theme `default`；CN 451 + 企业/教育 CTA、CN API 200、非 CN/未知 IP 200、未授权管理 API 401、Default/Classic 资源 marker 均通过。未进行真实扣款；`origin/main` 在记忆提交后应与 HEAD 同步。
+
+### 2026-08-24 — 批量重置 pending 预扣记录阻塞修复并发布
+
+- 根因确认：`ResetVirtualMemberships` 原先发现 `VirtualMembershipPreConsumeRecord` 为 pending 就直接跳过会员，线上 #7、#10、#16、#17 都命中该条件，部分 pending 已遗留多日。
+- 提交 `644173f8e`：管理员重置在会员行锁内将选中实例的 pending 记录标记 `refunded` 后清空周期额度；`PostConsumeVirtualMembershipDelta`、补扣、回滚和退款改为会员优先、记录随后锁定，避免与管理员重置死锁；迟到结算不会重新加回已重置额度。`TestVirtualMembershipResetFinalizesPendingSettlement` 覆盖后台重置、迟到结算和主动重置，model 全测、race、全仓 compile-only 均通过。
+- 产物已发布到 site-builder `/opt/newapi/releases/new-api-20260824-vm-reset-644173f8e-linux-amd64`，SHA-256 `9db71ffe0357c4ffefe847c83b7454f0176406279aecbb83691bea99ec110014`；正式 Compose SHA-256 `bbf1b61fe35f27ae47e407f2ea1c53973415fc32c9df4397fac214237d9ddf1a`；备份目录 `/opt/newapi/backups/release-new-api-20260824-vm-reset-644173f8e-linux-amd64-20260824T034233Z/`。只重建 `new-api`，MySQL/Redis 未重建，`overseas2` 未触碰。
+- 正式容器 healthy、版本 `20260824-vm-reset-644173f8e`，三现役公网域名和回环状态正常，新的管理接口未授权边界仍为 401。未通过 SQL 直接替用户执行重置；管理员下一次批量重置会处理这些 pending 实例。
