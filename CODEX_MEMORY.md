@@ -1670,3 +1670,10 @@
 - 提交 `84acb6385`：在当前实际 `Dashboard` 页面复用原有 `IdentityWelcomeBanner`，没有新建或覆盖登录流程；原有登录成功回调、`/api/user/self` 刷新和普通用户 toast 保持不变。
 - Default `npm run build:check`、定向 Prettier、`git diff --check` 通过。Linux/amd64 产物 `/opt/newapi/releases/new-api-20260824-identity-banner-dashboard-84acb6385-linux-amd64`，SHA-256 `8e2259fad670d62792f530a422d3606c465d5c57cf9357c616172520b8cf0395`。
 - site-builder 备份 `/opt/newapi/backups/release-identity-banner-dashboard-84acb6385-20260824T141937Z/`，只重建 `new-api`；容器 healthy、重启 0、仅监听 3000。三公网域名 `/api/status` 均为 `20260824-identity-banner-dashboard-84acb6385`；Default Dashboard 相关 bundle 与本地产物哈希一致，线上已包含 `ENTERPRISE`/`student` 与身份欢迎文案。
+
+### 2026-08-24 — 身份欢迎改为进入网站弹窗并发布
+
+- 用户澄清产品语义：欢迎信息应沿用 New API 原有 toast 弹窗，而不是固定显示在数据看板。提交 `70b7ab5eb` 移除 Dashboard 固定横幅，把欢迎弹窗集中到现有 `AuthenticatedLayout`：登录进入或带有效 token 刷新进入时每次挂载只弹一次。
+- 普通用户沿用原绿色 `Welcome back!`；企业/教育用户使用原 `IdentityWelcomeBanner` 作为金色身份 toast，显示用户名、`ENTERPRISE`/`student` 及对应身份文案。密码、微信、Passkey、2FA 登录不再各自重复触发成功 toast，避免双弹窗；登录流程和后端接口未重写。
+- Default `npm run build:check`、定向 Prettier、`git diff --check` 通过。Linux/amd64 产物 `/opt/newapi/releases/new-api-20260824-identity-welcome-toast-70b7ab5eb-linux-amd64`，SHA-256 `fe23f91e5346fc9d8ff915ce2c5be050841e338d1e31f0899894d2e2ad3e0ae7`。
+- site-builder 备份 `/opt/newapi/backups/release-identity-welcome-toast-70b7ab5eb-20260824T143206Z/`，只重建 `new-api`；容器 healthy、重启 0、仅监听 3000。三公网域名版本均为 `20260824-identity-welcome-toast-70b7ab5eb`；线上 authenticated-layout bundle 与本地哈希一致，确认包含普通 toast 与身份自定义 toast 分支。
