@@ -83,3 +83,14 @@ func TestMainlandAllowlistSupportsIPv6AndRejectsUnauthorisedIdentity(t *testing.
 	require.Equal(t, 128, row.PrefixLength)
 	require.True(t, IsMainlandIPWhitelisted(ip))
 }
+
+func TestGetUserByUsernameOmitsPassword(t *testing.T) {
+	db := setupIdentityAccessTestDB(t)
+	user := User{Username: "public-identity-user", Password: "password-hash", Role: 1, Status: 1}
+	require.NoError(t, db.Create(&user).Error)
+
+	loaded, err := GetUserByUsername("public-identity-user")
+	require.NoError(t, err)
+	require.Equal(t, user.Id, loaded.Id)
+	require.Empty(t, loaded.Password)
+}

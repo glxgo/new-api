@@ -338,9 +338,10 @@ func SetApiRouter(router *gin.Engine) {
 			accessPolicyRoute.GET("/allowlists", controller.ListMainlandAllowlists)
 			accessPolicyRoute.DELETE("/allowlists/:id", controller.RevokeMainlandAllowlist)
 		}
-		// The CTA on the self-contained 451 page uses a same-origin session
-		// endpoint. GET is a static form; POST still requires a live session and
-		// trusted server-side IP resolution (username is only a confirmation).
+		// The CTA on the self-contained 451 page is intentionally public: a
+		// mainland-blocked user may be unable to establish a dashboard session.
+		// It still uses same-origin protection and trusted server-side IP
+		// resolution; the submitted username is resolved and identity-checked.
 		apiRouter.GET("/access-policy/whitelist", controller.GetMainlandWhitelistPage)
 		apiRouter.POST("/access-policy/whitelist", middleware.CriticalRateLimit(), middleware.SessionCookieOriginGuard(), controller.ApplyMainlandWhitelistFromSession)
 

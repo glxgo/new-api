@@ -82,8 +82,27 @@ const PageLayout = () => {
   const loadUser = () => {
     let user = localStorage.getItem('user');
     if (user) {
-      let data = JSON.parse(user);
-      userDispatch({ type: 'login', payload: data });
+      try {
+        let data = JSON.parse(user);
+        userDispatch({ type: 'login', payload: data });
+        return data;
+      } catch (error) {
+        localStorage.removeItem('user');
+      }
+    }
+    return null;
+  };
+
+  const refreshCurrentUser = async () => {
+    try {
+      const res = await API.get('/api/user/self');
+      if (res.data?.success && res.data?.data) {
+        userDispatch({ type: 'login', payload: res.data.data });
+        localStorage.setItem('user', JSON.stringify(res.data.data));
+      }
+    } catch (error) {
+      // The existing API interceptor handles an expired token. A failed
+      // refresh must not prevent public pages from rendering.
     }
   };
 
@@ -103,7 +122,12 @@ const PageLayout = () => {
   };
 
   useEffect(() => {
-    loadUser();
+    const cachedUser = loadUser();
+    if (cachedUser) {
+      // Rehydrate identity from the current token on every full page load so
+      // enterprise/education banners survive refresh and later admin grants.
+      refreshCurrentUser();
+    }
     loadStatus().catch(console.error);
     let systemName = getSystemName();
     if (systemName) {

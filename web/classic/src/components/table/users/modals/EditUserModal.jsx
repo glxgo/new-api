@@ -391,8 +391,8 @@ const EditUserModal = (props) => {
                           label={t('企业 / 教育身份')}
                           optionList={[
                             { label: t('无身份'), value: 'none' },
-                            { label: 'ENTERPRISE', value: 'enterprise' },
-                            { label: 'student', value: 'education' },
+                            { label: '企业用户', value: 'enterprise' },
+                            { label: '教育用户', value: 'education' },
                           ]}
                           disabled={userState?.user?.role < 100}
                           placeholder={t('请选择身份')}

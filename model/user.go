@@ -389,6 +389,22 @@ func GetUserById(id int, selectAll bool) (*User, error) {
 	return &user, err
 }
 
+// GetUserByUsername loads a user for public identity workflows without ever
+// exposing the password hash. The caller is responsible for checking status
+// and the operator-granted identity before performing any action.
+func GetUserByUsername(username string) (*User, error) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil, errors.New("username 为空！")
+	}
+	var user User
+	err := DB.Omit("password").Where("username = ?", username).First(&user).Error
+	if err == nil {
+		user.ApplyEffectiveCapacityLimits()
+	}
+	return &user, err
+}
+
 // GetDirectDownlineIds 返回用户直接邀请的下级 id 列表(layer 1)。
 func GetDirectDownlineIds(inviterId int) ([]int, error) {
 	var ids []int

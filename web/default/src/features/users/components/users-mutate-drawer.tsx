@@ -358,8 +358,8 @@ export function UsersMutateDrawer({
                       <Select
                         items={[
                           { value: 'none', label: t('No identity') },
-                          { value: 'enterprise', label: 'ENTERPRISE' },
-                          { value: 'education', label: 'student' },
+                          { value: 'enterprise', label: t('企业用户') },
+                          { value: 'education', label: t('教育用户') },
                         ]}
                         onValueChange={(value) =>
                           value !== null && field.onChange(value)
@@ -378,9 +378,11 @@ export function UsersMutateDrawer({
                               {t('No identity')}
                             </SelectItem>
                             <SelectItem value='enterprise'>
-                              ENTERPRISE
+                              {t('企业用户')}
                             </SelectItem>
-                            <SelectItem value='education'>student</SelectItem>
+                            <SelectItem value='education'>
+                              {t('教育用户')}
+                            </SelectItem>
                           </SelectGroup>
                         </SelectContent>
                       </Select>
