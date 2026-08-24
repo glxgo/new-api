@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { type QueryClient } from '@tanstack/react-query'
 import {
   createRootRouteWithContext,
@@ -25,6 +25,10 @@ import {
 } from '@tanstack/react-router'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
+import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
+import { useAuthStore, type AuthUser } from '@/stores/auth-store'
+import { getSelf } from '@/lib/api'
 import { ThemeCustomizationProvider } from '@/context/theme-customization-provider'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { Toaster } from '@/components/ui/sonner'
@@ -32,7 +36,45 @@ import { NavigationProgress } from '@/components/navigation-progress'
 import { saveAffiliateCode } from '@/features/auth/lib/storage'
 import { GeneralError } from '@/features/errors/general-error'
 import { NotFoundError } from '@/features/errors/not-found-error'
+import { normalizeIdentityType } from '@/features/identity/identity'
+import { IdentityWelcomeBanner } from '@/features/identity/identity-welcome-banner'
 import { getSetupStatus } from '@/features/setup/api'
+
+function WelcomeToastOnEntry() {
+  const { t } = useTranslation()
+  const cachedUser = useAuthStore((state) => state.auth.user)
+  const setUser = useAuthStore((state) => state.auth.setUser)
+  const welcomeShownRef = useRef(false)
+
+  useEffect(() => {
+    if (!cachedUser || welcomeShownRef.current) return
+
+    welcomeShownRef.current = true
+    let cancelled = false
+    void (async () => {
+      const self = await getSelf().catch(() => null)
+      if (cancelled || !self?.success || !self.data) return
+
+      const user = self.data as AuthUser
+      setUser(user)
+
+      if (normalizeIdentityType(user.identity_type) === 'none') {
+        toast.success(t('Welcome back!'))
+        return
+      }
+
+      toast.custom(() => (
+        <IdentityWelcomeBanner className='w-[min(92vw,32rem)]' />
+      ))
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [cachedUser, setUser, t])
+
+  return null
+}
 
 function RootComponent() {
   // Load system configuration (logo, system name, etc.) from backend
@@ -49,6 +91,7 @@ function RootComponent() {
     <ThemeCustomizationProvider>
       <NavigationProgress />
       <Outlet />
+      <WelcomeToastOnEntry />
       <Toaster closeButton duration={5000} position='top-center' richColors />
       {import.meta.env.MODE === 'development' && (
         <>
