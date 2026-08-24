@@ -118,7 +118,7 @@ func TryTieredSettle(relayInfo *relaycommon.RelayInfo, params billingexpr.TokenP
 // applyPriorityAfterTieredSettle applies the platform FAST surcharge to a
 // dynamic settlement result. A nil result means dynamic evaluation failed and
 // tieredQuota fell back to FinalPreConsumedQuota. When outbound preparation
-// already reserved the FAST amount, that fallback base is already doubled and
+// already reserved the FAST amount, that fallback base is already surcharged and
 // must not be multiplied a second time.
 func applyPriorityAfterTieredSettle(
 	relayInfo *relaycommon.RelayInfo,
@@ -130,7 +130,7 @@ func applyPriorityAfterTieredSettle(
 	if tieredApplied && tieredResult == nil && relayInfo.PriorityDoubled {
 		extraQuota := composedQuota - tieredQuota
 		if extraQuota > 0 {
-			return tieredQuota + extraQuota*2
+			return tieredQuota + billingexpr.QuotaRound(float64(extraQuota)*2.5)
 		}
 		return composedQuota
 	}

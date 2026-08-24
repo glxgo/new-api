@@ -24,7 +24,7 @@ import {
 } from './priority-billing.ts'
 
 describe('getPriorityBillingSummary', () => {
-  test('reports an applied 2x surcharge from persisted audit fields', () => {
+  test('reports an applied 2.5x surcharge from persisted audit fields', () => {
     assert.deepEqual(
       getPriorityBillingSummary({
         service_tier: 'priority',
@@ -32,7 +32,7 @@ describe('getPriorityBillingSummary', () => {
       }),
       {
         isFast: true,
-        multiplier: 2,
+        multiplier: 2.5,
       }
     )
   })
@@ -60,16 +60,16 @@ describe('getPriorityBillingSummary', () => {
     )
   })
 
-  test('derives the persisted pre-FAST price from the final 2x quota', () => {
-    assert.deepEqual(getPriorityBillingAmounts(2468, 2), {
-      originalQuota: 1234,
-      fastQuota: 2468,
+  test('derives the persisted pre-FAST price from the final 2.5x quota', () => {
+    assert.deepEqual(getPriorityBillingAmounts(3088, 2.5), {
+      originalQuota: 1235.2,
+      fastQuota: 3088,
     })
   })
 
-  test('does not invent an original price without a persisted 2x marker', () => {
+  test('does not invent an original price without a persisted 2.5x marker', () => {
     assert.equal(getPriorityBillingAmounts(2468, null), null)
-    assert.equal(getPriorityBillingAmounts(Number.NaN, 2), null)
-    assert.equal(getPriorityBillingAmounts(-1, 2), null)
+    assert.equal(getPriorityBillingAmounts(Number.NaN, 2.5), null)
+    assert.equal(getPriorityBillingAmounts(-1, 2.5), null)
   })
 })

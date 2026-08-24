@@ -216,8 +216,8 @@ type RelayInfo struct {
 	// ServiceTier captures the service tier (e.g. "priority") from the final
 	// outbound payload after disabled-field filtering and parameter overrides.
 	ServiceTier string
-	// PriorityDoubled records that the priority 2x surcharge was applied, so
-	// the consume log can surface it for transparency.
+	// PriorityDoubled is the backward-compatible audit flag indicating that
+	// the platform FAST surcharge was applied (currently 2.5x).
 	PriorityDoubled bool
 
 	Request dto.Request
@@ -733,8 +733,8 @@ func (info *RelayInfo) IsOpenAIChannel() bool {
 	return info != nil && info.ChannelType == constant.ChannelTypeOpenAI
 }
 
-// ApplyPrioritySurcharge doubles billed quota for an effective OpenAI
-// service_tier "priority" payload. A tiered expression owns this multiplier
+// ApplyPrioritySurcharge applies the 2.5x FAST surcharge for an effective
+// OpenAI service_tier "priority" payload. A tiered expression owns this multiplier
 // only when it explicitly reads the same effective service_tier value.
 func (info *RelayInfo) ApplyPrioritySurcharge(quota int) int {
 	if info != nil {
@@ -757,7 +757,7 @@ func (info *RelayInfo) ApplyPrioritySurcharge(quota int) int {
 		}
 	}
 	info.PriorityDoubled = true
-	return quota * 2
+	return billingexpr.QuotaRound(float64(quota) * 2.5)
 }
 
 func (info *RelayInfo) InitRequestConversionChain() {

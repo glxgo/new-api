@@ -20,7 +20,7 @@ import type { LogOtherData } from '../types'
 
 export interface PriorityBillingSummary {
   isFast: true
-  multiplier: 2 | null
+  multiplier: 2.5 | null
 }
 
 export interface PriorityBillingAmounts {
@@ -35,7 +35,7 @@ export function getPriorityBillingSummary(
 
   return {
     isFast: true,
-    multiplier: other.priority_doubled === true ? 2 : null,
+    multiplier: other.priority_doubled === true ? 2.5 : null,
   }
 }
 
@@ -43,7 +43,7 @@ export function getPriorityBillingAmounts(
   finalQuota: number,
   multiplier: PriorityBillingSummary['multiplier']
 ): PriorityBillingAmounts | null {
-  if (multiplier !== 2 || !Number.isFinite(finalQuota) || finalQuota < 0) {
+  if (multiplier !== 2.5 || !Number.isFinite(finalQuota) || finalQuota < 0) {
     return null
   }
 

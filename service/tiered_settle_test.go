@@ -411,8 +411,8 @@ func TestTryTieredSettlePriorityAppliesPlatformSurcharge(t *testing.T) {
 	if quota != 500 {
 		t.Fatalf("tiered quota = %d, want 500", quota)
 	}
-	if doubled := relayInfo.ApplyPrioritySurcharge(quota); doubled != 1000 {
-		t.Fatalf("priority quota = %d, want 1000", doubled)
+	if surcharged := relayInfo.ApplyPrioritySurcharge(quota); surcharged != 1250 {
+		t.Fatalf("priority quota = %d, want 1250", surcharged)
 	}
 	if !relayInfo.PriorityDoubled {
 		t.Fatal("expected priority surcharge audit flag")
@@ -449,8 +449,8 @@ func TestTryTieredSettleSecondTierAndPriorityStackToFourTimesBase(t *testing.T) 
 	if tieredQuota != firstTierBaseQuota*2 {
 		t.Fatalf("second-tier quota = %d, want %d", tieredQuota, firstTierBaseQuota*2)
 	}
-	if finalQuota := relayInfo.ApplyPrioritySurcharge(tieredQuota); finalQuota != firstTierBaseQuota*4 {
-		t.Fatalf("second-tier FAST quota = %d, want %d", finalQuota, firstTierBaseQuota*4)
+	if finalQuota := relayInfo.ApplyPrioritySurcharge(tieredQuota); finalQuota != billingexpr.QuotaRound(float64(firstTierBaseQuota*2)*2.5) {
+		t.Fatalf("second-tier FAST quota = %d, want %d", finalQuota, firstTierBaseQuota*5)
 	}
 	if !relayInfo.PriorityDoubled {
 		t.Fatal("expected priority surcharge audit flag")
@@ -472,8 +472,8 @@ func TestApplyPriorityAfterTieredSettleDoesNotDoubleFallbackTwice(t *testing.T) 
 	if !relayInfo.PriorityDoubled {
 		t.Fatal("fallback must preserve the priority audit flag")
 	}
-	if quota := applyPriorityAfterTieredSettle(relayInfo, 210, 200, true, nil); quota != 220 {
-		t.Fatalf("fallback with extra quota = %d, want 220", quota)
+	if quota := applyPriorityAfterTieredSettle(relayInfo, 210, 200, true, nil); quota != 225 {
+		t.Fatalf("fallback with extra quota = %d, want 225", quota)
 	}
 }
 

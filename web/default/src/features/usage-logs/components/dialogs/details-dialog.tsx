@@ -338,7 +338,7 @@ function BillingBreakdown(props: {
         value: formatLogQuota(priorityAmounts.originalQuota),
       })
       rows.push({
-        label: t('FAST Billed Price (2x)'),
+        label: t('FAST Billed Price (2.5x)'),
         value: formatLogQuota(priorityAmounts.fastQuota),
       })
     }

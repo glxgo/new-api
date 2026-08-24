@@ -170,7 +170,7 @@ export interface LogOtherData {
   // Upstream service tier requested by the user (e.g. "priority"). Set when
   // the OpenAI fast/priority surcharge is in play.
   service_tier?: string
-  // True when the priority 2x surcharge was applied to this bill.
+  // True when the platform FAST surcharge (currently 2.5x) was applied.
   priority_doubled?: boolean
   image?: boolean
   image_ratio?: number

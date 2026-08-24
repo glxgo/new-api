@@ -3,7 +3,7 @@ package common
 import "testing"
 
 func TestPlatformBaseQuotaKeepsPriorityAndRemovesCustomerMultipliers(t *testing.T) {
-	// Base 100, priority 2x, group 0.5x, ingress 0.95x => billed 95.
+	// Base 100, priority surcharge, group 0.5x, ingress 0.95x => billed 95.
 	got, exact := PlatformBaseQuota(95, 0.5, 100)
 	if !exact {
 		t.Fatal("expected exact calculation")

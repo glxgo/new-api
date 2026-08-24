@@ -11,23 +11,23 @@ func TestApplyPrioritySurcharge(t *testing.T) {
 	// tieredExpr == "" means non-tiered billing; a non-empty value simulates a
 	// tiered_expr model with that expression string.
 	tests := []struct {
-		name        string
-		channelType int
-		serviceTier string
-		tieredExpr  string
-		requestBody string
-		quota       int
-		wantQuota   int
-		wantDoubled bool
+		name           string
+		channelType    int
+		serviceTier    string
+		tieredExpr     string
+		requestBody    string
+		quota          int
+		wantQuota      int
+		wantSurcharged bool
 	}{
-		{"openai priority doubles quota", constant.ChannelTypeOpenAI, "priority", "", "", 100, 200, true},
-		{"openai priority large quota doubles", constant.ChannelTypeOpenAI, "priority", "", "", 12345, 24690, true},
+		{"openai priority applies 2.5x surcharge", constant.ChannelTypeOpenAI, "priority", "", "", 100, 250, true},
+		{"openai priority large quota applies 2.5x surcharge", constant.ChannelTypeOpenAI, "priority", "", "", 12345, 30863, true},
 		{"openai default tier unchanged", constant.ChannelTypeOpenAI, "default", "", "", 100, 100, false},
 		{"openai empty tier unchanged", constant.ChannelTypeOpenAI, "", "", "", 100, 100, false},
 		{"non-openai priority unchanged", constant.ChannelTypeAzure, "priority", "", "", 100, 100, false},
-		{"openai priority tiered expr without service tier doubles", constant.ChannelTypeOpenAI, "priority", `len <= 272000 ? tier("standard", p*2.5+c*15) : tier("long_context", p*5+c*30)`, `{"service_tier":"priority"}`, 100, 200, true},
+		{"openai priority tiered expr without service tier applies 2.5x", constant.ChannelTypeOpenAI, "priority", `len <= 272000 ? tier("standard", p*2.5+c*15) : tier("long_context", p*5+c*30)`, `{"service_tier":"priority"}`, 100, 250, true},
 		{"openai priority tiered expr that handles service tier is not stacked", constant.ChannelTypeOpenAI, "priority", `param("service_tier") == "priority" ? tier("fast", (p*5+c*25)*2) : tier("base", p*5+c*25)`, `{"service_tier":"priority"}`, 100, 100, false},
-		{"openai priority tiered expr with overridden service tier doubles", constant.ChannelTypeOpenAI, "priority", `param("service_tier") == "priority" ? tier("fast", (p*5+c*25)*2) : tier("base", p*5+c*25)`, `{"service_tier":"default"}`, 100, 200, true},
+		{"openai priority tiered expr with overridden service tier applies 2.5x", constant.ChannelTypeOpenAI, "priority", `param("service_tier") == "priority" ? tier("fast", (p*5+c*25)*2) : tier("base", p*5+c*25)`, `{"service_tier":"default"}`, 100, 250, true},
 		{"openai priority zero quota unchanged", constant.ChannelTypeOpenAI, "priority", "", "", 0, 0, false},
 		{"openai priority negative quota unchanged", constant.ChannelTypeOpenAI, "priority", "", "", -5, -5, false},
 	}
@@ -47,8 +47,8 @@ func TestApplyPrioritySurcharge(t *testing.T) {
 			if got != tt.wantQuota {
 				t.Errorf("quota = %d, want %d", got, tt.wantQuota)
 			}
-			if info.PriorityDoubled != tt.wantDoubled {
-				t.Errorf("PriorityDoubled = %v, want %v", info.PriorityDoubled, tt.wantDoubled)
+			if info.PriorityDoubled != tt.wantSurcharged {
+				t.Errorf("PriorityDoubled = %v, want %v", info.PriorityDoubled, tt.wantSurcharged)
 			}
 		})
 	}

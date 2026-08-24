@@ -101,7 +101,7 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	appendFinalRequestFormat(relayInfo, other)
 	appendBillingInfo(relayInfo, other)
 	// This public analytics baseline removes entrance and customer-group
-	// multipliers, but intentionally keeps model pricing and priority 2x.
+	// multipliers, but intentionally keeps model pricing and the FAST 2.5x surcharge.
 	if relayInfo.FinalConsumedQuota > 0 {
 		baseQuota, exact := common.PlatformBaseQuota(
 			int64(relayInfo.FinalConsumedQuota),
