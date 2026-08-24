@@ -1684,3 +1684,11 @@
 - 提交 `9885e78a9`：将欢迎触发上移到现有根布局 `WelcomeToastOnEntry`，首次加载时用当前会话调用 `/api/user/self` 刷新权威身份，再复用普通 toast 或企业/教育金色自定义 toast。登录、缓存会话恢复、受保护页面刷新和公共首页刷新统一覆盖，每次页面挂载只弹一次；认证布局不再重复触发。
 - Default `npm run build:check`、定向 Prettier、`git diff --check` 通过。Linux/amd64 产物 `/opt/newapi/releases/new-api-20260824-identity-entry-cache-welcome-9885e78a9-linux-amd64`，SHA-256 `f436f5f50bc81fa5b57c69cfa1e5d78d07af816ba5c5290cb29a7fa825d3701a`。
 - site-builder 备份 `/opt/newapi/backups/release-identity-entry-cache-welcome-9885e78a9-20260824T144029Z/`，只重建 `new-api`；container healthy、重启 0。三现役公网域名 `/api/status` 均为 `20260824-identity-entry-cache-welcome-9885e78a9`，线上 root bundle SHA-256 与本地一致并包含 `getSelf`、普通欢迎和身份自定义 toast 分支。
+
+### 2026-08-25 — 451 页面尺寸/官方链接与充值自动企业身份已发布
+
+- 提交 `e48e14676`：大陆 Web 451 页面改为紧凑卡片（最大宽度 800px、按视口自适应，接近用户给出的参考图），法规标题改为带下划线/焦点样式的真实 CAC 官方超链接；CSP 保持自包含样式，不引入外部资源。
+- 同提交新增充值自动企业身份：累计合格充值严格大于 ¥1000（`recharge_total_cents > 100000`，恰好 ¥1000 不触发）；保留人工企业/教育身份，系统身份的 `IdentityVerifiedBy=0`；启动迁移会为历史超阈值用户补齐身份且幂等。数据来源沿用既有合格充值台账（充值、订阅、虚拟会员、管理员充值）。
+- 首次上线检查发现迁移在 Redis 初始化前清理缓存会空指针重启；提交 `e297ade40` 在用户缓存失效函数增加 `RDB == nil` 防护，并重新构建发布。两次均推送 `origin/main`，当前工作树 clean。
+- 最终产物 `/opt/newapi/releases/new-api-20260825-451-enterprise-e297ade40-linux-amd64`，SHA-256 `955cacfe6b69542b0d7db57a7247d4c57600d258423a827d10d4ff4b61c2e540`；备份 `/opt/newapi/backups/release-20260825-451-enterprise-e297ade40-20260824T161915Z/`，正式 compose 已切换到该产物并通过 `docker compose config`。
+- canonical `site-builder`（152.53.209.90）只重建 `new-api`，MySQL/Redis 未重建，`overseas2` 未触碰。容器当前 `healthy`、重启 0，容器内二进制哈希与本地一致；回环及 `token.stellaisle.com`、`api.stellaisle.com`、`direct-token.stellaisle.com` `/api/status` 均为 `20260825-451-enterprise-e297ade40`。公网普通路径返回 200；451 页面新尺寸、CAC 链接和迁移标记已在正式二进制字符串中核验。
