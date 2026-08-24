@@ -1677,3 +1677,10 @@
 - 普通用户沿用原绿色 `Welcome back!`；企业/教育用户使用原 `IdentityWelcomeBanner` 作为金色身份 toast，显示用户名、`ENTERPRISE`/`student` 及对应身份文案。密码、微信、Passkey、2FA 登录不再各自重复触发成功 toast，避免双弹窗；登录流程和后端接口未重写。
 - Default `npm run build:check`、定向 Prettier、`git diff --check` 通过。Linux/amd64 产物 `/opt/newapi/releases/new-api-20260824-identity-welcome-toast-70b7ab5eb-linux-amd64`，SHA-256 `fe23f91e5346fc9d8ff915ce2c5be050841e338d1e31f0899894d2e2ad3e0ae7`。
 - site-builder 备份 `/opt/newapi/backups/release-identity-welcome-toast-70b7ab5eb-20260824T143206Z/`，只重建 `new-api`；容器 healthy、重启 0、仅监听 3000。三公网域名版本均为 `20260824-identity-welcome-toast-70b7ab5eb`；线上 authenticated-layout bundle 与本地哈希一致，确认包含普通 toast 与身份自定义 toast 分支。
+
+### 2026-08-24 — 缓存会话/刷新进入时欢迎弹窗补齐并发布
+
+- 根因确认：之前欢迎触发点位于 `AuthenticatedLayout`，公共首页 `/` 使用 `Home`/`PublicLayout` 时不会经过该布局；因此浏览器从本地缓存恢复用户或刷新首页时可能没有欢迎弹窗。
+- 提交 `9885e78a9`：将欢迎触发上移到现有根布局 `WelcomeToastOnEntry`，首次加载时用当前会话调用 `/api/user/self` 刷新权威身份，再复用普通 toast 或企业/教育金色自定义 toast。登录、缓存会话恢复、受保护页面刷新和公共首页刷新统一覆盖，每次页面挂载只弹一次；认证布局不再重复触发。
+- Default `npm run build:check`、定向 Prettier、`git diff --check` 通过。Linux/amd64 产物 `/opt/newapi/releases/new-api-20260824-identity-entry-cache-welcome-9885e78a9-linux-amd64`，SHA-256 `f436f5f50bc81fa5b57c69cfa1e5d78d07af816ba5c5290cb29a7fa825d3701a`。
+- site-builder 备份 `/opt/newapi/backups/release-identity-entry-cache-welcome-9885e78a9-20260824T144029Z/`，只重建 `new-api`；container healthy、重启 0。三现役公网域名 `/api/status` 均为 `20260824-identity-entry-cache-welcome-9885e78a9`，线上 root bundle SHA-256 与本地一致并包含 `getSelf`、普通欢迎和身份自定义 toast 分支。
