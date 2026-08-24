@@ -1692,3 +1692,9 @@
 - 首次上线检查发现迁移在 Redis 初始化前清理缓存会空指针重启；提交 `e297ade40` 在用户缓存失效函数增加 `RDB == nil` 防护，并重新构建发布。两次均推送 `origin/main`，当前工作树 clean。
 - 最终产物 `/opt/newapi/releases/new-api-20260825-451-enterprise-e297ade40-linux-amd64`，SHA-256 `955cacfe6b69542b0d7db57a7247d4c57600d258423a827d10d4ff4b61c2e540`；备份 `/opt/newapi/backups/release-20260825-451-enterprise-e297ade40-20260824T161915Z/`，正式 compose 已切换到该产物并通过 `docker compose config`。
 - canonical `site-builder`（152.53.209.90）只重建 `new-api`，MySQL/Redis 未重建，`overseas2` 未触碰。容器当前 `healthy`、重启 0，容器内二进制哈希与本地一致；回环及 `token.stellaisle.com`、`api.stellaisle.com`、`direct-token.stellaisle.com` `/api/status` 均为 `20260825-451-enterprise-e297ade40`。公网普通路径返回 200；451 页面新尺寸、CAC 链接和迁移标记已在正式二进制字符串中核验。
+
+### 2026-08-25 — 自动企业身份迁移缓存时序最终修复
+
+- 提交 `cebc977b8` 将历史企业身份迁移放到 Redis 初始化之后执行；这样已有用户缓存会立即失效，且保留 `RDB == nil` 防护。模型定向测试、451 定向测试、全仓 compile-only、Default 前端构建均通过，已推送 `origin/main`。
+- 最终生产产物 `/opt/newapi/releases/new-api-20260825-451-enterprise-cebc977b8-linux-amd64`，SHA-256 `5d6b76dca995b2ecefb9b277bcd097e8a2b1364a2c078317a1000afc97db3c8d`；备份 `/opt/newapi/backups/release-20260825-451-enterprise-cebc977b8-20260824T162350Z/`。该版本已替换中间版本 `e297ade40`，正式 compose 通过配置校验。
+- site-builder 当前容器 `healthy`、重启 0，启动日志无 panic，容器内二进制哈希与本地一致；三现役公网域名 `/api/status` 均返回 `20260825-451-enterprise-cebc977b8`。只重建 `new-api`，MySQL/Redis 未重建，overseas2 未触碰。
