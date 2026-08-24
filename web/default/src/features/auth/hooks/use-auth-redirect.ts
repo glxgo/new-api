@@ -56,7 +56,8 @@ export function useAuthRedirect() {
   const handleLoginSuccess = async (
     userData?: { id?: number } | null,
     redirectTo?: string
-  ) => {
+  ): Promise<User | null> => {
+    let authenticatedUser: User | null = null
     // Save user ID if available
     if (userData?.id) {
       saveUserId(userData.id)
@@ -67,6 +68,7 @@ export function useAuthRedirect() {
       const self = await getSelf()
       if (self?.success && self.data) {
         const user = self.data as User
+        authenticatedUser = user
         auth.setUser(user)
 
         // Update user ID if not already set
@@ -88,6 +90,7 @@ export function useAuthRedirect() {
     // Navigate to target page
     const targetPath = redirectTo || '/dashboard'
     navigate({ to: targetPath, replace: true })
+    return authenticatedUser
   }
 
   /**

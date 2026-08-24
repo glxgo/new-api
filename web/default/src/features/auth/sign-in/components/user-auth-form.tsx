@@ -53,6 +53,7 @@ import { useAuthRedirect } from '@/features/auth/hooks/use-auth-redirect'
 import { useTurnstile } from '@/features/auth/hooks/use-turnstile'
 import { beginPasskeyLogin, finishPasskeyLogin } from '@/features/auth/passkey'
 import type { AuthFormProps } from '@/features/auth/types'
+import { normalizeIdentityType } from '@/features/identity/identity'
 
 export function UserAuthForm({
   className,
@@ -69,6 +70,11 @@ export function UserAuthForm({
   const [isWeChatSubmitting, setIsWeChatSubmitting] = useState(false)
   const legalConsentErrorMessage = t('Please agree to the legal terms first')
   const loginFailedMessage = t('Login failed')
+
+  const showGenericLoginToast = (user?: { identity_type?: string } | null) => {
+    if (normalizeIdentityType(user?.identity_type) !== 'none') return
+    toast.success(t('Welcome back!'))
+  }
 
   const { status } = useStatus()
   const passkeyLoginEnabled = Boolean(
@@ -164,8 +170,11 @@ export function UserAuthForm({
           return
         }
 
-        await handleLoginSuccess(res.data as { id?: number } | null, redirectTo)
-        toast.success(t('Welcome back!'))
+        const user = await handleLoginSuccess(
+          res.data as { id?: number } | null,
+          redirectTo
+        )
+        showGenericLoginToast(user)
       }
     } catch (_error) {
       // Errors are handled by global interceptor
@@ -201,8 +210,13 @@ export function UserAuthForm({
     try {
       const res = await wechatLoginByCode(wechatCode)
       if (res?.success) {
-        await handleLoginSuccess(res.data as { id?: number } | null, redirectTo)
-        toast.success(t('Signed in via WeChat'))
+        const user = await handleLoginSuccess(
+          res.data as { id?: number } | null,
+          redirectTo
+        )
+        if (normalizeIdentityType(user?.identity_type) === 'none') {
+          toast.success(t('Signed in via WeChat'))
+        }
         handleWeChatDialogChange(false)
       } else {
         toast.error(res?.message || loginFailedMessage)
@@ -264,11 +278,13 @@ export function UserAuthForm({
         throw new Error(t('Missing user data from Passkey login response'))
       }
 
-      await handleLoginSuccess(
+      const user = await handleLoginSuccess(
         finish.data as { id?: number } | null,
         redirectTo
       )
-      toast.success(t('Signed in with Passkey'))
+      if (normalizeIdentityType(user?.identity_type) === 'none') {
+        toast.success(t('Signed in with Passkey'))
+      }
     } catch (error: unknown) {
       if (error instanceof DOMException && error.name === 'NotAllowedError') {
         toast.info(t('Passkey login was cancelled or timed out'))

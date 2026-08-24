@@ -56,6 +56,7 @@ import {
   formatBackupCode,
   cleanBackupCode,
 } from '@/features/auth/lib/validation'
+import { normalizeIdentityType } from '@/features/identity/identity'
 import type { User } from '@/features/users/types'
 
 type OtpFormProps = React.HTMLAttributes<HTMLFormElement>
@@ -114,7 +115,9 @@ export function OtpForm({ className, ...props }: OtpFormProps) {
         saveUserId(userData.id)
       }
 
-      toast.success(t('Signed in'))
+      if (normalizeIdentityType(userData.identity_type) === 'none') {
+        toast.success(t('Signed in'))
+      }
       redirectToLogin() // This will redirect to dashboard via the redirect logic
     } catch (error) {
       // eslint-disable-next-line no-console
