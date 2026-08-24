@@ -311,6 +311,9 @@ func InitResources() error {
 	if err = model.MigrateRechargeCapacityCreditsV3(); err != nil {
 		return err
 	}
+	if err = model.MigrateRechargeEnterpriseIdentitiesV1(); err != nil {
+		return err
+	}
 	if err = model.MigrateRechargeCommissionPolicyV1(); err != nil {
 		return err
 	}

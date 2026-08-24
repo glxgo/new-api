@@ -17,7 +17,7 @@ const mainlandBlockedPage = `<!doctype html>
   body {
     margin: 0;
     min-height: 100vh;
-    padding: 36px 24px;
+    padding: 24px 16px;
     display: grid;
     place-items: center;
     background: #0b0c10;
@@ -26,10 +26,10 @@ const mainlandBlockedPage = `<!doctype html>
   }
   .card {
     position: relative;
-    width: min(1320px, 100%);
-    min-height: min(860px, calc(100vh - 72px));
+    width: min(800px, 100%);
+    min-height: min(780px, calc(100vh - 48px));
     overflow: hidden;
-    padding: 104px 9.2% 74px;
+    padding: 58px 58px 48px;
     border: 1px solid #2c3342;
     border-radius: 30px;
     background: linear-gradient(145deg, #151821 0%, #10131b 58%, #0e1016 100%);
@@ -48,7 +48,7 @@ const mainlandBlockedPage = `<!doctype html>
     top: 26px;
     right: 4.2%;
     color: rgba(255,255,255,.035);
-    font-size: clamp(130px, 20vw, 260px);
+    font-size: clamp(112px, 18vw, 210px);
     font-weight: 800;
     line-height: 1;
     letter-spacing: -.08em;
@@ -60,18 +60,18 @@ const mainlandBlockedPage = `<!doctype html>
     display: inline-flex;
     align-items: center;
     gap: 12px;
-    padding: 12px 30px;
+    padding: 9px 20px;
     border: 2px solid rgba(199, 154, 67, .58);
     border-radius: 999px;
     color: #d6ad60;
-    font-size: clamp(16px, 1.7vw, 25px);
+    font-size: clamp(14px, 1.35vw, 18px);
     letter-spacing: .08em;
   }
-  .tag svg { width: 25px; height: 25px; flex: none; }
+  .tag svg { width: 21px; height: 21px; flex: none; }
   h1 {
     position: relative;
-    margin: 58px 0 32px;
-    font-size: clamp(30px, 3.35vw, 53px);
+    margin: 42px 0 24px;
+    font-size: clamp(28px, 2.65vw, 38px);
     line-height: 1.2;
     font-weight: 750;
     letter-spacing: .01em;
@@ -81,55 +81,58 @@ const mainlandBlockedPage = `<!doctype html>
     display: block;
     width: 88px;
     height: 5px;
-    margin-top: 34px;
+    margin-top: 24px;
     border-radius: 5px;
     background: linear-gradient(90deg, #d7b263, rgba(215,178,99,0));
   }
   .zh {
-    max-width: 1130px;
-    margin: 0 0 42px;
+    max-width: 680px;
+    margin: 0 0 32px;
     color: #aeb4c4;
-    font-size: clamp(17px, 1.6vw, 25px);
-    line-height: 2.15;
+    font-size: clamp(15px, 1.25vw, 18px);
+    line-height: 1.9;
     letter-spacing: .01em;
   }
   .legal {
     display: flex;
-    gap: 26px;
+    gap: 18px;
     align-items: flex-start;
-    max-width: 1130px;
-    padding: 34px 42px;
+    max-width: 680px;
+    padding: 22px 24px;
     border: 1px solid #303748;
     border-left: 7px solid #d7b263;
     border-radius: 18px;
     background: rgba(255,255,255,.025);
   }
-  .legal svg { width: 30px; height: 30px; flex: none; margin-top: 4px; color: #b99a5c; }
-  .legal-title { margin-bottom: 12px; color: #939bad; font-size: clamp(16px, 1.35vw, 22px); letter-spacing: .08em; }
-  .legal p { margin: 0; color: #d6ad60; font-size: clamp(18px, 1.65vw, 27px); line-height: 1.65; text-decoration: underline; text-decoration-color: rgba(214,173,96,.7); text-underline-offset: 7px; }
-  .apology { margin: 60px 0 56px; color: #aeb4c4; font-size: clamp(18px, 1.55vw, 25px); }
+  .legal svg { width: 24px; height: 24px; flex: none; margin-top: 2px; color: #b99a5c; }
+  .legal-title { margin-bottom: 8px; color: #939bad; font-size: clamp(14px, 1.1vw, 16px); letter-spacing: .08em; }
+  .legal p { margin: 0; color: #d6ad60; font-size: clamp(15px, 1.25vw, 18px); line-height: 1.65; }
+  .legal-link { color: inherit; text-decoration: underline; text-decoration-color: rgba(214,173,96,.82); text-underline-offset: 5px; transition: color .18s ease, text-decoration-color .18s ease; }
+  .legal-link:hover, .legal-link:focus-visible { color: #f0c86f; text-decoration-color: #f0c86f; }
+  .legal-link:focus-visible { outline: 2px solid rgba(240, 200, 111, .7); outline-offset: 4px; border-radius: 2px; }
+  .apology { margin: 40px 0 36px; color: #aeb4c4; font-size: clamp(15px, 1.25vw, 18px); }
   .identity-cta {
     display: inline-flex;
     align-items: center;
     gap: 10px;
-    margin: 0 0 54px;
-    padding: 14px 22px;
+    margin: 0 0 36px;
+    padding: 12px 18px;
     border: 1px solid rgba(236, 190, 92, .9);
     border-radius: 12px;
     background: linear-gradient(135deg, #d7a94f, #a97922);
     color: #17130b;
-    font-size: clamp(16px, 1.45vw, 23px);
+    font-size: clamp(14px, 1.15vw, 16px);
     font-weight: 750;
     text-decoration: none;
     box-shadow: 0 10px 24px rgba(0, 0, 0, .25);
   }
   .identity-cta:hover, .identity-cta:focus-visible { background: #f0c86f; outline: 3px solid rgba(240, 200, 111, .35); outline-offset: 3px; }
-  .divider { height: 1px; margin-bottom: 48px; background: #303748; }
-  .en { max-width: 1120px; margin: 0 0 54px; color: #777f92; font-size: clamp(16px, 1.45vw, 23px); line-height: 2.05; }
-  .footer { display: flex; justify-content: space-between; gap: 24px; color: #626b7f; font-size: clamp(13px, 1.15vw, 18px); letter-spacing: .17em; }
+  .divider { height: 1px; margin-bottom: 28px; background: #303748; }
+  .en { max-width: 680px; margin: 0 0 32px; color: #777f92; font-size: clamp(13px, 1.1vw, 16px); line-height: 1.8; }
+  .footer { display: flex; justify-content: space-between; gap: 18px; color: #626b7f; font-size: clamp(11px, .9vw, 13px); letter-spacing: .12em; }
   @media (max-width: 700px) {
     body { padding: 16px; }
-    .card { min-height: calc(100vh - 32px); padding: 56px 24px 38px; border-radius: 20px; }
+    .card { min-height: calc(100vh - 32px); padding: 42px 24px 34px; border-radius: 20px; }
     .watermark { top: 24px; right: 2%; font-size: 130px; }
     .tag { padding: 9px 17px; font-size: 14px; }
     .tag svg { width: 20px; height: 20px; }
@@ -154,7 +157,7 @@ const mainlandBlockedPage = `<!doctype html>
     <p class="zh">本站点遵循中华人民共和国《生成式人工智能服务管理暂行办法》及相关法律法规的要求，不面向中国大陆境内公众提供生成式人工智能服务，并已对来自中国大陆地区的网络访问予以限制。</p>
     <section class="legal" aria-label="法规依据">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6 3.5h8l4 4V20.5H6z"/><path d="M14 3.5v4h4M9 12h6M9 15.5h6"/></svg>
-      <div><div class="legal-title">法规依据 · 官方发布</div><p>《生成式人工智能服务管理暂行办法》（国家互联网信息办公室等七部门联合发布）</p></div>
+      <div><div class="legal-title">法规依据 · 官方发布</div><p><a class="legal-link" href="https://www.cac.gov.cn/2023-07/13/c_1690898327029107.htm" target="_blank" rel="noopener noreferrer">《生成式人工智能服务管理暂行办法》（国家互联网信息办公室等七部门联合发布）</a></p></div>
     </section>
     <p class="apology">由此给您带来的不便，敬请谅解。</p>
     <a class="identity-cta" href="/api/access-policy/whitelist" aria-label="企业用户或教育用户申请当前 IP 白名单">企业用户/教育用户？点击此处加入 IP 白名单后，即可访问</a>

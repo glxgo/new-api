@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // IdentityType is the small, mutually-exclusive set of operator-assigned
@@ -19,6 +20,12 @@ const (
 	IdentityTypeEnterprise = "enterprise"
 	IdentityTypeEducation  = "education"
 )
+
+// EnterpriseIdentityRechargeThresholdCents is the cumulative CNY recharge
+// amount required before the system grants the enterprise identity.  The
+// comparison is intentionally strict: the user must recharge more than
+// ¥1,000, not exactly ¥1,000.
+const EnterpriseIdentityRechargeThresholdCents int64 = 100_000
 
 const (
 	MainlandIPAllowlistStatusActive  = "active"
@@ -225,6 +232,75 @@ func SetUserIdentity(userID, operatorID int, identityType string) (string, strin
 	}
 	_ = InvalidateUserCache(userID)
 	return previous, canonical, nil
+}
+
+// EnsureEnterpriseIdentityForRechargeTx grants the enterprise identity to a
+// user whose qualified cumulative recharge has exceeded ¥1,000.  It is called
+// inside the same transaction that records the recharge credit, so a payment
+// cannot be committed without its corresponding identity decision. Existing
+// operator-granted education or enterprise identities are preserved.
+func EnsureEnterpriseIdentityForRechargeTx(tx *gorm.DB, userID int) (bool, error) {
+	if tx == nil || userID <= 0 {
+		return false, fmt.Errorf("invalid recharge identity transaction")
+	}
+	var user User
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id", "recharge_total_cents").Where("id = ?", userID).First(&user).Error; err != nil {
+		return false, err
+	}
+	if user.RechargeTotalCents <= EnterpriseIdentityRechargeThresholdCents {
+		return false, nil
+	}
+
+	var identity UserIdentity
+	result := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", userID).First(&identity)
+	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		if err := tx.Create(&UserIdentity{
+			UserID:             userID,
+			IdentityType:       IdentityTypeEnterprise,
+			IdentityVerifiedAt: time.Now().Unix(),
+			IdentityVerifiedBy: 0, // 0 identifies the system's recharge rule.
+		}).Error; err != nil {
+			return false, err
+		}
+		if err := tx.Model(&MainlandIPAllowlist{}).
+			Where("user_id = ? AND status = ?", userID, MainlandIPAllowlistStatusActive).
+			Updates(map[string]interface{}{
+				"status":        MainlandIPAllowlistStatusRevoked,
+				"revoked_at":    time.Now().Unix(),
+				"revoke_reason": "identity_changed",
+			}).Error; err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	if result.Error != nil {
+		return false, result.Error
+	}
+	previous, err := normalizeIdentityType(identity.IdentityType)
+	if err != nil {
+		return false, err
+	}
+	if previous != IdentityTypeNone {
+		return false, nil
+	}
+	if err := tx.Model(&identity).Updates(map[string]interface{}{
+		"identity_type":        IdentityTypeEnterprise,
+		"identity_verified_at": time.Now().Unix(),
+		"identity_verified_by": 0, // 0 identifies the system's recharge rule.
+	}).Error; err != nil {
+		return false, err
+	}
+	if err := tx.Model(&MainlandIPAllowlist{}).
+		Where("user_id = ? AND status = ?", userID, MainlandIPAllowlistStatusActive).
+		Updates(map[string]interface{}{
+			"status":        MainlandIPAllowlistStatusRevoked,
+			"revoked_at":    time.Now().Unix(),
+			"revoke_reason": "identity_changed",
+		}).Error; err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func normalizeAllowlistIP(ip net.IP) (value, family string, prefixLength int, ok bool) {

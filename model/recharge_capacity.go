@@ -16,6 +16,7 @@ import (
 )
 
 const rechargeCapacityMigrationKey = "RechargeCapacityCreditsMigratedV3"
+const rechargeEnterpriseIdentityMigrationKey = "RechargeEnterpriseIdentityMigratedV1"
 
 type RechargeCapacityTier struct {
 	MinimumCents     int64 `json:"minimum_cents"`
@@ -207,6 +208,9 @@ func recordRechargeCreditTx(tx *gorm.DB, userId int, amountCents, commissionBase
 			return false, update.Error
 		}
 		if update.RowsAffected != 0 {
+			if _, err := EnsureEnterpriseIdentityForRechargeTx(tx, userId); err != nil {
+				return false, err
+			}
 			goto settle
 		}
 		var user User
@@ -232,6 +236,9 @@ func recordRechargeCreditTx(tx *gorm.DB, userId int, amountCents, commissionBase
 				return false, err
 			}
 		}
+		if _, err := EnsureEnterpriseIdentityForRechargeTx(tx, userId); err != nil {
+			return false, err
+		}
 	} else {
 		var userCount int64
 		if err := tx.Model(&User{}).Where("id = ?", userId).Count(&userCount).Error; err != nil {
@@ -249,6 +256,41 @@ settle:
 		}
 	}
 	return true, nil
+}
+
+// MigrateRechargeEnterpriseIdentitiesV1 grants the new automatic enterprise
+// identity to existing users whose cumulative qualified recharge already
+// exceeds the threshold. The operation is idempotent and never replaces an
+// operator-granted education or enterprise identity.
+func MigrateRechargeEnterpriseIdentitiesV1() error {
+	if !common.IsMasterNode {
+		return nil
+	}
+	var option Option
+	if err := DB.Where(optionKeyWhereClause(), rechargeEnterpriseIdentityMigrationKey).First(&option).Error; err == nil && option.Value == "true" {
+		return nil
+	}
+	var userIDs []int
+	if err := DB.Model(&User{}).
+		Where("recharge_total_cents > ?", EnterpriseIdentityRechargeThresholdCents).
+		Pluck("id", &userIDs).Error; err != nil {
+		return err
+	}
+	for _, userID := range userIDs {
+		if err := DB.Transaction(func(tx *gorm.DB) error {
+			_, err := EnsureEnterpriseIdentityForRechargeTx(tx, userID)
+			return err
+		}); err != nil {
+			return err
+		}
+		if err := InvalidateUserCache(userID); err != nil {
+			common.SysLog(fmt.Sprintf("failed to invalidate automatic enterprise identity cache for user %d: %s", userID, err.Error()))
+		}
+	}
+	return DB.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "key"}},
+		DoUpdates: clause.AssignmentColumns([]string{"value"}),
+	}).Create(&Option{Key: rechargeEnterpriseIdentityMigrationKey, Value: "true"}).Error
 }
 
 func RecordTopUpRechargeCreditTx(tx *gorm.DB, topUp *TopUp) (bool, error) {

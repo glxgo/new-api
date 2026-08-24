@@ -116,6 +116,10 @@ func TestMainlandWebAccessBlock(t *testing.T) {
 		if !strings.Contains(body, "451") || !strings.Contains(body, "生成式人工智能服务管理暂行办法") {
 			t.Fatalf("451 page copy missing")
 		}
+		if !strings.Contains(body, "width: min(800px, 100%)") ||
+			!strings.Contains(body, `href="https://www.cac.gov.cn/2023-07/13/c_1690898327029107.htm"`) {
+			t.Fatalf("451 page size or official legal link missing")
+		}
 		if geoBlockTotal.Load() != 1 {
 			t.Fatalf("expected block counter 1, got %d", geoBlockTotal.Load())
 		}
