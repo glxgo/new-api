@@ -1663,3 +1663,10 @@
 - 提交 `446e0308e`：登录成功后复用 `/api/user/self` 返回的身份字段；企业/教育用户不再显示通用绿色登录 toast，继续由 dashboard 的金色身份欢迎条展示；普通用户、微信、Passkey、2FA 仍保留原成功提示。
 - 本地 Default `npm run build:check`、定向 Prettier、`git diff --check` 通过；已推送 `origin/main`。Linux/amd64 产物 `/opt/newapi/releases/new-api-20260824-identity-toast-fix-446e0308e-linux-amd64`，SHA-256 `986745d55491c3fad8747d0326f0d8c79c87f1c4e6987f9b5dedfb361cecc0b5`。
 - canonical `site-builder` 已备份 `/opt/newapi/backups/release-identity-toast-fix-446e0308e-20260824T050007Z/` 并只重建 `new-api`；正式容器 healthy、重启 0、仅监听 `127.0.0.1:3000`。三现役公网域名版本均为 `20260824-identity-toast-fix-446e0308e`；线上登录异步 chunk 与本地产物哈希一致，并含按 `identity_type` 抑制 toast 的逻辑。若用户仍看到绿色提示，需检查该账号 `/api/user/self` 是否实际返回 `enterprise`/`education`，否则它会按普通用户正确保留绿色提示。
+
+### 2026-08-24 — 身份欢迎条实际 Dashboard 挂载修复并发布
+
+- 进一步复现发现：`IdentityWelcomeBanner` 原先只挂在旧的 `OverviewDashboard`，而当前 Default 主题实际路由使用新的 `Dashboard` 组件，旧组件未被引用。因此身份数据和登录回调均正常，但页面没有任何身份欢迎标识。
+- 提交 `84acb6385`：在当前实际 `Dashboard` 页面复用原有 `IdentityWelcomeBanner`，没有新建或覆盖登录流程；原有登录成功回调、`/api/user/self` 刷新和普通用户 toast 保持不变。
+- Default `npm run build:check`、定向 Prettier、`git diff --check` 通过。Linux/amd64 产物 `/opt/newapi/releases/new-api-20260824-identity-banner-dashboard-84acb6385-linux-amd64`，SHA-256 `8e2259fad670d62792f530a422d3606c465d5c57cf9357c616172520b8cf0395`。
+- site-builder 备份 `/opt/newapi/backups/release-identity-banner-dashboard-84acb6385-20260824T141937Z/`，只重建 `new-api`；容器 healthy、重启 0、仅监听 3000。三公网域名 `/api/status` 均为 `20260824-identity-banner-dashboard-84acb6385`；Default Dashboard 相关 bundle 与本地产物哈希一致，线上已包含 `ENTERPRISE`/`student` 与身份欢迎文案。
