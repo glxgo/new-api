@@ -25,7 +25,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SectionPageLayout } from '@/components/layout'
 import { FadeIn } from '@/components/page-transition'
-import { IdentityWelcomeBanner } from '@/features/identity/identity-welcome-banner'
 import { MySubscriptionsDetail } from '@/features/wallet/components/my-subscriptions-detail'
 import { MyVirtualMembershipsDetail } from '@/features/wallet/components/my-virtual-memberships-detail'
 import { ModelsChartPreferences } from './components/models/models-chart-preferences'
@@ -224,7 +223,6 @@ export function Dashboard() {
       <SectionPageLayout.Title>{t(meta.titleKey)}</SectionPageLayout.Title>
       <SectionPageLayout.Content>
         <div className='space-y-3 sm:space-y-4'>
-          <IdentityWelcomeBanner />
           <div className='flex flex-wrap items-center justify-between gap-1.5 sm:gap-2'>
             {showSectionTabs ? (
               <Tabs value={activeSection} onValueChange={handleSectionChange}>

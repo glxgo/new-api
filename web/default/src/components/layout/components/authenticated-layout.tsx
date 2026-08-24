@@ -16,6 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
+import { useAuthStore } from '@/stores/auth-store'
 import { getCookie } from '@/lib/cookies'
 import { cn } from '@/lib/utils'
 import { LayoutProvider } from '@/context/layout-provider'
@@ -23,6 +27,8 @@ import { SearchProvider } from '@/context/search-provider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { AnimatedOutlet } from '@/components/page-transition'
 import { SkipToMain } from '@/components/skip-to-main'
+import { normalizeIdentityType } from '@/features/identity/identity'
+import { IdentityWelcomeBanner } from '@/features/identity/identity-welcome-banner'
 import { AppHeader } from './app-header'
 import { AppSidebar } from './app-sidebar'
 
@@ -31,7 +37,24 @@ type AuthenticatedLayoutProps = {
 }
 
 export function AuthenticatedLayout(props: AuthenticatedLayoutProps) {
+  const { t } = useTranslation()
+  const user = useAuthStore((state) => state.auth.user)
+  const welcomeShownRef = useRef(false)
   const defaultOpen = getCookie('sidebar_state') !== 'false'
+
+  useEffect(() => {
+    if (!user || welcomeShownRef.current) return
+
+    welcomeShownRef.current = true
+    if (normalizeIdentityType(user.identity_type) === 'none') {
+      toast.success(t('Welcome back!'))
+      return
+    }
+
+    toast.custom(() => (
+      <IdentityWelcomeBanner className='w-[min(92vw,32rem)]' />
+    ))
+  }, [t, user])
 
   return (
     <LayoutProvider>
