@@ -86,7 +86,10 @@ func getUserCacheKey(userId int) string {
 
 // invalidateUserCache clears user cache
 func invalidateUserCache(userId int) error {
-	if !common.RedisEnabled {
+	// RedisEnabled defaults to true before InitRedisClient runs. During
+	// startup migrations the client may therefore still be nil; treat that
+	// state like a disabled cache instead of dereferencing a nil client.
+	if !common.RedisEnabled || common.RDB == nil {
 		return nil
 	}
 	return common.RedisDelKey(getUserCacheKey(userId))
