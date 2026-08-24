@@ -1649,3 +1649,10 @@
 - 提交 `644173f8e`：管理员重置在会员行锁内将选中实例的 pending 记录标记 `refunded` 后清空周期额度；`PostConsumeVirtualMembershipDelta`、补扣、回滚和退款改为会员优先、记录随后锁定，避免与管理员重置死锁；迟到结算不会重新加回已重置额度。`TestVirtualMembershipResetFinalizesPendingSettlement` 覆盖后台重置、迟到结算和主动重置，model 全测、race、全仓 compile-only 均通过。
 - 产物已发布到 site-builder `/opt/newapi/releases/new-api-20260824-vm-reset-644173f8e-linux-amd64`，SHA-256 `9db71ffe0357c4ffefe847c83b7454f0176406279aecbb83691bea99ec110014`；正式 Compose SHA-256 `bbf1b61fe35f27ae47e407f2ea1c53973415fc32c9df4397fac214237d9ddf1a`；备份目录 `/opt/newapi/backups/release-new-api-20260824-vm-reset-644173f8e-linux-amd64-20260824T034233Z/`。只重建 `new-api`，MySQL/Redis 未重建，`overseas2` 未触碰。
 - 正式容器 healthy、版本 `20260824-vm-reset-644173f8e`，三现役公网域名和回环状态正常，新的管理接口未授权边界仍为 401。未通过 SQL 直接替用户执行重置；管理员下一次批量重置会处理这些 pending 实例。
+
+### 2026-08-24 — 白名单未登录申请、身份刷新与 FAST 2.5x
+
+- `aece9a93b`：`POST /api/access-policy/whitelist` 不再读取登录会话，按提交用户名查询启用用户并复用企业/教育身份校验后加入当前 IP；静态 451 CTA 改为“无需登录”。Default `_authenticated` 和 Classic `PageLayout` 每次进入/刷新按当前 token 调 `/api/user/self`，保证管理员后来授予的身份反映在金色欢迎条；Default 管理员身份选择区域补齐中文。
+- `b316b1851`：OpenAI priority/FAST 平台附加计费统一为 2.5x，使用 `QuotaRound` 处理整数额度，覆盖预扣、tiered settle、fallback、审计与 Default 用量详情；历史 `priority_doubled` 布尔字段保持兼容，仅表示平台附加费已生效。
+- 定向验证：FAST/身份 model 与 relay/service 测试、全仓 `go test -vet=off ./... -run '^$'`、Default `npm run build:check`、Classic `npm run build`、FAST 前端 5 条 Node 单测均通过；带 vet 的 service 全测仍受仓库既有 non-constant `fmt.Errorf` 告警影响。
+- 发布到 canonical `site-builder`：产物 `/opt/newapi/releases/new-api-20260824-identity-whitelist-fast25-b316b1851-linux-amd64`，SHA-256 `5c7f650a0f58ed41b6237eb0e15a20c43d0af61c92477e009dc4fcd94f6bff78`；备份 `/opt/newapi/backups/release-identity-whitelist-fast25-b316b1851-20260824T042011Z/`。正式容器 healthy/0 重启/仅 3000，三现役公网域名版本检查通过；未登录无效用户名白名单请求返回业务 400，页面与 Default 异步资源 marker 已核验。
