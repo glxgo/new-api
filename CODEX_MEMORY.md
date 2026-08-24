@@ -1656,3 +1656,10 @@
 - `b316b1851`：OpenAI priority/FAST 平台附加计费统一为 2.5x，使用 `QuotaRound` 处理整数额度，覆盖预扣、tiered settle、fallback、审计与 Default 用量详情；历史 `priority_doubled` 布尔字段保持兼容，仅表示平台附加费已生效。
 - 定向验证：FAST/身份 model 与 relay/service 测试、全仓 `go test -vet=off ./... -run '^$'`、Default `npm run build:check`、Classic `npm run build`、FAST 前端 5 条 Node 单测均通过；带 vet 的 service 全测仍受仓库既有 non-constant `fmt.Errorf` 告警影响。
 - 发布到 canonical `site-builder`：产物 `/opt/newapi/releases/new-api-20260824-identity-whitelist-fast25-b316b1851-linux-amd64`，SHA-256 `5c7f650a0f58ed41b6237eb0e15a20c43d0af61c92477e009dc4fcd94f6bff78`；备份 `/opt/newapi/backups/release-identity-whitelist-fast25-b316b1851-20260824T042011Z/`。正式容器 healthy/0 重启/仅 3000，三现役公网域名版本检查通过；未登录无效用户名白名单请求返回业务 400，页面与 Default 异步资源 marker 已核验。
+
+### 2026-08-24 — 企业/教育用户登录通用欢迎提示修复并发布
+
+- 根因确认：Default 登录表单在 `handleLoginSuccess` 后无条件触发绿色 `Welcome back!` toast；它与身份欢迎条是两个独立组件，因此即使用户已被识别为企业/教育身份，仍会先看到普通绿色提示。并非主题或线上配置回退。
+- 提交 `446e0308e`：登录成功后复用 `/api/user/self` 返回的身份字段；企业/教育用户不再显示通用绿色登录 toast，继续由 dashboard 的金色身份欢迎条展示；普通用户、微信、Passkey、2FA 仍保留原成功提示。
+- 本地 Default `npm run build:check`、定向 Prettier、`git diff --check` 通过；已推送 `origin/main`。Linux/amd64 产物 `/opt/newapi/releases/new-api-20260824-identity-toast-fix-446e0308e-linux-amd64`，SHA-256 `986745d55491c3fad8747d0326f0d8c79c87f1c4e6987f9b5dedfb361cecc0b5`。
+- canonical `site-builder` 已备份 `/opt/newapi/backups/release-identity-toast-fix-446e0308e-20260824T050007Z/` 并只重建 `new-api`；正式容器 healthy、重启 0、仅监听 `127.0.0.1:3000`。三现役公网域名版本均为 `20260824-identity-toast-fix-446e0308e`；线上登录异步 chunk 与本地产物哈希一致，并含按 `identity_type` 抑制 toast 的逻辑。若用户仍看到绿色提示，需检查该账号 `/api/user/self` 是否实际返回 `enterprise`/`education`，否则它会按普通用户正确保留绿色提示。
