@@ -1910,10 +1910,25 @@ func PreConsumeVirtualMembershipForToken(requestId string, userId int, modelName
 func PostConsumeVirtualMembershipDelta(requestId string, delta int64) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
 		var record VirtualMembershipPreConsumeRecord
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("request_id = ?", requestId).First(&record).Error; err != nil {
+		if err := tx.Where("request_id = ?", requestId).First(&record).Error; err != nil {
 			return err
 		}
 		if record.Status != VirtualMembershipRecordPending {
+			return nil
+		}
+		var membership UserVirtualMembership
+		// Keep the lock order consistent with administrator resets and the
+		// pre-consume path: membership first, then its ledger record. This
+		// prevents a settlement racing an explicit reset from deadlocking.
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&membership, record.MembershipId).Error; err != nil {
+			return err
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&record, record.Id).Error; err != nil {
+			return err
+		}
+		if record.Status != VirtualMembershipRecordPending {
+			// An administrator reset may have finalized this request while the
+			// initial non-locking lookup was in progress.
 			return nil
 		}
 		if delta == 0 {
@@ -1921,10 +1936,6 @@ func PostConsumeVirtualMembershipDelta(requestId string, delta int64) error {
 			record.Status = VirtualMembershipRecordSettled
 			record.UpdatedAt = common.GetTimestamp()
 			return tx.Save(&record).Error
-		}
-		var membership UserVirtualMembership
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&membership, record.MembershipId).Error; err != nil {
-			return err
 		}
 		membership.WeeklyUsed += delta
 		if membership.FiveHourActive {
@@ -1950,15 +1961,21 @@ func PreConsumeVirtualMembershipDelta(requestId string, delta int64) error {
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
 		var record VirtualMembershipPreConsumeRecord
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("request_id = ?", requestId).First(&record).Error; err != nil {
+		if err := tx.Where("request_id = ?", requestId).First(&record).Error; err != nil {
 			return err
 		}
 		if record.Status != VirtualMembershipRecordPending {
 			return errors.New("虚拟会员预扣记录已结束")
 		}
 		var membership UserVirtualMembership
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&membership, record.MembershipId).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&membership, record.MembershipId).Error; err != nil {
 			return err
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&record, record.Id).Error; err != nil {
+			return err
+		}
+		if record.Status != VirtualMembershipRecordPending {
+			return errors.New("虚拟会员预扣记录已结束")
 		}
 		if membership.WeeklyQuota > 0 && membership.WeeklyUsed+delta > membership.WeeklyQuota {
 			return errors.New("虚拟会员周额度不足")
@@ -1986,15 +2003,21 @@ func RollbackVirtualMembershipDelta(requestId string, delta int64) error {
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
 		var record VirtualMembershipPreConsumeRecord
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("request_id = ?", requestId).First(&record).Error; err != nil {
+		if err := tx.Where("request_id = ?", requestId).First(&record).Error; err != nil {
 			return err
 		}
 		if record.Status != VirtualMembershipRecordPending || record.PreConsumed < delta {
 			return errors.New("虚拟会员补充预扣记录无效")
 		}
 		var membership UserVirtualMembership
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&membership, record.MembershipId).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&membership, record.MembershipId).Error; err != nil {
 			return err
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&record, record.Id).Error; err != nil {
+			return err
+		}
+		if record.Status != VirtualMembershipRecordPending || record.PreConsumed < delta {
+			return errors.New("虚拟会员补充预扣记录无效")
 		}
 		membership.WeeklyUsed -= delta
 		if membership.FiveHourActive {
@@ -2016,15 +2039,21 @@ func RollbackVirtualMembershipDelta(requestId string, delta int64) error {
 func RefundVirtualMembershipPreConsume(requestId string) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
 		var record VirtualMembershipPreConsumeRecord
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("request_id = ?", requestId).First(&record).Error; err != nil {
+		if err := tx.Where("request_id = ?", requestId).First(&record).Error; err != nil {
 			return err
 		}
 		if record.Status != VirtualMembershipRecordPending {
 			return nil
 		}
 		var membership UserVirtualMembership
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&membership, record.MembershipId).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&membership, record.MembershipId).Error; err != nil {
 			return err
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&record, record.Id).Error; err != nil {
+			return err
+		}
+		if record.Status != VirtualMembershipRecordPending {
+			return nil
 		}
 		membership.WeeklyUsed -= record.PreConsumed
 		if membership.FiveHourActive {
@@ -2073,20 +2102,26 @@ func ResetVirtualMemberships(scope VirtualMembershipResetScope) (int64, error) {
 		if err := query.Find(&memberships).Error; err != nil {
 			return err
 		}
+		membershipIds := make([]int, 0, len(memberships))
 		for i := range memberships {
-			membership := &memberships[i]
-			// A pending pre-consumption still has to be settled against the
-			// current window. Skipping that row avoids resetting usage under an
-			// in-flight request; the next administrator reset can handle it.
-			var pendingCount int64
+			membershipIds = append(membershipIds, memberships[i].Id)
+		}
+		if len(membershipIds) > 0 {
+			// An explicit administrator reset supersedes unfinished requests. The
+			// quota window is being replaced, so pending pre-consumption records
+			// must be finalized as refunded before the reset; otherwise they would
+			// permanently block this instance or add usage back later.
 			if err := tx.Model(&VirtualMembershipPreConsumeRecord{}).
-				Where("membership_id = ? AND status = ?", membership.Id, VirtualMembershipRecordPending).
-				Count(&pendingCount).Error; err != nil {
+				Where("membership_id IN ? AND status = ?", membershipIds, VirtualMembershipRecordPending).
+				Updates(map[string]interface{}{
+					"status":     VirtualMembershipRecordRefunded,
+					"updated_at": now,
+				}).Error; err != nil {
 				return err
 			}
-			if pendingCount > 0 {
-				continue
-			}
+		}
+		for i := range memberships {
+			membership := &memberships[i]
 			result := tx.Model(&UserVirtualMembership{}).Where("id = ?", membership.Id).
 				Updates(map[string]interface{}{
 					"weekly_used": 0, "five_hour_used": 0, "weekly_reset_at": now + 7*86400,

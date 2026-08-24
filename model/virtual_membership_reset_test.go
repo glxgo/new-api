@@ -100,7 +100,7 @@ func TestVirtualMembershipResetOrderRejectsPurchaseWhenCreditAlreadyExists(t *te
 	require.EqualError(t, err, "已有主动重置次数，请先使用现有次数")
 }
 
-func TestVirtualMembershipResetSkipsPendingSettlement(t *testing.T) {
+func TestVirtualMembershipResetFinalizesPendingSettlement(t *testing.T) {
 	db := setupVirtualMembershipTestDB(t)
 	now := common.GetTimestamp()
 	memberships := []UserVirtualMembership{
@@ -115,16 +115,26 @@ func TestVirtualMembershipResetSkipsPendingSettlement(t *testing.T) {
 
 	affected, err := ResetVirtualMemberships(VirtualMembershipResetScope{PlanCode: "pending"})
 	require.NoError(t, err)
-	require.EqualValues(t, 1, affected)
+	require.EqualValues(t, 2, affected)
 	var refreshed UserVirtualMembership
 	require.NoError(t, db.First(&refreshed, memberships[0].Id).Error)
-	require.EqualValues(t, 70, refreshed.WeeklyUsed)
+	require.Zero(t, refreshed.WeeklyUsed)
 	refreshed = UserVirtualMembership{}
 	require.NoError(t, db.First(&refreshed, memberships[1].Id).Error)
+	require.Zero(t, refreshed.WeeklyUsed)
+	var pending VirtualMembershipPreConsumeRecord
+	require.NoError(t, db.Where("membership_id = ?", memberships[0].Id).First(&pending).Error)
+	require.Equal(t, VirtualMembershipRecordRefunded, pending.Status)
+
+	// A response that settles after an administrator reset must not add its
+	// pre-consumed amount back into the newly reset quota window.
+	require.NoError(t, PostConsumeVirtualMembershipDelta(pending.RequestId, 25))
+	refreshed = UserVirtualMembership{}
+	require.NoError(t, db.First(&refreshed, memberships[0].Id).Error)
 	require.Zero(t, refreshed.WeeklyUsed)
 
 	_, err = GrantVirtualMembershipResetCredits(memberships[0].Id, 1)
 	require.NoError(t, err)
 	_, err = ActiveResetVirtualMembership(104, memberships[0].Id)
-	require.EqualError(t, err, "该会员存在正在结算的请求，请稍后再主动重置")
+	require.NoError(t, err)
 }
