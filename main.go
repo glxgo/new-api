@@ -311,9 +311,6 @@ func InitResources() error {
 	if err = model.MigrateRechargeCapacityCreditsV3(); err != nil {
 		return err
 	}
-	if err = model.MigrateRechargeEnterpriseIdentitiesV1(); err != nil {
-		return err
-	}
 	if err = model.MigrateRechargeCommissionPolicyV1(); err != nil {
 		return err
 	}
@@ -321,6 +318,12 @@ func InitResources() error {
 	// Initialize Redis
 	err = common.InitRedisClient()
 	if err != nil {
+		return err
+	}
+	// Run the enterprise identity backfill after Redis is initialized so
+	// existing user-cache entries are invalidated immediately when identities
+	// change. The cache helper remains nil-safe for deployments without Redis.
+	if err = model.MigrateRechargeEnterpriseIdentitiesV1(); err != nil {
 		return err
 	}
 
