@@ -3,6 +3,10 @@ package model
 import (
 	"testing"
 	"time"
+
+	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestCalcNextResetTimeDailyUsesStartWallClockAndSevenWindows(t *testing.T) {
@@ -50,6 +54,82 @@ func TestCalcNextResetTimeWeeklyUsesPurchaseWallClock(t *testing.T) {
 	if next != want {
 		t.Fatalf("weekly reset = %s, want %s", time.Unix(next, 0).In(subscriptionBusinessLocation), start.AddDate(0, 0, 7))
 	}
+}
+
+func TestCalcNextResetTimeMidnightOverrideAlignsDailyAndWeekly(t *testing.T) {
+	start := time.Date(2026, 8, 20, 16, 30, 3, 0, subscriptionBusinessLocation)
+	daily := &SubscriptionPlan{
+		DurationUnit:     SubscriptionDurationWeek,
+		DurationValue:    1,
+		QuotaResetPeriod: SubscriptionResetDaily,
+		QuotaResetAnchor: SubscriptionResetAnchorMidnight,
+	}
+	dailyEnd := start.AddDate(0, 0, 7).Unix()
+	wantDaily := time.Date(2026, 8, 21, 0, 0, 0, 0, subscriptionBusinessLocation)
+	if got := calcNextResetTime(start, daily, dailyEnd, start.Unix()); got != wantDaily.Unix() {
+		t.Fatalf("midnight daily reset = %s, want %s", time.Unix(got, 0).In(subscriptionBusinessLocation), wantDaily)
+	}
+
+	weekly := &SubscriptionPlan{
+		Id:               19,
+		DurationUnit:     SubscriptionDurationMonth,
+		DurationValue:    1,
+		QuotaResetPeriod: SubscriptionResetWeekly,
+		QuotaResetAnchor: SubscriptionResetAnchorMidnight,
+	}
+	weeklyEnd := start.AddDate(0, 1, 0).Unix()
+	wantWeekly := time.Date(2026, 8, 27, 0, 0, 0, 0, subscriptionBusinessLocation)
+	if got := calcNextResetTime(start, weekly, weeklyEnd, start.Unix()); got != wantWeekly.Unix() {
+		t.Fatalf("midnight weekly reset = %s, want %s", time.Unix(got, 0).In(subscriptionBusinessLocation), wantWeekly)
+	}
+	if subscriptionUsesPurchaseResetAnchor(weekly) {
+		t.Fatal("midnight override unexpectedly used purchase anchor")
+	}
+	if got := calcNextResetTime(wantWeekly, weekly, weeklyEnd, start.Unix()); got != time.Date(2026, 9, 3, 0, 0, 0, 0, subscriptionBusinessLocation).Unix() {
+		t.Fatalf("second midnight weekly reset = %s", time.Unix(got, 0).In(subscriptionBusinessLocation))
+	}
+	snapshot, err := BuildSubscriptionPlanSnapshot(weekly)
+	if err != nil {
+		t.Fatalf("build midnight snapshot: %v", err)
+	}
+	parsed, err := ParseSubscriptionPlanSnapshot(snapshot)
+	if err != nil || parsed.QuotaResetAnchor != SubscriptionResetAnchorMidnight {
+		t.Fatalf("midnight anchor snapshot round-trip = %q, err=%v", parsed.QuotaResetAnchor, err)
+	}
+}
+
+func TestMidnightOverrideResetKeepsFutureBoundaryAtMidnight(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&SubscriptionPlan{}, &UserSubscription{}))
+	start := time.Date(2026, 8, 20, 16, 30, 3, 0, subscriptionBusinessLocation)
+	end := time.Date(2026, 9, 20, 16, 30, 3, 0, subscriptionBusinessLocation)
+	plan := &SubscriptionPlan{
+		Id:               235,
+		DurationUnit:     SubscriptionDurationMonth,
+		DurationValue:    1,
+		QuotaResetPeriod: SubscriptionResetDaily,
+		QuotaResetAnchor: SubscriptionResetAnchorMidnight,
+	}
+	sub := &UserSubscription{
+		Id:            235,
+		PlanId:        plan.Id,
+		PlanSnapshot:  "",
+		StartTime:     start.Unix(),
+		EndTime:       end.Unix(),
+		Status:        "active",
+		AmountTotal:   65_000_000,
+		AmountUsed:    64_000_000,
+		LastResetTime: time.Date(2026, 8, 26, 0, 0, 0, 0, subscriptionBusinessLocation).Unix(),
+		NextResetTime: time.Date(2026, 8, 27, 0, 0, 0, 0, subscriptionBusinessLocation).Unix(),
+	}
+	require.NoError(t, db.Create(plan).Error)
+	require.NoError(t, db.Create(sub).Error)
+	now := time.Date(2026, 8, 27, 0, 1, 0, 0, subscriptionBusinessLocation)
+	require.NoError(t, maybeResetUserSubscriptionWithPlanTx(db, sub, plan, now.Unix()))
+	require.Zero(t, sub.AmountUsed)
+	require.Equal(t, now.Add(-time.Minute).Truncate(time.Minute).Unix(), sub.LastResetTime)
+	require.Equal(t, time.Date(2026, 8, 28, 0, 0, 0, 0, subscriptionBusinessLocation).Unix(), sub.NextResetTime)
 }
 
 func TestProjectSubscriptionNextResetTimeSkipsPastDisplayBoundary(t *testing.T) {

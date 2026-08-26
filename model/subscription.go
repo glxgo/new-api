@@ -34,6 +34,15 @@ const (
 	SubscriptionResetCustom  = "custom"
 )
 
+// Quota reset anchors are snapshotted with a purchased subscription.  The
+// default (empty) value remains purchase-time anchored; midnight is an
+// explicit, narrowly-scoped override for legacy/support adjustments and does
+// not change the global plan default.
+const (
+	SubscriptionResetAnchorPurchase = "purchase"
+	SubscriptionResetAnchorMidnight = "midnight"
+)
+
 // Subscription plan version (drives card border color & badge: starter=铜/advanced=银/pro=金/enterprise=黑金)
 const (
 	PlanVersionStarter    = "starter"
@@ -231,6 +240,9 @@ type SubscriptionPlan struct {
 	// Quota reset period for plan
 	QuotaResetPeriod        string `json:"quota_reset_period" gorm:"type:varchar(16);default:'never'"`
 	QuotaResetCustomSeconds int64  `json:"quota_reset_custom_seconds" gorm:"type:bigint;default:0"`
+	// QuotaResetAnchor is snapshot metadata, not a subscription_plans column.
+	// Empty/unknown values normalize to the normal purchase-time anchor.
+	QuotaResetAnchor string `json:"quota_reset_anchor,omitempty" gorm:"-"`
 
 	CreatedAt int64 `json:"created_at" gorm:"bigint"`
 	UpdatedAt int64 `json:"updated_at" gorm:"bigint"`
@@ -661,6 +673,15 @@ func NormalizeResetPeriod(period string) string {
 	}
 }
 
+func NormalizeResetAnchor(anchor string) string {
+	switch strings.TrimSpace(anchor) {
+	case SubscriptionResetAnchorMidnight:
+		return SubscriptionResetAnchorMidnight
+	default:
+		return SubscriptionResetAnchorPurchase
+	}
+}
+
 // NormalizePlanVersion 非法/空值回落到 ""(不设版本, 卡片保持默认外观)
 func NormalizePlanVersion(v string) string {
 	switch strings.TrimSpace(v) {
@@ -673,8 +694,9 @@ func NormalizePlanVersion(v string) string {
 
 // subscriptionBusinessLocation is the single calendar used for subscription
 // reset boundaries. Persisted values remain Unix timestamps, while daily and
-// weekly boundaries are calculated from the purchase/start wall-clock time in
-// Asia/Shanghai rather than from server midnight or a fixed UTC offset.
+// weekly boundaries are calculated in Asia/Shanghai. Normal plans use the
+// purchase/start wall-clock phase; an explicit midnight snapshot override uses
+// the local calendar boundary instead.
 var subscriptionBusinessLocation = func() *time.Location {
 	location, err := time.LoadLocation("Asia/Shanghai")
 	if err != nil {
@@ -692,13 +714,21 @@ func calcNextResetTime(base time.Time, plan *SubscriptionPlan, endUnix int64, st
 		return 0
 	}
 	base = base.In(subscriptionBusinessLocation)
+	midnightAnchor := NormalizeResetAnchor(plan.QuotaResetAnchor) == SubscriptionResetAnchorMidnight
 	var next time.Time
 	switch period {
 	case SubscriptionResetDaily:
-		// A daily quota window starts when the instance becomes effective. The
-		// next boundary is the same local wall-clock time on the following day;
-		// midnight alignment would create an eighth window for late purchases.
-		next = base.AddDate(0, 0, 1)
+		if midnightAnchor {
+			// Explicit support override: align the next and all later daily
+			// boundaries to Asia/Shanghai 00:00.
+			next = time.Date(base.Year(), base.Month(), base.Day(), 0, 0, 0, 0, base.Location()).
+				AddDate(0, 0, 1)
+		} else {
+			// A daily quota window starts when the instance becomes effective. The
+			// next boundary is the same local wall-clock time on the following day;
+			// midnight alignment would create an eighth window for late purchases.
+			next = base.AddDate(0, 0, 1)
+		}
 	case SubscriptionResetWeekly:
 		// 所有卡(周卡/月卡/季卡/年卡)都从订阅(付款)日起每 7 天一周期, 不对齐周一。
 		// 单月卡(duration_value=1)特殊: 前 3 周各重置一次(start+7/+14/+21),
@@ -710,7 +740,12 @@ func calcNextResetTime(base time.Time, plan *SubscriptionPlan, endUnix int64, st
 				return 0
 			}
 		}
-		next = base.AddDate(0, 0, 7)
+		if midnightAnchor {
+			next = time.Date(base.Year(), base.Month(), base.Day(), 0, 0, 0, 0, base.Location()).
+				AddDate(0, 0, 7)
+		} else {
+			next = base.AddDate(0, 0, 7)
+		}
 	case SubscriptionResetMonthly:
 		// Align to first day of next month 00:00
 		next = time.Date(base.Year(), base.Month(), 1, 0, 0, 0, 0, base.Location()).
@@ -738,6 +773,9 @@ func calcNextResetTime(base time.Time, plan *SubscriptionPlan, endUnix int64, st
 // retain their existing anchor semantics for backwards compatibility.
 func subscriptionUsesPurchaseResetAnchor(plan *SubscriptionPlan) bool {
 	if plan == nil {
+		return false
+	}
+	if NormalizeResetAnchor(plan.QuotaResetAnchor) == SubscriptionResetAnchorMidnight {
 		return false
 	}
 	period := NormalizeResetPeriod(plan.QuotaResetPeriod)
