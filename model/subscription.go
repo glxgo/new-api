@@ -735,9 +735,24 @@ func calcNextResetTime(base time.Time, plan *SubscriptionPlan, endUnix int64, st
 		// 第 4 段(start+21 → 月底约 9-10 天)不再重置, 额度用到月底到期。
 		// 解决月卡 30 天按 4×7=28 天算多出 2-3 天、最后一周额度浪费的问题。
 		if plan.DurationUnit == SubscriptionDurationMonth && plan.DurationValue == 1 && startUnix > 0 {
-			weeksFromStart := int(base.Sub(time.Unix(startUnix, 0)).Hours() / 24 / 7)
-			if weeksFromStart >= 3 {
-				return 0
+			if midnightAnchor {
+				// Midnight alignment moves the first boundary earlier than the
+				// purchase timestamp. Count the three reset windows from that first
+				// aligned weekly boundary, otherwise a monthly weekly plan would gain
+				// a fourth boundary merely because its clock phase changed.
+				startWall := time.Unix(startUnix, 0).In(subscriptionBusinessLocation)
+				firstBoundary := time.Date(startWall.Year(), startWall.Month(), startWall.Day(), 0, 0, 0, 0, startWall.Location()).AddDate(0, 0, 7)
+				if !base.Before(firstBoundary) {
+					boundaryIndex := int(base.Sub(firstBoundary).Hours() / 24 / 7)
+					if boundaryIndex >= 2 {
+						return 0
+					}
+				}
+			} else {
+				weeksFromStart := int(base.Sub(time.Unix(startUnix, 0)).Hours() / 24 / 7)
+				if weeksFromStart >= 3 {
+					return 0
+				}
 			}
 		}
 		if midnightAnchor {

@@ -88,6 +88,10 @@ func TestCalcNextResetTimeMidnightOverrideAlignsDailyAndWeekly(t *testing.T) {
 	if got := calcNextResetTime(wantWeekly, weekly, weeklyEnd, start.Unix()); got != time.Date(2026, 9, 3, 0, 0, 0, 0, subscriptionBusinessLocation).Unix() {
 		t.Fatalf("second midnight weekly reset = %s", time.Unix(got, 0).In(subscriptionBusinessLocation))
 	}
+	thirdWeekly := time.Date(2026, 9, 10, 0, 0, 0, 0, subscriptionBusinessLocation)
+	if got := calcNextResetTime(thirdWeekly, weekly, weeklyEnd, start.Unix()); got != 0 {
+		t.Fatalf("monthly midnight weekly plan unexpectedly opened a fourth reset at %s", time.Unix(got, 0).In(subscriptionBusinessLocation))
+	}
 	snapshot, err := BuildSubscriptionPlanSnapshot(weekly)
 	if err != nil {
 		t.Fatalf("build midnight snapshot: %v", err)
