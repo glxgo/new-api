@@ -44,6 +44,18 @@ const PaymentConfirmModal = ({
     discountRate && discountRate > 0 && discountRate < 1 && amountNumber > 0;
   const originalAmount = hasDiscount ? amountNumber / discountRate : 0;
   const discountAmount = hasDiscount ? originalAmount - amountNumber : 0;
+  const selectedPayMethod = (payMethods || []).find(
+    (method) => method.type === payWay,
+  );
+  const paymentFeeRate = Number(
+    selectedPayMethod?.fee_rate ??
+      selectedPayMethod?.fee_percent ??
+      selectedPayMethod?.fee ??
+      0,
+  );
+  const paymentFee =
+    paymentFeeRate > 0 ? Math.round(amountNumber * paymentFeeRate) / 100 : 0;
+  const paymentTotal = Math.round((amountNumber + paymentFee) * 100) / 100;
   return (
     <Modal
       title={
@@ -73,21 +85,41 @@ const PaymentConfirmModal = ({
             </div>
             <div className='flex justify-between items-center'>
               <Text strong className='text-slate-700 dark:text-slate-200'>
-                {t('实付金额')}：
+                商品金额：
               </Text>
               {amountLoading ? (
                 <Skeleton.Title style={{ width: '60px', height: '16px' }} />
               ) : (
                 <div className='flex items-baseline space-x-2'>
-                  <Text strong className='font-bold' style={{ color: 'red' }}>
-                    {renderAmount()}
-                  </Text>
+                  <Text strong>{`${amountNumber.toFixed(2)} ${t('元')}`}</Text>
                   {hasDiscount && (
-                    <Text size='small' className='text-rose-500'>
-                      {Math.round(discountRate * 100)}%
+                    <Text delete size='small' className='text-slate-500'>
+                      {`${originalAmount.toFixed(2)} ${t('元')}`}
                     </Text>
                   )}
                 </div>
+              )}
+            </div>
+            <div className='flex justify-between items-center'>
+              <Text strong className='text-slate-700 dark:text-slate-200'>
+                支付手续费{paymentFeeRate > 0 ? ` (${paymentFeeRate}%)` : ''}：
+              </Text>
+              {amountLoading ? (
+                <Skeleton.Title style={{ width: '60px', height: '16px' }} />
+              ) : (
+                <Text strong>{`${paymentFee.toFixed(2)} ${t('元')}`}</Text>
+              )}
+            </div>
+            <div className='flex justify-between items-center'>
+              <Text strong className='text-slate-700 dark:text-slate-200'>
+                实际支付：
+              </Text>
+              {amountLoading ? (
+                <Skeleton.Title style={{ width: '72px', height: '18px' }} />
+              ) : (
+                <Text strong className='font-bold' style={{ color: 'red' }}>
+                  {`${paymentTotal.toFixed(2)} ${t('元')}`}
+                </Text>
               )}
             </div>
             {hasDiscount && !amountLoading && (

@@ -13,11 +13,15 @@ import (
 )
 
 type TopUp struct {
-	Id      int     `json:"id"`
-	UserId  int     `json:"user_id" gorm:"index"`
-	Amount  int64   `json:"amount"`
-	Money   float64 `json:"money"`
-	TradeNo string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
+	Id     int     `json:"id"`
+	UserId int     `json:"user_id" gorm:"index"`
+	Amount int64   `json:"amount"`
+	Money  float64 `json:"money"`
+	// PaymentFee is the gateway surcharge included in the provider amount but
+	// never credited to the user's balance. Money remains the discounted base
+	// recharge amount for backwards-compatible settlement.
+	PaymentFee float64 `json:"payment_fee" gorm:"not null;default:0"`
+	TradeNo    string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
 	// ProductNameSnapshot is the immutable, human-readable gateway product
 	// name captured when the order is created. It is metadata only and is never
 	// used for payment verification.
@@ -48,7 +52,11 @@ func SetTopUpPaymentExpectation(topUp *TopUp, snapshot PaymentSnapshot) error {
 	if topUp == nil {
 		return errors.New("topup is nil")
 	}
-	baseQuota, err := CommissionBaseQuotaForPayment(snapshot)
+	baseSnapshot, err := PaymentSnapshotAfterFee(snapshot, topUp.PaymentFee)
+	if err != nil {
+		return err
+	}
+	baseQuota, err := CommissionBaseQuotaForPayment(baseSnapshot)
 	if err != nil {
 		return err
 	}

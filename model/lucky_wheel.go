@@ -968,7 +968,11 @@ func RecordLuckyRechargeTx(tx *gorm.DB, topUp *TopUp) ([]LuckyCard, error) {
 	}
 	// New payment flows persist the authenticated provider amount/currency.
 	// Historical rows fall back to Money for reversal compatibility only.
-	amountCents, snapshotErr := RechargeCentsForPayment(PaymentSnapshot{AmountMinor: topUp.ActualPaymentAmountMinor, Currency: topUp.ActualPaymentCurrency})
+	actualNet, netErr := PaymentSnapshotAfterFee(PaymentSnapshot{AmountMinor: topUp.ActualPaymentAmountMinor, Currency: topUp.ActualPaymentCurrency}, topUp.PaymentFee)
+	amountCents, snapshotErr := RechargeCentsForPayment(actualNet)
+	if netErr != nil {
+		snapshotErr = netErr
+	}
 	if snapshotErr != nil {
 		amountCents = MoneyToRechargeCents(topUp.Money)
 	}
@@ -1157,7 +1161,11 @@ func ReverseLuckyRechargeTx(tx *gorm.DB, topUp *TopUp, reason string) (LuckySour
 	if !topUp.LuckyRechargeEligible || topUp.LuckyRuleSetId <= 0 {
 		return result, nil
 	}
-	amountCents, snapshotErr := RechargeCentsForPayment(PaymentSnapshot{AmountMinor: topUp.ActualPaymentAmountMinor, Currency: topUp.ActualPaymentCurrency})
+	actualNet, netErr := PaymentSnapshotAfterFee(PaymentSnapshot{AmountMinor: topUp.ActualPaymentAmountMinor, Currency: topUp.ActualPaymentCurrency}, topUp.PaymentFee)
+	amountCents, snapshotErr := RechargeCentsForPayment(actualNet)
+	if netErr != nil {
+		snapshotErr = netErr
+	}
 	if snapshotErr != nil {
 		amountCents = MoneyToRechargeCents(topUp.Money)
 	}

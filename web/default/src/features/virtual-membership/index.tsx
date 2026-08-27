@@ -240,7 +240,7 @@ function VirtualMembershipPurchaseDialog({
   onOpenChange: (open: boolean) => void
   plan: VirtualMembershipPlan | null
   groupSize: number
-  epayMethods: { type: string; name?: string }[]
+  epayMethods: { type: string; name?: string; fee_rate?: number | string }[]
   userQuota: number
   onConfirm: (payment: PaymentSelection) => Promise<boolean>
   renewal?: boolean
@@ -269,10 +269,19 @@ function VirtualMembershipPurchaseDialog({
     plan.variants[0]
   const groupLabel =
     variant?.label ?? (groupSize === 1 ? '单独购买' : `${groupSize} 人团`)
+  const selectedEpayMethodItem = epayMethods.find(
+    (item) => item.type === selectedEpayMethod
+  )
   const selectedEpayMethodLabel =
-    epayMethods.find((item) => item.type === selectedEpayMethod)?.name ||
-    selectedEpayMethod ||
-    '请选择付款方式'
+    selectedEpayMethodItem?.name || selectedEpayMethod || '请选择付款方式'
+  const productAmount = Number(variant?.price_amount ?? 0)
+  const selectedEpayFeeRate = Number(selectedEpayMethodItem?.fee_rate || 0)
+  const selectedEpayFee =
+    selectedEpayFeeRate > 0
+      ? Math.round(productAmount * selectedEpayFeeRate) / 100
+      : 0
+  const selectedEpayTotal =
+    Math.round((productAmount + selectedEpayFee) * 100) / 100
   const quotaPerUnit =
     currency?.quotaPerUnit && currency.quotaPerUnit > 0
       ? currency.quotaPerUnit
@@ -315,12 +324,38 @@ function VirtualMembershipPurchaseDialog({
           <span className='text-muted-foreground text-sm'>购买档位</span>
           <span className='font-medium'>{groupLabel}</span>
         </div>
-        <div className='flex items-center justify-between gap-3'>
-          <span className='text-muted-foreground text-sm'>应付金额</span>
-          <span className='text-primary text-xl font-bold'>
-            ¥{(variant?.price_amount ?? 0).toFixed(2)}
-          </span>
-        </div>
+        {selectedEpayMethod ? (
+          <>
+            <div className='flex items-center justify-between gap-3'>
+              <span className='text-muted-foreground text-sm'>商品金额</span>
+              <span className='text-lg font-semibold'>
+                ¥{productAmount.toFixed(2)}
+              </span>
+            </div>
+            <div className='flex items-center justify-between gap-3'>
+              <span className='text-muted-foreground text-sm'>
+                支付手续费
+                {selectedEpayFeeRate > 0 ? ` (${selectedEpayFeeRate}%)` : ''}
+              </span>
+              <span className='text-lg font-semibold'>
+                ¥{selectedEpayFee.toFixed(2)}
+              </span>
+            </div>
+            <div className='flex items-center justify-between gap-3'>
+              <span className='text-sm font-medium'>实际支付</span>
+              <span className='text-primary text-xl font-bold'>
+                ¥{selectedEpayTotal.toFixed(2)}
+              </span>
+            </div>
+          </>
+        ) : (
+          <div className='flex items-center justify-between gap-3'>
+            <span className='text-muted-foreground text-sm'>应付金额</span>
+            <span className='text-primary text-xl font-bold'>
+              ¥{productAmount.toFixed(2)}
+            </span>
+          </div>
+        )}
         <div className='flex items-center justify-between gap-3'>
           <span className='text-muted-foreground text-sm'>获得周额度</span>
           <span className='font-medium'>
@@ -377,7 +412,7 @@ function VirtualMembershipPurchaseDialog({
             <Select
               items={epayMethods.map((method) => ({
                 value: method.type,
-                label: method.name || method.type,
+                label: `${method.name || method.type}${Number(method.fee_rate || 0) > 0 ? ` +${Number(method.fee_rate)}%` : ''}`,
               }))}
               value={selectedEpayMethod}
               onValueChange={(value) =>
@@ -392,6 +427,8 @@ function VirtualMembershipPurchaseDialog({
                   {epayMethods.map((method) => (
                     <SelectItem key={method.type} value={method.type}>
                       {method.name || method.type}
+                      {Number(method.fee_rate || 0) > 0 &&
+                        ` +${Number(method.fee_rate)}%`}
                     </SelectItem>
                   ))}
                 </SelectGroup>

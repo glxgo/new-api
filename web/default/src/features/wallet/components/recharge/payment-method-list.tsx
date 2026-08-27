@@ -84,6 +84,11 @@ export function PaymentMethodList({
                   )
                 )}
                 <span className='truncate'>{method.name}</span>
+                {method.fee_rate && method.fee_rate > 0 ? (
+                  <span className='text-muted-foreground shrink-0 text-[10px]'>
+                    +{method.fee_rate}%
+                  </span>
+                ) : null}
               </Button>
             )
 

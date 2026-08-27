@@ -304,7 +304,11 @@ func RecordTopUpRechargeCreditTx(tx *gorm.DB, topUp *TopUp) (bool, error) {
 	if err := ValidatePaymentSnapshot(topUp.ExpectedPaymentAmountMinor, topUp.ExpectedPaymentCurrency, actual); err != nil {
 		return false, err
 	}
-	amountCents, err := RechargeCentsForPayment(actual)
+	actualNet, err := PaymentSnapshotAfterFee(actual, topUp.PaymentFee)
+	if err != nil {
+		return false, err
+	}
+	amountCents, err := RechargeCentsForPayment(actualNet)
 	if err != nil {
 		return false, err
 	}

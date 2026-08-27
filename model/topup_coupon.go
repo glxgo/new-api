@@ -180,7 +180,10 @@ func CreateTopUpWithCoupon(topUp *TopUp, couponCode string, originalMoney float6
 			topUp.Money = quote.DiscountedMoney
 		}
 		if topUp.PaymentProvider == PaymentProviderEpay {
-			snapshot, snapshotErr := NewPaymentSnapshotFromMoney(topUp.Money, "CNY")
+			// Money is the discounted base recharge amount; PaymentFee is a
+			// gateway-only surcharge and must remain part of the immutable
+			// provider expectation after coupon reservation.
+			snapshot, snapshotErr := NewPaymentSnapshotFromMoney(topUp.Money+topUp.PaymentFee, "CNY")
 			if snapshotErr != nil {
 				return snapshotErr
 			}

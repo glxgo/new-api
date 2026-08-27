@@ -83,6 +83,25 @@ func NewPaymentSnapshotFromMoney(amount float64, currency string) (PaymentSnapsh
 	return NewPaymentSnapshotFromDisplayAmount(decimal.NewFromFloat(amount).StringFixed(2), currency)
 }
 
+// PaymentSnapshotAfterFee removes a previously snapshotted gateway surcharge
+// so recharge credits, commission and lucky-wheel progress are based only on
+// the product amount. The provider expectation itself remains the gross
+// amount paid by the customer.
+func PaymentSnapshotAfterFee(snapshot PaymentSnapshot, fee float64) (PaymentSnapshot, error) {
+	normalized, err := NewPaymentSnapshotFromMinor(snapshot.AmountMinor, snapshot.Currency)
+	if err != nil {
+		return PaymentSnapshot{}, err
+	}
+	feeMinor := decimal.NewFromFloat(fee).Mul(decimal.NewFromInt(100)).Round(0).IntPart()
+	if feeMinor < 0 || feeMinor >= normalized.AmountMinor {
+		if feeMinor == 0 {
+			return normalized, nil
+		}
+		return PaymentSnapshot{}, errors.New("invalid payment fee")
+	}
+	return NewPaymentSnapshotFromMinor(normalized.AmountMinor-feeMinor, normalized.Currency)
+}
+
 func CommissionBaseQuotaForPayment(snapshot PaymentSnapshot) (int64, error) {
 	snapshot, err := NewPaymentSnapshotFromMinor(snapshot.AmountMinor, snapshot.Currency)
 	if err != nil {

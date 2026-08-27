@@ -312,6 +312,9 @@ type SubscriptionOrder struct {
 	UserId int     `json:"user_id" gorm:"index"`
 	PlanId int     `json:"plan_id" gorm:"index"`
 	Money  float64 `json:"money"`
+	// PaymentFee is charged by the selected gateway method only; it never
+	// changes the subscription entitlements derived from Money/PlanSnapshot.
+	PaymentFee float64 `json:"payment_fee" gorm:"not null;default:0"`
 
 	TradeNo string `json:"trade_no" gorm:"unique;type:varchar(255);index"`
 	// ProductNameSnapshot is captured at order creation and is display/audit
@@ -344,7 +347,11 @@ func SetSubscriptionOrderPaymentExpectation(order *SubscriptionOrder, snapshot P
 	if order == nil {
 		return errors.New("subscription order is nil")
 	}
-	baseQuota, err := CommissionBaseQuotaForPayment(snapshot)
+	baseSnapshot, err := PaymentSnapshotAfterFee(snapshot, order.PaymentFee)
+	if err != nil {
+		return err
+	}
+	baseQuota, err := CommissionBaseQuotaForPayment(baseSnapshot)
 	if err != nil {
 		return err
 	}
@@ -1277,7 +1284,11 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 			return err
 		}
 		actual := PaymentSnapshot{AmountMinor: order.ActualPaymentAmountMinor, Currency: order.ActualPaymentCurrency}
-		amountCents, paymentErr := RechargeCentsForPayment(actual)
+		actualNet, netErr := PaymentSnapshotAfterFee(actual, order.PaymentFee)
+		if netErr != nil {
+			return netErr
+		}
+		amountCents, paymentErr := RechargeCentsForPayment(actualNet)
 		if paymentErr != nil {
 			return paymentErr
 		}
@@ -1343,6 +1354,7 @@ func upsertSubscriptionTopUpTx(tx *gorm.DB, order *SubscriptionOrder) error {
 				UserId:                     order.UserId,
 				Amount:                     0,
 				Money:                      order.Money,
+				PaymentFee:                 order.PaymentFee,
 				TradeNo:                    order.TradeNo,
 				ProductNameSnapshot:        order.ProductNameSnapshot,
 				PaymentMethod:              order.PaymentMethod,
@@ -1364,6 +1376,7 @@ func upsertSubscriptionTopUpTx(tx *gorm.DB, order *SubscriptionOrder) error {
 		return err
 	}
 	topup.Money = order.Money
+	topup.PaymentFee = order.PaymentFee
 	if strings.TrimSpace(topup.ProductNameSnapshot) == "" {
 		topup.ProductNameSnapshot = order.ProductNameSnapshot
 	}

@@ -96,13 +96,14 @@ func SubscriptionRequestEpay(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	moneyText := model.FormatPaymentGatewayAmount(plan.PriceAmount)
+	paymentFee, gatewayAmount := operation_setting.PaymentAmountWithFee(order.Money, req.PaymentMethod)
+	moneyText := model.FormatPaymentGatewayAmount(gatewayAmount)
 	money, parseMoneyErr := strconv.ParseFloat(moneyText, 64)
 	if parseMoneyErr != nil || money < 0.01 {
 		common.ApiErrorMsg(c, "支付金额格式错误")
 		return
 	}
-	order.Money = money
+	order.PaymentFee = paymentFee
 	epaySnapshot, err := model.NewPaymentSnapshotFromDisplayAmount(moneyText, "CNY")
 	if err != nil || model.SetSubscriptionOrderPaymentExpectation(order, epaySnapshot) != nil {
 		common.ApiErrorMsg(c, "支付金额快照失败")
@@ -126,7 +127,7 @@ func SubscriptionRequestEpay(c *gin.Context) {
 		common.ApiErrorMsg(c, "拉起支付失败")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "success", "data": params, "url": uri})
+	c.JSON(http.StatusOK, gin.H{"message": "success", "data": params, "url": uri, "payment_fee": paymentFee, "payment_total": money})
 }
 
 func SubscriptionEpayNotify(c *gin.Context) {

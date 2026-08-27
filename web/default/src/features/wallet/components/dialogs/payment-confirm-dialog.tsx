@@ -65,6 +65,17 @@ export function PaymentConfirmDialog({
   const hasDiscount = discountRate > 0 && discountRate < 1 && paymentAmount > 0
   const originalAmount = hasDiscount ? paymentAmount / discountRate : 0
   const discountAmount = hasDiscount ? originalAmount - paymentAmount : 0
+  const paymentFeeRate = Number(
+    paymentMethod?.fee_rate ??
+      (paymentMethod as (PaymentMethod & { fee_percent?: number }) | undefined)
+        ?.fee_percent ??
+      0
+  )
+  const paymentFee =
+    paymentFeeRate > 0
+      ? Math.round(paymentAmount * paymentFeeRate) / 100
+      : 0
+  const paymentTotal = Math.round((paymentAmount + paymentFee) * 100) / 100
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -94,13 +105,13 @@ export function PaymentConfirmDialog({
 
           <div className='flex items-center justify-between'>
             <span className='text-muted-foreground text-sm'>
-              {t('You Pay')}
+              {t('Product amount')}
             </span>
             {calculating ? (
               <Skeleton className='h-6 w-24' />
             ) : (
               <div className='flex items-baseline gap-2'>
-                <span className='text-2xl font-semibold'>
+                <span className='text-lg font-semibold'>
                   {'¥'}
                   {formatCurrency(paymentAmount)}
                 </span>
@@ -111,6 +122,33 @@ export function PaymentConfirmDialog({
                   </span>
                 )}
               </div>
+            )}
+          </div>
+
+          <div className='flex items-center justify-between'>
+            <span className='text-muted-foreground text-sm'>
+              {t('Payment fee')}
+              {paymentFeeRate > 0 ? ` (${paymentFeeRate}%)` : ''}
+            </span>
+            {calculating ? (
+              <Skeleton className='h-6 w-20' />
+            ) : (
+              <span className='text-lg font-semibold'>
+                {'¥'}
+                {formatCurrency(paymentFee)}
+              </span>
+            )}
+          </div>
+
+          <div className='flex items-center justify-between'>
+            <span className='text-sm font-medium'>{t('Actual payment')}</span>
+            {calculating ? (
+              <Skeleton className='h-7 w-24' />
+            ) : (
+              <span className='text-primary text-2xl font-semibold'>
+                {'¥'}
+                {formatCurrency(paymentTotal)}
+              </span>
             )}
           </div>
 

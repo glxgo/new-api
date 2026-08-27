@@ -92,17 +92,25 @@ export function PaymentMethodsVisualEditor({
       context: 'payment methods',
     })
 
-    return parsed.filter(
-      (item): item is PaymentMethodData =>
-        typeof item === 'object' &&
-        item !== null &&
-        'name' in item &&
-        'type' in item &&
-        'color' in item &&
-        typeof item.name === 'string' &&
-        typeof item.type === 'string' &&
-        typeof item.color === 'string'
-    )
+    return parsed
+      .filter(
+        (item): item is PaymentMethodData =>
+          typeof item === 'object' &&
+          item !== null &&
+          'name' in item &&
+          'type' in item &&
+          'color' in item &&
+          typeof item.name === 'string' &&
+          typeof item.type === 'string' &&
+          typeof item.color === 'string'
+      )
+      .map((item) => ({
+        ...item,
+        min_topup:
+          item.min_topup === undefined ? undefined : String(item.min_topup),
+        fee_rate:
+          item.fee_rate === undefined ? undefined : String(item.fee_rate),
+      }))
   }, [value])
 
   const filteredMethods = useMemo(() => {
@@ -371,6 +379,18 @@ export function PaymentMethodsVisualEditor({
                   </div>
                 ),
               },
+              {
+                id: 'fee-rate',
+                header: t('Fee'),
+                cell: (method) =>
+                  method.fee_rate ? (
+                    <span className='font-mono text-sm'>
+                      {method.fee_rate}%
+                    </span>
+                  ) : (
+                    <span className='text-muted-foreground text-sm'>—</span>
+                  ),
+              },
             ]}
           />
 
@@ -437,6 +457,14 @@ export function PaymentMethodsVisualEditor({
                           {t('Min Top-up:')}
                         </span>
                         <span className='font-mono'>{method.min_topup}</span>
+                      </div>
+                    )}
+                    {method.fee_rate && (
+                      <div className='flex items-center gap-2'>
+                        <span className='text-muted-foreground min-w-20'>
+                          {t('Fee:')}
+                        </span>
+                        <span className='font-mono'>{method.fee_rate}%</span>
                       </div>
                     )}
                   </div>

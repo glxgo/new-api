@@ -105,6 +105,8 @@ export interface PaymentMethod {
   min_topup?: number
   /** Optional icon URL provided by backend (preferred over built-in icons) */
   icon?: string
+  /** Gateway surcharge percentage (e.g. 2.5 means 2.5%). */
+  fee_rate?: number
 }
 
 /**

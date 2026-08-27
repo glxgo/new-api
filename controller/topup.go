@@ -231,6 +231,12 @@ func RequestEpay(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "支付方式不存在"})
 		return
 	}
+	basePayMoney := payMoney
+	paymentFee, gatewayPayMoney := operation_setting.PaymentAmountWithFee(basePayMoney, req.PaymentMethod)
+	if gatewayPayMoney < 0.01 {
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "支付金额过低"})
+		return
+	}
 
 	callBackAddress := service.GetCallbackAddress()
 	returnUrl, _ := url.Parse(paymentReturnPath("/console/log"))
@@ -242,7 +248,7 @@ func RequestEpay(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "当前管理员未配置支付信息"})
 		return
 	}
-	moneyText := model.FormatPaymentGatewayAmount(payMoney)
+	moneyText := model.FormatPaymentGatewayAmount(gatewayPayMoney)
 	// Derive the display amount from the exact two-decimal string sent to Epay
 	// so product metadata and the gateway Money field cannot diverge on a
 	// fractional-cent discount result.
@@ -253,8 +259,8 @@ func RequestEpay(c *gin.Context) {
 	}
 	// The gateway, order ledger, product label, and callback snapshot must all
 	// use the same two-decimal amount.
-	payMoney = moneyForProduct
-	productName := model.PaymentProductNameForTopUp(moneyForProduct)
+	gatewayPayMoney = moneyForProduct
+	productName := model.PaymentProductNameForTopUp(basePayMoney)
 	uri, params, err := client.Purchase(&epay.PurchaseArgs{
 		Type:           req.PaymentMethod,
 		ServiceTradeNo: tradeNo,
@@ -278,7 +284,8 @@ func RequestEpay(c *gin.Context) {
 	topUp := &model.TopUp{
 		UserId:              id,
 		Amount:              amount,
-		Money:               payMoney,
+		Money:               basePayMoney,
+		PaymentFee:          paymentFee,
 		TradeNo:             tradeNo,
 		PaymentMethod:       req.PaymentMethod,
 		PaymentProvider:     model.PaymentProviderEpay,
@@ -297,8 +304,8 @@ func RequestEpay(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": err.Error()})
 		return
 	}
-	logger.LogInfo(c.Request.Context(), fmt.Sprintf("易支付 充值订单创建成功 user_id=%d trade_no=%s payment_method=%s amount=%d money=%.2f uri=%q params=%q", id, tradeNo, req.PaymentMethod, req.Amount, payMoney, uri, common.GetJsonString(params)))
-	c.JSON(http.StatusOK, gin.H{"message": "success", "data": params, "url": uri})
+	logger.LogInfo(c.Request.Context(), fmt.Sprintf("易支付 充值订单创建成功 user_id=%d trade_no=%s payment_method=%s amount=%d base_money=%.2f fee=%.2f money=%.2f uri=%q params=%q", id, tradeNo, req.PaymentMethod, req.Amount, basePayMoney, paymentFee, gatewayPayMoney, uri, common.GetJsonString(params)))
+	c.JSON(http.StatusOK, gin.H{"message": "success", "data": params, "url": uri, "payment_fee": paymentFee, "payment_total": gatewayPayMoney})
 }
 
 // tradeNo lock

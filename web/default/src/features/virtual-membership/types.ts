@@ -106,7 +106,7 @@ export interface VirtualMembershipPageData {
   memberships: UserVirtualMembership[]
   hidden_memberships?: UserVirtualMembership[]
   epay_enabled?: boolean
-  epay_methods?: { type: string; name?: string }[]
+  epay_methods?: { type: string; name?: string; fee_rate?: number }[]
 }
 
 export type VirtualMembershipPageResponse =

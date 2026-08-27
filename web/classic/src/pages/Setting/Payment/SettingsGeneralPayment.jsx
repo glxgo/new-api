@@ -205,8 +205,9 @@ export default function SettingsGeneralPayment(props) {
               <Form.TextArea
                 field='PayMethods'
                 label={t('充值方式设置')}
-                placeholder={t('为一个 JSON 文本')}
+                placeholder={t('为一个 JSON 文本，例如：[{"name":"支付宝","type":"alipay","fee_rate":"2.5"}]')}
                 autosize
+                extraText={t('可在每个支付方式中设置 fee_rate（百分比，如 2.5）；手续费由付款方承担，不计入余额或会员权益。')}
               />
             </Col>
             <Col xs={24} sm={24} md={12} lg={12} xl={12}>

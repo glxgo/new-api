@@ -99,11 +99,14 @@ type VirtualMembershipPlan struct {
 }
 
 type VirtualMembershipOrder struct {
-	Id                         int     `json:"id"`
-	UserId                     int     `json:"user_id" gorm:"index"`
-	PlanId                     int     `json:"plan_id" gorm:"index"`
-	GroupSize                  int     `json:"group_size" gorm:"not null;default:1"`
-	Money                      float64 `json:"money"`
+	Id        int     `json:"id"`
+	UserId    int     `json:"user_id" gorm:"index"`
+	PlanId    int     `json:"plan_id" gorm:"index"`
+	GroupSize int     `json:"group_size" gorm:"not null;default:1"`
+	Money     float64 `json:"money"`
+	// PaymentFee is a gateway-only surcharge and is excluded from membership
+	// entitlements and balance-like settlement values.
+	PaymentFee                 float64 `json:"payment_fee" gorm:"not null;default:0"`
 	WeeklyQuota                int64   `json:"weekly_quota" gorm:"type:bigint;not null;default:0"`
 	FiveHourQuota              int64   `json:"five_hour_quota" gorm:"type:bigint;not null;default:0"`
 	FiveHourActive             bool    `json:"five_hour_active" gorm:"not null;default:false"`
@@ -139,6 +142,7 @@ type VirtualMembershipResetOrder struct {
 	MembershipId               int     `json:"membership_id" gorm:"index"`
 	Credits                    int     `json:"credits" gorm:"not null;default:1"`
 	Money                      float64 `json:"money"`
+	PaymentFee                 float64 `json:"payment_fee" gorm:"not null;default:0"`
 	TradeNo                    string  `json:"trade_no" gorm:"uniqueIndex;type:varchar(255)"`
 	PaymentMethod              string  `json:"payment_method" gorm:"type:varchar(50)"`
 	PaymentProvider            string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
@@ -154,13 +158,73 @@ type VirtualMembershipResetOrder struct {
 }
 
 func setVirtualMembershipPaymentExpectation(order *VirtualMembershipOrder, snapshot PaymentSnapshot) error {
-	baseQuota, err := CommissionBaseQuotaForPayment(snapshot)
+	baseSnapshot, err := PaymentSnapshotAfterFee(snapshot, order.PaymentFee)
+	if err != nil {
+		return err
+	}
+	baseQuota, err := CommissionBaseQuotaForPayment(baseSnapshot)
 	if err != nil {
 		return err
 	}
 	order.ExpectedPaymentAmountMinor = snapshot.AmountMinor
 	order.ExpectedPaymentCurrency = snapshot.Currency
 	order.CommissionBaseQuota = baseQuota
+	return nil
+}
+
+// SetVirtualMembershipOrderPaymentExpectation is the public counterpart used
+// by Epay controllers when a gateway surcharge changes the final amount.
+func SetVirtualMembershipOrderPaymentExpectation(order *VirtualMembershipOrder, snapshot PaymentSnapshot) error {
+	if order == nil {
+		return errors.New("virtual membership order is nil")
+	}
+	return setVirtualMembershipPaymentExpectation(order, snapshot)
+}
+
+func UpdateVirtualMembershipOrderPaymentExpectation(orderId int, snapshot PaymentSnapshot, fee float64) error {
+	if orderId <= 0 {
+		return errors.New("invalid virtual membership order")
+	}
+	tmp := VirtualMembershipOrder{PaymentFee: fee}
+	if err := setVirtualMembershipPaymentExpectation(&tmp, snapshot); err != nil {
+		return err
+	}
+	baseQuota := tmp.CommissionBaseQuota
+	if baseQuota <= 0 {
+		return errors.New("invalid virtual membership commission base")
+	}
+	result := DB.Model(&VirtualMembershipOrder{}).Where("id = ? AND status = ?", orderId, common.TopUpStatusPending).
+		Updates(map[string]interface{}{
+			"payment_fee": fee, "expected_payment_amount_minor": snapshot.AmountMinor,
+			"expected_payment_currency": snapshot.Currency, "commission_base_quota": baseQuota,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errors.New("virtual membership order is no longer pending")
+	}
+	return nil
+}
+
+func UpdateVirtualMembershipResetOrderPaymentExpectation(orderId int, snapshot PaymentSnapshot, fee float64) error {
+	if orderId <= 0 {
+		return errors.New("invalid virtual membership reset order")
+	}
+	if _, err := NewPaymentSnapshotFromMinor(snapshot.AmountMinor, snapshot.Currency); err != nil {
+		return err
+	}
+	result := DB.Model(&VirtualMembershipResetOrder{}).Where("id = ? AND status = ?", orderId, common.TopUpStatusPending).
+		Updates(map[string]interface{}{
+			"payment_fee": fee, "expected_payment_amount_minor": snapshot.AmountMinor,
+			"expected_payment_currency": snapshot.Currency,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errors.New("virtual membership reset order is no longer pending")
+	}
 	return nil
 }
 
@@ -1202,7 +1266,11 @@ func CompleteVirtualMembershipOrder(tradeNo, providerPayload, expectedPaymentPro
 		if err := tx.Save(&order).Error; err != nil {
 			return err
 		}
-		amountCents, err := RechargeCentsForPayment(actual)
+		actualNet, netErr := PaymentSnapshotAfterFee(actual, order.PaymentFee)
+		if netErr != nil {
+			return netErr
+		}
+		amountCents, err := RechargeCentsForPayment(actualNet)
 		if err != nil {
 			return err
 		}
@@ -1236,7 +1304,11 @@ func CompleteVirtualMembershipOrder(tradeNo, providerPayload, expectedPaymentPro
 			return err
 		}
 		if err := DB.Transaction(func(tx *gorm.DB) error {
-			amountCents, conversionErr := RechargeCentsForPayment(PaymentSnapshot{AmountMinor: completedOrder.ActualPaymentAmountMinor, Currency: completedOrder.ActualPaymentCurrency})
+			actualNet, netErr := PaymentSnapshotAfterFee(PaymentSnapshot{AmountMinor: completedOrder.ActualPaymentAmountMinor, Currency: completedOrder.ActualPaymentCurrency}, completedOrder.PaymentFee)
+			if netErr != nil {
+				return netErr
+			}
+			amountCents, conversionErr := RechargeCentsForPayment(actualNet)
 			if conversionErr != nil {
 				return conversionErr
 			}

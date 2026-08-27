@@ -41,6 +41,7 @@ const createPaymentMethodDialogSchema = (t: (key: string) => string) =>
     type: z.string().min(1, t('Payment method type is required')),
     color: z.string().min(1, t('Color is required')),
     min_topup: z.string().optional(),
+    fee_rate: z.string().optional(),
   })
 
 type PaymentMethodDialogFormValues = z.infer<
@@ -54,6 +55,7 @@ export type PaymentMethodData = {
   type: string
   color: string
   min_topup?: string
+  fee_rate?: string
 }
 
 type PaymentMethodDialogProps = {
@@ -117,6 +119,7 @@ export function PaymentMethodDialog({
       type: '',
       color: '',
       min_topup: '',
+      fee_rate: '',
     },
   })
 
@@ -145,6 +148,7 @@ export function PaymentMethodDialog({
         type: '',
         color: '',
         min_topup: '',
+        fee_rate: '',
       })
     }
   }, [editData, form, open])
@@ -157,6 +161,9 @@ export function PaymentMethodDialog({
     }
     if (values.min_topup && values.min_topup.trim() !== '') {
       data.min_topup = values.min_topup
+    }
+    if (values.fee_rate && values.fee_rate.trim() !== '') {
+      data.fee_rate = values.fee_rate
     }
     onSave(data)
     form.reset()
@@ -284,6 +291,32 @@ export function PaymentMethodDialog({
                 </FormControl>
                 <FormDescription>
                   {t('Optional minimum recharge amount for this method.')}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name='fee_rate'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Payment fee rate (%)')}</FormLabel>
+                <FormControl>
+                  <Input
+                    type='number'
+                    min={0}
+                    max={100}
+                    step='0.01'
+                    placeholder={t('e.g., 2.5')}
+                    {...field}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'Extra gateway fee charged to the payer; it is not added to balance or entitlements.'
+                  )}
                 </FormDescription>
                 <FormMessage />
               </FormItem>

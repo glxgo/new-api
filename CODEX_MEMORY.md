@@ -1784,3 +1784,10 @@
 - `ActiveResetVirtualMembership` 现在按现有 `TASK_TIMEOUT_MINUTES` 加 5 分钟回调缓冲判断 pending 活跃度：新鲜记录继续返回稳定错误；超时记录在同一会员行锁事务内批量标记 `refunded`，随后清空周/5 小时窗口并消耗 1 次主动重置次数。
 - 迟到 `PostConsumeVirtualMembershipDelta` 看到已退款记录时保持幂等，不会把额度加回新窗口。新增“新鲜 pending 阻止”和“超时 pending 恢复/迟到结算”回归测试。
 - `go test -vet=off ./model -count=1`、`go test -vet=off ./... -run '^$'` 和 `git diff --check` 通过；本轮未修改生产数据库、未构建或部署产物。源码已在本地提交，尚未推送。
+
+### 2026-08-27 — 支付渠道手续费功能本地完成（未上线）
+
+- 易支付 `PayMethods` 条目可用 `fee_rate`（百分比）配置渠道手续费，后端按两位小数计算并在充值、订阅、虚拟会员及主动重置 Epay 订单保存 `payment_fee` 与含手续费的支付快照。
+- 订单 `Money`/权益快照仍保留基础商品金额；充值余额、订阅/虚拟会员权益、分润和幸运充值进度通过净支付快照结算，手续费不会进入余额或权益。回调金额必须与含手续费快照完全一致。
+- Default 支付方式可视化编辑器、Classic 支付设置提示及支付方式列表展示费率；模型/设置定向 Go 测试、控制器编译、Default `tsc`/构建、Classic 构建和 diff 检查通过。完整 controller 测试仍只有既有模型列表共享状态失败。
+- 代码目前未提交、未推送、未构建/部署；生产仍运行上一版本，未改数据库业务数据或支付配置。

@@ -6,6 +6,10 @@ This file is the old version of the payment settings file. If you need to add ne
 package operation_setting
 
 import (
+	"math"
+	"strconv"
+	"strings"
+
 	"github.com/QuantumNous/new-api/common"
 )
 
@@ -56,4 +60,49 @@ func ContainsPayMethod(method string) bool {
 		}
 	}
 	return false
+}
+
+// GetPaymentMethodFeeRate returns the configured percentage surcharge for an
+// Epay payment method. The value is read from the method's `fee_rate` field
+// (percent, e.g. 2.5). `fee_percent` and the legacy-friendly `fee` aliases
+// are accepted as well. Invalid, negative, or over-100 values fail closed to
+// zero so a malformed admin setting can never overcharge a customer.
+func GetPaymentMethodFeeRate(method string) float64 {
+	method = strings.TrimSpace(method)
+	if method == "" {
+		return 0
+	}
+	for _, payMethod := range PayMethods {
+		if strings.TrimSpace(payMethod["type"]) != method {
+			continue
+		}
+		for _, key := range []string{"fee_rate", "fee_percent", "fee"} {
+			raw := strings.TrimSpace(payMethod[key])
+			if raw == "" {
+				continue
+			}
+			rate, err := strconv.ParseFloat(raw, 64)
+			if err != nil || math.IsNaN(rate) || math.IsInf(rate, 0) || rate < 0 || rate > 100 {
+				return 0
+			}
+			return rate
+		}
+		return 0
+	}
+	return 0
+}
+
+// PaymentAmountWithFee rounds both the surcharge and final amount to cents,
+// matching the amount sent to Epay. The first return value is the fee, and
+// the second is the total amount charged. Callers should retain their base
+// product amount separately for balance/entitlement settlement.
+func PaymentAmountWithFee(baseAmount float64, method string) (float64, float64) {
+	if baseAmount <= 0 {
+		return 0, baseAmount
+	}
+	rate := GetPaymentMethodFeeRate(method)
+	fee := math.Round(baseAmount*rate) / 100
+	fee = math.Round(fee*100) / 100
+	total := math.Round((baseAmount+fee)*100) / 100
+	return fee, total
 }

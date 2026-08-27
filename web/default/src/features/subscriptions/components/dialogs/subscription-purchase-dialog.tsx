@@ -49,6 +49,7 @@ import type { PlanRecord, SubscriptionRenewalPreview } from '../../types'
 interface PaymentMethod {
   type: string
   name?: string
+  fee_rate?: number
 }
 
 interface Props {
@@ -105,6 +106,17 @@ export function SubscriptionPurchaseDialog(props: Props) {
     t('Select payment method')
   const totalAmount = Number(plan.total_amount || 0)
   const price = Number(plan.price_amount || 0).toFixed(2)
+  const selectedEpayFeeRate = Number(
+    (props.epayMethods || []).find((m) => m.type === selectedEpayMethod)
+      ?.fee_rate || 0
+  )
+  const selectedEpayFee =
+    selectedEpayFeeRate > 0
+      ? Math.round(Number(plan.price_amount || 0) * selectedEpayFeeRate) / 100
+      : 0
+  const productAmount = Number(plan.price_amount || 0)
+  const selectedEpayTotal =
+    Math.round((productAmount + selectedEpayFee) * 100) / 100
   const quotaPerUnit =
     currency?.quotaPerUnit && currency.quotaPerUnit > 0
       ? currency.quotaPerUnit
@@ -416,12 +428,41 @@ export function SubscriptionPurchaseDialog(props: Props) {
                   </p>
                 )}
               </div>
-            )}
+          )}
           <Separator />
-          <div className='flex items-center justify-between'>
-            <span className='text-sm font-medium'>{t('Amount Due')}</span>
-            <span className='text-primary text-lg font-bold'>${price}</span>
-          </div>
+          {hasEpay && selectedEpayMethod && (
+            <>
+              <div className='flex items-center justify-between text-sm'>
+                <span className='text-muted-foreground'>
+                  {t('Product amount')}
+                </span>
+                <span>${productAmount.toFixed(2)}</span>
+              </div>
+              <div className='flex items-center justify-between text-sm'>
+                <span className='text-muted-foreground'>
+                  {t('Payment fee')}
+                  {selectedEpayFeeRate > 0
+                    ? ` (${selectedEpayFeeRate}%)`
+                    : ''}
+                </span>
+                <span>${selectedEpayFee.toFixed(2)}</span>
+              </div>
+              <div className='flex items-center justify-between'>
+                <span className='text-sm font-medium'>
+                  {t('Actual payment')}
+                </span>
+                <span className='text-primary text-lg font-bold'>
+                  ${selectedEpayTotal.toFixed(2)}
+                </span>
+              </div>
+            </>
+          )}
+          {(!hasEpay || !selectedEpayMethod) && (
+            <div className='flex items-center justify-between text-sm'>
+              <span className='text-sm font-medium'>{t('Amount Due')}</span>
+              <span className='text-primary text-lg font-bold'>${price}</span>
+            </div>
+          )}
         </div>
 
         {limitReached && (

@@ -87,13 +87,21 @@ func VirtualMembershipRequestEpay(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	paymentFee, gatewayAmount := operation_setting.PaymentAmountWithFee(order.Money, req.PaymentMethod)
+	gatewayAmountText := model.FormatPaymentGatewayAmount(gatewayAmount)
+	gatewaySnapshot, snapshotErr := model.NewPaymentSnapshotFromDisplayAmount(gatewayAmountText, "CNY")
+	if snapshotErr != nil || model.UpdateVirtualMembershipOrderPaymentExpectation(order.Id, gatewaySnapshot, paymentFee) != nil {
+		_ = model.ExpireVirtualMembershipOrder(tradeNo, model.PaymentProviderEpay)
+		common.ApiErrorMsg(c, "支付金额快照失败")
+		return
+	}
 	productName := order.ProductNameSnapshot
 	if productName == "" {
 		productName = model.PaymentProductNameForVirtualMembership(plan.Title)
 	}
 	uri, params, err := client.Purchase(&epay.PurchaseArgs{
 		Type: req.PaymentMethod, ServiceTradeNo: tradeNo,
-		Name: productName, Money: model.FormatPaymentGatewayAmount(order.Money),
+		Name: productName, Money: gatewayAmountText,
 		Device: epay.PC, NotifyUrl: notifyURL, ReturnUrl: returnURL,
 	})
 	if err != nil {
@@ -101,7 +109,7 @@ func VirtualMembershipRequestEpay(c *gin.Context) {
 		common.ApiErrorMsg(c, "拉起支付失败")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "success", "data": params, "url": uri})
+	c.JSON(http.StatusOK, gin.H{"message": "success", "data": params, "url": uri, "payment_fee": paymentFee, "payment_total": gatewayAmount})
 }
 
 // VirtualMembershipActiveResetRequestEpay starts the optional one-credit
@@ -146,13 +154,21 @@ func VirtualMembershipActiveResetRequestEpay(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	paymentFee, gatewayAmount := operation_setting.PaymentAmountWithFee(order.Money, req.PaymentMethod)
+	gatewayAmountText := model.FormatPaymentGatewayAmount(gatewayAmount)
+	gatewaySnapshot, snapshotErr := model.NewPaymentSnapshotFromDisplayAmount(gatewayAmountText, "CNY")
+	if snapshotErr != nil || model.UpdateVirtualMembershipResetOrderPaymentExpectation(order.Id, gatewaySnapshot, paymentFee) != nil {
+		_ = model.ExpireVirtualMembershipResetOrder(order.TradeNo, model.PaymentProviderEpay)
+		common.ApiErrorMsg(c, "支付金额快照失败")
+		return
+	}
 	paymentMethod := order.PaymentMethod
 	if paymentMethod == "" {
 		paymentMethod = req.PaymentMethod
 	}
 	uri, params, err := client.Purchase(&epay.PurchaseArgs{
 		Type: paymentMethod, ServiceTradeNo: order.TradeNo,
-		Name: order.ProductNameSnapshot, Money: model.FormatPaymentGatewayAmount(order.Money),
+		Name: order.ProductNameSnapshot, Money: gatewayAmountText,
 		Device: epay.PC, NotifyUrl: notifyURL, ReturnUrl: returnURL,
 	})
 	if err != nil {
@@ -162,7 +178,7 @@ func VirtualMembershipActiveResetRequestEpay(c *gin.Context) {
 		common.ApiErrorMsg(c, "拉起支付失败")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "success", "data": params, "url": uri, "price": order.Money})
+	c.JSON(http.StatusOK, gin.H{"message": "success", "data": params, "url": uri, "price": order.Money, "payment_fee": paymentFee, "payment_total": gatewayAmount})
 }
 
 func readEpayCallbackParams(c *gin.Context) map[string]string {

@@ -382,7 +382,10 @@ const RechargeCard = ({
                                 }
                                 className='!rounded-lg !px-4 !py-2'
                               >
-                                {payMethod.name}
+                                  {payMethod.name}
+                                  {Number(payMethod.fee_rate || payMethod.fee_percent || payMethod.fee) > 0
+                                    ? ` +${Number(payMethod.fee_rate || payMethod.fee_percent || payMethod.fee)}%`
+                                    : ''}
                               </Button>
                             );
 
