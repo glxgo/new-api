@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -38,10 +39,23 @@ const (
 	VirtualMembershipResetOrderType = "active_reset_credit"
 )
 
+// virtualMembershipPendingSettlementTimeout leaves enough time for the
+// configured asynchronous task timeout plus a small callback/drain buffer.
+// This avoids reclaiming a legitimately long-running task while still making
+// multi-day orphaned records recoverable from the user's reset action.
+func virtualMembershipPendingSettlementTimeout() time.Duration {
+	minutes := constant.TaskTimeoutMinutes
+	if minutes <= 0 {
+		minutes = 24 * 60
+	}
+	return time.Duration(minutes+5) * time.Minute
+}
+
 var (
 	ErrVirtualMembershipRenewalUnavailable       = errors.New("当前虚拟会员无法续费")
 	ErrVirtualMembershipRenewalExists            = errors.New("当前虚拟会员已存在续费实例或待支付订单")
 	ErrVirtualMembershipResetCreditsInsufficient = errors.New("主动重置次数不足，请先购买重置次数")
+	ErrVirtualMembershipSettlementInProgress     = errors.New("该会员存在正在结算的请求，请稍后再主动重置")
 )
 
 type VirtualMembershipSetting struct {
@@ -2207,14 +2221,31 @@ func ActiveResetVirtualMembership(userId, membershipId int) (*UserVirtualMembers
 		if membership.ActiveResetCredits <= 0 {
 			return ErrVirtualMembershipResetCreditsInsufficient
 		}
-		var pendingCount int64
-		if err := tx.Model(&VirtualMembershipPreConsumeRecord{}).
+		var pending []VirtualMembershipPreConsumeRecord
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("membership_id = ? AND status = ?", membershipId, VirtualMembershipRecordPending).
-			Count(&pendingCount).Error; err != nil {
+			Find(&pending).Error; err != nil {
 			return err
 		}
-		if pendingCount > 0 {
-			return errors.New("该会员存在正在结算的请求，请稍后再主动重置")
+		cutoff := now - int64(virtualMembershipPendingSettlementTimeout()/time.Second)
+		for _, record := range pending {
+			lastActivity := record.UpdatedAt
+			if lastActivity <= 0 {
+				lastActivity = record.CreatedAt
+			}
+			if lastActivity > cutoff {
+				return ErrVirtualMembershipSettlementInProgress
+			}
+		}
+		if len(pending) > 0 {
+			// A timed-out request can no longer safely hold this quota window.
+			// Mark it refunded before moving the window so a late settlement sees
+			// a terminal row and cannot add usage back after the reset.
+			if err := tx.Model(&VirtualMembershipPreConsumeRecord{}).
+				Where("membership_id = ? AND status = ?", membershipId, VirtualMembershipRecordPending).
+				Updates(map[string]interface{}{"status": VirtualMembershipRecordRefunded, "updated_at": now}).Error; err != nil {
+				return err
+			}
 		}
 		membership.WeeklyUsed = 0
 		membership.WeeklyResetAt = now + 7*86400

@@ -2,6 +2,7 @@ package model
 
 import (
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/stretchr/testify/require"
@@ -42,6 +43,67 @@ func TestVirtualMembershipActiveResetCreditsGrantAndConsume(t *testing.T) {
 	require.NoError(t, err)
 	_, err = ActiveResetVirtualMembership(101, membership.Id)
 	require.ErrorIs(t, err, ErrVirtualMembershipResetCreditsInsufficient)
+}
+
+func TestVirtualMembershipActiveResetBlocksFreshPendingSettlement(t *testing.T) {
+	db := setupVirtualMembershipTestDB(t)
+	now := common.GetTimestamp()
+	membership := UserVirtualMembership{
+		UserId: 106, PlanId: 1, PlanTitle: "fresh-pending", PlanCode: "fresh-pending",
+		GroupSize: 1, WeeklyQuota: 1_000, WeeklyUsed: 420,
+		ActiveResetCredits: 1, StartTime: now - 60, EndTime: now + 86400,
+		Status: VirtualMembershipStatusActive,
+	}
+	require.NoError(t, db.Create(&membership).Error)
+	require.NoError(t, db.Create(&VirtualMembershipPreConsumeRecord{
+		RequestId: "fresh-pending-reset", MembershipId: membership.Id, UserId: membership.UserId,
+		PreConsumed: 10, Status: VirtualMembershipRecordPending, CreatedAt: now - 60, UpdatedAt: now - 60,
+	}).Error)
+
+	_, err := ActiveResetVirtualMembership(membership.UserId, membership.Id)
+	require.ErrorIs(t, err, ErrVirtualMembershipSettlementInProgress)
+
+	var unchanged UserVirtualMembership
+	require.NoError(t, db.First(&unchanged, membership.Id).Error)
+	require.EqualValues(t, 420, unchanged.WeeklyUsed)
+	require.Equal(t, 1, unchanged.ActiveResetCredits)
+}
+
+func TestVirtualMembershipActiveResetRecoversStalePendingSettlement(t *testing.T) {
+	db := setupVirtualMembershipTestDB(t)
+	now := common.GetTimestamp()
+	membership := UserVirtualMembership{
+		UserId: 107, PlanId: 1, PlanTitle: "stale-pending", PlanCode: "stale-pending",
+		GroupSize: 1, WeeklyQuota: 1_000, WeeklyUsed: 420,
+		FiveHourActive: true, FiveHourQuota: 500, FiveHourUsed: 210,
+		ActiveResetCredits: 1, WeeklyResetAt: now + 3600, FiveHourResetAt: now + 1800,
+		StartTime: now - 60, EndTime: now + 86400,
+		Status: VirtualMembershipStatusActive,
+	}
+	require.NoError(t, db.Create(&membership).Error)
+	require.NoError(t, db.Create(&VirtualMembershipPreConsumeRecord{
+		RequestId: "stale-pending-reset", MembershipId: membership.Id, UserId: membership.UserId,
+		PreConsumed: 10, Status: VirtualMembershipRecordPending,
+		CreatedAt: now - int64(virtualMembershipPendingSettlementTimeout()/time.Second) - 60,
+		UpdatedAt: now - int64(virtualMembershipPendingSettlementTimeout()/time.Second) - 60,
+	}).Error)
+
+	reset, err := ActiveResetVirtualMembership(membership.UserId, membership.Id)
+	require.NoError(t, err)
+	require.Zero(t, reset.WeeklyUsed)
+	require.Zero(t, reset.FiveHourUsed)
+	require.Zero(t, reset.ActiveResetCredits)
+
+	var refunded VirtualMembershipPreConsumeRecord
+	require.NoError(t, db.Where("request_id = ?", "stale-pending-reset").First(&refunded).Error)
+	require.Equal(t, VirtualMembershipRecordRefunded, refunded.Status)
+
+	// A late callback must not add the old request back into the new window.
+	require.NoError(t, PostConsumeVirtualMembershipDelta(refunded.RequestId, 25))
+	var refreshed UserVirtualMembership
+	require.NoError(t, db.First(&refreshed, membership.Id).Error)
+	require.Zero(t, refreshed.WeeklyUsed)
+	require.Zero(t, refreshed.FiveHourUsed)
 }
 
 func TestVirtualMembershipResetOrderUsesPriceSnapshotAndCompletesIdempotently(t *testing.T) {

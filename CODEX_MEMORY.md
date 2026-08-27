@@ -1772,3 +1772,15 @@
 - 由于 `glxgo/new-api` 是公开仓库，本次新增交接记录中的生产公网 IP 已脱敏为 `production host redacted`；公开域名、回环/测试地址和占位测试数据不属于凭据或个人隐私。
 - 主工作树全部改动（60 个文件，其中 8 个新增源码/测试文件）已提交为 `23e4ffb64ab3923a7a83959228f1c751174054fd`，推送到 `origin/main`；本地 `HEAD` 与远端分支一致，工作树 clean，未跟踪文件为空，`git diff --check` 和提交后高置信度密钥扫描均通过。
 - 本轮只做 Git 提交/推送，没有重新部署生产。生产仍运行上一条记录的 `20260826-full-local-snapshot`，其健康、公网和 Safari 验收状态不变。
+
+### 2026-08-27 — 主动重置被 pending 结算记录阻塞（只读诊断）
+
+- 代码事实：`ActiveResetVirtualMembership` 在会员行锁内统计 `virtual_membership_pre_consume_records.status='pending'`，只要数量大于 0 就返回“该会员存在正在结算的请求，请稍后再主动重置”；用户主动重置路径不会像管理员 `ResetVirtualMemberships` 一样将 pending 记录标记为 refunded 后继续重置。
+- 线上只读核对（site-builder 当前生产数据库）发现 pending 记录共 46 条、涉及 11 个会员实例；最早记录创建于 2026-08-07，部分实例的最新更新停留在 2026-08-24，已确认存在历史遗留而非全部是实时请求。未修改数据库、会员额度或代码。
+- 结论：短时 pending 是并发保护的预期行为；小时/天级 pending 会把用户永久挡在主动重置之外，属于结算生命周期缺少超时回收/自助恢复的流程缺陷。后续应增加“新鲜 pending 阻塞、超时 pending 原子退款并继续重置”的状态机/后台清理、409 机器码和前端倒计时/刷新提示；不要直接删除 pending 行。
+
+### 2026-08-27 — 主动重置超时 pending 自恢复修复（本地完成，未上线）
+
+- `ActiveResetVirtualMembership` 现在按现有 `TASK_TIMEOUT_MINUTES` 加 5 分钟回调缓冲判断 pending 活跃度：新鲜记录继续返回稳定错误；超时记录在同一会员行锁事务内批量标记 `refunded`，随后清空周/5 小时窗口并消耗 1 次主动重置次数。
+- 迟到 `PostConsumeVirtualMembershipDelta` 看到已退款记录时保持幂等，不会把额度加回新窗口。新增“新鲜 pending 阻止”和“超时 pending 恢复/迟到结算”回归测试。
+- `go test -vet=off ./model -count=1`、`go test -vet=off ./... -run '^$'` 和 `git diff --check` 通过；本轮未修改生产数据库、未构建或部署产物。源码已在本地提交，尚未推送。
