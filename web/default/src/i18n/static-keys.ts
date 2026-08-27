@@ -287,6 +287,11 @@ export const STATIC_I18N_KEYS = [
   'Received',
   'Payment initiated',
   'Payment page opened',
+  'Product amount',
+  'Payment fee',
+  'Actual payment',
+  'Payment fee rate (%)',
+  'Extra gateway fee charged to the payer; it is not added to balance or entitlements.',
 
   // Upstream model updates
   'Upstream Model Updates',
