@@ -1791,3 +1791,10 @@
 - 订单 `Money`/权益快照仍保留基础商品金额；充值余额、订阅/虚拟会员权益、分润和幸运充值进度通过净支付快照结算，手续费不会进入余额或权益。回调金额必须与含手续费快照完全一致。
 - Default 支付方式可视化编辑器、Classic 支付设置提示及支付方式列表展示费率；模型/设置定向 Go 测试、控制器编译、Default `tsc`/构建、Classic 构建和 diff 检查通过。完整 controller 测试仍只有既有模型列表共享状态失败。
 - 代码目前未提交、未推送、未构建/部署；生产仍运行上一版本，未改数据库业务数据或支付配置。
+
+### 2026-08-28 — 支付渠道手续费已提交并上线
+
+- 付款确认页已统一展示“商品金额 / 支付手续费 / 实际支付”：Default 充值、订阅、虚拟会员，以及 Classic 充值确认均会按所选渠道费率预览；渠道列表同时显示费率，余额支付不加手续费。
+- 本地 Default `tsc -b`/Rsbuild、Classic Rsbuild、定向 Go 测试、全仓静态编译和 `git diff --check` 通过；提交 `344b5f1a5` 已推送到 `origin/main`。
+- Linux/amd64 静态产物 `/opt/newapi/releases/new-api-payment-fee-344b5f1a5-linux-amd64`，SHA-256 `9cb9e7a4fd3ee94c970069de402023af705d1bd7fb4baa4d49cd1b12a05af054`。生产备份 `/opt/new-api-backups/release-payment-fee-20260827T161641Z/`，含 MySQL dump、Compose、Nginx、容器检查和旧产物哈希。
+- site-builder 先以 3010 候选实例验证健康、版本和 `payment_fee` 四表字段，再只重建 `new-api` 正式容器；MySQL/Redis 容器 ID 未变，正式仅监听 3000，候选已移除。正式 `/api/status` 与公网 `https://token.stellaisle.com/api/status` 返回版本 `344b5f1a5`，公网 `/console` 返回 200。
