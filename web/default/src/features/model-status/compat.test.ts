@@ -105,7 +105,7 @@ describe('hasCompleteHealthMetrics', () => {
 })
 
 describe('summarizeAvailabilitySeries', () => {
-  test('groups a seven-day window into at most 24 weighted segments', () => {
+  test('keeps the 48-column density across the seven-day window', () => {
     const series = Array.from({ length: 28 }, (_, index) => ({
       ts: index * 6 * 3600,
       request_count: index === 0 ? 9 : 1,
@@ -119,8 +119,46 @@ describe('summarizeAvailabilitySeries', () => {
 
     const result = summarizeAvailabilitySeries(series, 168)
 
-    assert.ok(result.length <= 24)
-    assert.equal(result[0]?.successRate, 10)
+    assert.ok(result.length <= 48)
+    assert.equal(result[0]?.successRate, 0)
+    assert.equal(result[0]?.hasData, true)
+  })
+
+  test('uses 48 slots for a 24-hour window and marks empty slots unknown', () => {
+    const result = summarizeAvailabilitySeries(
+      Array.from({ length: 48 }, (_, index) => ({
+        ts: index * 30 * 60,
+        request_count: index === 0 ? 1 : 0,
+        success_count: index === 0 ? 1 : 0,
+        avg_ttft_ms: 0,
+        avg_latency_ms: 0,
+        success_rate: index === 0 ? 100 : 0,
+        avg_tps: 0,
+        cache_rate: 0,
+      })),
+      24
+    )
+
+    assert.equal(result.length, 48)
+    assert.equal(result[0]?.hasData, true)
+    assert.equal(result[1]?.hasData, false)
+
+    const empty = summarizeAvailabilitySeries(
+      [
+        {
+          ts: 0,
+          request_count: 0,
+          success_count: 0,
+          avg_ttft_ms: 0,
+          avg_latency_ms: 0,
+          success_rate: 0,
+          avg_tps: 0,
+          cache_rate: 0,
+        },
+      ],
+      24
+    )
+    assert.equal(empty[0]?.hasData, false)
   })
 
   test('falls back to averaging reported rates when request counts are absent', () => {
@@ -143,9 +181,11 @@ describe('summarizeAvailabilitySeries', () => {
           cache_rate: 0,
         },
       ],
+      24,
       24
     )
 
     assert.equal(result[0]?.successRate, 95)
+    assert.equal(result[0]?.hasData, true)
   })
 })

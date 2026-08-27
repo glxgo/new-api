@@ -16,6 +16,35 @@
 
 ## Current handoff
 
+### 2026-08-26 — Per-subscription midnight reset anchor deployed
+
+- Commits `23cb6a048` and `e2063adbd` add snapshot-only `quota_reset_anchor` metadata to `SubscriptionPlan`, with explicit `midnight` handling. Daily/weekly calculations and admin projections align those instances to Asia/Shanghai 00:00; empty/unknown anchors retain the normal purchase/start wall-clock phase. The monthly weekly special case still stops after its original three reset windows even when the first boundary is moved earlier to midnight. Regression coverage includes daily/weekly calculation, snapshot round-trip, the future-midnight reset and the no-fourth-window guard.
+- Local `GOTOOLCHAIN=local ... go test -vet=off ./model`, full model tests, compile-only build and Linux/amd64 static build passed in clean detached worktrees. The main worktree still contains unrelated dirty changes and the commits have not been pushed.
+- Production uses `/opt/newapi/releases/new-api-20260826-subscription-midnight-anchor2-linux-amd64` (SHA-256 `c324eefd56c3b603c0d328dd0041ecb5e49fe8d57cfa070a6682e3a24cdc76ec`) and keeps the default purchase-time reset contract for all subscriptions without the snapshot override. Operational/database evidence is recorded in `../CODEX_MEMORY.md` under the 2026-08-26 entry.
+
+### 2026-08-25 — Active-probe bars restored to their prior height rule (deployed)
+
+- User clarified that only real-request bars should use the new mapping (below 85% at the floor, 85%–100% rising uniformly). Active-probe bars now use the prior `Math.max(12, healthyPercentage)` rule again, with their prior spacing and minimum width restored.
+- Default TypeScript, model-status visual tests, Rsbuild build and `git diff --check` passed locally.
+- Production version `20260825-admin-ops-30m-height2`, artifact SHA-256 `5184df4bb635004a2f8bd0e80dc8c42880e1db4025aebc7a60ee3b9640e681b6`; site-builder is healthy on 3000 only, candidate 3010 removed, and all three public domains return the new version.
+- Evidence appended under `/opt/newapi/backups/admin-ops-20260825-211643/`; source remains uncommitted and unpushed.
+
+### 2026-08-25 — Performance bucket height now follows success rate (deployed)
+
+- Bucket height is now success-rate driven: below 85% stays at the floor; 85%–100% rises uniformly to full height. Existing health color thresholds are unchanged, and the mapping is used for both real-request and active-probe bars.
+- Added boundary tests for 0%, 85%, 92.5%, 100%, out-of-range values and NaN; Default TypeScript, Node regressions and Rsbuild production build passed.
+- Production version is `20260825-admin-ops-30m-height`, artifact SHA-256 `bcd2c91035724855dd3399e6dadcc75e2b2ac2a6413cdcf8926694ab043c46b6`; site-builder formal container is healthy on port 3000 and all three public `/api/status` checks return the new version.
+- Evidence is appended under `/opt/newapi/backups/admin-ops-20260825-211643/`; source remains uncommitted and unpushed.
+
+### 2026-08-25 — 综合维护与模型状态/号池最新调整已部署
+
+- Current dirty worktree includes browser-session mainland whitelist automation and root IP management, 451 return/refresh, settled API-key today/lifetime usage, 30-day detailed-log archival, percentage-sorted CPA public pool, model-status timeline, and related frontend changes. Public pool page size is now 8.
+- Model-status timelines now use a 30-minute 24-hour bucket and 48 fixed slots for 24h/7d/30d; longer ranges widen the bucket. Frontend bars use shrinkable flex width, compact gaps and `min-w-0` so bars stay inside the card.
+- Local validation: cached Go 1.26.4 focused Go tests, Linux/amd64 static build, Default `tsc -b`, model-status/public-pool Node tests, Rsbuild `build:check`, and `git diff --check` passed. The frontend package has no root `test` script; that npm diagnostic was not a code failure.
+- Production target is `site-builder (production host redacted)`, not deprecated overseas2. Version `20260825-admin-ops-30m`; artifact `/opt/newapi/releases/new-api-20260825-admin-ops-30m-linux-amd64`, SHA-256 `029197c6f34786280f96eb7a2383b286f6bdd121d9a4713f69fb8dbaa2a0dcdc`; formal `new-api` is healthy on `127.0.0.1:3000`, MySQL/Redis were not recreated.
+- Public `token.stellaisle.com`, `api.stellaisle.com`, and `direct-token.stellaisle.com` `/api/status` checks returned the new version; unauthenticated `/api/user/self` remains 401, unauthenticated auto-whitelist is protected, and `nginx -t` passed.
+- Rollback/evidence backup: `/opt/newapi/backups/admin-ops-20260825-211643/`. Git remains uncommitted and unpushed; the worktree stays dirty.
+
 ### 2026-08-23 — Admin subscription list hides unusable instances and shows total-cap usage (deployed)
 
 - `GetSubscriptionSubscriberInstances` now returns only active, started, unexpired instances with remaining cycle quota or a due cycle reset, and with remaining total cap when a cap exists. Expired/cancelled/cycle-exhausted/total-cap-exhausted instances are omitted from the admin subscriber sheet.
@@ -1698,3 +1727,41 @@
 - 提交 `cebc977b8` 将历史企业身份迁移放到 Redis 初始化之后执行；这样已有用户缓存会立即失效，且保留 `RDB == nil` 防护。模型定向测试、451 定向测试、全仓 compile-only、Default 前端构建均通过，已推送 `origin/main`。
 - 最终生产产物 `/opt/newapi/releases/new-api-20260825-451-enterprise-cebc977b8-linux-amd64`，SHA-256 `5d6b76dca995b2ecefb9b277bcd097e8a2b1364a2c078317a1000afc97db3c8d`；备份 `/opt/newapi/backups/release-20260825-451-enterprise-cebc977b8-20260824T162350Z/`。该版本已替换中间版本 `e297ade40`，正式 compose 通过配置校验。
 - site-builder 当前容器 `healthy`、重启 0，启动日志无 panic，容器内二进制哈希与本地一致；三现役公网域名 `/api/status` 均返回 `20260825-451-enterprise-cebc977b8`。只重建 `new-api`，MySQL/Redis 未重建，overseas2 未触碰。
+
+### 2026-08-26 — 分组顺序与渠道图标元数据（已发布）
+
+- 新增 `GroupOrder`（JSON 数组）与 `GroupIconTypes`（分组名到渠道类型 ID 的 JSON 映射）系统选项。它们仅用于展示顺序和图标，不复制渠道路由、模型或计费功能；`/api/user/self/groups` 保留原 `data` 结构并额外返回 `group_order`、`group_icon_types`。
+- Default 设置页的分组可视化编辑器已加入上下移动排序、渠道同款图标选择和 JSON 编辑字段；Default API Key 分组下拉与表格内联分组选择器按配置顺序展示，并在分组名前渲染渠道图标。
+- 本地 Default/Classic 前端构建、Default `tsc -b`、Go 全仓 compile-only（`go test -vet=off ./... -run '^$'`）和 `git diff --check` 均通过；代码未提交、未推送，Classic 主题设置页未同步该可视化编辑器。
+- 在隔离工作树中以当前本地提交 `e2063adbd` 为基线，仅应用本次分组功能补丁，未带入主工作树其他未提交改动。Linux/amd64 静态候选产物为 `/opt/newapi/releases/new-api-group-icons-20260826-e2063adbd-linux-amd64`，SHA-256 `a16a7cf2f0a4d72d0ecf9f6d252072788b3e2bfeeb7cad1f3257618458fb5f3c`；正式 compose `/opt/newapi/docker-compose.final.group-icons-20260826.yml` 已通过 `docker compose config --quiet`。
+- canonical `site-builder` 仅重建 `new-api`，MySQL/Redis 未重建，`overseas2` 未触碰。备份位于 `/opt/new-api-backups/release-20260826-group-icons-20260826T091814Z/`；容器当前 `healthy`、重启 0，仅监听 `127.0.0.1:3000`，`/new-api` 挂载指向上述产物且远端哈希一致。
+- `token.stellaisle.com`、`api.stellaisle.com`、`direct-token.stellaisle.com` 三域 `/api/status` 均 HTTP 200/`success=true`；未登录 `/api/user/groups` 返回 `group_order` 与 `group_icon_types` 字段（当前顺序 13 项、图标映射 0 项，为默认配置）。
+
+### 2026-08-26 — 分组定价 500 根因已确认（历史诊断，已由下方发布记录 supersede）
+
+- Safari Web Inspector 在 `/system-settings/billing/group-pricing` 稳定复现：页面文档与 `/api/option/` 均 HTTP 200，但 Console 报 `TypeError: null is not an object (evaluating 'o.filter')`，来源为线上 `5339.b9d66aa2a0.js:1:103193`，随后由前端错误边界显示 500。
+- 已认证 HAR 中 `/api/option/` 返回 `success=true`、282 项；`GroupOrder` 的值是字符串 `"null"`，`GroupIconTypes` 为 `"{}"`。后端日志对应页面和 `/api/option/` 均为 200，近期 5xx 是无关的 relay 请求。开启 Safari“停用缓存”后重新加载仍完全复现，因此本案不是浏览器缓存或必须新开浏览器的问题。
+- 代码链路已定位：`setting/group_metadata.go` 的 nil `[]string` 经 `common.Marshal`（`json.Marshal`）序列化成 `null`；前端分组定价 chunk 解析后直接执行 `configuredOrder.filter(...)`，未把合法 JSON `null` 归一为空数组。下一步应同时修正默认序列化/持久化为 `[]`，并在前端对 null 做类型防御；本轮未改源码、数据库或生产部署。
+
+### 2026-08-26 — 分组定价 500 修复与正式发布
+
+- 代码修复覆盖 `setting/group_metadata.go`、`model/option.go`、`web/default/src/features/system-settings/models/group-ratio-visual-editor.tsx` 及新增 `web/default/src/features/system-settings/utils/group-pricing-json.ts`：默认值和旧值兼容归一为 `[]`/`{}`，写入与 API 暴露前规范化，前端所有分组定价映射增加结构校验，避免 `null.filter`/对象操作崩溃；新增 Go 与前端回归测试。
+- 已验证 `go test ./setting -run 'GroupMetadata'`、前端分组 JSON 4 条测试、既有 `group-renames` 测试、Default `tsc -b`、`go test -vet=off ./... -run '^$'`、Default/Classic 生产构建、Prettier 和 `git diff --check` 全部通过。主工作树仍有用户既有未提交改动，本修复未提交、未推送；发布使用隔离工作树基线 `e2063adbd` 加本修复。
+- Linux/amd64 静态产物 `/opt/newapi/releases/new-api-group-pricing-null-fix-20260826-linux-amd64`，SHA-256 `b9969d2e228f3a17ffbae812f67a37efeb121578ca28ee1c258f843324a0cb21`。正式 compose `/opt/newapi/docker-compose.final.group-pricing-20260826.yml`，默认 `/opt/newapi/docker-compose.final.yml` 已同步并通过 `docker compose config --quiet`。
+- site-builder 发布前备份 `/opt/new-api-backups/release-20260826-group-pricing-null-fix-20260826T110708Z/`；仅重建 `new-api`，MySQL/Redis 未重建，`overseas2` 未触碰。正式容器版本 `20260826-group-pricing-null-fix`、healthy、重启 0、只监听 3000，候选 3010 已移除。三现役公网域名状态、分组定价页面和 `/api/user/groups` 顶层数组/对象形状均已验证；Safari 登录态页面正常，无 500。
+
+### 2026-08-26 — 发布快照不累积导致旧功能被覆盖（只读诊断）
+
+- `main.go` 通过 `go:embed` 嵌入 `web/default/dist` 和 `web/classic/dist`，生产 Compose 将单个 Go 二进制挂载为 `/new-api`；所以发布粒度是整份后端与前端快照，而非增量补丁。
+- 最近隔离发布树 `/private/tmp/new-api-group-deploy.8DTOhx` 固定在 `e2063adbd`，只包含本次分组功能和分组定价空值修复。主工作树同一 HEAD 之上仍有模型状态、平台用量、性能指标、身份/策略等 tracked 未提交改动，以及新增测试/工具文件；这些文件没有进入候选树和最终 Linux/amd64 产物。
+- 主工作树与隔离树的状态/差异已实测：隔离树 `git diff --stat` 仅 15 个分组 tracked 文件；主工作树另有 50+ 个业务文件。线上首页资源 `index.7f23923cb5.js` 与主工作树现有 dist 的 `index.1e421db6f0.js` 也不相同。
+- 结论：每次发布从干净 commit 建新二进制并手工带入当前补丁，导致上次仍未提交的功能在整包替换时消失；蓝绿切换本身没有删除代码或数据库。旧产物仍保留在生产 release 目录，可作为回滚证据。
+- 当前未改源码、未提交、未推送、未改生产。后续应建立累积 release 分支/快照，强制记录 commit + patch manifest，并在构建前拒绝未纳入快照的 tracked/untracked 改动，避免再次发布不完整功能集合。
+
+### 2026-08-26 — 主工作树完整快照已发布
+
+- 用户明确授权将主工作树全部未上传修改整体上线。本次直接从 `/Users/adrian/Documents/中转站运营/new-api` 主工作树构建，未再从只含单一补丁的隔离树制作产物；Default/Classic dist、后端代码、tracked 修改和 8 个 untracked 源码/测试文件均纳入构建。
+- 本地通过 Default 20 条定向前端回归、`tsc -b`、分组/订阅/身份/策略/平台用量/性能指标定向 Go 测试、`go test -vet=off ./... -run '^$'`、Default/Classic Rsbuild 和 `git diff --check`。Linux/amd64 静态产物 `/opt/newapi/releases/new-api-full-local-20260826-linux-amd64`，SHA-256 `13afa19a90dcc951bb62e8d9b8be6772a398f830eed5894c2aee3b11427294d4`。
+- site-builder 备份 `/opt/new-api-backups/release-20260826-full-local-20260826T144438Z/`；正式 Compose `/opt/newapi/docker-compose.final-full-local-20260826.yml`，默认 `/opt/newapi/docker-compose.final.yml` 已同步；只重建 `new-api`，MySQL/Redis 未重建，`overseas2` 未触碰。正式挂载新产物、healthy、重启 0，仅监听 3000，候选 3010 已移除。
+- 三现役公网域名 `/api/status` 均返回版本 `20260826-full-local-snapshot`，分组定价页面均 200，`/api/user/groups` 顶层 `group_order` 为数组、`group_icon_types` 为对象；Safari 登录态平台用量、模型状态、分组定价三页均正常，无错误边界。
+- 主工作树仍未提交、未推送；本次发布状态为“本地完整快照已构建、生产已部署、在线已验收”。后续应把该快照提交/推送后再继续发布，形成可回滚、可复现的累积基线。

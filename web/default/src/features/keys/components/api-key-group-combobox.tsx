@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useMemo, useState } from 'react'
 import { Check, ChevronsUpDown, Route } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { getGroupIconLabel, getGroupIconNode } from '@/lib/group-icons'
 import { cn } from '@/lib/utils'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { Badge } from '@/components/ui/badge'
@@ -50,6 +51,7 @@ export type ApiKeyGroupOption = {
   label: string
   desc?: string
   ratio?: number | string
+  iconType?: number
 }
 
 type ApiKeyGroupComboboxProps = {
@@ -235,9 +237,15 @@ export function ApiKeyGroupCombobox({
       />
       <span className='min-w-0'>
         <span
-          className='text-foreground block text-sm leading-5 font-medium break-words'
+          className='text-foreground flex items-center gap-2 text-sm leading-5 font-medium break-words'
           title={option.label}
         >
+          <span
+            className='flex size-5 shrink-0 items-center justify-center'
+            title={getGroupIconLabel(option.iconType)}
+          >
+            {getGroupIconNode(option.iconType, 20)}
+          </span>
           {option.label}
         </span>
         {option.desc && (
@@ -337,10 +345,20 @@ export function ApiKeyGroupCombobox({
     <>
       <span className='flex min-w-0 flex-1 items-center justify-between gap-2 sm:gap-3'>
         <span className='min-w-0'>
-          <span className='block truncate font-medium'>
-            {customRoutingSelected
-              ? 'API Key 消耗路由策略'
-              : selectedOption?.label || placeholder || t('Select a group')}
+          <span className='flex items-center gap-2 truncate font-medium'>
+            {!customRoutingSelected && (
+              <span
+                className='flex size-5 shrink-0 items-center justify-center'
+                title={getGroupIconLabel(selectedOption?.iconType)}
+              >
+                {getGroupIconNode(selectedOption?.iconType, 20)}
+              </span>
+            )}
+            <span className='truncate'>
+              {customRoutingSelected
+                ? 'API Key 消耗路由策略'
+                : selectedOption?.label || placeholder || t('Select a group')}
+            </span>
           </span>
           {customRoutingSelected ? (
             <span className='text-muted-foreground block truncate text-[11px] sm:text-xs'>

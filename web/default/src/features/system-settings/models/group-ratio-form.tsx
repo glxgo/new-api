@@ -64,6 +64,8 @@ type GroupFormValues = {
   GroupCostRatio: string
   TopupGroupRatio: string
   UserUsableGroups: string
+  GroupOrder: string
+  GroupIconTypes: string
   GroupGroupRatio: string
   AutoGroups: string
   DefaultUseAutoGroup: boolean
@@ -147,6 +149,8 @@ export const GroupRatioForm = memo(function GroupRatioForm({
               groupCostRatio={form.watch('GroupCostRatio')}
               topupGroupRatio={form.watch('TopupGroupRatio')}
               userUsableGroups={form.watch('UserUsableGroups')}
+              groupOrder={form.watch('GroupOrder')}
+              groupIconTypes={form.watch('GroupIconTypes')}
               groupGroupRatio={form.watch('GroupGroupRatio')}
               autoGroups={form.watch('AutoGroups')}
               onChange={(field, value) =>
@@ -244,6 +248,44 @@ export const GroupRatioForm = memo(function GroupRatioForm({
                   <FormDescription>
                     {t(
                       'JSON map of group → description exposed when users create API keys.'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='GroupOrder'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Group display order')}</FormLabel>
+                  <FormControl>
+                    <Textarea rows={5} {...field} />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'JSON array of group identifiers in the order shown to API Key users.'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='GroupIconTypes'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Group channel icon types')}</FormLabel>
+                  <FormControl>
+                    <Textarea rows={5} {...field} />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'JSON map of group identifiers to channel type ids. This only controls the displayed icon and does not copy channel behavior.'
                     )}
                   </FormDescription>
                   <FormMessage />

@@ -18,6 +18,23 @@ For commercial licensing, please contact support@quantumnous.com
 */
 export const HEALTHY_AVAILABILITY_THRESHOLD = 90
 export const UNSTABLE_AVAILABILITY_THRESHOLD = 80
+export const AVAILABILITY_BAR_HEIGHT_FLOOR = 18
+
+/**
+ * Compress low availability into a stable floor while preserving a uniform
+ * visual scale for the useful 85%-100% range.
+ */
+export function availabilityBarHeight(
+  successRate: number,
+  floor = AVAILABILITY_BAR_HEIGHT_FLOOR
+): number {
+  const safeFloor = Math.min(100, Math.max(0, floor))
+  const safeRate = Number.isFinite(successRate)
+    ? Math.min(100, Math.max(0, successRate))
+    : 0
+  if (safeRate <= 85) return safeFloor
+  return safeFloor + ((safeRate - 85) / 15) * (100 - safeFloor)
+}
 
 export function availabilityBarClass(successRate: number): string {
   if (successRate >= HEALTHY_AVAILABILITY_THRESHOLD) {

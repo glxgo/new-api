@@ -344,6 +344,11 @@ func SetApiRouter(router *gin.Engine) {
 		// resolution; the submitted username is resolved and identity-checked.
 		apiRouter.GET("/access-policy/whitelist", controller.GetMainlandWhitelistPage)
 		apiRouter.POST("/access-policy/whitelist", middleware.CriticalRateLimit(), middleware.SessionCookieOriginGuard(), controller.ApplyMainlandWhitelistFromSession)
+		// Browser-session-only bootstrap for a mainland-blocked page. This route
+		// intentionally does not use UserAuth because the self-contained 451 page
+		// cannot provide the SPA's New-Api-User header; the controller validates
+		// the session cookie itself and rejects bearer/API-key traffic.
+		apiRouter.POST("/access-policy/auto-whitelist", middleware.CriticalRateLimit(), middleware.SessionCookieOriginGuard(), controller.AutoWhitelistFromBrowserSession)
 
 		// 分组定价预览(2026-06-22): 管理员以上可访问, 成本/毛利字段仅 Root 返回(controller 内裁剪)。
 		apiRouter.GET("/option/pricing/group-preview", middleware.AdminAuth(), controller.GetGroupPricingPreview)

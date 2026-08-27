@@ -34,21 +34,26 @@ type Token struct {
 	// SubscriptionMode keeps existing keys backward compatible: empty/auto
 	// continues the legacy user-level allocation, instance pins this key to a
 	// concrete UserSubscription.
-	SubscriptionMode             string         `json:"subscription_mode" gorm:"type:varchar(16);not null;default:'auto';index"`
-	SubscriptionId               int            `json:"subscription_id" gorm:"not null;default:0;index"`
-	SubscriptionAllowRenewal     bool           `json:"subscription_allow_renewal" gorm:"not null;default:false"`
-	SubscriptionAllowSameGroup   bool           `json:"subscription_allow_same_group" gorm:"not null;default:false"`
-	SubscriptionAllowWallet      bool           `json:"subscription_allow_wallet" gorm:"not null;default:false"`
-	SubscriptionWalletLimit      int64          `json:"subscription_wallet_limit" gorm:"type:bigint;not null;default:0"`
-	SubscriptionWalletUsed       int64          `json:"subscription_wallet_used" gorm:"type:bigint;not null;default:0"`
-	SubscriptionWalletCycleId    int            `json:"subscription_wallet_cycle_id" gorm:"not null;default:0;index"`
-	PlannedSubscriptionId        int            `json:"planned_subscription_id" gorm:"not null;default:0;index"`
-	PlannedSubscriptionGroup     string         `json:"planned_subscription_group" gorm:"type:varchar(64);not null;default:''"`
-	PlannedSubscriptionEffective int64          `json:"planned_subscription_effective" gorm:"type:bigint;not null;default:0;index"`
-	VirtualMembershipId          int            `json:"virtual_membership_id" gorm:"not null;default:0;index"`
-	VirtualMembershipMode        string         `json:"virtual_membership_mode" gorm:"type:varchar(16);not null;default:'instance'"`
-	CancelPlannedSubscription    bool           `json:"cancel_planned_subscription" gorm:"-"`
-	DeletedAt                    gorm.DeletedAt `gorm:"index"`
+	SubscriptionMode             string `json:"subscription_mode" gorm:"type:varchar(16);not null;default:'auto';index"`
+	SubscriptionId               int    `json:"subscription_id" gorm:"not null;default:0;index"`
+	SubscriptionAllowRenewal     bool   `json:"subscription_allow_renewal" gorm:"not null;default:false"`
+	SubscriptionAllowSameGroup   bool   `json:"subscription_allow_same_group" gorm:"not null;default:false"`
+	SubscriptionAllowWallet      bool   `json:"subscription_allow_wallet" gorm:"not null;default:false"`
+	SubscriptionWalletLimit      int64  `json:"subscription_wallet_limit" gorm:"type:bigint;not null;default:0"`
+	SubscriptionWalletUsed       int64  `json:"subscription_wallet_used" gorm:"type:bigint;not null;default:0"`
+	SubscriptionWalletCycleId    int    `json:"subscription_wallet_cycle_id" gorm:"not null;default:0;index"`
+	PlannedSubscriptionId        int    `json:"planned_subscription_id" gorm:"not null;default:0;index"`
+	PlannedSubscriptionGroup     string `json:"planned_subscription_group" gorm:"type:varchar(64);not null;default:''"`
+	PlannedSubscriptionEffective int64  `json:"planned_subscription_effective" gorm:"type:bigint;not null;default:0;index"`
+	VirtualMembershipId          int    `json:"virtual_membership_id" gorm:"not null;default:0;index"`
+	VirtualMembershipMode        string `json:"virtual_membership_mode" gorm:"type:varchar(16);not null;default:'instance'"`
+	// Usage projections are read-only response fields. They are derived from
+	// settled consume logs plus archived daily aggregates and are never stored
+	// in the tokens table.
+	TodayUsedQuota            int64          `json:"today_used_quota" gorm:"-"`
+	LifetimeUsedQuota         int64          `json:"lifetime_used_quota" gorm:"-"`
+	CancelPlannedSubscription bool           `json:"cancel_planned_subscription" gorm:"-"`
+	DeletedAt                 gorm.DeletedAt `gorm:"index"`
 }
 
 func (token *Token) Clean() {

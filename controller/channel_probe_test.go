@@ -63,6 +63,31 @@ func TestClassifyChannelProbeError(t *testing.T) {
 	require.Equal(t, "upstream", classifyChannelProbeError(testResult{httpStatus: 502}))
 }
 
+func TestModelStatusBucketWindowUsesThirtyMinuteCadence(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	for _, test := range []struct {
+		hours int
+		count int
+	}{
+		{hours: 24, count: 48},
+		{hours: 24 * 7, count: 48},
+		{hours: 24 * 30, count: 48},
+	} {
+		first, last, bucketSeconds, count := modelStatusBucketWindow(test.hours, now)
+		require.Equal(t, test.count, count)
+		require.EqualValues(t, int64(count-1)*bucketSeconds, last-first)
+		require.Zero(t, last%bucketSeconds)
+		switch test.hours {
+		case 24:
+			require.EqualValues(t, 30*60, bucketSeconds)
+		case 24 * 7:
+			require.EqualValues(t, 210*60, bucketSeconds)
+		case 24 * 30:
+			require.EqualValues(t, 15*60*60, bucketSeconds)
+		}
+	}
+}
+
 func TestClassifyGroupProbeStatusByRemainingHealthyChannels(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -152,10 +177,22 @@ func TestBuildGroupProbeSummariesKeepsSyntheticHealthSeparate(t *testing.T) {
 	require.Equal(t, 50.0, summaries["gpt-plus"].SuccessRate)
 	require.EqualValues(t, 800, summaries["gpt-plus"].AvgLatencyMs)
 	require.Equal(t, "upstream", summaries["gpt-plus"].LastErrorCategory)
-	require.Len(t, summaries["gpt-plus"].Series, 1)
-	require.Equal(t, 2, summaries["gpt-plus"].Series[0].TotalChannels)
-	require.Equal(t, 2, summaries["gpt-plus"].Series[0].CheckedChannels)
-	require.Equal(t, 1, summaries["gpt-plus"].Series[0].HealthyChannels)
+	require.Len(t, summaries["gpt-plus"].Series, 48)
+	var observed *perfmetrics.ProbeSeriesPoint
+	for index := range summaries["gpt-plus"].Series {
+		point := &summaries["gpt-plus"].Series[index]
+		if point.ProbeCount > 0 {
+			observed = point
+			break
+		}
+	}
+	require.NotNil(t, observed)
+	require.Equal(t, 2, observed.TotalChannels)
+	require.Equal(t, 2, observed.CheckedChannels)
+	require.Equal(t, 1, observed.HealthyChannels)
+	// Intervals with no probe samples are retained and remain unknown.
+	require.Equal(t, 0, summaries["gpt-plus"].Series[0].CheckedChannels)
+	require.Equal(t, 0, summaries["gpt-plus"].Series[0].HealthyChannels)
 
 	require.Equal(t, "healthy", summaries["shared"].Status)
 	require.Equal(t, 2, summaries["shared"].TotalChannels)

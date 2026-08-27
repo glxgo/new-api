@@ -123,7 +123,7 @@ func main() {
 	// Subscription quota reset task (daily/weekly/monthly/custom)
 	service.StartSubscriptionQuotaResetTask()
 
-	// Keep request-level consume/error details for 7 days, then retain only
+	// Keep request-level consume/error details for 30 days, then retain only
 	// compact usage/billing aggregates.
 	service.StartDetailedUsageLogRetentionTask()
 

@@ -18,8 +18,11 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { RefreshCw, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { useAuthStore } from '@/stores/auth-store'
+import { ROLE } from '@/lib/roles'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,10 +33,21 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import {
   getAccessPolicy,
+  getMainlandAllowlists,
   rollbackAccessPolicy,
+  revokeMainlandAllowlist,
   updateAccessPolicy,
 } from '../api'
 import {
@@ -45,13 +59,39 @@ import { SettingsSection } from '../components/settings-section'
 export function AccessPolicySection() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const isRoot =
+    (useAuthStore((state) => state.auth.user?.role) ?? 0) >= ROLE.SUPER_ADMIN
   const [pendingValue, setPendingValue] = useState<boolean | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [rollbackOpen, setRollbackOpen] = useState(false)
+  const [revokeId, setRevokeId] = useState<number | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['access-policy'],
     queryFn: getAccessPolicy,
+  })
+
+  const allowlistsQuery = useQuery({
+    queryKey: ['mainland-allowlists'],
+    queryFn: () => getMainlandAllowlists(false),
+    enabled: isRoot,
+  })
+
+  const revokeMutation = useMutation({
+    mutationFn: (id: number) => revokeMainlandAllowlist(id),
+    onSuccess: (res) => {
+      setRevokeId(null)
+      if (res.success) {
+        toast.success(t('IP whitelist entry deleted'))
+        void allowlistsQuery.refetch()
+      } else {
+        toast.error(res.message || t('Failed to delete IP whitelist entry'))
+      }
+    },
+    onError: (error: Error) => {
+      setRevokeId(null)
+      toast.error(error.message || t('Failed to delete IP whitelist entry'))
+    },
   })
 
   const saveMutation = useMutation({
@@ -153,6 +193,105 @@ export function AccessPolicySection() {
             {t('Rollback to previous version')}
           </Button>
         </div>
+
+        <div className='border-border/70 mt-4 space-y-3 border-t pt-4'>
+          <div className='flex flex-wrap items-center justify-between gap-2'>
+            <div>
+              <div className='text-sm font-medium'>
+                {t('Mainland IP whitelist management')}
+              </div>
+              <p className='text-muted-foreground text-xs'>
+                {t('View each users IP entries and revoke them individually')}
+              </p>
+            </div>
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={() => void allowlistsQuery.refetch()}
+              disabled={allowlistsQuery.isFetching}
+            >
+              <RefreshCw className='size-3.5' />
+              {t('Refresh')}
+            </Button>
+          </div>
+          {!isRoot ? (
+            <p className='text-muted-foreground text-sm'>
+              {t('Only the super administrator can manage IP whitelists')}
+            </p>
+          ) : allowlistsQuery.isError ? (
+            <p className='text-destructive text-sm'>
+              {t('Only the super administrator can manage IP whitelists')}
+            </p>
+          ) : allowlistsQuery.isLoading ? (
+            <p className='text-muted-foreground text-sm'>{t('Loading...')}</p>
+          ) : allowlistsQuery.data?.data?.length ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('User')}</TableHead>
+                  <TableHead>{t('IP address')}</TableHead>
+                  <TableHead>{t('Identity')}</TableHead>
+                  <TableHead>{t('Source')}</TableHead>
+                  <TableHead>{t('Last seen')}</TableHead>
+                  <TableHead className='text-right'>{t('Action')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {allowlistsQuery.data.data.map((entry) => (
+                  <TableRow key={entry.id}>
+                    <TableCell>
+                      <div className='font-medium'>
+                        {entry.username || `ID ${entry.user_id}`}
+                      </div>
+                      {entry.email ? (
+                        <div className='text-muted-foreground text-xs'>
+                          {entry.email}
+                        </div>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className='font-mono text-xs'>
+                      {entry.ip}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant='outline'>
+                        {entry.identity_type === 'enterprise'
+                          ? t('Enterprise')
+                          : t('Education')}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className='text-xs'>
+                      {entry.source === 'browser_session'
+                        ? t('Browser session')
+                        : entry.source === 'admin'
+                          ? t('Administrator')
+                          : t('User request')}
+                    </TableCell>
+                    <TableCell className='text-muted-foreground text-xs'>
+                      {entry.last_seen_at
+                        ? new Date(entry.last_seen_at * 1000).toLocaleString()
+                        : '-'}
+                    </TableCell>
+                    <TableCell className='text-right'>
+                      <Button
+                        variant='destructive'
+                        size='sm'
+                        onClick={() => setRevokeId(entry.id)}
+                        disabled={revokeMutation.isPending}
+                      >
+                        <Trash2 className='size-3.5' />
+                        {t('Delete')}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className='text-muted-foreground text-sm'>
+              {t('No active mainland IP whitelist entries')}
+            </p>
+          )}
+        </div>
       </SettingsControlGroup>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
@@ -177,6 +316,36 @@ export function AccessPolicySection() {
             <AlertDialogCancel>{t('Cancel')}</AlertDialogCancel>
             <AlertDialogAction onClick={onConfirmSave}>
               {t('Confirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={revokeId !== null}
+        onOpenChange={(open) => {
+          if (!open) setRevokeId(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('Delete this IP whitelist entry?')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(
+                'The address will be blocked again if mainland restriction is enabled.'
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('Cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (revokeId !== null) revokeMutation.mutate(revokeId)
+              }}
+            >
+              {t('Delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

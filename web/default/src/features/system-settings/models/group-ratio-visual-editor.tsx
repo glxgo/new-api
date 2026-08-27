@@ -17,8 +17,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useMemo, useEffect, useCallback, memo } from 'react'
-import { Pencil, Plus, Trash2, GripVertical, ChevronDown } from 'lucide-react'
+import {
+  Pencil,
+  Plus,
+  Trash2,
+  GripVertical,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { getLobeIcon } from '@/lib/lobe-icon'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -35,15 +43,34 @@ import {
 } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { StaticDataTable } from '@/components/data-table'
 import { Dialog } from '@/components/dialog'
-import { safeJsonParse } from '../utils/json-parser'
+import { CHANNEL_TYPE_OPTIONS } from '@/features/channels/constants'
+import { getChannelTypeIcon } from '@/features/channels/lib/channel-utils'
+import {
+  parseGroupIconTypes,
+  parseGroupOrder,
+} from '../utils/group-pricing-json'
+import {
+  safeJsonParse,
+  safeJsonParseWithValidation,
+} from '../utils/json-parser'
+import { isObjectRecord } from '../utils/json-validators'
 
 type GroupRatioVisualEditorProps = {
   groupRatio: string
   groupCostRatio: string
   topupGroupRatio: string
   userUsableGroups: string
+  groupOrder: string
+  groupIconTypes: string
   groupGroupRatio: string
   autoGroups: string
   onChange: (field: string, value: string) => void
@@ -61,6 +88,7 @@ type GroupPricingRow = {
   costRatio: string // '' = 继承售价倍率; 数字字符串 = 单独配置
   selectable: boolean
   description: string
+  iconType: number
 }
 
 type GroupOverride = {
@@ -83,26 +111,65 @@ function normalizeRatio(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 1
 }
 
+function isRecord<T>(data: unknown): data is Record<string, T> {
+  return isObjectRecord(data)
+}
+
+function isNestedRecord<T>(
+  data: unknown
+): data is Record<string, Record<string, T>> {
+  return isObjectRecord(data) && Object.values(data).every(isObjectRecord)
+}
+
+function parseRecord<T>(
+  value: string | undefined | null,
+  context: string,
+  silent = false
+): Record<string, T> {
+  return safeJsonParseWithValidation<Record<string, T>>(value, {
+    fallback: {} as Record<string, T>,
+    validator: isRecord<T>,
+    context,
+    silent,
+  })
+}
+
+function parseNestedRecord<T>(
+  value: string | undefined | null,
+  context: string,
+  silent = false
+): Record<string, Record<string, T>> {
+  return safeJsonParseWithValidation<Record<string, Record<string, T>>>(value, {
+    fallback: {} as Record<string, Record<string, T>>,
+    validator: isNestedRecord<T>,
+    context,
+    silent,
+  })
+}
+
 function buildGroupPricingRows(
   groupRatio: string,
   groupCostRatio: string,
-  userUsableGroups: string
+  userUsableGroups: string,
+  groupOrder: string,
+  groupIconTypes: string
 ): GroupPricingRow[] {
-  const ratioMap = safeJsonParse<Record<string, number>>(groupRatio, {
-    fallback: {},
-    context: 'group ratios',
-  })
-  const costMap = safeJsonParse<Record<string, number>>(groupCostRatio, {
-    fallback: {},
-    context: 'group cost ratios',
-  })
-  const usableMap = safeJsonParse<Record<string, string>>(userUsableGroups, {
-    fallback: {},
-    context: 'user usable groups',
-  })
-  const names = new Set([...Object.keys(ratioMap), ...Object.keys(usableMap)])
+  const ratioMap = parseRecord<number>(groupRatio, 'group ratios')
+  const costMap = parseRecord<number>(groupCostRatio, 'group cost ratios')
+  const usableMap = parseRecord<string>(userUsableGroups, 'user usable groups')
+  const configuredOrder = parseGroupOrder(groupOrder)
+  const iconMap = parseGroupIconTypes(groupIconTypes)
+  const knownNames = new Set([
+    ...Object.keys(ratioMap),
+    ...Object.keys(usableMap),
+  ])
+  const names = [
+    ...configuredOrder.filter((name) => knownNames.has(name)),
+    ...Object.keys(ratioMap),
+    ...Object.keys(usableMap),
+  ].filter((name, index, all) => name && all.indexOf(name) === index)
 
-  return Array.from(names).map((name) => ({
+  return names.map((name) => ({
     _id: createGroupPricingId(),
     name,
     ratio: normalizeRatio(ratioMap[name]),
@@ -111,6 +178,7 @@ function buildGroupPricingRows(
       : '',
     selectable: Object.prototype.hasOwnProperty.call(usableMap, name),
     description: String(usableMap[name] ?? ''),
+    iconType: Number(iconMap[name]) || 0,
   }))
 }
 
@@ -118,10 +186,13 @@ function serializeGroupPricingRows(rows: GroupPricingRow[]) {
   const groupRatio: Record<string, number> = {}
   const groupCostRatio: Record<string, number> = {}
   const userUsableGroups: Record<string, string> = {}
+  const groupIconTypes: Record<string, number> = {}
+  const groupOrder: string[] = []
 
   for (const row of rows) {
     const name = row.name.trim()
     if (!name) continue
+    groupOrder.push(name)
     groupRatio[name] = normalizeRatio(row.ratio)
     // 成本倍率仅当显式填写时才写入(空 = 继承售价倍率, 后端 GetGroupCostRatio 处理)
     if (row.costRatio !== '') {
@@ -130,12 +201,17 @@ function serializeGroupPricingRows(rows: GroupPricingRow[]) {
     if (row.selectable) {
       userUsableGroups[name] = row.description
     }
+    if (row.iconType > 0) {
+      groupIconTypes[name] = row.iconType
+    }
   }
 
   return {
     GroupRatio: JSON.stringify(groupRatio, null, 2),
     GroupCostRatio: JSON.stringify(groupCostRatio, null, 2),
     UserUsableGroups: JSON.stringify(userUsableGroups, null, 2),
+    GroupOrder: JSON.stringify(groupOrder, null, 2),
+    GroupIconTypes: JSON.stringify(groupIconTypes, null, 2),
   }
 }
 
@@ -154,13 +230,23 @@ function groupPricingSignature(rows: GroupPricingRow[]): string {
       fallback: {},
       silent: true,
     }),
+    groupOrder: safeJsonParse(serialized.GroupOrder, {
+      fallback: [],
+      silent: true,
+    }),
+    groupIconTypes: safeJsonParse(serialized.GroupIconTypes, {
+      fallback: {},
+      silent: true,
+    }),
   })
 }
 
 function sourceGroupPricingSignature(
   groupRatio: string,
   groupCostRatio: string,
-  userUsableGroups: string
+  userUsableGroups: string,
+  groupOrder: string,
+  groupIconTypes: string
 ): string {
   return JSON.stringify({
     groupRatio: safeJsonParse(groupRatio, { fallback: {}, silent: true }),
@@ -172,6 +258,11 @@ function sourceGroupPricingSignature(
       fallback: {},
       silent: true,
     }),
+    groupOrder: safeJsonParse(groupOrder, { fallback: [], silent: true }),
+    groupIconTypes: safeJsonParse(groupIconTypes, {
+      fallback: {},
+      silent: true,
+    }),
   })
 }
 
@@ -180,6 +271,8 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
   groupCostRatio,
   topupGroupRatio,
   userUsableGroups,
+  groupOrder,
+  groupIconTypes,
   groupGroupRatio,
   autoGroups,
   onChange,
@@ -206,10 +299,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
 
   // Parse topup group ratios
   const topupRatioList = useMemo(() => {
-    const map = safeJsonParse<Record<string, number>>(topupGroupRatio, {
-      fallback: {},
-      context: 'topup group ratios',
-    })
+    const map = parseRecord<number>(topupGroupRatio, 'topup group ratios')
     return Object.entries(map).map(([name, value]) => ({
       name,
       value: String(value),
@@ -218,21 +308,17 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
 
   // Parse auto groups
   const autoGroupsList = useMemo(() => {
-    return safeJsonParse<string[]>(autoGroups, {
+    return safeJsonParseWithValidation<string[]>(autoGroups, {
       fallback: [],
+      validator: (data): data is string[] =>
+        Array.isArray(data) && data.every((item) => typeof item === 'string'),
       context: 'auto groups',
     })
   }, [autoGroups])
 
   // Parse group-group ratios
   const groupGroupRatioList = useMemo(() => {
-    const map = safeJsonParse<Record<string, Record<string, number>>>(
-      groupGroupRatio,
-      {
-        fallback: {},
-        context: 'group-group ratios',
-      }
-    )
+    const map = parseNestedRecord<number>(groupGroupRatio, 'group-group ratios')
     return Object.entries(map).map(([userGroup, overrides]) => ({
       userGroup,
       overrides: Object.entries(overrides).map(([targetGroup, ratio]) => ({
@@ -263,10 +349,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
 
     const fieldName =
       simpleDialogType === 'groupRatio' ? groupRatio : topupGroupRatio
-    const map = safeJsonParse<Record<string, number>>(fieldName, {
-      fallback: {},
-      silent: true,
-    })
+    const map = parseRecord<number>(fieldName, 'group ratio map', true)
 
     if (simpleEditData && simpleEditData.name !== name) {
       delete map[simpleEditData.name]
@@ -285,10 +368,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
     name: string
   ) => {
     const fieldName = type === 'groupRatio' ? groupRatio : topupGroupRatio
-    const map = safeJsonParse<Record<string, number>>(fieldName, {
-      fallback: {},
-      silent: true,
-    })
+    const map = parseRecord<number>(fieldName, 'group ratio map', true)
     delete map[name]
 
     const field = type === 'groupRatio' ? 'GroupRatio' : 'TopupGroupRatio'
@@ -332,12 +412,10 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
   const handleUserGroupSave = () => {
     if (!userGroupInput.trim()) return
 
-    const map = safeJsonParse<Record<string, Record<string, number>>>(
+    const map = parseNestedRecord<number>(
       groupGroupRatio,
-      {
-        fallback: {},
-        silent: true,
-      }
+      'group-group ratios',
+      true
     )
 
     if (!map[userGroupInput.trim()]) {
@@ -349,12 +427,10 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
   }
 
   const handleUserGroupDelete = (userGroup: string) => {
-    const map = safeJsonParse<Record<string, Record<string, number>>>(
+    const map = parseNestedRecord<number>(
       groupGroupRatio,
-      {
-        fallback: {},
-        silent: true,
-      }
+      'group-group ratios',
+      true
     )
     delete map[userGroup]
     onChange('GroupGroupRatio', JSON.stringify(map, null, 2))
@@ -379,12 +455,10 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
   ) => {
     if (!groupOverrideUserGroup) return
 
-    const map = safeJsonParse<Record<string, Record<string, number>>>(
+    const map = parseNestedRecord<number>(
       groupGroupRatio,
-      {
-        fallback: {},
-        silent: true,
-      }
+      'group-group ratios',
+      true
     )
 
     if (!map[groupOverrideUserGroup]) {
@@ -402,12 +476,10 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
   }
 
   const handleOverrideDelete = (userGroup: string, targetGroup: string) => {
-    const map = safeJsonParse<Record<string, Record<string, number>>>(
+    const map = parseNestedRecord<number>(
       groupGroupRatio,
-      {
-        fallback: {},
-        silent: true,
-      }
+      'group-group ratios',
+      true
     )
 
     if (map[userGroup]) {
@@ -426,6 +498,8 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
         groupRatio={groupRatio}
         groupCostRatio={groupCostRatio}
         userUsableGroups={userUsableGroups}
+        groupOrder={groupOrder}
+        groupIconTypes={groupIconTypes}
         onChange={onChange}
       />
 
@@ -771,6 +845,8 @@ type GroupPricingTableProps = {
   groupRatio: string
   groupCostRatio: string
   userUsableGroups: string
+  groupOrder: string
+  groupIconTypes: string
   onChange: (field: string, value: string) => void
 }
 
@@ -778,26 +854,42 @@ function GroupPricingTable({
   groupRatio,
   groupCostRatio,
   userUsableGroups,
+  groupOrder,
+  groupIconTypes,
   onChange,
 }: GroupPricingTableProps) {
   const { t } = useTranslation()
   const [rows, setRows] = useState<GroupPricingRow[]>(() =>
-    buildGroupPricingRows(groupRatio, groupCostRatio, userUsableGroups)
+    buildGroupPricingRows(
+      groupRatio,
+      groupCostRatio,
+      userUsableGroups,
+      groupOrder,
+      groupIconTypes
+    )
   )
 
   useEffect(() => {
     const incomingSignature = sourceGroupPricingSignature(
       groupRatio,
       groupCostRatio,
-      userUsableGroups
+      userUsableGroups,
+      groupOrder,
+      groupIconTypes
     )
     setRows((currentRows) => {
       if (groupPricingSignature(currentRows) === incomingSignature) {
         return currentRows
       }
-      return buildGroupPricingRows(groupRatio, groupCostRatio, userUsableGroups)
+      return buildGroupPricingRows(
+        groupRatio,
+        groupCostRatio,
+        userUsableGroups,
+        groupOrder,
+        groupIconTypes
+      )
     })
-  }, [groupRatio, groupCostRatio, userUsableGroups])
+  }, [groupRatio, groupCostRatio, userUsableGroups, groupOrder, groupIconTypes])
 
   const emitRows = useCallback(
     (nextRows: GroupPricingRow[]) => {
@@ -806,6 +898,8 @@ function GroupPricingTable({
       onChange('GroupRatio', serialized.GroupRatio)
       onChange('GroupCostRatio', serialized.GroupCostRatio)
       onChange('UserUsableGroups', serialized.UserUsableGroups)
+      onChange('GroupOrder', serialized.GroupOrder)
+      onChange('GroupIconTypes', serialized.GroupIconTypes)
     },
     [onChange]
   )
@@ -840,6 +934,7 @@ function GroupPricingTable({
         costRatio: '',
         selectable: true,
         description: '',
+        iconType: 0,
       },
     ])
   }, [emitRows, rows])
@@ -847,6 +942,20 @@ function GroupPricingTable({
   const removeRow = useCallback(
     (id: string) => {
       emitRows(rows.filter((row) => row._id !== id))
+    },
+    [emitRows, rows]
+  )
+
+  const moveRow = useCallback(
+    (index: number, direction: 'up' | 'down') => {
+      const nextIndex = direction === 'up' ? index - 1 : index + 1
+      if (nextIndex < 0 || nextIndex >= rows.length) return
+      const nextRows = [...rows]
+      ;[nextRows[index], nextRows[nextIndex]] = [
+        nextRows[nextIndex],
+        nextRows[index],
+      ]
+      emitRows(nextRows)
     },
     [emitRows, rows]
   )
@@ -871,7 +980,7 @@ function GroupPricingTable({
             <CardTitle>{t('Pricing groups')}</CardTitle>
             <CardDescription>
               {t(
-                'Edit billing ratios and user-selectable groups in one table.'
+                'Edit billing ratios, display order, and user-selectable groups in one table. Channel icons are visual labels only and do not copy channel behavior.'
               )}
             </CardDescription>
           </div>
@@ -890,6 +999,39 @@ function GroupPricingTable({
             emptyContent={t('No groups yet. Add a group to get started.')}
             columns={[
               {
+                id: 'order',
+                header: t('Order'),
+                className: 'w-28',
+                cell: (row) => {
+                  const index = rows.findIndex((item) => item._id === row._id)
+                  return (
+                    <div className='flex items-center gap-1'>
+                      <GripVertical className='text-muted-foreground size-4 shrink-0' />
+                      <Button
+                        variant='ghost'
+                        size='sm'
+                        className='size-7 p-0'
+                        disabled={index <= 0}
+                        onClick={() => moveRow(index, 'up')}
+                        aria-label={t('Move up')}
+                      >
+                        <ChevronUp className='size-4' />
+                      </Button>
+                      <Button
+                        variant='ghost'
+                        size='sm'
+                        className='size-7 p-0'
+                        disabled={index < 0 || index >= rows.length - 1}
+                        onClick={() => moveRow(index, 'down')}
+                        aria-label={t('Move down')}
+                      >
+                        <ChevronDown className='size-4' />
+                      </Button>
+                    </div>
+                  )
+                },
+              },
+              {
                 id: 'group',
                 header: t('Group name'),
                 className: 'min-w-40',
@@ -901,6 +1043,40 @@ function GroupPricingTable({
                     }
                     aria-invalid={duplicateNames.includes(row.name.trim())}
                   />
+                ),
+              },
+              {
+                id: 'icon',
+                header: t('Channel icon'),
+                className: 'w-44',
+                cell: (row) => (
+                  <Select
+                    value={String(row.iconType || 0)}
+                    onValueChange={(value) =>
+                      updateRow(row._id, 'iconType', Number(value) || 0)
+                    }
+                  >
+                    <SelectTrigger className='w-40'>
+                      <SelectValue placeholder={t('No icon')} />
+                    </SelectTrigger>
+                    <SelectContent alignItemWithTrigger={false}>
+                      <SelectItem value='0'>{t('No icon')}</SelectItem>
+                      {CHANNEL_TYPE_OPTIONS.map((option) => (
+                        <SelectItem
+                          key={option.value}
+                          value={String(option.value)}
+                        >
+                          <span className='flex items-center gap-2'>
+                            {getLobeIcon(
+                              `${getChannelTypeIcon(option.value)}.Color`,
+                              18
+                            )}
+                            <span>{t(option.label)}</span>
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 ),
               },
               {

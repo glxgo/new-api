@@ -503,6 +503,10 @@ func GetSelf(c *gin.Context) {
 		common.SysLog("failed to load user identity: " + identityErr.Error())
 		identityType = model.IdentityTypeNone
 	}
+	// A restored dashboard session (including a long-lived browser cookie) is
+	// enough to establish the user's mainland exception. The helper is
+	// deliberately best-effort and ignores bearer/API-token requests.
+	ApplyMainlandWhitelistFromBrowserSession(c, user.Id)
 
 	// 构建响应数据，包含用户信息和权限
 	responseData := map[string]interface{}{

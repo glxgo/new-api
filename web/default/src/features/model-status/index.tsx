@@ -53,6 +53,7 @@ import {
 } from './probe'
 import {
   availabilityBarClass,
+  availabilityBarHeight,
   HEALTHY_AVAILABILITY_THRESHOLD,
   UNSTABLE_AVAILABILITY_THRESHOLD,
 } from './visuals'
@@ -103,19 +104,23 @@ function AvailabilityBars({
     )
   }
 
-  const segments = summarizeAvailabilitySeries(series, hours)
+  const segments = summarizeAvailabilitySeries(series, hours, 48)
 
   return (
-    <div className='flex h-10 items-end gap-1' aria-label='所选周期可用率趋势'>
+    <div className='flex h-10 items-end gap-px' aria-label='所选周期可用率趋势'>
       {segments.map((point) => (
         <span
           key={point.ts}
-          title={`${new Date(point.ts * 1000).toLocaleString()} · ${point.successRate.toFixed(1)}%`}
+          title={`${new Date(point.ts * 1000).toLocaleString()} · ${point.hasData ? `${point.successRate.toFixed(1)}%` : '暂无请求样本'}`}
           className={cn(
-            'min-w-1 flex-1 rounded-[2px] transition-[height,opacity] duration-200 hover:opacity-60',
-            availabilityBarClass(point.successRate)
+            'min-w-0 flex-1 rounded-[2px] transition-[height,opacity] duration-200 hover:opacity-60',
+            point.hasData
+              ? availabilityBarClass(point.successRate)
+              : 'bg-muted-foreground/35'
           )}
-          style={{ height: `${Math.max(18, point.successRate)}%` }}
+          style={{
+            height: `${availabilityBarHeight(point.hasData ? point.successRate : 0)}%`,
+          }}
         />
       ))}
     </div>
@@ -432,7 +437,7 @@ export function ModelStatus() {
         <SectionPageLayout.Title>{t('Model Status')}</SectionPageLayout.Title>
         <SectionPageLayout.Description>
           按分组并排查看最近{activeRange.label}
-          的关联渠道真实请求表现与独立渠道探测，共用渠道的真实样本会同步计入对应分组，探测结果不参与渠道禁用。
+          的关联渠道真实请求表现与独立渠道探测。
         </SectionPageLayout.Description>
         <SectionPageLayout.Content>
           <div className='space-y-5'>

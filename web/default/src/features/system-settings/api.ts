@@ -112,6 +112,30 @@ export type UpdateAccessPolicyResponse = {
   }
 }
 
+export type MainlandAllowlist = {
+  id: number
+  user_id: number
+  username?: string
+  email?: string
+  ip: string
+  address_family: 'ipv4' | 'ipv6' | string
+  prefix_length: number
+  identity_type: 'enterprise' | 'education' | 'none' | string
+  source: 'self' | 'admin' | 'browser_session' | string
+  status: 'active' | 'revoked' | string
+  created_at: number
+  last_seen_at: number
+  expires_at: number
+  revoked_at: number
+  revoke_reason?: string
+}
+
+export type MainlandAllowlistsResponse = {
+  success: boolean
+  message?: string
+  data: MainlandAllowlist[]
+}
+
 export async function getAccessPolicy() {
   const res = await api.get<AccessPolicyResponse>('/api/access-policy')
   return res.data
@@ -128,6 +152,22 @@ export async function updateAccessPolicy(request: UpdateAccessPolicyRequest) {
 export async function rollbackAccessPolicy() {
   const res = await api.post<UpdateAccessPolicyResponse>(
     '/api/access-policy/rollback'
+  )
+  return res.data
+}
+
+export async function getMainlandAllowlists(includeRevoked = false) {
+  const res = await api.get<MainlandAllowlistsResponse>(
+    '/api/access-policy/allowlists',
+    { params: { include_revoked: includeRevoked } }
+  )
+  return res.data
+}
+
+export async function revokeMainlandAllowlist(id: number, reason?: string) {
+  const res = await api.delete<{ success: boolean; message?: string }>(
+    `/api/access-policy/allowlists/${id}`,
+    { data: { reason: reason ?? '' } }
   )
   return res.data
 }

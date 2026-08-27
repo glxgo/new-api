@@ -383,11 +383,15 @@ func GeoBlockStatsSnapshot() GeoBlockStats {
 func serveMainlandBlocked(c *gin.Context, ip net.IP) {
 	c.Header("Cache-Control", "no-store")
 	c.Header("Content-Language", "zh-CN")
-	c.Header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+	c.Header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'")
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("X-Robots-Tag", "noindex, nofollow")
 	c.Header("Content-Type", "text/html; charset=utf-8")
-	body := []byte(mainlandBlockedPage)
+	returnTo := "/"
+	if c.Request != nil && c.Request.URL != nil {
+		returnTo = c.Request.URL.RequestURI()
+	}
+	body := mainlandBlockedPageForPath(returnTo)
 	c.Header("Content-Length", strconv.Itoa(len(body)))
 	common.SysLog(fmt.Sprintf("mainland web access blocked path_category=web country=CN masked_ip=%s", maskIP(ip)))
 	c.Data(http.StatusUnavailableForLegalReasons, "text/html; charset=utf-8", body)

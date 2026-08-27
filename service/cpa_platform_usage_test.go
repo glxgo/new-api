@@ -44,6 +44,27 @@ func TestBuildCPAQuotaWindowsUsesRemainingPercentage(t *testing.T) {
 	}
 }
 
+func TestSortCPAAccountsByAvailabilityAndPrimaryRemaining(t *testing.T) {
+	remaining := func(value float64) *float64 { return &value }
+	accounts := []CPAAccountUsage{
+		{Code: "A-LOW", Available: true, Enabled: true, Windows: []CPAQuotaWindow{{ID: "codex-primary", RemainingPercent: remaining(20)}}},
+		{Code: "A-HIGH", Available: true, Enabled: true, Windows: []CPAQuotaWindow{{ID: "codex-primary", RemainingPercent: remaining(80)}}},
+		{Code: "A-NO-QUOTA", Available: true, Enabled: true},
+		{Code: "A-OFFLINE", Available: false, Enabled: true},
+		{Code: "A-DISABLED", Available: false, Enabled: false, Windows: []CPAQuotaWindow{{ID: "codex-primary", RemainingPercent: remaining(100)}}},
+	}
+
+	sortCPAAccounts(accounts)
+	got := make([]string, 0, len(accounts))
+	for _, account := range accounts {
+		got = append(got, account.Code)
+	}
+	want := []string{"A-HIGH", "A-LOW", "A-NO-QUOTA", "A-DISABLED", "A-OFFLINE"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("sorted account codes = %v, want %v", got, want)
+	}
+}
+
 func TestFindCPAFieldTraversesKnownWrappers(t *testing.T) {
 	models := []interface{}{map[string]interface{}{"model": "gpt-test"}}
 	got, ok := findCPAField(map[string]interface{}{"data": map[string]interface{}{"summary": map[string]interface{}{"models": models}}}, "models")

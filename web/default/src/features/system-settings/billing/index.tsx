@@ -57,6 +57,8 @@ const defaultBillingSettings: BillingSettings = {
   GroupRatio: '',
   GroupCostRatio: '',
   UserUsableGroups: '',
+  GroupOrder: '[]',
+  GroupIconTypes: '{}',
   GroupGroupRatio: '',
   AutoGroups: '',
   DefaultUseAutoGroup: false,

@@ -161,6 +161,8 @@ func InitOptionMap() {
 	common.OptionMap["GroupCostRatio"] = ratio_setting.GroupCostRatio2JSONString()
 	common.OptionMap["GroupGroupRatio"] = ratio_setting.GroupGroupRatio2JSONString()
 	common.OptionMap["UserUsableGroups"] = setting.UserUsableGroups2JSONString()
+	common.OptionMap["GroupOrder"] = setting.GroupOrder2JSONString()
+	common.OptionMap["GroupIconTypes"] = setting.GroupIconTypes2JSONString()
 	common.OptionMap["CompletionRatio"] = ratio_setting.CompletionRatio2JSONString()
 	common.OptionMap["ImageRatio"] = ratio_setting.ImageRatio2JSONString()
 	common.OptionMap["AudioRatio"] = ratio_setting.AudioRatio2JSONString()
@@ -202,6 +204,7 @@ func InitOptionMap() {
 
 	common.OptionMapRWMutex.Unlock()
 	loadOptionsFromDatabase()
+	migrateGroupMetadataOptions()
 	migrateLegacySensitiveWords()
 	migrateGroupModelPricingV1()
 }
@@ -216,6 +219,32 @@ func loadOptionsFromDatabase() {
 	}
 }
 
+// migrateGroupMetadataOptions repairs the legacy null representation created
+// before GroupOrder/GroupIconTypes had non-nil defaults. The values are
+// presentation metadata only, so rewriting null to []/{} is lossless and
+// keeps future restarts from reintroducing the frontend shape error.
+func migrateGroupMetadataOptions() {
+	for _, key := range []string{"GroupOrder", "GroupIconTypes"} {
+		rawValue, err := GetOptionValue(key)
+		if err != nil {
+			continue
+		}
+		normalizedValue, err := normalizeOptionValue(key, rawValue)
+		if err != nil {
+			common.SysLog("failed to normalize " + key + ": " + err.Error())
+			continue
+		}
+		if rawValue == normalizedValue {
+			continue
+		}
+		if err := UpdateOption(key, normalizedValue); err != nil {
+			common.SysLog("failed to persist normalized " + key + ": " + err.Error())
+			continue
+		}
+		common.SysLog("normalized legacy " + key + " option")
+	}
+}
+
 func SyncOptions(frequency int) {
 	for {
 		time.Sleep(time.Duration(frequency) * time.Second)
@@ -225,6 +254,12 @@ func SyncOptions(frequency int) {
 }
 
 func UpdateOption(key string, value string) error {
+	normalizedValue, err := normalizeOptionValue(key, value)
+	if err != nil {
+		return err
+	}
+	value = normalizedValue
+
 	// Save to database first
 	option := Option{
 		Key: key,
@@ -249,8 +284,16 @@ func UpdateOptionsBulk(values map[string]string) error {
 	if len(values) == 0 {
 		return nil
 	}
+	normalizedValues := make(map[string]string, len(values))
+	for key, value := range values {
+		normalizedValue, err := normalizeOptionValue(key, value)
+		if err != nil {
+			return err
+		}
+		normalizedValues[key] = normalizedValue
+	}
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		for k, v := range values {
+		for k, v := range normalizedValues {
 			option := Option{Key: k}
 			if err := tx.FirstOrCreate(&option, Option{Key: k}).Error; err != nil {
 				return err
@@ -265,12 +308,23 @@ func UpdateOptionsBulk(values map[string]string) error {
 	if err != nil {
 		return err
 	}
-	for k, v := range values {
+	for k, v := range normalizedValues {
 		if err := updateOptionMap(k, v); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func normalizeOptionValue(key string, value string) (string, error) {
+	switch key {
+	case "GroupOrder":
+		return setting.NormalizeGroupOrderJSONString(value)
+	case "GroupIconTypes":
+		return setting.NormalizeGroupIconTypesJSONString(value)
+	default:
+		return value, nil
+	}
 }
 
 // GetOptionValue 读取指定 option 键的值；不存在时返回错误，调用方按空处理。
@@ -332,6 +386,10 @@ func migrateLegacySensitiveWords() {
 }
 
 func updateOptionMap(key string, value string) (err error) {
+	value, err = normalizeOptionValue(key, value)
+	if err != nil {
+		return err
+	}
 	common.OptionMapRWMutex.Lock()
 	defer common.OptionMapRWMutex.Unlock()
 	// Database migrations can persist a newly introduced option before
@@ -642,6 +700,10 @@ func updateOptionMap(key string, value string) (err error) {
 		err = ratio_setting.UpdateGroupGroupRatioByJSONString(value)
 	case "UserUsableGroups":
 		err = setting.UpdateUserUsableGroupsByJSONString(value)
+	case "GroupOrder":
+		err = setting.UpdateGroupOrderByJSONString(value)
+	case "GroupIconTypes":
+		err = setting.UpdateGroupIconTypesByJSONString(value)
 	case "CompletionRatio":
 		err = ratio_setting.UpdateCompletionRatioByJSONString(value)
 	case "ModelPrice":

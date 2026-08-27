@@ -48,6 +48,8 @@ const getGroupDefaults = (settings: BillingSettings) => ({
   GroupRatio: settings.GroupRatio,
   GroupCostRatio: settings.GroupCostRatio,
   UserUsableGroups: settings.UserUsableGroups,
+  GroupOrder: settings.GroupOrder,
+  GroupIconTypes: settings.GroupIconTypes,
   GroupGroupRatio: settings.GroupGroupRatio,
   AutoGroups: settings.AutoGroups,
   DefaultUseAutoGroup: settings.DefaultUseAutoGroup,

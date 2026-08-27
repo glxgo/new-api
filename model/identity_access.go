@@ -32,7 +32,12 @@ const (
 	MainlandIPAllowlistStatusRevoked = "revoked"
 	MainlandIPAllowlistSourceSelf    = "self"
 	MainlandIPAllowlistSourceAdmin   = "admin"
-	MainlandIPAllowlistMaxPerUser    = 10
+	// MainlandIPAllowlistSourceBrowserSession is written when an existing
+	// browser dashboard session is restored. It is deliberately distinct from
+	// the public username form so administrators can audit how an address was
+	// granted without treating API-key traffic as a browser exception.
+	MainlandIPAllowlistSourceBrowserSession = "browser_session"
+	MainlandIPAllowlistMaxPerUser           = 10
 )
 
 var (
@@ -342,7 +347,7 @@ func AddMainlandIPWhitelist(userID, creatorID int, ip net.IP, source string) (*M
 		return nil, fmt.Errorf("invalid client IP")
 	}
 	source = strings.TrimSpace(source)
-	if source != MainlandIPAllowlistSourceAdmin {
+	if source != MainlandIPAllowlistSourceAdmin && source != MainlandIPAllowlistSourceBrowserSession {
 		source = MainlandIPAllowlistSourceSelf
 	}
 	now := time.Now().Unix()
@@ -386,6 +391,28 @@ func AddMainlandIPWhitelist(userID, creatorID int, ip net.IP, source string) (*M
 			return &row, nil
 		}
 		return nil, err
+	}
+	return &row, nil
+}
+
+// GetMainlandIPAllowlistForUser returns the active exact-address exception for
+// one user. It is used by the browser-session bootstrap to distinguish a new
+// grant from an idempotent refresh without exposing another user's row.
+func GetMainlandIPAllowlistForUser(userID int, ip net.IP) (*MainlandIPAllowlist, error) {
+	if DB == nil {
+		return nil, fmt.Errorf("database is not initialized")
+	}
+	ipValue, _, prefixLength, ok := normalizeAllowlistIP(ip)
+	if !ok || userID <= 0 {
+		return nil, fmt.Errorf("invalid whitelist lookup")
+	}
+	var row MainlandIPAllowlist
+	result := DB.Where("user_id = ? AND ip = ? AND prefix_length = ? AND status = ?", userID, ipValue, prefixLength, MainlandIPAllowlistStatusActive).Limit(1).Find(&row)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, gorm.ErrRecordNotFound
 	}
 	return &row, nil
 }

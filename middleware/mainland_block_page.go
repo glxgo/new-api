@@ -1,7 +1,13 @@
 package middleware
 
+import (
+	"html"
+	"net/url"
+	"strings"
+)
+
 // mainlandBlockedPage 451 提示页（PRD v0.4 附录 A）。
-// 页面完全由服务端直出，不依赖站内 JS、CSS、字体或图片资源，避免受限请求再次触发前端加载。
+// 页面完全由服务端直出，仅使用内联 CSS 与 session-cookie 自动放行脚本，避免受限请求再次触发前端资源加载。
 const mainlandBlockedPage = `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -160,10 +166,34 @@ const mainlandBlockedPage = `<!doctype html>
       <div><div class="legal-title">法规依据 · 官方发布</div><p><a class="legal-link" href="https://www.cac.gov.cn/2023-07/13/c_1690898327029107.htm" target="_blank" rel="noopener noreferrer">《生成式人工智能服务管理暂行办法》（国家互联网信息办公室等七部门联合发布）</a></p></div>
     </section>
     <p class="apology">由此给您带来的不便，敬请谅解。</p>
-    <a class="identity-cta" href="/api/access-policy/whitelist" aria-label="企业用户或教育用户申请当前 IP 白名单">企业用户/教育用户？点击此处加入 IP 白名单后，即可访问</a>
+    <script>
+      (function () {
+        fetch('/api/access-policy/auto-whitelist', { method: 'POST', credentials: 'include', headers: { 'Accept': 'application/json' } })
+          .then(function (response) { return response.ok ? response.json() : null; })
+          .then(function (body) {
+            var status = body && body.data && body.data.status;
+            if (status === 'added' || status === 'already_present') {
+              window.location.replace(window.location.href);
+            }
+          })
+          .catch(function () {});
+      })();
+    </script>
+    <a class="identity-cta" href="/api/access-policy/whitelist?return_to=__RETURN_TO__" aria-label="企业用户或教育用户申请当前 IP 白名单">企业用户/教育用户？点击此处加入 IP 白名单后，即可访问</a>
     <div class="divider"></div>
     <p class="en">In accordance with the Interim Measures for the Administration of Generative Artificial Intelligence Services and related laws and regulations, this service is not available to users in mainland China.</p>
     <footer class="footer"><span>ERROR 451 · UNAVAILABLE FOR LEGAL REASONS</span><span>ACCESS RESTRICTED</span></footer>
   </main>
 </body>
 </html>`
+
+// mainlandBlockedPageForPath keeps the page self-contained while carrying a
+// same-origin return target through the public whitelist form. The value is
+// query-escaped and HTML-escaped, and the form handler validates it again.
+func mainlandBlockedPageForPath(returnTo string) []byte {
+	if strings.TrimSpace(returnTo) == "" {
+		returnTo = "/"
+	}
+	escaped := html.EscapeString(url.QueryEscape(returnTo))
+	return []byte(strings.Replace(mainlandBlockedPage, "__RETURN_TO__", escaped, 1))
+}

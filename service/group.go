@@ -1,6 +1,7 @@
 package service
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/QuantumNous/new-api/setting"
@@ -34,6 +35,30 @@ func GetUserUsableGroups(userGroup string) map[string]string {
 		}
 	}
 	return groupsCopy
+}
+
+// GetOrderedUserGroups applies the administrator's display order and appends
+// newly introduced groups deterministically. Subscription-only groups are
+// appended by the controller's existing response logic. This is
+// presentation metadata; the returned set is still controlled by groups.
+func GetOrderedUserGroups(groups map[string]string) []string {
+	configured := setting.GetGroupOrderCopy()
+	ordered := make([]string, 0, len(groups))
+	seen := make(map[string]struct{}, len(groups))
+	for _, group := range configured {
+		if _, ok := groups[group]; ok {
+			ordered = append(ordered, group)
+			seen[group] = struct{}{}
+		}
+	}
+	remaining := make([]string, 0, len(groups))
+	for group := range groups {
+		if _, ok := seen[group]; !ok {
+			remaining = append(remaining, group)
+		}
+	}
+	sort.Strings(remaining)
+	return append(ordered, remaining...)
 }
 
 func GroupInUserUsableGroups(userGroup, groupName string) bool {

@@ -414,6 +414,21 @@ function ApiKeysMobileList({
                 </span>
               )}
             </div>
+
+            <div className='grid grid-cols-2 gap-2 border-t border-dashed pt-2 text-[11px]'>
+              <div>
+                <span className='text-muted-foreground block'>今日消耗</span>
+                <span className='font-mono font-medium tabular-nums'>
+                  {formatQuota(apiKey.today_used_quota)}
+                </span>
+              </div>
+              <div className='text-right'>
+                <span className='text-muted-foreground block'>累计消耗</span>
+                <span className='font-mono font-medium tabular-nums'>
+                  {formatQuota(apiKey.lifetime_used_quota)}
+                </span>
+              </div>
+            </div>
           </div>
         )
       })}
@@ -484,7 +499,6 @@ function ApiKeysDesktopWorkspace({
 
   const apiKey = selectedRow.original
   const statusConfig = API_KEY_STATUSES[apiKey.status]
-  const totalQuota = apiKey.used_quota + apiKey.remain_quota
   const lastUsed = apiKey.accessed_time
     ? formatTimestampToDate(apiKey.accessed_time)
     : '-'
@@ -679,14 +693,12 @@ function ApiKeysDesktopWorkspace({
             <div>
               <div className='flex items-baseline gap-2'>
                 <p className='font-mono text-2xl font-semibold tracking-tight tabular-nums'>
-                  {formatQuota(apiKey.used_quota)}
+                  {formatQuota(apiKey.today_used_quota)}
                 </p>
-                <span className='text-muted-foreground text-xs'>
-                  {t('Used')}
-                </span>
+                <span className='text-muted-foreground text-xs'>今日消耗</span>
               </div>
               <p className='text-muted-foreground mt-1 text-[10px] tabular-nums'>
-                {t('Total')} {formatQuota(totalQuota)}
+                累计消耗 {formatQuota(apiKey.lifetime_used_quota)}
               </p>
             </div>
             <div className='text-right'>

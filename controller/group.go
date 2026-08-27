@@ -29,7 +29,7 @@ func GetUserGroups(c *gin.Context) {
 	userId := c.GetInt("id")
 	userGroup, _ = model.GetUserGroup(userId, false)
 	userUsableGroups := service.GetUserUsableGroups(userGroup)
-	for groupName, _ := range ratio_setting.GetGroupRatioCopy() {
+	for groupName := range ratio_setting.GetGroupRatioCopy() {
 		// UserUsableGroups contains the groups that the user can use
 		if desc, ok := userUsableGroups[groupName]; ok {
 			usableGroups[groupName] = map[string]interface{}{
@@ -67,9 +67,18 @@ func GetUserGroups(c *gin.Context) {
 			}
 		}
 	}
+	// Build the order from the actual response set so subscription-only and
+	// virtual-membership groups also receive deterministic fallback ordering.
+	displayGroups := make(map[string]string, len(usableGroups))
+	for groupName := range usableGroups {
+		displayGroups[groupName] = groupName
+	}
+	orderedGroups := service.GetOrderedUserGroups(displayGroups)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
 		"data":    usableGroups,
+		"group_order": orderedGroups,
+		"group_icon_types": setting.GetGroupIconTypesCopy(),
 	})
 }

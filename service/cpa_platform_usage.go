@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -341,8 +342,51 @@ func fetchCPAAccounts(ctx context.Context, client *http.Client, config cpaUsageC
 		}()
 	}
 	wg.Wait()
-	sort.Slice(accounts, func(i, j int) bool { return accounts[i].Code < accounts[j].Code })
+	sortCPAAccounts(accounts)
 	return accounts, partial.Load(), nil
+}
+
+// sortCPAAccounts keeps the public account pool useful at a glance: accounts
+// with a fresh quota response are listed first, then by their primary quota
+// window's remaining percentage (descending). Missing quota values sort below
+// known values, with the anonymized code as a stable tie-breaker.
+func sortCPAAccounts(accounts []CPAAccountUsage) {
+	sort.SliceStable(accounts, func(i, j int) bool {
+		if accounts[i].Available != accounts[j].Available {
+			return accounts[i].Available
+		}
+		left, leftOK := cpaPrimaryRemainingPercent(accounts[i])
+		right, rightOK := cpaPrimaryRemainingPercent(accounts[j])
+		if leftOK != rightOK {
+			return leftOK
+		}
+		if leftOK && left != right {
+			return left > right
+		}
+		return accounts[i].Code < accounts[j].Code
+	})
+}
+
+func cpaPrimaryRemainingPercent(account CPAAccountUsage) (float64, bool) {
+	for _, window := range account.Windows {
+		// buildCPAQuotaWindows emits the primary window before the secondary
+		// window for each quota family. Prefer an explicit primary ID when a
+		// snapshot was assembled by another caller.
+		if strings.HasSuffix(strings.ToLower(window.ID), "-primary") {
+			if window.RemainingPercent != nil && math.IsNaN(*window.RemainingPercent) == false && math.IsInf(*window.RemainingPercent, 0) == false {
+				return *window.RemainingPercent, true
+			}
+			return 0, false
+		}
+	}
+	if len(account.Windows) == 0 || account.Windows[0].RemainingPercent == nil {
+		return 0, false
+	}
+	remaining := *account.Windows[0].RemainingPercent
+	if math.IsNaN(remaining) || math.IsInf(remaining, 0) {
+		return 0, false
+	}
+	return remaining, true
 }
 
 func fetchCPAAccountQuota(ctx context.Context, client *http.Client, config cpaUsageConfig, authIndex interface{}) (cpaUsagePayload, error) {

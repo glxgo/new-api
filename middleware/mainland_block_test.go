@@ -102,7 +102,7 @@ func TestMainlandWebAccessBlock(t *testing.T) {
 		resetGeoBlockCountersForTest()
 		access_setting.GetAccessPolicy().BlockMainlandWebAccess = true
 		r := newMainlandTestRouter(lookup)
-		w := requestMainland(r, "/")
+		w := requestMainland(r, "/console?tab=1")
 		if w.Code != http.StatusUnavailableForLegalReasons {
 			t.Fatalf("expected 451, got %d", w.Code)
 		}
@@ -112,6 +112,9 @@ func TestMainlandWebAccessBlock(t *testing.T) {
 		if w.Header().Get("X-Robots-Tag") != "noindex, nofollow" {
 			t.Fatalf("expected noindex robots header")
 		}
+		if !strings.Contains(w.Header().Get("Content-Security-Policy"), "script-src 'unsafe-inline'") {
+			t.Fatalf("expected inline auto-whitelist script CSP")
+		}
 		body := w.Body.String()
 		if !strings.Contains(body, "451") || !strings.Contains(body, "生成式人工智能服务管理暂行办法") {
 			t.Fatalf("451 page copy missing")
@@ -119,6 +122,16 @@ func TestMainlandWebAccessBlock(t *testing.T) {
 		if !strings.Contains(body, "width: min(800px, 100%)") ||
 			!strings.Contains(body, `href="https://www.cac.gov.cn/2023-07/13/c_1690898327029107.htm"`) {
 			t.Fatalf("451 page size or official legal link missing")
+		}
+		if !strings.Contains(body, "/api/access-policy/auto-whitelist") ||
+			!strings.Contains(body, "window.location.replace(window.location.href)") {
+			t.Fatalf("451 page browser-session bootstrap missing")
+		}
+		if strings.Contains(body, "__RETURN_TO__") {
+			t.Fatalf("451 page return target placeholder was not rendered")
+		}
+		if !strings.Contains(body, "return_to=%2Fconsole%3Ftab%3D1") {
+			t.Fatalf("451 page did not preserve original path")
 		}
 		if geoBlockTotal.Load() != 1 {
 			t.Fatalf("expected block counter 1, got %d", geoBlockTotal.Load())

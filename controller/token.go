@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
@@ -30,6 +31,14 @@ func buildMaskedTokenResponses(tokens []*model.Token) []*model.Token {
 		maskedTokens = append(maskedTokens, buildMaskedTokenResponse(token))
 	}
 	return maskedTokens
+}
+
+func enrichTokenUsageStats(tokens []*model.Token) {
+	if err := model.AttachTokenUsageStats(tokens, time.Now()); err != nil {
+		// Usage statistics are informative fields. A temporary log-database
+		// failure must not make API-key management unavailable.
+		common.SysLog("failed to attach token usage stats: " + err.Error())
+	}
 }
 
 func decodeTokenMutation(c *gin.Context, token *model.Token) (bool, bool, error) {
@@ -90,6 +99,7 @@ func GetAllTokens(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	enrichTokenUsageStats(tokens)
 	total, _ := model.CountUserTokens(userId)
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(buildMaskedTokenResponses(tokens))
@@ -108,6 +118,7 @@ func SearchTokens(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	enrichTokenUsageStats(tokens)
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(buildMaskedTokenResponses(tokens))
 	common.ApiSuccess(c, pageInfo)
@@ -129,6 +140,7 @@ func GetToken(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	enrichTokenUsageStats([]*model.Token{token})
 	common.ApiSuccess(c, buildMaskedTokenResponse(token))
 }
 

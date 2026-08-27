@@ -16,12 +16,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   Activity,
   ArrowDownToLine,
   ArrowUpFromLine,
   Boxes,
+  ChevronLeft,
+  ChevronRight,
   CircleGauge,
   Clock3,
   Coins,
@@ -43,7 +46,7 @@ import type {
   CPAQuotaWindow,
   CPAUsageSnapshot,
 } from './types'
-import { metricCardSurfaceClass } from './visuals'
+import { getPlatformAccountPage, metricCardSurfaceClass } from './visuals'
 
 function formatSyncTime(timestamp: number, fallback = '—') {
   if (!timestamp) return fallback
@@ -230,11 +233,23 @@ function AccountCard({ account }: { account: CPAAccountUsage }) {
             </div>
           </div>
         </div>
-        <span className='relative isolate overflow-hidden rounded-full border border-slate-300/90 bg-[linear-gradient(135deg,#f8fafc_0%,#cbd5e1_38%,#ffffff_58%,#94a3b8_100%)] px-2.5 py-1 text-[10px] font-extrabold tracking-[0.1em] text-slate-800 uppercase shadow-[inset_0_1px_0_rgba(255,255,255,.95),0_2px_8px_rgba(71,85,105,.18)] after:pointer-events-none after:absolute after:inset-y-[-35%] after:left-[-75%] after:w-1/2 after:skew-x-[-18deg] after:bg-[linear-gradient(90deg,transparent,rgba(255,255,255,.95),transparent)] after:transition-transform after:duration-700 group-hover:after:translate-x-[420%] motion-reduce:after:transition-none dark:border-slate-500/80 dark:bg-[linear-gradient(135deg,#475569_0%,#cbd5e1_42%,#f8fafc_58%,#64748b_100%)] dark:text-slate-950'>
-          <span className='relative z-10 drop-shadow-[0_1px_0_rgba(255,255,255,.75)]'>
-            {account.plan_type || t('Unknown plan')}
+        <div className='flex shrink-0 flex-col items-end gap-1.5'>
+          <span className='relative isolate overflow-hidden rounded-full border border-slate-300/90 bg-[linear-gradient(135deg,#f8fafc_0%,#cbd5e1_38%,#ffffff_58%,#94a3b8_100%)] px-2.5 py-1 text-[10px] font-extrabold tracking-[0.1em] text-slate-800 uppercase shadow-[inset_0_1px_0_rgba(255,255,255,.95),0_2px_8px_rgba(71,85,105,.18)] after:pointer-events-none after:absolute after:inset-y-[-35%] after:left-[-75%] after:w-1/2 after:skew-x-[-18deg] after:bg-[linear-gradient(90deg,transparent,rgba(255,255,255,.95),transparent)] after:transition-transform after:duration-700 group-hover:after:translate-x-[420%] motion-reduce:after:transition-none dark:border-slate-500/80 dark:bg-[linear-gradient(135deg,#475569_0%,#cbd5e1_42%,#f8fafc_58%,#64748b_100%)] dark:text-slate-950'>
+            <span className='relative z-10 drop-shadow-[0_1px_0_rgba(255,255,255,.75)]'>
+              {account.plan_type || t('Unknown plan')}
+            </span>
           </span>
-        </span>
+          <span
+            className={cn(
+              'rounded-full border px-2 py-0.5 text-[10px] font-semibold',
+              account.available
+                ? 'border-emerald-500/25 bg-emerald-500/8 text-emerald-700 dark:text-emerald-300'
+                : 'border-amber-500/25 bg-amber-500/8 text-amber-700 dark:text-amber-300'
+            )}
+          >
+            {account.available ? t('Available') : t('Unavailable')}
+          </span>
+        </div>
       </header>
 
       <div className='mt-4 min-h-24 space-y-3'>
@@ -421,6 +436,7 @@ function ModelsTable({
 
 export function PlatformUsage() {
   const { t } = useTranslation()
+  const [accountPage, setAccountPage] = useState(1)
   const query = useQuery({
     queryKey: ['platform-usage'],
     queryFn: async () => {
@@ -437,6 +453,11 @@ export function PlatformUsage() {
   const data = query.data
   const cpa = data?.cpa
   const accounts = cpa?.accounts ?? []
+  const {
+    currentPage: currentAccountPage,
+    totalPages: accountPageCount,
+    accounts: visibleAccounts,
+  } = getPlatformAccountPage(accounts, accountPage)
   const availableAccounts = accounts.filter(
     (account) => account.available
   ).length
@@ -570,7 +591,7 @@ export function PlatformUsage() {
             </div>
             {query.isPending ? (
               <div className='grid gap-3 @3xl/content:grid-cols-2 @6xl/content:grid-cols-4'>
-                {Array.from({ length: 6 }).map((_, index) => (
+                {Array.from({ length: 8 }).map((_, index) => (
                   <Skeleton key={index} className='h-44 rounded-xl' />
                 ))}
               </div>
@@ -581,11 +602,47 @@ export function PlatformUsage() {
                   : t('CPA usage integration is not configured')}
               </div>
             ) : (
-              <div className='grid gap-3 @3xl/content:grid-cols-2 @6xl/content:grid-cols-4'>
-                {accounts.map((account) => (
-                  <AccountCard key={account.code} account={account} />
-                ))}
-              </div>
+              <>
+                <div className='grid gap-3 @3xl/content:grid-cols-2 @6xl/content:grid-cols-4'>
+                  {visibleAccounts.map((account) => (
+                    <AccountCard key={account.code} account={account} />
+                  ))}
+                </div>
+                {accountPageCount > 1 && (
+                  <div className='mt-4 flex items-center justify-center gap-3'>
+                    <Button
+                      variant='outline'
+                      size='icon-sm'
+                      aria-label={t('Previous page')}
+                      disabled={currentAccountPage <= 1}
+                      onClick={() =>
+                        setAccountPage(Math.max(1, currentAccountPage - 1))
+                      }
+                    >
+                      <ChevronLeft className='size-4' />
+                    </Button>
+                    <span className='text-muted-foreground text-xs tabular-nums'>
+                      {t('Page {{current}} of {{total}}', {
+                        current: currentAccountPage,
+                        total: accountPageCount,
+                      })}
+                    </span>
+                    <Button
+                      variant='outline'
+                      size='icon-sm'
+                      aria-label={t('Next page')}
+                      disabled={currentAccountPage >= accountPageCount}
+                      onClick={() =>
+                        setAccountPage(
+                          Math.min(accountPageCount, currentAccountPage + 1)
+                        )
+                      }
+                    >
+                      <ChevronRight className='size-4' />
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
           </section>
 

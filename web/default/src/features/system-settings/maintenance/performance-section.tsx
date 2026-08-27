@@ -92,7 +92,7 @@ const perfSchema = z.object({
   perf_metrics_setting: z.object({
     enabled: z.boolean(),
     flush_interval: z.coerce.number().min(1),
-    bucket_time: z.enum(['minute', '5min', '15min', 'hour']),
+    bucket_time: z.enum(['minute', '5min', '15min', '20min', '30min', 'hour']),
     retention_days: z.coerce.number().min(0),
   }),
 })
@@ -111,7 +111,13 @@ type FlatPerfDefaults = {
   'performance_setting.monitor_disk_threshold': number
   'perf_metrics_setting.enabled': boolean
   'perf_metrics_setting.flush_interval': number
-  'perf_metrics_setting.bucket_time': 'minute' | '5min' | '15min' | 'hour'
+  'perf_metrics_setting.bucket_time':
+    | 'minute'
+    | '5min'
+    | '15min'
+    | '20min'
+    | '30min'
+    | 'hour'
   'perf_metrics_setting.retention_days': number
 }
 
@@ -669,6 +675,8 @@ export function PerformanceSection(props: Props) {
                       { value: 'minute', label: t('1 minute') },
                       { value: '5min', label: t('5 minutes') },
                       { value: '15min', label: t('15 minutes') },
+                      { value: '20min', label: t('20 minutes') },
+                      { value: '30min', label: t('30 minutes') },
                       { value: 'hour', label: t('1 hour') },
                     ]}
                     value={field.value}
@@ -685,6 +693,8 @@ export function PerformanceSection(props: Props) {
                         <SelectItem value='minute'>{t('1 minute')}</SelectItem>
                         <SelectItem value='5min'>{t('5 minutes')}</SelectItem>
                         <SelectItem value='15min'>{t('15 minutes')}</SelectItem>
+                        <SelectItem value='20min'>{t('20 minutes')}</SelectItem>
+                        <SelectItem value='30min'>{t('30 minutes')}</SelectItem>
                         <SelectItem value='hour'>{t('1 hour')}</SelectItem>
                       </SelectGroup>
                     </SelectContent>

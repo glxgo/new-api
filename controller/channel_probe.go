@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"net/http"
 	"regexp"
 	"sort"
@@ -17,12 +16,43 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/perf_metrics_setting"
 
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
 )
 
 const channelProbeRetention = 30 * 24 * time.Hour
+
+// Model status timelines keep the 24-hour view at a 30-minute cadence (48
+// slots). Longer ranges preserve that visual density: 7d and 30d therefore
+// use wider buckets instead of rendering hundreds of unreadable columns.
+const modelStatusBucketSeconds = perf_metrics_setting.ModelStatusBucketSeconds
+
+func modelStatusBucketSize(hours int) int64 {
+	if hours < 1 {
+		hours = 24
+	}
+	duration := int64(hours) * 3600
+	// Keep exactly 48 columns and round up so the requested range is covered.
+	seconds := (duration + 47) / 48
+	if seconds < modelStatusBucketSeconds {
+		seconds = modelStatusBucketSeconds
+	}
+	return seconds
+}
+
+func modelStatusBucketWindow(hours int, now time.Time) (first, last int64, bucketSeconds int64, count int) {
+	if hours < 1 {
+		hours = 24
+	}
+	bucketSeconds = modelStatusBucketSize(hours)
+	count = 48
+	last = now.Unix()
+	last -= last % bucketSeconds
+	first = last - int64(count-1)*bucketSeconds
+	return first, last, bucketSeconds, count
+}
 
 var probeSecretPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)(bearer\s+)[^\s,;]+`),
@@ -429,15 +459,15 @@ func buildGroupProbeSummaries(hours int, visibleGroups []string) (map[string]*pe
 		}
 	}
 
-	bucketSeconds := int64(math.Ceil(float64(hours)/24.0) * 3600)
-	if bucketSeconds < 3600 {
-		bucketSeconds = 3600
-	}
+	firstBucket, lastBucket, bucketSeconds, _ := modelStatusBucketWindow(hours, time.Now())
 	for _, record := range records {
 		for _, group := range groupsByChannel[record.ChannelId] {
 			acc := ensureGroup(group)
-			acc.probeCount++
 			bucketTs := record.ProbeTs - record.ProbeTs%bucketSeconds
+			if bucketTs < firstBucket || bucketTs > lastBucket {
+				continue
+			}
+			acc.probeCount++
 			bucket := acc.series[bucketTs]
 			if bucket == nil {
 				bucket = &probeSeriesAccumulator{channelSucceeded: make(map[int]bool)}
@@ -460,6 +490,17 @@ func buildGroupProbeSummaries(hours int, visibleGroups []string) (map[string]*pe
 					bucket.ttftSum += record.TtftMs
 					bucket.ttftCount++
 				}
+			}
+		}
+	}
+
+	// Materialize the complete timeline for every visible group. The frontend
+	// can then distinguish an empty interval from a measured unhealthy interval
+	// without guessing from sparse timestamps.
+	for _, acc := range accumulators {
+		for ts := firstBucket; ts <= lastBucket; ts += bucketSeconds {
+			if _, ok := acc.series[ts]; !ok {
+				acc.series[ts] = &probeSeriesAccumulator{channelSucceeded: make(map[int]bool)}
 			}
 		}
 	}

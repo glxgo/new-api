@@ -18,7 +18,25 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { availabilityBarClass } from './visuals.ts'
+import { availabilityBarClass, availabilityBarHeight } from './visuals.ts'
+
+describe('availabilityBarHeight', () => {
+  test('holds rates at or below 85 percent at the floor', () => {
+    assert.equal(availabilityBarHeight(0), 18)
+    assert.equal(availabilityBarHeight(85), 18)
+  })
+
+  test('scales uniformly from 85 percent to full height', () => {
+    assert.equal(availabilityBarHeight(92.5), 59)
+    assert.equal(availabilityBarHeight(100), 100)
+  })
+
+  test('clamps invalid and out-of-range values', () => {
+    assert.equal(availabilityBarHeight(-10), 18)
+    assert.equal(availabilityBarHeight(110), 100)
+    assert.equal(availabilityBarHeight(Number.NaN), 18)
+  })
+})
 
 describe('availabilityBarClass', () => {
   test('uses green at or above 90 percent', () => {

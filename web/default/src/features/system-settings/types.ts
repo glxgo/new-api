@@ -223,6 +223,8 @@ export type BillingSettings = {
   GroupRatio: string
   GroupCostRatio: string
   UserUsableGroups: string
+  GroupOrder: string
+  GroupIconTypes: string
   GroupGroupRatio: string
   AutoGroups: string
   DefaultUseAutoGroup: boolean
@@ -317,7 +319,13 @@ export type OperationsSettings = {
   'performance_setting.monitor_disk_threshold': number
   'perf_metrics_setting.enabled': boolean
   'perf_metrics_setting.flush_interval': number
-  'perf_metrics_setting.bucket_time': 'hour' | 'minute' | '5min' | '15min'
+  'perf_metrics_setting.bucket_time':
+    | 'hour'
+    | 'minute'
+    | '5min'
+    | '15min'
+    | '20min'
+    | '30min'
   'perf_metrics_setting.retention_days': number
   'tutorial_setting.content': string
   // 顶部导航排序(JSON 数组 of navKey, 超管后台可配)

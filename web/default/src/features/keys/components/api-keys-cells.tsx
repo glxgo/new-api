@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { getUserGroups } from '@/lib/api'
 import { copyToClipboard } from '@/lib/copy-to-clipboard'
+import { getGroupIconLabel, getGroupIconNode } from '@/lib/group-icons'
 import { cn } from '@/lib/utils'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { Badge } from '@/components/ui/badge'
@@ -255,6 +256,7 @@ type GroupListOption = {
   label: string
   desc?: string
   ratio?: number | string
+  iconType?: number
 }
 
 function CellRatioBadge({ ratio }: { ratio: GroupListOption['ratio'] }) {
@@ -299,12 +301,20 @@ export function ApiKeyGroupCell({ apiKey }: { apiKey: ApiKey }) {
 
   const options: GroupListOption[] = useMemo(() => {
     const raw = groupsData?.data || {}
-    return Object.entries(raw).map(([key, info]) => ({
-      value: key,
-      label: key,
-      desc: info.desc || key,
-      ratio: info.ratio,
-    }))
+    const iconTypes = groupsData?.group_icon_types || {}
+    const groupOrder = groupsData?.group_order || []
+    const orderIndex = new Map(groupOrder.map((group, index) => [group, index]))
+    return Object.entries(raw)
+      .map(([key, info], fallbackIndex) => ({
+        value: key,
+        label: key,
+        desc: info.desc || key,
+        ratio: info.ratio,
+        iconType: iconTypes[key],
+        _order: orderIndex.get(key) ?? groupOrder.length + fallbackIndex,
+      }))
+      .sort((a, b) => a._order - b._order)
+      .map(({ _order: _ignored, ...option }) => option)
   }, [groupsData])
 
   const subscribedSet = useMemo(() => {
@@ -385,6 +395,9 @@ export function ApiKeyGroupCell({ apiKey }: { apiKey: ApiKey }) {
     !isAuto && currentGroup
       ? options.find((o) => o.value === currentGroup)?.ratio
       : undefined
+  const currentIconType = options.find(
+    (o) => o.value === currentGroup
+  )?.iconType
 
   const subscribedOptions = filteredOptions.filter((option) =>
     subscribedSet.has(option.value)
@@ -413,9 +426,15 @@ export function ApiKeyGroupCell({ apiKey }: { apiKey: ApiKey }) {
       />
       <span className='min-w-0'>
         <span
-          className='text-foreground block text-sm leading-5 font-medium break-words'
+          className='text-foreground flex items-center gap-2 text-sm leading-5 font-medium break-words'
           title={option.label}
         >
+          <span
+            className='flex size-5 shrink-0 items-center justify-center'
+            title={getGroupIconLabel(option.iconType)}
+          >
+            {getGroupIconNode(option.iconType, 20)}
+          </span>
           {option.label}
         </span>
         {option.desc && (
@@ -469,7 +488,10 @@ export function ApiKeyGroupCell({ apiKey }: { apiKey: ApiKey }) {
 
   const triggerContent = (
     <>
-      <span className='max-w-[120px] truncate'>
+      <span className='flex max-w-[120px] items-center gap-1 truncate'>
+        <span title={getGroupIconLabel(currentIconType)}>
+          {getGroupIconNode(currentIconType, 16)}
+        </span>
         {currentGroup || t('Default')}
       </span>
       {typeof currentRatio === 'number' && (

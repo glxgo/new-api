@@ -53,7 +53,10 @@ export function ModelStatusDrawer({ open, onOpenChange, model }: Props) {
     staleTime: 60 * 1000,
   })
 
-  const groups = metricsQuery.data?.data?.groups ?? []
+  const groups = useMemo(
+    () => metricsQuery.data?.data?.groups ?? [],
+    [metricsQuery.data]
+  )
 
   const sortedGroups = useMemo(
     () => [...groups].sort((a, b) => b.success_rate - a.success_rate),
@@ -93,7 +96,7 @@ export function ModelStatusDrawer({ open, onOpenChange, model }: Props) {
               series={toGroupUptimeSeries(group)}
               size='md'
               showOverall={false}
-              maxPoints={24}
+              maxPoints={48}
               fill
               className='w-full'
               emptyLabel={t('No data')}

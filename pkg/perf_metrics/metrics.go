@@ -102,15 +102,13 @@ func Query(params QueryParams) (QueryResult, error) {
 	if params.Hours <= 0 {
 		params.Hours = 24
 	}
-	// 桶数 = 时间窗口 / 桶大小(原来误用 hours 当 limit, 导致 5min 桶也只能显示 24 根)
-	bucketSeconds := perf_metrics_setting.GetBucketSeconds()
-	if bucketSeconds <= 0 {
-		bucketSeconds = 3600
-	}
-	limit := int(int64(params.Hours) * 3600 / bucketSeconds)
-	if limit > 1000 {
-		limit = 1000
-	}
+	// Keep model-status timelines at a stable 48-column density. The 24-hour
+	// view therefore remains 30 minutes per bucket; longer ranges widen them.
+	limit := 48
+
+	now := time.Now()
+	startTs := now.Add(-time.Duration(params.Hours) * time.Hour).Unix()
+	endTs := now.Unix()
 
 	// B 方案：取该 model 最近 limit 个有数据的 bucket_ts（跨多天凑满，不固定 24h 时间窗口）。
 	// 这样即使流量稀疏（冷门模型），也能展示满 limit 根连续绿柱，不会因某些小时无请求而出现空柱。
@@ -129,6 +127,9 @@ func Query(params QueryParams) (QueryResult, error) {
 
 	merged := map[bucketKey]counters{}
 	for _, row := range rows {
+		if row.BucketTs < startTs || row.BucketTs > endTs {
+			continue
+		}
 		mergeCounters(merged, bucketKey{
 			model:    row.ModelName,
 			group:    row.Group,
@@ -146,7 +147,7 @@ func Query(params QueryParams) (QueryResult, error) {
 		})
 	}
 
-	// 热桶（当前小时实时数据）：仅合并 bucketTs 在已选 bucket 列表内的热桶
+	// 热桶（当前 30 分钟实时数据）：仅合并 bucketTs 在已选 bucket 列表内的热桶
 	tsSet := make(map[int64]bool, len(bucketTsList))
 	for _, ts := range bucketTsList {
 		tsSet[ts] = true
@@ -163,7 +164,73 @@ func Query(params QueryParams) (QueryResult, error) {
 		return true
 	})
 
-	return buildQueryResult(params.Model, merged), nil
+	result := buildQueryResult(params.Model, merged)
+	fillQueryResultSeries(&result, startTs, endTs)
+	return result, nil
+}
+
+// fillQueryResultSeries materializes the fixed model-status cadence so a
+// missing request interval is represented as an unknown slot instead of being
+// silently removed from the chart.
+func fillQueryResultSeries(result *QueryResult, startTs, endTs int64) {
+	if result == nil {
+		return
+	}
+	first, last, bucketSeconds, count := fixedStatusBucketWindow(startTs, endTs)
+	for groupIndex := range result.Groups {
+		group := &result.Groups[groupIndex]
+		byTs := make(map[int64]BucketPoint, len(group.Series))
+		for _, point := range group.Series {
+			ts := point.Ts - point.Ts%bucketSeconds
+			merged := mergeBucketPoint(byTs[ts], point)
+			merged.Ts = ts
+			byTs[ts] = merged
+		}
+		series := make([]BucketPoint, 0, count)
+		for ts := first; ts <= last; ts += bucketSeconds {
+			if point, ok := byTs[ts]; ok {
+				series = append(series, point)
+			} else {
+				series = append(series, BucketPoint{Ts: ts})
+			}
+		}
+		group.Series = series
+	}
+}
+
+func fixedStatusBucketWindow(startTs, endTs int64) (first, last, bucketSeconds int64, count int) {
+	if endTs < startTs {
+		startTs, endTs = endTs, startTs
+	}
+	bucketSeconds = (endTs - startTs + 47) / 48
+	if bucketSeconds < perf_metrics_setting.ModelStatusBucketSeconds {
+		bucketSeconds = perf_metrics_setting.ModelStatusBucketSeconds
+	}
+	last = endTs - endTs%bucketSeconds
+	count = 48
+	first = last - int64(count-1)*bucketSeconds
+	return first, last, bucketSeconds, count
+}
+
+func mergeBucketPoint(current, point BucketPoint) BucketPoint {
+	if current.Ts == 0 {
+		return point
+	}
+	previousRequests := current.RequestCount
+	previousSuccesses := current.SuccessCount
+	current.RequestCount += point.RequestCount
+	current.SuccessCount += point.SuccessCount
+	if current.SuccessCount > 0 {
+		latencySum := current.AvgLatencyMs*previousSuccesses + point.AvgLatencyMs*point.SuccessCount
+		current.AvgLatencyMs = latencySum / current.SuccessCount
+	}
+	if current.RequestCount > 0 {
+		current.AvgTtftMs = (current.AvgTtftMs*previousRequests + point.AvgTtftMs*point.RequestCount) / current.RequestCount
+		current.AvgTps = (current.AvgTps*float64(previousRequests) + point.AvgTps*float64(point.RequestCount)) / float64(current.RequestCount)
+		current.CacheRate = (current.CacheRate*float64(previousRequests) + point.CacheRate*float64(point.RequestCount)) / float64(current.RequestCount)
+		current.SuccessRate = float64(current.SuccessCount) * 100 / float64(current.RequestCount)
+	}
+	return current
 }
 
 func QuerySummaryAll(hours int, groups []string) (SummaryAllResult, error) {
@@ -355,7 +422,35 @@ func QueryGroupSummaryByChannels(hours int, scopes []GroupChannelScope) (GroupSu
 		}
 		return true
 	})
-	return buildChannelScopedGroupSummary(scopes, rows, hot, legacyRows), nil
+	result := buildChannelScopedGroupSummary(scopes, rows, hot, legacyRows)
+	fillGroupSummarySeries(&result, startTs, endTs)
+	return result, nil
+}
+
+func fillGroupSummarySeries(result *GroupSummaryAllResult, startTs, endTs int64) {
+	if result == nil {
+		return
+	}
+	first, last, bucketSeconds, count := fixedStatusBucketWindow(startTs, endTs)
+	for groupIndex := range result.Groups {
+		group := &result.Groups[groupIndex]
+		byTs := make(map[int64]BucketPoint, len(group.Series))
+		for _, point := range group.Series {
+			ts := point.Ts - point.Ts%bucketSeconds
+			merged := mergeBucketPoint(byTs[ts], point)
+			merged.Ts = ts
+			byTs[ts] = merged
+		}
+		series := make([]BucketPoint, 0, count)
+		for ts := first; ts <= last; ts += bucketSeconds {
+			if point, ok := byTs[ts]; ok {
+				series = append(series, point)
+			} else {
+				series = append(series, BucketPoint{Ts: ts})
+			}
+		}
+		group.Series = series
+	}
 }
 
 func channelIdsFromScopes(scopes []GroupChannelScope) []int {

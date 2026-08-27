@@ -120,6 +120,23 @@ const createGroupSchema = (t: Translate) =>
     GroupCostRatio: createJsonStringField(t),
     TopupGroupRatio: createJsonStringField(t),
     UserUsableGroups: createJsonStringField(t),
+    GroupOrder: createJsonStringField(t, {
+      predicate: (parsed) =>
+        Array.isArray(parsed) &&
+        parsed.every((item) => typeof item === 'string'),
+      predicateMessage: 'Expected a JSON array of group identifiers',
+    }),
+    GroupIconTypes: createJsonStringField(t, {
+      predicate: (parsed) =>
+        !!parsed &&
+        typeof parsed === 'object' &&
+        !Array.isArray(parsed) &&
+        Object.values(parsed as Record<string, unknown>).every(
+          (value) => Number.isInteger(value) && Number(value) >= 0
+        ),
+      predicateMessage:
+        'Expected a JSON map of group names to channel type ids',
+    }),
     GroupGroupRatio: createJsonStringField(t),
     AutoGroups: createJsonStringField(t, {
       predicate: (parsed) =>
@@ -197,6 +214,8 @@ export function RatioSettingsCard({
     GroupCostRatio: normalizeJsonString(groupDefaults.GroupCostRatio),
     TopupGroupRatio: normalizeJsonString(groupDefaults.TopupGroupRatio),
     UserUsableGroups: normalizeJsonString(groupDefaults.UserUsableGroups),
+    GroupOrder: normalizeJsonString(groupDefaults.GroupOrder),
+    GroupIconTypes: normalizeJsonString(groupDefaults.GroupIconTypes),
     GroupGroupRatio: normalizeJsonString(groupDefaults.GroupGroupRatio),
     AutoGroups: normalizeJsonString(groupDefaults.AutoGroups),
     DefaultUseAutoGroup: groupDefaults.DefaultUseAutoGroup,
@@ -240,6 +259,8 @@ export function RatioSettingsCard({
       GroupCostRatio: formatJsonForTextarea(groupDefaults.GroupCostRatio),
       TopupGroupRatio: formatJsonForTextarea(groupDefaults.TopupGroupRatio),
       UserUsableGroups: formatJsonForTextarea(groupDefaults.UserUsableGroups),
+      GroupOrder: formatJsonForTextarea(groupDefaults.GroupOrder),
+      GroupIconTypes: formatJsonForTextarea(groupDefaults.GroupIconTypes),
       GroupGroupRatio: formatJsonForTextarea(groupDefaults.GroupGroupRatio),
       AutoGroups: formatJsonForTextarea(groupDefaults.AutoGroups),
       GroupSpecialUsableGroup: formatJsonForTextarea(
@@ -295,6 +316,8 @@ export function RatioSettingsCard({
       GroupCostRatio: normalizeJsonString(groupDefaults.GroupCostRatio),
       TopupGroupRatio: normalizeJsonString(groupDefaults.TopupGroupRatio),
       UserUsableGroups: normalizeJsonString(groupDefaults.UserUsableGroups),
+      GroupOrder: normalizeJsonString(groupDefaults.GroupOrder),
+      GroupIconTypes: normalizeJsonString(groupDefaults.GroupIconTypes),
       GroupGroupRatio: normalizeJsonString(groupDefaults.GroupGroupRatio),
       AutoGroups: normalizeJsonString(groupDefaults.AutoGroups),
       DefaultUseAutoGroup: groupDefaults.DefaultUseAutoGroup,
@@ -309,6 +332,8 @@ export function RatioSettingsCard({
       GroupCostRatio: formatJsonForTextarea(groupDefaults.GroupCostRatio),
       TopupGroupRatio: formatJsonForTextarea(groupDefaults.TopupGroupRatio),
       UserUsableGroups: formatJsonForTextarea(groupDefaults.UserUsableGroups),
+      GroupOrder: formatJsonForTextarea(groupDefaults.GroupOrder),
+      GroupIconTypes: formatJsonForTextarea(groupDefaults.GroupIconTypes),
       GroupGroupRatio: formatJsonForTextarea(groupDefaults.GroupGroupRatio),
       AutoGroups: formatJsonForTextarea(groupDefaults.AutoGroups),
       GroupSpecialUsableGroup: formatJsonForTextarea(
@@ -369,6 +394,8 @@ export function RatioSettingsCard({
         GroupCostRatio: normalizeJsonString(values.GroupCostRatio),
         TopupGroupRatio: normalizeJsonString(values.TopupGroupRatio),
         UserUsableGroups: normalizeJsonString(values.UserUsableGroups),
+        GroupOrder: normalizeJsonString(values.GroupOrder),
+        GroupIconTypes: normalizeJsonString(values.GroupIconTypes),
         GroupGroupRatio: normalizeJsonString(values.GroupGroupRatio),
         AutoGroups: normalizeJsonString(values.AutoGroups),
         DefaultUseAutoGroup: values.DefaultUseAutoGroup,

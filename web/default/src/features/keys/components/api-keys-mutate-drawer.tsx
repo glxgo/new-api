@@ -192,14 +192,20 @@ export function ApiKeysMutateDrawer({
   }, [virtualMembershipQuery.data])
   const groups: ApiKeyGroupOption[] = useMemo(() => {
     const groupsRaw = groupsData?.data || {}
-    const options: ApiKeyGroupOption[] = Object.entries(groupsRaw).map(
-      ([key, info]) => ({
+    const iconTypes = groupsData?.group_icon_types || {}
+    const groupOrder = groupsData?.group_order || []
+    const orderIndex = new Map(groupOrder.map((group, index) => [group, index]))
+    const options: ApiKeyGroupOption[] = Object.entries(groupsRaw)
+      .map(([key, info], fallbackIndex) => ({
         value: key,
         label: key,
         desc: info.desc || key,
         ratio: info.ratio,
-      })
-    )
+        iconType: iconTypes[key],
+        _order: orderIndex.get(key) ?? groupOrder.length + fallbackIndex,
+      }))
+      .sort((a, b) => a._order - b._order)
+      .map(({ _order: _ignored, ...option }) => option)
     const known = new Set(options.map((option) => option.value))
     for (const group of virtualMembershipGroups) {
       if (known.has(group)) continue
@@ -207,10 +213,16 @@ export function ApiKeysMutateDrawer({
         value: group,
         label: group,
         desc: '虚拟会员专属分组',
+        iconType: iconTypes[group],
       })
     }
     return options
-  }, [groupsData?.data, virtualMembershipGroups])
+  }, [
+    groupsData?.data,
+    groupsData?.group_icon_types,
+    groupsData?.group_order,
+    virtualMembershipGroups,
+  ])
   const subscribedGroups: string[] = useMemo(() => {
     const subs = selfSubQuery.data?.data?.subscriptions || []
     const now = selfSubQuery.dataUpdatedAt / 1000

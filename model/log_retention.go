@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	DetailedUsageLogRetentionDays = 7
+	DetailedUsageLogRetentionDays = 30
 	usageLogAggregateBucket       = int64(24 * 60 * 60)
 )
 
