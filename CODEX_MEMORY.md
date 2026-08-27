@@ -1798,3 +1798,10 @@
 - 本地 Default `tsc -b`/Rsbuild、Classic Rsbuild、定向 Go 测试、全仓静态编译和 `git diff --check` 通过；提交 `344b5f1a5` 已推送到 `origin/main`。
 - Linux/amd64 静态产物 `/opt/newapi/releases/new-api-payment-fee-344b5f1a5-linux-amd64`，SHA-256 `9cb9e7a4fd3ee94c970069de402023af705d1bd7fb4baa4d49cd1b12a05af054`。生产备份 `/opt/new-api-backups/release-payment-fee-20260827T161641Z/`，含 MySQL dump、Compose、Nginx、容器检查和旧产物哈希。
 - site-builder 先以 3010 候选实例验证健康、版本和 `payment_fee` 四表字段，再只重建 `new-api` 正式容器；MySQL/Redis 容器 ID 未变，正式仅监听 3000，候选已移除。正式 `/api/status` 与公网 `https://token.stellaisle.com/api/status` 返回版本 `344b5f1a5`，公网 `/console` 返回 200。
+
+### 2026-08-28 — 手续费文案中文化并完成累积版本核对
+
+- Default 中文资源新增“商品金额”“支付手续费”“实际支付”“支付手续费率（%）”及手续费说明，付款确认页和管理端字段在中文环境不再回退到英文；Classic 确认页原本即为中文硬编码。
+- 最新提交 `ba66db230` 已推送到 `origin/main`。本地 `HEAD` 与远端一致且工作树干净；正式产物从该提交完整工作树重新构建，SHA-256 为 `c6831a1293dfc7cb8f8b94d2f34c24b3c74b3dfa92455ce1edb57187ee0e8c2f`。
+- 发布前备份 `/opt/new-api-backups/release-payment-fee-i18n-20260827T164411Z/`；3010 候选返回版本 `ba66db230` 且 healthy 后切换正式。生产容器 healthy、重启计数 0，仅监听 3000，候选已移除；MySQL/Redis 仍为 running，公网 `/api/status` 返回 `ba66db230`，`/console` 返回 200。
+- 因本次产物从 `ba66db230` 的完整提交树构建，之前支付手续费功能提交 `344b5f1a5` 及其交接文档提交均包含在当前线上代码中；未发现本地尚未上线的源码改动。
