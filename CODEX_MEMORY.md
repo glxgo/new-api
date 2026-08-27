@@ -1765,3 +1765,10 @@
 - site-builder 备份 `/opt/new-api-backups/release-20260826-full-local-20260826T144438Z/`；正式 Compose `/opt/newapi/docker-compose.final-full-local-20260826.yml`，默认 `/opt/newapi/docker-compose.final.yml` 已同步；只重建 `new-api`，MySQL/Redis 未重建，`overseas2` 未触碰。正式挂载新产物、healthy、重启 0，仅监听 3000，候选 3010 已移除。
 - 三现役公网域名 `/api/status` 均返回版本 `20260826-full-local-snapshot`，分组定价页面均 200，`/api/user/groups` 顶层 `group_order` 为数组、`group_icon_types` 为对象；Safari 登录态平台用量、模型状态、分组定价三页均正常，无错误边界。
 - 主工作树仍未提交、未推送；本次发布状态为“本地完整快照已构建、生产已部署、在线已验收”。后续应把该快照提交/推送后再继续发布，形成可回滚、可复现的累积基线。
+
+### 2026-08-27 — 累积本地改动已完成安全审计并推送
+
+- 提交前对当前工作树、两枚未推送提交和暂存区执行密钥/隐私审计：未发现真实 API key、访问令牌、私钥、带凭据连接串、Cookie、JWT、数据库 dump 或 `.env` 文件。
+- 由于 `glxgo/new-api` 是公开仓库，本次新增交接记录中的生产公网 IP 已脱敏为 `production host redacted`；公开域名、回环/测试地址和占位测试数据不属于凭据或个人隐私。
+- 主工作树全部改动（60 个文件，其中 8 个新增源码/测试文件）已提交为 `23e4ffb64ab3923a7a83959228f1c751174054fd`，推送到 `origin/main`；本地 `HEAD` 与远端分支一致，工作树 clean，未跟踪文件为空，`git diff --check` 和提交后高置信度密钥扫描均通过。
+- 本轮只做 Git 提交/推送，没有重新部署生产。生产仍运行上一条记录的 `20260826-full-local-snapshot`，其健康、公网和 Safari 验收状态不变。
