@@ -16,6 +16,15 @@
 
 ## Current handoff
 
+### 2026-08-30 — Responses stream failure billing and terminal handling deployed
+
+- Commit `adbc89c53` (pushed to `origin/main`) adds semantic-progress accounting for failed Responses streams. Output/reasoning/function-call/custom-tool deltas and `response.incomplete` make a failure billable; provider usage wins when present, otherwise prompt and received output are estimated and tagged `usage_source=estimated_stream_failure` / `usage_estimated=true`. Empty/prelude-only failures retain retry/refund behavior.
+- `relay/helper/stream_scanner.go` resets the idle watchdog only after accepted SSE `data:` events, while comments and blank lines no longer mask a stalled model. `response.done` is accepted alongside `response.completed`. Native Responses and Responses-to-Chat failures reuse `PostTextConsumeQuota` and idempotent `BillingSession.Settle`, preventing the deferred error refund from undoing a settled charge. A review also removed duplicate reasoning-summary delta estimation and added a regression. CPA code was not changed.
+- Focused Responses/OpenAI, scanner timeout/cancel, text-quota and BillingSession tests passed, as did full `go build ./...`, Linux/amd64 static build, `gofmt`, and `git diff --check`. Broader package runs still expose unrelated repository baselines in image error-copy expectations, priority shared global state, and helper i18n initialization.
+- Real 3010 acceptance passed for a normal stream, a Function Call stream with a valid `fc_...` ID, and a controlled client abort after 103 typed events. The aborted stream ended on `response.output_text.delta`, settled 21 input + 97 output tokens (603 quota), recorded exactly one consumption row with estimated-failure metadata, and did not refund. A post-cutover public stream returned `PUBLIC_FINAL_OK` plus `response.completed` and logged normal usage.
+- Production `site-builder` runs `20260830-responses-stream-billing2` from `/opt/newapi/releases/new-api-20260830-responses-stream-billing2-linux-amd64`, SHA-256 `ee89be0c801d64e321b70a36ceee0dedb217886ebce6789b023a47f8c35fa47b`. Formal is healthy with zero restarts on port 3000 only; candidate 3010 drained and was removed; MySQL and Redis were not recreated. All three public status endpoints return the release version and Nginx is normalized to 3000.
+- Rollback/evidence backup: `/opt/newapi/backups/responses-stream-billing2-20260830T040927Z-before/`. The test key is absent from source, handoff files, Compose files, current application logs, and current Docker JSON logs by exact-match audit.
+
 ### 2026-08-26 — Per-subscription midnight reset anchor deployed
 
 - Commits `23cb6a048` and `e2063adbd` add snapshot-only `quota_reset_anchor` metadata to `SubscriptionPlan`, with explicit `midnight` handling. Daily/weekly calculations and admin projections align those instances to Asia/Shanghai 00:00; empty/unknown anchors retain the normal purchase/start wall-clock phase. The monthly weekly special case still stops after its original three reset windows even when the first boundary is moved earlier to midnight. Regression coverage includes daily/weekly calculation, snapshot round-trip, the future-midnight reset and the no-fourth-window guard.
@@ -1805,3 +1814,28 @@
 - 最新提交 `ba66db230` 已推送到 `origin/main`。本地 `HEAD` 与远端一致且工作树干净；正式产物从该提交完整工作树重新构建，SHA-256 为 `c6831a1293dfc7cb8f8b94d2f34c24b3c74b3dfa92455ce1edb57187ee0e8c2f`。
 - 发布前备份 `/opt/new-api-backups/release-payment-fee-i18n-20260827T164411Z/`；3010 候选返回版本 `ba66db230` 且 healthy 后切换正式。生产容器 healthy、重启计数 0，仅监听 3000，候选已移除；MySQL/Redis 仍为 running，公网 `/api/status` 返回 `ba66db230`，`/console` 返回 200。
 - 因本次产物从 `ba66db230` 的完整提交树构建，之前支付手续费功能提交 `344b5f1a5` 及其交接文档提交均包含在当前线上代码中；未发现本地尚未上线的源码改动。
+
+### 2026-08-30 — Responses `function_call + item_` 兼容缺口已定位（只读）
+
+- 生产 `responses_input_id_diagnostic` 确认用户所报 `input[42].id=item_... / expected fc` 的目标项为 `type=function_call`、`id_prefix=item_`、长度 29；错误字段是 function-call Item 的 `id`，不是 `call_id`。相同结构还在多个输入位置和不同 `item_` 后缀上重复出现。
+- 当前 `relay/common/responses_item_id_compat.go` 会把通用 `item_` 按类型归一为 `reasoning → rs_`、`message → msg_`，并处理部分 `ctc_/fc_/ctco_/fco_` 类型串线，但没有处理 `function_call + item_`；现有测试还把该输入固定为保持不变。同一失败请求的兼容统计为 reasoning 7、message 1、function_call 0，直接证明此缺口仍存在于当前代码。
+- 渠道 28 后接的 CLIProxyAPI `v7.2.119`（commit `6e92e3e6`）同样只为 message 归一化通用 Item ID，`function_call + item_` 会原样发送到 OpenAI Codex。CLIProxyAPI commit `5e25566c240ed6332fe2effed834dbde58b23a74` 已补上 reasoning/function_call 归一化，首个发布版本为 `v7.2.122`。
+- 根因链：某个历史响应/兼容实现产生通用 `item_` 并被客户端后续重放；New API 与旧 CPA 都未修复 function_call Item ID；严格上游要求其为 `fc_` 并返回 400。最初污染生产者尚未对具体样本证实，不能把 `call_id` 或某一个客户端写成已确认根因。
+- 推荐代码防线是仅对 `type=function_call` 且 `id` 精确匹配 `item_<非空后缀>` 时改为 `fc_<原后缀>`，保留 `call_id`、canonical/未知 ID 与其他字段，并新增红绿测试、归一化计数和真实工具调用回放。生产侧同时至少升级 CPA 到 `v7.2.122`；所有构建和测试必须在本地/独立构建环境完成。
+- 本轮未修改源码、测试、配置或生产。排查开始与结束时源码工作树均为 clean；追加本交接记录后仅记忆文件发生变化。
+
+### 2026-08-30 — Responses mid-stream idle timeout 与 upstream 对比（只读）
+
+- 生产近 14 天约 41.2 万条终态中仅 9 条 `timeout`（约 0.0022%），全部来自渠道 28 / CPA；8 月 29 日三条已精确关联到 CPA 请求，均先收到并转发 SSE，再在缺少 `response.completed` 的情况下静默约 300 秒，最后由本仓库 scanner 的默认 idle timeout 终止。
+- CPA 7.2.119 对应请求从相同开始时间一直挂到 New API 取消时才记录 5 分钟级 HTTP 200；这表示已提交流式响应头，并不表示完整成功。三条落在同一匿名 Codex 凭据，但该凭据同期大量其他流正常完成，排除凭据整体失效，更符合独立上游 HTTP SSE 请求/连接偶发停滞。
+- 当前 `relay/helper/stream_scanner.go` 每读到任意行都会重置 300 秒 ticker；`relay/channel/openai/relay_responses.go` 只有 `response.completed` 才调用 `sr.Done()`，随后严格检查 Done，否则返回 `channel:incomplete_stream` 502。定向测试 `DONEWithoutCompleted`、`CompletedEventMarksNormalEnd`、`PrematureEOFIsIncomplete` 与 scanner timeout 使用本地 Go 1.26.4 均通过。
+- 最新 `upstream/main` 为 `918427d8a`：Responses handler兼容 `response.done`，但仍没有本 fork 的严格 incomplete-stream 502 检查；生产近 30 天 `response.done` 为 0，且 `response.completed` 全部对应 Done，因此该兼容差异不是本案根因。官方 OpenAI 文档仍以 `response.completed` / `response.failed` 为终态。
+- CLIProxyAPI 最新发布为 7.2.145。其 7.2.119→7.2.145 包含 premature SSE termination、终态错误透传和 context-aware transport 等相关修复，但 Codex HTTP SSE executor 仍无 post-connect idle watchdog；相关 PR 尚未合入。CPA keepalive 功能在 7.2.119 已存在但生产关闭，单独开启会被当前 scanner 当成活动并掩盖上游卡死，不应作为独立修复。
+- 代码决策：保留严格 Responses 终态检查与有界 idle 失败，不整包覆盖 upstream，不把 timeout 无限调大，也不单独开启 CPA SSE keepalive。若实施修复，应先让 scanner 分离 transport heartbeat 与 semantic event progress，再评估 CPA 7.2.145 候选升级及 typed `response.failed` 终态；本轮未改源码、测试文件或生产。
+
+### 2026-08-30 — CPA 已升级到最新正式版 v7.2.145
+
+- 用户明确授权升级 CPA。实时 GitHub Releases 核对显示最新正式版为 `v7.2.145`（2026-08-28 发布）；`CLIProxyAPI_7.2.145_linux_amd64.tar.gz` 已用官方 `checksums.txt` 校验，归档 SHA-256 `ffb59d406af9b849ec9174154d96642a1d3ccb315f8687c56ac55202816e9b37`，解包二进制 SHA-256 `576a0555e5180c48a5cdf51ee92047a6ab78c363dfe612ea75925ba7f1ae1713`。
+- 生产 `site-builder` 的 `cpa.service` 已由 `7.2.119 / 6e92e3e6` 原子替换为 `7.2.145 / d9cea890`，仍监听 `172.20.0.1:18096`；配置哈希 `07eb1fc410d1d9231d314811f8676a14361e3dfbcf7986482c29c9dd0e987515` 与升级前一致，11 个 Codex 账号文件未变，`codex-token-usage` 与 `cpa-account-config-manager` 插件均成功加载。
+- 升级后服务 `active/running`、`NRestarts=0`；本机与 `new-api` 容器内 `/healthz` 连续 200，未认证 `/v1/models` 仍 401，New API 三个公网 `/api/status` 均 200；升级后 15 分钟 journal 无 panic/fatal/error/oom。
+- 回滚备份 `/opt/cpa/backups/upgrade-7.2.145-20260829T164349Z/` 包含旧二进制（SHA-256 `08dabc076b639c25b92085cf07af04c69fcf50e0c695314d41f4db2900825fa8`）、配置、systemd 单元、插件和面板；旧二进制仍保留。新版本未改 CPA 配置、账号、数据库、Nginx、New API 或流量路由。
