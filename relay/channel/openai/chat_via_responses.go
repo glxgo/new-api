@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	appconstant "github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -108,6 +109,7 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		sentStart   bool
 		sentStop    bool
 		sawToolCall bool
+		completed   bool
 		streamErr   *types.NewAPIError
 	)
 
@@ -122,6 +124,31 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 
 	if info.RelayFormat == types.RelayFormatClaude && info.ClaudeConvertInfo == nil {
 		info.ClaudeConvertInfo = &relaycommon.ClaudeConvertInfo{LastMessagesType: relaycommon.LastMessageTypeNone}
+	}
+	info.ResponsesFailureUsageEligible = false
+	info.ResponsesFailureUsageEstimated = false
+	buildFailureUsage := func() *dto.Usage {
+		if !info.ResponsesFailureUsageEligible {
+			return nil
+		}
+		estimated := false
+		if usage.PromptTokens == 0 {
+			usage.PromptTokens = info.GetEstimatePromptTokens()
+			estimated = true
+		}
+		if usage.CompletionTokens == 0 && usageText.Len() > 0 {
+			usage.CompletionTokens = service.CountTextToken(usageText.String(), info.UpstreamModelName)
+			estimated = true
+		}
+		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+		if usage.TotalTokens == 0 {
+			return nil
+		}
+		if estimated {
+			usage.UsageSource = "estimated_stream_failure"
+			info.ResponsesFailureUsageEstimated = true
+		}
+		return usage
 	}
 
 	sendChatChunk := func(chunk *dto.ChatCompletionsStreamResponse) bool {
@@ -308,6 +335,26 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 			sr.Error(err)
 			return
 		}
+		if isResponsesBillingProgressEvent(streamResp.Type) {
+			info.ResponsesFailureUsageEligible = true
+		}
+		if streamResp.Response != nil && streamResp.Response.Usage != nil {
+			if streamResp.Response.Usage.InputTokens != 0 {
+				usage.PromptTokens = streamResp.Response.Usage.InputTokens
+				usage.InputTokens = streamResp.Response.Usage.InputTokens
+			}
+			if streamResp.Response.Usage.OutputTokens != 0 {
+				usage.CompletionTokens = streamResp.Response.Usage.OutputTokens
+				usage.OutputTokens = streamResp.Response.Usage.OutputTokens
+			}
+			if streamResp.Response.Usage.InputTokensDetails != nil {
+				usage.PromptTokensDetails = *streamResp.Response.Usage.InputTokensDetails
+			}
+			usage.CompletionTokenDetails = streamResp.Response.Usage.CompletionTokenDetails
+			if streamResp.Response.Usage.InputTokens > 0 || streamResp.Response.Usage.OutputTokens > 0 || streamResp.Response.Usage.TotalTokens > 0 {
+				info.ResponsesFailureUsageEligible = true
+			}
+		}
 
 		switch streamResp.Type {
 		case "response.created":
@@ -387,6 +434,9 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 				}
 			}
 
+		case "response.reasoning_text.delta", "response.custom_tool_call_input.delta":
+			usageText.WriteString(streamResp.Delta)
+
 		case "response.output_item.added", "response.output_item.done":
 			if streamResp.Item == nil {
 				break
@@ -442,7 +492,8 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 
 		case "response.function_call_arguments.done":
 
-		case "response.completed":
+		case "response.completed", "response.done":
+			info.ResponsesFailureUsageEligible = true
 			if streamResp.Response != nil {
 				if streamResp.Response.Model != "" {
 					model = streamResp.Response.Model
@@ -494,16 +545,30 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 				}
 				sentStop = true
 			}
+			completed = true
+			sr.Done()
+
+		case "response.incomplete":
+			info.ResponsesFailureUsageEligible = true
+			streamErr = responsesTerminalError(streamResp, types.ErrorCodeUpstreamResponseIncomplete, true)
+			common.SetContextKey(c, appconstant.ContextKeyRelayErrorAlreadyStreamed, true)
+			sr.Stop(streamErr)
 
 		case "error", "response.error", "response.failed":
 			if streamResp.Response != nil {
 				if oaiErr := streamResp.Response.GetOpenAIError(); oaiErr != nil && oaiErr.Type != "" {
 					streamErr = types.WithOpenAIError(*oaiErr, http.StatusInternalServerError)
+					if sentStart {
+						types.ErrOptionWithSkipRetry()(streamErr)
+					}
 					sr.Stop(streamErr)
 					return
 				}
 			}
 			streamErr = types.NewOpenAIError(fmt.Errorf("responses stream error: %s", streamResp.Type), types.ErrorCodeBadResponse, http.StatusInternalServerError)
+			if sentStart {
+				types.ErrOptionWithSkipRetry()(streamErr)
+			}
 			sr.Stop(streamErr)
 			return
 
@@ -512,7 +577,28 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 	})
 
 	if streamErr != nil {
-		return nil, streamErr
+		return buildFailureUsage(), streamErr
+	}
+
+	if !completed || info.StreamStatus == nil || info.StreamStatus.EndReason != relaycommon.StreamEndReasonDone {
+		streamSummary := "status unavailable"
+		if info.StreamStatus != nil {
+			streamSummary = info.StreamStatus.Summary()
+		}
+		errorOptions := []types.NewAPIErrorOptions{}
+		if sentStart {
+			errorOptions = append(errorOptions, types.ErrOptionWithSkipRetry())
+		}
+		streamErr = types.NewErrorWithStatusCode(
+			fmt.Errorf("responses stream ended before response.completed: %s", streamSummary),
+			types.ErrorCodeChannelIncompleteStream,
+			http.StatusBadGateway,
+			errorOptions...,
+		)
+		if info.ResponsesFailureUsageEligible {
+			common.SetContextKey(c, appconstant.ContextKeyRelayErrorAlreadyStreamed, true)
+		}
+		return buildFailureUsage(), streamErr
 	}
 
 	if usage.TotalTokens == 0 {

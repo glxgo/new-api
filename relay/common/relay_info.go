@@ -143,10 +143,17 @@ type RelayInfo struct {
 	// control events may be buffered, and ping comments do not increment it.
 	// Retrying is safe only while this remains zero.
 	ForwardedResponsesEventCount int
-	UpstreamEventBytes           int64
-	UpstreamLastEventType        string
-	UpstreamLastSequence         int
-	FinalPreConsumedQuota        int // 最终预消耗的配额
+	// ResponsesFailureUsageEligible is set when a Responses stream has exposed
+	// semantic model progress before failing. The controller uses it to settle
+	// an estimated usage instead of refunding the whole pre-consume hold.
+	ResponsesFailureUsageEligible bool
+	// ResponsesFailureUsageEstimated marks a fallback usage estimate for audit
+	// logging; provider-confirmed usage leaves this false.
+	ResponsesFailureUsageEstimated bool
+	UpstreamEventBytes             int64
+	UpstreamLastEventType          string
+	UpstreamLastSequence           int
+	FinalPreConsumedQuota          int // 最终预消耗的配额
 	// ForcePreConsume 为 true 时禁用 BillingSession 的信任额度旁路，
 	// 强制预扣全额。用于异步任务（视频/音乐生成等），因为请求返回后任务仍在运行，
 	// 必须在提交前锁定全额。

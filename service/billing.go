@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
@@ -111,4 +112,22 @@ func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuo
 		return PostConsumeQuota(relayInfo, quotaDelta, relayInfo.FinalPreConsumedQuota, true)
 	}
 	return nil
+}
+
+// SettleResponsesStreamFailureUsage charges a Responses request that failed
+// after the upstream had already exposed semantic progress. The stream
+// handler supplies provider usage when available, otherwise an explicitly
+// marked estimate based on the request and received output deltas. Requests
+// that failed before semantic progress are left to the normal refund path.
+func SettleResponsesStreamFailureUsage(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage) bool {
+	if relayInfo == nil || usage == nil || !relayInfo.IsStream ||
+		!relayInfo.ResponsesFailureUsageEligible || !ValidUsage(usage) {
+		return false
+	}
+	extra := []string{"Responses 流在上游已产生用量，按已接收事件结算"}
+	if usage.UsageSource == "estimated_stream_failure" {
+		extra = append(extra, "上游未返回完整 usage，已按流中已接收内容估算")
+	}
+	PostTextConsumeQuota(ctx, relayInfo, usage, extra)
+	return true
 }

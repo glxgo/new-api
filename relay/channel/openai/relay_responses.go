@@ -83,12 +83,85 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 
 	var usage = &dto.Usage{}
 	var responseTextBuilder strings.Builder
+	var failureUsageTextBuilder strings.Builder
 	var streamErr *types.NewAPIError
 	var latestResponseSnapshot *responsesFailureSnapshot
 	lastSequenceNumber := 0
 	forwardedEventCount := 0
 	pendingPrelude := make([]responsesBufferedEvent, 0, 2)
+	failureItemText := make(map[string]string)
 	info.ForwardedResponsesEventCount = 0
+	info.ResponsesFailureUsageEligible = false
+	info.ResponsesFailureUsageEstimated = false
+
+	markFailureUsageProgress := func(eventType string) {
+		if isResponsesBillingProgressEvent(eventType) {
+			info.ResponsesFailureUsageEligible = true
+		}
+	}
+	setUsageFromResponse := func(response *dto.OpenAIResponsesResponse) {
+		if response == nil || response.Usage == nil {
+			return
+		}
+		if response.Usage.InputTokens != 0 {
+			usage.PromptTokens = response.Usage.InputTokens
+			usage.InputTokens = response.Usage.InputTokens
+		}
+		if response.Usage.OutputTokens != 0 {
+			usage.CompletionTokens = response.Usage.OutputTokens
+			usage.OutputTokens = response.Usage.OutputTokens
+		}
+		if response.Usage.TotalTokens != 0 {
+			usage.TotalTokens = response.Usage.TotalTokens
+		}
+		if response.Usage.InputTokensDetails != nil {
+			usage.PromptTokensDetails.CachedTokens = response.Usage.InputTokensDetails.CachedTokens
+			usage.PromptTokensDetails.ImageTokens = response.Usage.InputTokensDetails.ImageTokens
+			usage.PromptTokensDetails.AudioTokens = response.Usage.InputTokensDetails.AudioTokens
+		}
+		usage.CompletionTokenDetails = response.Usage.CompletionTokenDetails
+	}
+	buildFailureUsage := func() *dto.Usage {
+		if !info.ResponsesFailureUsageEligible {
+			return nil
+		}
+		if usage.PromptTokens == 0 {
+			usage.PromptTokens = info.GetEstimatePromptTokens()
+			info.ResponsesFailureUsageEstimated = true
+		}
+		if usage.CompletionTokens == 0 && failureUsageTextBuilder.Len() > 0 {
+			usage.CompletionTokens = service.CountTextToken(failureUsageTextBuilder.String(), info.UpstreamModelName)
+			info.ResponsesFailureUsageEstimated = true
+		}
+		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+		if usage.TotalTokens == 0 {
+			return nil
+		}
+		if info.ResponsesFailureUsageEstimated {
+			usage.UsageSource = "estimated_stream_failure"
+		}
+		return usage
+	}
+	failureItemKey := func(itemID string) string {
+		key := strings.TrimSpace(itemID)
+		if key == "" {
+			return "unknown"
+		}
+		return key
+	}
+	appendFailureItemPayload := func(itemID, payload string) {
+		if payload == "" {
+			return
+		}
+		key := failureItemKey(itemID)
+		previous := failureItemText[key]
+		if previous != "" && strings.HasPrefix(payload, previous) {
+			failureUsageTextBuilder.WriteString(payload[len(previous):])
+		} else if previous == "" || payload != previous {
+			failureUsageTextBuilder.WriteString(payload)
+		}
+		failureItemText[key] = payload
+	}
 
 	forwardEvent := func(streamResponse dto.ResponsesStreamResponse, data string, sr *helper.StreamResult) bool {
 		if err := sendResponsesStreamData(c, streamResponse, data); err != nil {
@@ -135,6 +208,11 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		if streamResponse.Response != nil && info.StreamStatus != nil {
 			info.StreamStatus.SetUpstreamResponseID(streamResponse.Response.ID)
 			latestResponseSnapshot = newResponsesFailureSnapshot(streamResponse.Response)
+			setUsageFromResponse(streamResponse.Response)
+			if streamResponse.Response.Usage != nil &&
+				(streamResponse.Response.Usage.InputTokens > 0 || streamResponse.Response.Usage.OutputTokens > 0 || streamResponse.Response.Usage.TotalTokens > 0) {
+				info.ResponsesFailureUsageEligible = true
+			}
 		}
 		if streamResponse.Type == "error" || streamResponse.Type == "response.failed" || streamResponse.Type == "response.error" {
 			recordResponsesUpstreamTerminal(info, resp.StatusCode, streamResponse)
@@ -209,27 +287,15 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			pendingPrelude = append(pendingPrelude, responsesBufferedEvent{Response: streamResponse, Data: data})
 			return
 		}
+		markFailureUsageProgress(streamResponse.Type)
 		if !flushPrelude(sr) || !forwardEvent(streamResponse, data, sr) {
 			return
 		}
 		switch streamResponse.Type {
-		case "response.completed":
+		case "response.completed", "response.done":
 			if streamResponse.Response != nil {
 				recordResponsesUpstreamTerminal(info, resp.StatusCode, streamResponse)
-				if streamResponse.Response.Usage != nil {
-					if streamResponse.Response.Usage.InputTokens != 0 {
-						usage.PromptTokens = streamResponse.Response.Usage.InputTokens
-					}
-					if streamResponse.Response.Usage.OutputTokens != 0 {
-						usage.CompletionTokens = streamResponse.Response.Usage.OutputTokens
-					}
-					if streamResponse.Response.Usage.TotalTokens != 0 {
-						usage.TotalTokens = streamResponse.Response.Usage.TotalTokens
-					}
-					if streamResponse.Response.Usage.InputTokensDetails != nil {
-						usage.PromptTokensDetails.CachedTokens = streamResponse.Response.Usage.InputTokensDetails.CachedTokens
-					}
-				}
+				setUsageFromResponse(streamResponse.Response)
 				if streamResponse.Response.HasImageGenerationCall() {
 					c.Set("image_generation_call", true)
 					c.Set("image_generation_call_quality", streamResponse.Response.GetQuality())
@@ -238,6 +304,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			}
 			sr.Done()
 		case "response.incomplete":
+			markFailureUsageProgress(streamResponse.Type)
 			recordResponsesUpstreamTerminal(info, resp.StatusCode, streamResponse)
 			streamErr = responsesTerminalError(streamResponse, types.ErrorCodeUpstreamResponseIncomplete, true)
 			common.SetContextKey(c, constant.ContextKeyRelayErrorAlreadyStreamed, true)
@@ -245,14 +312,27 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		case "response.output_text.delta":
 			// 处理输出文本
 			responseTextBuilder.WriteString(streamResponse.Delta)
-		case dto.ResponsesOutputTypeItemDone:
+			failureUsageTextBuilder.WriteString(streamResponse.Delta)
+		case "response.reasoning_text.delta", "response.reasoning_summary_text.delta":
+			failureUsageTextBuilder.WriteString(streamResponse.Delta)
+		case "response.function_call_arguments.delta", "response.custom_tool_call_input.delta":
+			key := failureItemKey(streamResponse.ItemID)
+			appendFailureItemPayload(streamResponse.ItemID, failureItemText[key]+streamResponse.Delta)
+		case dto.ResponsesOutputTypeItemAdded, dto.ResponsesOutputTypeItemDone:
 			// 函数调用处理
 			if streamResponse.Item != nil {
-				switch streamResponse.Item.Type {
-				case dto.BuildInCallWebSearchCall:
-					if info != nil && info.ResponsesUsageInfo != nil && info.ResponsesUsageInfo.BuiltInTools != nil {
-						if webSearchTool, exists := info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolWebSearchPreview]; exists && webSearchTool != nil {
-							webSearchTool.CallCount++
+				if args := streamResponse.Item.ArgumentsString(); args != "" {
+					appendFailureItemPayload(streamResponse.Item.ID, args)
+				} else if input := common.JsonRawMessageToString(streamResponse.Item.Input); input != "" {
+					appendFailureItemPayload(streamResponse.Item.ID, input)
+				}
+				if streamResponse.Type == dto.ResponsesOutputTypeItemDone {
+					switch streamResponse.Item.Type {
+					case dto.BuildInCallWebSearchCall:
+						if info != nil && info.ResponsesUsageInfo != nil && info.ResponsesUsageInfo.BuiltInTools != nil {
+							if webSearchTool, exists := info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolWebSearchPreview]; exists && webSearchTool != nil {
+								webSearchTool.CallCount++
+							}
 						}
 					}
 				}
@@ -263,7 +343,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	if streamErr != nil {
 		service.PreventChannelAffinityRecord(c)
 		service.ClearCurrentChannelAffinityCache(c)
-		return nil, streamErr
+		return buildFailureUsage(), streamErr
 	}
 
 	if info.StreamStatus == nil || info.StreamStatus.EndReason != relaycommon.StreamEndReasonDone {
@@ -288,12 +368,13 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			// corrupting that stream by appending a non-SSE JSON error document.
 			common.SetContextKey(c, constant.ContextKeyRelayErrorAlreadyStreamed, true)
 		}
-		return nil, types.NewErrorWithStatusCode(
+		incompleteErr := types.NewErrorWithStatusCode(
 			streamErr,
 			types.ErrorCodeChannelIncompleteStream,
 			http.StatusBadGateway,
 			errorOptions...,
 		)
+		return buildFailureUsage(), incompleteErr
 	}
 
 	if usage.CompletionTokens == 0 {
@@ -313,6 +394,21 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 
 	return usage, nil
+}
+
+func isResponsesBillingProgressEvent(eventType string) bool {
+	eventType = strings.TrimSpace(eventType)
+	if eventType == "response.incomplete" {
+		return true
+	}
+	if strings.HasSuffix(eventType, ".delta") {
+		return strings.HasPrefix(eventType, "response.output_") ||
+			strings.HasPrefix(eventType, "response.reasoning_") ||
+			strings.HasPrefix(eventType, "response.function_call_") ||
+			strings.HasPrefix(eventType, "response.custom_tool_call_")
+	}
+	return eventType == "response.output_item.added" || eventType == "response.output_item.done" ||
+		eventType == "response.content_part.added" || eventType == "response.content_part.done"
 }
 
 type responsesBufferedEvent struct {

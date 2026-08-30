@@ -247,7 +247,6 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			default:
 			}
 
-			ticker.Reset(streamingTimeout)
 			data := scanner.Text()
 			logger.LogDebug(c, "stream scanner data: %s", data)
 
@@ -263,6 +262,10 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 				continue
 			}
 			if !strings.HasPrefix(data, "[DONE]") {
+				// Reset the idle watchdog only after a complete SSE data event has
+				// been accepted. Blank lines and comments are transport keepalive,
+				// not model progress, so they must not hide a stalled response.
+				ticker.Reset(streamingTimeout)
 				info.SetFirstResponseTime()
 				info.ReceivedResponseCount++
 

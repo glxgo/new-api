@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -76,6 +77,19 @@ func TestOaiResponsesStreamHandler_CompletedEventMarksNormalEnd(t *testing.T) {
 	require.Equal(t, relaycommon.StreamEndReasonDone, info.StreamStatus.EndReason)
 }
 
+func TestOaiResponsesStreamHandler_DoneEventMarksNormalEnd(t *testing.T) {
+	c, info, resp, _ := newResponsesStreamTest(t,
+		"data: {\"type\":\"response.done\",\"response\":{\"usage\":{\"input_tokens\":4,\"output_tokens\":1,\"total_tokens\":5}}}\n\n")
+
+	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
+
+	require.Nil(t, apiErr)
+	require.NotNil(t, usage)
+	require.Equal(t, 4, usage.PromptTokens)
+	require.Equal(t, 1, usage.CompletionTokens)
+	require.Equal(t, relaycommon.StreamEndReasonDone, info.StreamStatus.EndReason)
+}
+
 func TestOaiResponsesStreamHandler_PrematureEOFIsIncomplete(t *testing.T) {
 	c, info, resp, recorder := newResponsesStreamTest(t,
 		"data: {\"type\":\"response.created\",\"sequence_number\":1,\"response\":{\"id\":\"resp_partial_1\"}}\n\n"+
@@ -83,7 +97,9 @@ func TestOaiResponsesStreamHandler_PrematureEOFIsIncomplete(t *testing.T) {
 
 	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
 
-	require.Nil(t, usage)
+	require.NotNil(t, usage)
+	require.Equal(t, 2, usage.CompletionTokens)
+	require.Equal(t, "estimated_stream_failure", usage.UsageSource)
 	require.NotNil(t, apiErr)
 	require.Equal(t, types.ErrorCode("channel:incomplete_stream"), apiErr.GetErrorCode())
 	require.Equal(t, http.StatusBadGateway, apiErr.StatusCode)
@@ -117,7 +133,9 @@ func TestOaiResponsesStreamHandler_ResponseFailedPreservesUpstreamCause(t *testi
 
 	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
 
-	require.Nil(t, usage)
+	require.NotNil(t, usage)
+	require.Equal(t, 2, usage.CompletionTokens)
+	require.Equal(t, "estimated_stream_failure", usage.UsageSource)
 	require.NotNil(t, apiErr)
 	require.Equal(t, types.ErrorCode("server_error"), apiErr.GetErrorCode())
 	require.Equal(t, http.StatusBadGateway, apiErr.StatusCode)
@@ -136,10 +154,13 @@ func TestOaiResponsesStreamHandler_ResponseFailedPreservesUpstreamCause(t *testi
 func TestOaiResponsesStreamHandler_ResponseIncompleteCapturesReason(t *testing.T) {
 	c, info, resp, _ := newResponsesStreamTest(t,
 		"data: {\"type\":\"response.incomplete\",\"response\":{\"id\":\"resp_incomplete_1\",\"status\":\"incomplete\",\"incomplete_details\":{\"reason\":\"max_output_tokens\"}}}\n\n")
+	info.SetEstimatePromptTokens(120)
 
 	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
 
-	require.Nil(t, usage)
+	require.NotNil(t, usage)
+	require.Equal(t, 120, usage.PromptTokens)
+	require.Equal(t, "estimated_stream_failure", usage.UsageSource)
 	require.NotNil(t, apiErr)
 	require.Equal(t, types.ErrorCode("upstream:response_incomplete:max_output_tokens"), apiErr.GetErrorCode())
 	require.True(t, types.IsSkipRetryError(apiErr))
@@ -147,6 +168,54 @@ func TestOaiResponsesStreamHandler_ResponseIncompleteCapturesReason(t *testing.T
 	require.Equal(t, "response.incomplete", terminal.EventType)
 	require.Equal(t, "incomplete", terminal.ResponseStatus)
 	require.Equal(t, "max_output_tokens", terminal.IncompleteReason)
+}
+
+func TestOaiResponsesStreamHandler_CustomToolInputFailureEstimatesUsage(t *testing.T) {
+	c, info, resp, _ := newResponsesStreamTest(t,
+		"data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"custom_tool_call\",\"id\":\"ctc_1\",\"input\":\"{\\\"query\\\":\\\"status\\\"}\"}}\n\n")
+	info.SetEstimatePromptTokens(80)
+
+	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
+
+	require.NotNil(t, usage)
+	require.Equal(t, 80, usage.PromptTokens)
+	require.Greater(t, usage.CompletionTokens, 0)
+	require.Equal(t, "estimated_stream_failure", usage.UsageSource)
+	require.NotNil(t, apiErr)
+	require.Equal(t, types.ErrorCodeChannelIncompleteStream, apiErr.GetErrorCode())
+}
+
+func TestOaiResponsesToChatStreamHandler_PrematureEOFFailsAndEstimatesUsage(t *testing.T) {
+	c, info, resp, _ := newResponsesStreamTest(t,
+		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n")
+	info.RelayFormat = types.RelayFormatOpenAI
+	info.SetEstimatePromptTokens(90)
+
+	usage, apiErr := OaiResponsesToChatStreamHandler(c, info, resp)
+
+	require.NotNil(t, usage)
+	require.Equal(t, 90, usage.PromptTokens)
+	require.Greater(t, usage.CompletionTokens, 0)
+	require.Equal(t, "estimated_stream_failure", usage.UsageSource)
+	require.NotNil(t, apiErr)
+	require.Equal(t, types.ErrorCodeChannelIncompleteStream, apiErr.GetErrorCode())
+	require.True(t, common.GetContextKeyBool(c, appconstant.ContextKeyRelayErrorAlreadyStreamed))
+}
+
+func TestOaiResponsesToChatStreamHandler_ReasoningSummaryFailureCountsDeltaOnce(t *testing.T) {
+	const delta = "reasoning summary"
+	c, info, resp, _ := newResponsesStreamTest(t,
+		"data: {\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\""+delta+"\"}\n\n")
+	info.RelayFormat = types.RelayFormatOpenAI
+	info.SetEstimatePromptTokens(90)
+
+	usage, apiErr := OaiResponsesToChatStreamHandler(c, info, resp)
+
+	require.NotNil(t, usage)
+	require.Equal(t, service.CountTextToken(delta, info.UpstreamModelName), usage.CompletionTokens)
+	require.Equal(t, "estimated_stream_failure", usage.UsageSource)
+	require.NotNil(t, apiErr)
+	require.Equal(t, types.ErrorCodeChannelIncompleteStream, apiErr.GetErrorCode())
 }
 
 func TestOaiResponsesStreamHandler_TopLevelResponseError(t *testing.T) {
@@ -315,6 +384,26 @@ func TestIsNonRetryableResponsesRequestError(t *testing.T) {
 				Code:    test.code,
 			}, http.StatusBadGateway)
 			require.Equal(t, test.want, isNonRetryableResponsesRequestError(apiErr))
+		})
+	}
+}
+
+func TestIsResponsesBillingProgressEvent(t *testing.T) {
+	tests := []struct {
+		event string
+		want  bool
+	}{
+		{event: "response.output_text.delta", want: true},
+		{event: "response.function_call_arguments.delta", want: true},
+		{event: "response.custom_tool_call_input.delta", want: true},
+		{event: "response.output_item.added", want: true},
+		{event: "response.in_progress", want: false},
+		{event: "response.created", want: false},
+		{event: "error", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.event, func(t *testing.T) {
+			require.Equal(t, test.want, isResponsesBillingProgressEvent(test.event))
 		})
 	}
 }
