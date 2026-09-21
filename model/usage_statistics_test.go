@@ -1,9 +1,11 @@
 package model
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/glebarez/sqlite"
@@ -117,4 +119,270 @@ func TestGetUserUsageStatisticsRejectsUnboundedRanges(t *testing.T) {
 	require.Error(t, err)
 	_, err = GetUserUsageStatistics(0, 1, 100, 60)
 	require.Error(t, err)
+}
+
+func TestGetUserUsageStatisticsDoesNotOvercountPartialArchivedDay(t *testing.T) {
+	db := setupUsageStatisticsTestDB(t)
+	// Use a historical day so the cache key is not treated as a hot/live
+	// projection. The aggregate represents the whole day; only the live row is
+	// inside the selected one-hour tail.
+	dayStart := usageLogAggregateBucketStart(time.Date(2024, 1, 10, 0, 0, 0, 0, time.Local).Unix())
+	userID := 90101
+	require.NoError(t, db.Create(&UsageLogDailyAggregate{
+		BucketStart:  dayStart,
+		UserId:       userID,
+		Type:         LogTypeConsume,
+		RequestCount: 9,
+		Quota:        900,
+		PromptTokens: 90,
+	}).Error)
+	require.NoError(t, db.Create(&UsageLogDailyAggregate{
+		BucketStart:  dayStart,
+		UserId:       userID,
+		Type:         LogTypeConsume,
+		ModelName:    "contained-batch",
+		RequestCount: 1,
+		Quota:        5,
+		FirstLogAt:   dayStart + 3600,
+		LastLogAt:    dayStart + 3610,
+	}).Error)
+	require.NoError(t, db.Create(&Log{
+		UserId: userID, CreatedAt: dayStart + 2*3600, Type: LogTypeConsume,
+		Quota: 40, PromptTokens: 4, CompletionTokens: 1,
+	}).Error)
+
+	stats, err := GetUserUsageStatisticsWithContext(context.Background(), userID, dayStart+3600, dayStart+3*3600, 3600)
+	require.NoError(t, err)
+	require.EqualValues(t, 45, stats.Summary.Quota)
+	require.EqualValues(t, 2, stats.Summary.SuccessCount)
+}
+
+func TestGetUserUsageStatisticsFallsBackToLiveLogsWhenArchiveTableMissing(t *testing.T) {
+	db := setupUsageStatisticsTestDB(t)
+	dayStart := usageLogAggregateBucketStart(time.Date(2024, 2, 12, 0, 0, 0, 0, time.Local).Unix())
+	userID := 90102
+	require.NoError(t, db.Create(&Log{
+		UserId: userID, CreatedAt: dayStart + 60, Type: LogTypeConsume,
+		Quota: 55, PromptTokens: 5, CompletionTokens: 2,
+	}).Error)
+	require.NoError(t, db.Migrator().DropTable(&UsageLogDailyAggregate{}))
+
+	stats, err := GetUserUsageStatisticsWithContext(context.Background(), userID, dayStart, dayStart+86400, 3600)
+	require.NoError(t, err)
+	require.EqualValues(t, 55, stats.Summary.Quota)
+	require.EqualValues(t, 1, stats.Summary.SuccessCount)
+}
+
+func TestGetUserCacheRateUsesRawLogsWithoutArchiveTable(t *testing.T) {
+	db := setupUsageStatisticsTestDB(t)
+	start := usageLogAggregateBucketStart(time.Date(2024, 3, 8, 0, 0, 0, 0, time.Local).Unix())
+	userID := 90103
+	require.NoError(t, db.Create(&Log{
+		UserId: userID, CreatedAt: start + 120, Type: LogTypeConsume,
+		PromptTokens: 10, CacheTokens: 20,
+	}).Error)
+	require.NoError(t, db.Migrator().DropTable(&UsageLogDailyAggregate{}))
+
+	cacheTokens, promptTokens, err := GetUserCacheRateWithContext(context.Background(), int64(userID), start, start+86400)
+	require.NoError(t, err)
+	require.EqualValues(t, 20, cacheTokens)
+	require.EqualValues(t, 30, promptTokens)
+}
+
+func TestGetUserUsageStatisticsReadsCompleteMetricProjectionWhenEnabled(t *testing.T) {
+	db := setupUsageStatisticsTestDB(t)
+	t.Setenv(UsageMetricReadEnableEnv, "true")
+	t.Setenv("USAGE_METRIC_TIMEZONE", "UTC")
+	require.NoError(t, db.AutoMigrate(&UsageMetricBucket{}, &UsageMetricCoverage{}))
+	userID := 90201
+	start := time.Date(2024, 3, 4, 0, 0, 0, 0, time.UTC).Unix()
+	var buckets []UsageMetricBucket
+	var coverage []UsageMetricCoverage
+	for hour := int64(0); hour < 3; hour++ {
+		bucketStart := start + hour*3600
+		bucket := UsageMetricBucket{
+			Granularity:           UsageMetricGranularityHour,
+			BucketStart:           bucketStart,
+			UserId:                userID,
+			Type:                  LogTypeConsume,
+			Settled:               true,
+			ModelName:             "projection-model",
+			Quota:                 100 + hour,
+			PromptTokens:          10,
+			CompletionTokens:      5,
+			EffectivePromptTokens: 10,
+			RequestCount:          1,
+			SuccessCount:          1,
+			ComputedAt:            start + 4*3600,
+			Watermark:             100 + hour,
+			SourceVersion:         UsageMetricSourceVersionV1,
+			Timezone:              "UTC",
+			CoverageStart:         bucketStart,
+			CoverageEnd:           bucketStart + 3600,
+			IsComplete:            true,
+		}
+		bucket.RefreshDimensionHash()
+		buckets = append(buckets, bucket)
+		coverage = append(coverage, UsageMetricCoverage{
+			Granularity: UsageMetricGranularityHour,
+			BucketStart: bucketStart,
+			BucketEnd:   bucketStart + 3600,
+			Timezone:    "UTC", ComputedAt: start + 4*3600,
+			Watermark: 100 + hour, SourceVersion: UsageMetricSourceVersionV1,
+			IsComplete: true,
+		})
+	}
+	require.NoError(t, db.Create(&buckets).Error)
+	require.NoError(t, db.Create(&coverage).Error)
+
+	stats, err := GetUserUsageStatisticsWithContext(context.Background(), userID, start, start+3*3600, 3600)
+	require.NoError(t, err)
+	require.EqualValues(t, 3, stats.Summary.RequestCount)
+	require.EqualValues(t, 303, stats.Summary.Quota)
+	require.Len(t, stats.Series, 3)
+	require.Len(t, stats.Models, 1)
+	require.Equal(t, "projection-model", stats.Models[0].ModelName)
+}
+
+func TestGetUserUsageStatisticsCombinesMetricBucketsWithPartialRawTails(t *testing.T) {
+	db := setupUsageStatisticsTestDB(t)
+	t.Setenv(UsageMetricReadEnableEnv, "true")
+	t.Setenv("USAGE_METRIC_TIMEZONE", "UTC")
+	require.NoError(t, db.AutoMigrate(&UsageMetricBucket{}, &UsageMetricCoverage{}))
+	userID := 90202
+	base := time.Date(2024, 3, 5, 0, 0, 0, 0, time.UTC).Unix()
+	start := base + 15
+	end := base + 3*3600 + 30
+
+	// Only the two complete middle hours are represented by metric buckets.
+	// Boundary events remain in logs and must be read exactly, without pulling
+	// in the rest of either boundary hour.
+	require.NoError(t, db.Create(&[]Log{
+		{UserId: userID, CreatedAt: base + 30, Type: LogTypeConsume, ModelName: "raw-left", Quota: 10, PromptTokens: 2, CompletionTokens: 1},
+		{UserId: userID, CreatedAt: base + 3*3600 + 15, Type: LogTypeConsume, ModelName: "raw-right", Quota: 20, PromptTokens: 3, CompletionTokens: 2},
+	}).Error)
+
+	buckets := make([]UsageMetricBucket, 0, 2)
+	coverage := make([]UsageMetricCoverage, 0, 2)
+	for offset, quota := range []int64{100, 200} {
+		bucketStart := base + int64(offset+1)*3600
+		bucket := UsageMetricBucket{
+			Granularity:           UsageMetricGranularityHour,
+			BucketStart:           bucketStart,
+			UserId:                userID,
+			Type:                  LogTypeConsume,
+			Settled:               true,
+			ModelName:             "projected",
+			Quota:                 quota,
+			PromptTokens:          10,
+			CompletionTokens:      5,
+			EffectivePromptTokens: 10,
+			RequestCount:          1,
+			SuccessCount:          1,
+			ComputedAt:            end,
+			Watermark:             int64(offset + 1),
+			SourceVersion:         UsageMetricSourceVersionV1,
+			Timezone:              "UTC",
+			CoverageStart:         bucketStart,
+			CoverageEnd:           bucketStart + 3600,
+			IsComplete:            true,
+		}
+		bucket.RefreshDimensionHash()
+		buckets = append(buckets, bucket)
+		coverage = append(coverage, UsageMetricCoverage{
+			Granularity:   UsageMetricGranularityHour,
+			BucketStart:   bucketStart,
+			BucketEnd:     bucketStart + 3600,
+			Timezone:      "UTC",
+			ComputedAt:    end,
+			Watermark:     int64(offset + 1),
+			SourceVersion: UsageMetricSourceVersionV1,
+			IsComplete:    true,
+		})
+	}
+	require.NoError(t, db.Create(&buckets).Error)
+	require.NoError(t, db.Create(&coverage).Error)
+
+	stats, err := GetUserUsageStatisticsWithContext(context.Background(), userID, start, end, 3600)
+	require.NoError(t, err)
+	require.EqualValues(t, 4, stats.Summary.RequestCount)
+	require.EqualValues(t, 4, stats.Summary.SuccessCount)
+	require.EqualValues(t, 330, stats.Summary.Quota)
+	require.Len(t, stats.Series, 4)
+	require.EqualValues(t, 10, stats.Series[0].Quota)
+	require.EqualValues(t, 100, stats.Series[1].Quota)
+	require.EqualValues(t, 200, stats.Series[2].Quota)
+	require.EqualValues(t, 20, stats.Series[3].Quota)
+}
+
+func TestNormalizeHotUsageWindowPreservesExactRange(t *testing.T) {
+	now := time.Now().Unix()
+	start, end := now-2*3600, now
+	gotStart, gotEnd := normalizeHotUsageWindow(start, end)
+	require.Equal(t, start, gotStart)
+	require.Equal(t, end, gotEnd)
+	nearStart, nearEnd := normalizeHotUsageWindow(start, end-1)
+	require.NotEqual(t, gotEnd, nearEnd)
+	// The left boundary is unchanged for this one-second-shorter range;
+	// preserving exact windows only requires the right boundary to differ.
+	require.Equal(t, gotStart, nearStart)
+}
+
+func TestGetUserCacheRateCombinesMetricBucketsWithPartialRawTails(t *testing.T) {
+	db := setupUsageStatisticsTestDB(t)
+	t.Setenv(UsageMetricReadEnableEnv, "true")
+	t.Setenv("USAGE_METRIC_TIMEZONE", "UTC")
+	require.NoError(t, db.AutoMigrate(&UsageMetricBucket{}, &UsageMetricCoverage{}))
+	userID := 90203
+	base := time.Date(2024, 3, 6, 0, 0, 0, 0, time.UTC).Unix()
+	start := base + 15
+	end := base + 3*3600 + 30
+	require.NoError(t, db.Create(&[]Log{
+		{UserId: userID, CreatedAt: base + 30, Type: LogTypeConsume, PromptTokens: 10, CacheTokens: 20},
+		{UserId: userID, CreatedAt: base + 3*3600 + 15, Type: LogTypeConsume, PromptTokens: 5, CacheTokens: 1},
+	}).Error)
+
+	buckets := make([]UsageMetricBucket, 0, 2)
+	coverage := make([]UsageMetricCoverage, 0, 2)
+	for offset := 1; offset <= 2; offset++ {
+		bucketStart := base + int64(offset)*3600
+		bucket := UsageMetricBucket{
+			Granularity:           UsageMetricGranularityHour,
+			BucketStart:           bucketStart,
+			UserId:                userID,
+			Type:                  LogTypeConsume,
+			Settled:               true,
+			PromptTokens:          10,
+			CacheTokens:           20,
+			EffectivePromptTokens: 30,
+			RequestCount:          1,
+			SuccessCount:          1,
+			ComputedAt:            end,
+			Watermark:             int64(offset),
+			SourceVersion:         UsageMetricSourceVersionV1,
+			Timezone:              "UTC",
+			CoverageStart:         bucketStart,
+			CoverageEnd:           bucketStart + 3600,
+			IsComplete:            true,
+		}
+		bucket.RefreshDimensionHash()
+		buckets = append(buckets, bucket)
+		coverage = append(coverage, UsageMetricCoverage{
+			Granularity:   UsageMetricGranularityHour,
+			BucketStart:   bucketStart,
+			BucketEnd:     bucketStart + 3600,
+			Timezone:      "UTC",
+			ComputedAt:    end,
+			Watermark:     int64(offset),
+			SourceVersion: UsageMetricSourceVersionV1,
+			IsComplete:    true,
+		})
+	}
+	require.NoError(t, db.Create(&buckets).Error)
+	require.NoError(t, db.Create(&coverage).Error)
+
+	cacheTokens, effectivePrompt, err := GetUserCacheRateWithContext(context.Background(), int64(userID), start, end)
+	require.NoError(t, err)
+	require.EqualValues(t, 61, cacheTokens)
+	require.EqualValues(t, 95, effectivePrompt)
 }

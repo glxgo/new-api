@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
+import ClientTimeCell from '../usage-logs/ClientTimeCell';
 import { Button, Progress, Tag, Typography } from '@douyinfe/semi-ui';
 import {
   Palette,
@@ -329,7 +330,14 @@ export const getMjLogsColumns = ({
       title: t('提交时间'),
       dataIndex: 'submit_time',
       render: (text, record, index) => {
-        return <div>{renderTimestamp(text / 1000)}</div>;
+        return (
+          <ClientTimeCell
+            time={renderTimestamp(text / 1000)}
+            status={renderStatus(record.status, t)}
+            client={record.client}
+            coding={record.coding_group}
+          />
+        );
       },
     },
     {

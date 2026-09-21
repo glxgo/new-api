@@ -3,7 +3,9 @@ package helper
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
@@ -29,13 +31,18 @@ func FlushWriter(c *gin.Context) (err error) {
 		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
 	}
 
-	flusher, ok := c.Writer.(http.Flusher)
-	if !ok {
-		return errors.New("streaming error: flusher not found")
+	// Gin's Flush() discards the underlying FlushError. Commit its header
+	// bookkeeping, then reach the transport's error-aware flush operation.
+	c.Writer.WriteHeaderNow()
+	var writer http.ResponseWriter = c.Writer
+	for {
+		unwrapper, ok := writer.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			break
+		}
+		writer = unwrapper.Unwrap()
 	}
-
-	flusher.Flush()
-	return nil
+	return http.NewResponseController(writer).Flush()
 }
 
 func SetEventStreamHeaders(c *gin.Context) {
@@ -57,19 +64,13 @@ func SetEventStreamHeaders(c *gin.Context) {
 func ClaudeData(c *gin.Context, resp dto.ClaudeResponse) error {
 	jsonData, err := common.Marshal(resp)
 	if err != nil {
-		common.SysError("error marshalling stream response: " + err.Error())
-	} else {
-		c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
-		c.Render(-1, common.CustomEvent{Data: "data: " + string(jsonData)})
+		return err
 	}
-	_ = FlushWriter(c)
-	return nil
+	return writeSSE(c, resp.Type, string(jsonData))
 }
 
-func ClaudeChunkData(c *gin.Context, resp dto.ClaudeResponse, data string) {
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("data: %s\n", data)})
-	_ = FlushWriter(c)
+func ClaudeChunkData(c *gin.Context, resp dto.ClaudeResponse, data string) error {
+	return writeSSE(c, resp.Type, data)
 }
 
 func ResponseChunkData(c *gin.Context, resp dto.ResponsesStreamResponse, data string) error {
@@ -79,9 +80,7 @@ func ResponseChunkData(c *gin.Context, resp dto.ResponsesStreamResponse, data st
 	if c.Request != nil && c.Request.Context().Err() != nil {
 		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
 	}
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("data: %s", data)})
-	return FlushWriter(c)
+	return writeSSE(c, resp.Type, data)
 }
 
 func StringData(c *gin.Context, str string) error {
@@ -93,8 +92,38 @@ func StringData(c *gin.Context, str string) error {
 		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
 	}
 
-	c.Render(-1, common.CustomEvent{Data: "data: " + str})
-	return FlushWriter(c)
+	return writeSSE(c, "", str)
+}
+
+// writeSSE returns both write and flush failures. Gin Render and http.Flusher
+// hide these errors, which otherwise lets the relay keep consuming upstream.
+func writeSSE(c *gin.Context, event, data string) error {
+	if c == nil || c.Writer == nil {
+		return errors.New("context or writer is nil")
+	}
+	if strings.ContainsAny(event, "\r\n") {
+		return errors.New("invalid SSE event name")
+	}
+	if c.Request != nil && c.Request.Context().Err() != nil {
+		return rememberStreamWriteError(c, c.Request.Context().Err())
+	}
+	if err := StreamWriteError(c); err != nil {
+		return err
+	}
+	data = strings.ReplaceAll(strings.ReplaceAll(data, "\r\n", "\n"), "\r", "\n")
+	frame := "data: " + strings.ReplaceAll(data, "\n", "\ndata: ") + "\n\n"
+	if event != "" {
+		frame = "event: " + event + "\n" + frame
+	}
+	SetEventStreamHeaders(c)
+	ExtendWriteDeadline(c)
+	c.Set(streamOutputKey, true)
+	if n, err := c.Writer.Write([]byte(frame)); err != nil {
+		return rememberStreamWriteError(c, err)
+	} else if n != len(frame) {
+		return rememberStreamWriteError(c, io.ErrShortWrite)
+	}
+	return rememberStreamWriteError(c, FlushWriter(c))
 }
 
 func PingData(c *gin.Context) error {
@@ -107,9 +136,9 @@ func PingData(c *gin.Context) error {
 	}
 
 	if _, err := c.Writer.Write([]byte(": PING\n\n")); err != nil {
-		return fmt.Errorf("write ping data failed: %w", err)
+		return rememberStreamWriteError(c, fmt.Errorf("write ping data failed: %w", err))
 	}
-	return FlushWriter(c)
+	return rememberStreamWriteError(c, FlushWriter(c))
 }
 
 func ObjectData(c *gin.Context, object interface{}) error {
@@ -214,4 +243,24 @@ func GenerateFinalUsageResponse(id string, createAt int64, model string, usage d
 		Choices:           make([]dto.ChatCompletionsStreamResponseChoice, 0),
 		Usage:             &usage,
 	}
+}
+
+// WriteStreamBytes checks downstream delivery for binary streaming protocols.
+func WriteStreamBytes(c *gin.Context, data []byte) error {
+	if err := StreamWriteError(c); err != nil {
+		return err
+	}
+	if c.Request.Context().Err() != nil {
+		return rememberStreamWriteError(c, c.Request.Context().Err())
+	}
+	ExtendWriteDeadline(c)
+	c.Set(streamOutputKey, true)
+	n, err := c.Writer.Write(data)
+	if err == nil && n != len(data) {
+		err = io.ErrShortWrite
+	}
+	if err == nil {
+		err = FlushWriter(c)
+	}
+	return rememberStreamWriteError(c, err)
 }

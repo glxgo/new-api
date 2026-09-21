@@ -1,7 +1,10 @@
 package controller
 
 import (
+	"errors"
+	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -165,6 +168,80 @@ func GetVirtualMembershipPage(c *gin.Context) {
 	})
 }
 
+func virtualMembershipCalendarRange(c *gin.Context) (int, int, int64, int64, error) {
+	location, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		location = time.FixedZone("Asia/Shanghai", 8*60*60)
+	}
+	now := time.Now().In(location)
+	year, month := now.Year(), int(now.Month())
+	if raw := c.Query("year"); raw != "" {
+		if year, err = strconv.Atoi(raw); err != nil {
+			return 0, 0, 0, 0, errors.New("年份无效")
+		}
+	}
+	if raw := c.Query("month"); raw != "" {
+		if month, err = strconv.Atoi(raw); err != nil {
+			return 0, 0, 0, 0, errors.New("月份无效")
+		}
+	}
+	if year < 2000 || year > 2100 || month < 1 || month > 12 {
+		return 0, 0, 0, 0, errors.New("日期范围无效")
+	}
+	start := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, location)
+	return year, month, start.Unix(), start.AddDate(0, 1, 0).Unix(), nil
+}
+
+func GetVirtualMembershipResetCalendar(c *gin.Context) {
+	year, month, startAt, endAt, err := virtualMembershipCalendarRange(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	entries, total, err := model.ListVirtualMembershipResetCalendarEntries(startAt, endAt)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"year": year, "month": month, "timezone": "Asia/Shanghai", "total_count": total, "entries": entries})
+}
+
+func AdminSaveVirtualMembershipResetCalendar(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	var req struct {
+		ResetAt int64  `json:"reset_at"`
+		Count   int    `json:"count"`
+		Reason  string `json:"reason"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	entry := &model.VirtualMembershipResetCalendarEntry{Id: id, ResetAt: req.ResetAt, Count: req.Count, Reason: req.Reason}
+	if id > 0 {
+		current, err := model.GetVirtualMembershipResetCalendarEntry(id)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		entry.CreatedAt = current.CreatedAt
+	}
+	if err := model.SaveVirtualMembershipResetCalendarEntry(entry); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, entry)
+}
+
+func AdminDeleteVirtualMembershipResetCalendar(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	if err := model.DeleteVirtualMembershipResetCalendarEntry(id); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, nil)
+}
+
 // SetSelfVirtualMembershipVisibility changes only the owner's remaining-quota
 // card visibility; it never revokes or pauses the membership.
 func SetSelfVirtualMembershipVisibility(c *gin.Context) {
@@ -192,8 +269,21 @@ func SetSelfVirtualMembershipVisibility(c *gin.Context) {
 // message and can start the Epay add-on flow from the same membership card.
 func ActiveResetVirtualMembership(c *gin.Context) {
 	membershipId, _ := strconv.Atoi(c.Param("id"))
-	membership, err := model.ActiveResetVirtualMembership(c.GetInt("id"), membershipId)
+	var req struct {
+		Force bool `json:"force"`
+	}
+	if c.Request != nil && c.Request.Body != nil {
+		_ = c.ShouldBindJSON(&req)
+	}
+	membership, err := model.ActiveResetVirtualMembership(c.GetInt("id"), membershipId, req.Force)
 	if err != nil {
+		var inProgress *model.VirtualMembershipSettlementInProgressError
+		if errors.As(err, &inProgress) {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error(), "code": "settlement_in_progress", "data": gin.H{
+				"pending_count": inProgress.PendingCount, "can_force": true, "latest_activity_at": inProgress.LatestActivityAt,
+			}})
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}

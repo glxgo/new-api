@@ -40,6 +40,7 @@ export function buildSearchParams(
   logCategory: LogCategory
 ): Record<string, unknown> {
   const baseParams: Record<string, unknown> = {
+    ...(filters.clientFamily && { clientFamily: filters.clientFamily }),
     ...(filters.startTime && { startTime: filters.startTime.getTime() }),
     ...(filters.endTime && { endTime: filters.endTime.getTime() }),
     ...(filters.channel && { channel: filters.channel }),

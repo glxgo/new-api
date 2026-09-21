@@ -48,11 +48,10 @@ export function summarizeAvailabilitySeries(
   maxSegments?: number
 ): AvailabilitySegment[] {
   const safeHours = Math.max(1, hours)
-  // Keep the 24-hour view at 48 thirty-minute columns. Longer ranges retain
-  // that same density by widening each column (7d = 3h30m, 30d = 15h).
+  // One hour uses twelve five-minute columns; longer ranges keep 48 columns.
   const safeMaxSegments = Math.max(1, maxSegments ?? 48)
   const segmentSeconds = Math.max(
-    1,
+    safeHours === 1 ? 300 : 1,
     Math.ceil((safeHours * 3600) / safeMaxSegments)
   )
   const buckets = new Map<

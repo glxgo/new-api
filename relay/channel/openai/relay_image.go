@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -98,14 +99,35 @@ func OpenaiImageStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp 
 	// field (real OpenAI image events keep event == type).
 	usage := &dto.Usage{}
 	var lastStreamData []byte
+	var streamErr *types.NewAPIError
+	completedImages, expectedImages := 0, 1
+	if request, ok := info.Request.(*dto.ImageRequest); ok && request.N != nil && *request.N > 0 {
+		expectedImages = int(*request.N)
+	}
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		raw := common.StringToByteSlice(data)
 		lastStreamData = raw
+		var event struct {
+			Type string `json:"type"`
+		}
+		if err := common.Unmarshal(raw, &event); err != nil {
+			sr.Stop(err)
+			return
+		}
+		if event.Type == "image_generation.completed" || event.Type == "image_edit.completed" {
+			completedImages++
+		}
 		if isOpenAIImageStreamErrorEvent(raw) {
-			// Record the error as a soft error; the scanner drives the final
-			// EndReason. HasErrors() flags the failure for logging/handling.
-			sr.Error(fmt.Errorf("%s", extractOpenAIImageStreamErrorMessage(raw)))
+			streamErr = types.NewErrorWithStatusCode(fmt.Errorf("%s", extractOpenAIImageStreamErrorMessage(raw)), types.ErrorCodeUpstreamResponseFailed, http.StatusBadGateway)
+			if helper.HasStreamOutput(c) {
+				types.ErrOptionWithSkipRetry()(streamErr)
+				if writeOpenaiImageStreamChunk(c, raw) == nil {
+					common.SetContextKey(c, constant.ContextKeyRelayErrorAlreadyStreamed, true)
+				}
+			}
+			sr.Stop(streamErr)
+			return
 		}
 		var usageResp dto.SimpleResponse
 		if err := common.Unmarshal(raw, &usageResp); err == nil {
@@ -114,8 +136,16 @@ func OpenaiImageStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp 
 				usage = &usageResp.Usage
 			}
 		}
-		writeOpenaiImageStreamChunk(c, raw)
+		if err := writeOpenaiImageStreamChunk(c, raw); err != nil {
+			sr.Stop(err)
+		}
 	})
+	if streamErr != nil {
+		return nil, streamErr
+	}
+	if streamErr = helper.StreamFailure(c, info, completedImages < expectedImages); streamErr != nil {
+		return nil, streamErr
+	}
 
 	// StreamScannerHandler consumes the upstream [DONE]; re-emit it so the
 	// client still receives a terminal data: [DONE].
@@ -124,22 +154,18 @@ func OpenaiImageStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp 
 	}
 
 	applyUsagePostProcessing(info, usage, lastStreamData)
-	return usage, nil
+	return usage, helper.StreamFailure(c, info, false)
 }
 
 // writeOpenaiImageStreamChunk rebuilds the SSE frame for an image stream chunk:
 // it emits an "event:" line derived from the JSON "type" field (when present)
 // followed by the verbatim "data:" payload, mirroring helper.ResponseChunkData.
-func writeOpenaiImageStreamChunk(c *gin.Context, data []byte) {
+func writeOpenaiImageStreamChunk(c *gin.Context, data []byte) error {
 	var payload struct {
 		Type string `json:"type"`
 	}
 	_ = common.Unmarshal(data, &payload)
-	if eventName := strings.TrimSpace(payload.Type); eventName != "" {
-		c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", eventName)})
-	}
-	c.Render(-1, common.CustomEvent{Data: "data: " + string(data)})
-	_ = helper.FlushWriter(c)
+	return helper.ResponseChunkData(c, dto.ResponsesStreamResponse{Type: strings.TrimSpace(payload.Type)}, string(data))
 }
 
 // isOpenAIImageStreamErrorEvent detects upstream error chunks by JSON content
@@ -244,14 +270,14 @@ func OpenaiImageJSONAsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo,
 			if info != nil && info.StreamStatus != nil {
 				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, err)
 			}
-			return &usageResp.Usage, nil
+			return &usageResp.Usage, types.NewErrorWithStatusCode(err, "client_write_error", 499, types.ErrOptionWithSkipRetry())
 		}
 	}
 	if err := writeOpenaiImageStreamDone(c); err != nil {
 		if info != nil && info.StreamStatus != nil {
 			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, err)
 		}
-		return &usageResp.Usage, nil
+		return &usageResp.Usage, types.NewErrorWithStatusCode(err, "client_write_error", 499, types.ErrOptionWithSkipRetry())
 	}
 	if info != nil {
 		info.ReceivedResponseCount += len(imageResp.Data)
@@ -268,20 +294,9 @@ func writeOpenaiImageStreamPayload(c *gin.Context, eventName string, payload any
 	if err != nil {
 		return err
 	}
-	if eventName != "" {
-		if _, err := fmt.Fprintf(c.Writer, "event: %s\n", eventName); err != nil {
-			return err
-		}
-	}
-	if _, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data); err != nil {
-		return err
-	}
-	return helper.FlushWriter(c)
+	return helper.ResponseChunkData(c, dto.ResponsesStreamResponse{Type: eventName}, string(data))
 }
 
 func writeOpenaiImageStreamDone(c *gin.Context) error {
-	if _, err := fmt.Fprint(c.Writer, "data: [DONE]\n\n"); err != nil {
-		return err
-	}
-	return helper.FlushWriter(c)
+	return helper.StringData(c, "[DONE]")
 }

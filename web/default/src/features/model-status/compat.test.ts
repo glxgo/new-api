@@ -105,6 +105,23 @@ describe('hasCompleteHealthMetrics', () => {
 })
 
 describe('summarizeAvailabilitySeries', () => {
+  test('aggregates minute samples into twelve weighted five-minute bars for 1h', () => {
+    const series = Array.from({ length: 60 }, (_, index) => ({
+      ts: index * 60,
+      request_count: index === 0 ? 9 : 1,
+      success_count: index === 0 ? 0 : 1,
+      avg_ttft_ms: 0,
+      avg_latency_ms: 0,
+      success_rate: index === 0 ? 0 : 100,
+      avg_tps: 0,
+      cache_rate: 0,
+    }))
+    const result = summarizeAvailabilitySeries(series, 1, 48)
+    assert.equal(result.length, 12)
+    assert.equal(result[1].ts - result[0].ts, 300)
+    assert.equal(result[0].successRate, (4 / 13) * 100)
+  })
+
   test('keeps the 48-column density across the seven-day window', () => {
     const series = Array.from({ length: 28 }, (_, index) => ({
       ts: index * 6 * 3600,

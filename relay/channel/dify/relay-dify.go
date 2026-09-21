@@ -236,7 +236,7 @@ func difyStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 		var difyResponse DifyChunkChatCompletionResponse
 		if err := json.Unmarshal([]byte(data), &difyResponse); err != nil {
 			common.SysLog("error unmarshalling stream response: " + err.Error())
-			sr.Error(err)
+			sr.Stop(err)
 			return
 		}
 		if difyResponse.Event == "message_end" {
@@ -256,15 +256,18 @@ func difyStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 		}
 		if err := helper.ObjectData(c, openaiResponse); err != nil {
 			common.SysLog(err.Error())
-			sr.Error(err)
+			sr.Stop(err)
 		}
 	})
+	if streamErr := helper.StreamFailure(c, info, true); streamErr != nil {
+		return nil, streamErr
+	}
 	helper.Done(c)
 	if usage.TotalTokens == 0 {
 		usage = service.ResponseText2Usage(c, responseText, info.UpstreamModelName, info.GetEstimatePromptTokens())
 	}
 	usage.CompletionTokens += nodeToken
-	return usage, nil
+	return usage, helper.StreamFailure(c, info, false)
 }
 
 func difyHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {

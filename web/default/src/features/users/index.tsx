@@ -16,15 +16,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { lazy, Suspense } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SectionPageLayout } from '@/components/layout'
 import { ConcurrencyApplicationsPanel } from './components/concurrency-applications-panel'
 import { UsersDeleteDialog } from './components/users-delete-dialog'
-import { UsersMutateDrawer } from './components/users-mutate-drawer'
 import { UsersPrimaryButtons } from './components/users-primary-buttons'
 import { UsersProvider, useUsers } from './components/users-provider'
 import { UsersTable } from './components/users-table'
+
+const UsersMutateDrawer = lazy(() =>
+  import('./components/users-mutate-drawer').then((module) => ({
+    default: module.UsersMutateDrawer,
+  }))
+)
 
 function UsersContent() {
   const { t } = useTranslation()
@@ -62,11 +68,15 @@ function UsersContent() {
         </SectionPageLayout.Content>
       </SectionPageLayout>
 
-      <UsersMutateDrawer
-        open={open === 'create' || open === 'update'}
-        onOpenChange={(isOpen) => !isOpen && setOpen(null)}
-        currentRow={open === 'update' ? currentRow || undefined : undefined}
-      />
+      <Suspense fallback={null}>
+        {(open === 'create' || open === 'update') && (
+          <UsersMutateDrawer
+            open={open === 'create' || open === 'update'}
+            onOpenChange={(isOpen) => !isOpen && setOpen(null)}
+            currentRow={open === 'update' ? currentRow || undefined : undefined}
+          />
+        )}
+      </Suspense>
       <UsersDeleteDialog />
     </>
   )

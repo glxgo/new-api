@@ -88,6 +88,23 @@ func TestRedisConcurrencyAcquireIsAtomic(t *testing.T) {
 	}, 2*time.Second, 20*time.Millisecond)
 }
 
+func TestRedisUnlimitedConcurrencyStillCountsAndReleases(t *testing.T) {
+	_, key := setupRedisConcurrencyIntegrationTest(t)
+	first, ok, count := AcquireConcurrencyWithCountByKey(key, 0)
+	t.Cleanup(first.Release)
+	require.True(t, ok)
+	require.Equal(t, 1, count)
+	second, ok, count := AcquireConcurrencyWithCountByKey(key, 0)
+	t.Cleanup(second.Release)
+	require.True(t, ok)
+	require.Equal(t, 2, count)
+	first.Release()
+	first.Release()
+	require.Equal(t, 1, GetConcurrencyByKey(key))
+	second.Release()
+	require.Zero(t, GetConcurrencyByKey(key))
+}
+
 func TestRedisConcurrencyHeartbeatKeepsLeaseAliveAndDoesNotResurrectRelease(t *testing.T) {
 	client, key := setupRedisConcurrencyIntegrationTest(t)
 

@@ -63,6 +63,7 @@ import { getUserVisibleRequestRouting } from '../../lib/routing'
 import { resolveFirstTokenMs } from '../../lib/timing'
 import {
   getLogTypeConfig,
+  formatCapacitySnapshot,
   isPerCallBilling,
   isTimingLogType,
 } from '../../lib/utils'
@@ -656,18 +657,25 @@ export function DetailsDialog(props: DetailsDialogProps) {
             <DetailRow label={t('Retry Chain')} value={channelChain} mono />
           )}
 
-          {props.log.user_concurrency_limit > 0 && (
+          {(props.log.user_concurrency > 0 ||
+            props.log.user_concurrency_limit > 0) && (
             <DetailRow
               label='并发快照'
-              value={`${props.log.user_concurrency} / ${props.log.user_concurrency_limit}`}
+              value={formatCapacitySnapshot(
+                props.log.user_concurrency,
+                props.log.user_concurrency_limit
+              )}
               mono
             />
           )}
 
-          {props.log.user_rpm_limit > 0 && (
+          {(props.log.user_rpm > 0 || props.log.user_rpm_limit > 0) && (
             <DetailRow
               label='RPM 快照'
-              value={`${props.log.user_rpm} / ${props.log.user_rpm_limit}`}
+              value={formatCapacitySnapshot(
+                props.log.user_rpm,
+                props.log.user_rpm_limit
+              )}
               mono
             />
           )}

@@ -61,11 +61,14 @@ func flushCompletedBuckets() {
 		deleteOldEmptyBucket(k, key)
 		return true
 	})
+	currentChannelBucket := time.Now().Unix() / 60 * 60
 	channelHotBuckets.Range(func(key, value any) bool {
 		k := key.(channelBucketKey)
-		if k.bucketTs >= currentBucket {
+		if k.bucketTs >= currentChannelBucket {
 			return true
 		}
+		channelMetricsMu.Lock()
+		defer channelMetricsMu.Unlock()
 
 		bucket := value.(*atomicBucket)
 		drained := bucket.drain()
@@ -78,6 +81,7 @@ func flushCompletedBuckets() {
 			ModelName:      k.model,
 			ChannelId:      k.channelId,
 			BucketTs:       k.bucketTs,
+			BucketSeconds:  60,
 			RequestCount:   drained.requestCount,
 			SuccessCount:   drained.successCount,
 			TotalLatencyMs: drained.totalLatencyMs,

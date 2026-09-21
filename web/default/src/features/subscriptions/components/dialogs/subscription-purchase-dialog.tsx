@@ -21,7 +21,11 @@ import { Crown, CalendarClock, Package } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { DEFAULT_CURRENCY_CONFIG } from '@/stores/system-config-store'
-import { formatQuota } from '@/lib/format'
+import {
+  formatBeijingDate,
+  formatBeijingTimestampToDate,
+  formatQuota,
+} from '@/lib/format'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -314,10 +318,8 @@ export function SubscriptionPurchaseDialog(props: Props) {
               </p>
               <p>
                 {t('New instance starts at')}{' '}
-                {new Date(
-                  props.renewalPreview.start_time * 1000
-                ).toLocaleString()}
-                ，
+                {formatBeijingTimestampToDate(props.renewalPreview.start_time)}{' '}
+                ({t('Beijing Time')}) ，
                 {t('and inherits the API Key bindings visible in the preview.')}
               </p>
               {props.renewalPreview.is_replacement && (
@@ -387,13 +389,8 @@ export function SubscriptionPurchaseDialog(props: Props) {
                 {t('New validity period')}
               </span>
               <span className='text-right text-sm'>
-                {new Date(
-                  props.renewalPreview.start_time * 1000
-                ).toLocaleDateString()}{' '}
-                –{' '}
-                {new Date(
-                  props.renewalPreview.end_time * 1000
-                ).toLocaleDateString()}
+                {formatBeijingDate(props.renewalPreview.start_time)} –{' '}
+                {formatBeijingDate(props.renewalPreview.end_time)}
               </span>
             </div>
           )}
@@ -428,7 +425,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
                   </p>
                 )}
               </div>
-          )}
+            )}
           <Separator />
           {hasEpay && selectedEpayMethod && (
             <>
@@ -441,9 +438,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
               <div className='flex items-center justify-between text-sm'>
                 <span className='text-muted-foreground'>
                   {t('Payment fee')}
-                  {selectedEpayFeeRate > 0
-                    ? ` (${selectedEpayFeeRate}%)`
-                    : ''}
+                  {selectedEpayFeeRate > 0 ? ` (${selectedEpayFeeRate}%)` : ''}
                 </span>
                 <span>${selectedEpayFee.toFixed(2)}</span>
               </div>

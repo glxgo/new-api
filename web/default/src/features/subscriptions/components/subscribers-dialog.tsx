@@ -20,7 +20,7 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Clock3, RefreshCw, Search, Users } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { formatQuota, formatTimestampToDate } from '@/lib/format'
+import { formatBeijingTimestampToDate, formatQuota } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -127,7 +127,7 @@ function QuotaCell({ item }: { item: AdminSubscriptionSubscriber }) {
       <div className='text-muted-foreground text-[10px]'>
         {t('Next reset')}:{' '}
         {item.next_reset_time
-          ? formatTimestampToDate(item.next_reset_time)
+          ? `${formatBeijingTimestampToDate(item.next_reset_time)} (${t('Beijing Time')})`
           : t('No Reset')}
       </div>
       {capTotal > 0 && (
@@ -319,10 +319,11 @@ export function SubscribersDialog({
                           </TableCell>
                           <TableCell>
                             <div className='text-xs'>
-                              至 {formatTimestampToDate(item.end_time)}
+                              至 {formatBeijingTimestampToDate(item.end_time)}
                             </div>
                             <div className='text-muted-foreground text-[10px]'>
-                              开始 {formatTimestampToDate(item.start_time)}
+                              开始{' '}
+                              {formatBeijingTimestampToDate(item.start_time)}
                             </div>
                           </TableCell>
                           <TableCell className='text-right'>

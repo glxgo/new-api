@@ -24,14 +24,15 @@ import (
 
 const channelProbeRetention = 30 * 24 * time.Hour
 
-// Model status timelines keep the 24-hour view at a 30-minute cadence (48
-// slots). Longer ranges preserve that visual density: 7d and 30d therefore
-// use wider buckets instead of rendering hundreds of unreadable columns.
+// One hour uses twelve five-minute slots. Longer views retain 48 slots.
 const modelStatusBucketSeconds = perf_metrics_setting.ModelStatusBucketSeconds
 
 func modelStatusBucketSize(hours int) int64 {
 	if hours < 1 {
 		hours = 24
+	}
+	if hours == 1 {
+		return 5 * 60
 	}
 	duration := int64(hours) * 3600
 	// Keep exactly 48 columns and round up so the requested range is covered.
@@ -47,7 +48,7 @@ func modelStatusBucketWindow(hours int, now time.Time) (first, last int64, bucke
 		hours = 24
 	}
 	bucketSeconds = modelStatusBucketSize(hours)
-	count = 48
+	count = min(48, max(1, int((int64(hours)*3600+bucketSeconds-1)/bucketSeconds)))
 	last = now.Unix()
 	last -= last % bucketSeconds
 	first = last - int64(count-1)*bucketSeconds

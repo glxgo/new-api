@@ -35,26 +35,20 @@ type UserBase struct {
 	CapacityPolicyVersion    int    `json:"capacity_policy_version"`
 }
 
-const userCapacityPolicyVersion = 3
+const userCapacityPolicyVersion = 4
 
 func (user *UserBase) EffectiveConcurrencyLimit() int {
-	if user != nil && user.ConcurrencyLimitOverride && user.ConcurrencyLimit > 0 {
-		return user.ConcurrencyLimit
+	if user == nil {
+		return common.GetDefaultUserConcurrencyLimit()
 	}
-	if user != nil && common.RechargeCapacityEnabled {
-		return RechargeCapacityForCents(user.RechargeTotalCents).ConcurrencyLimit
-	}
-	return common.GetDefaultUserConcurrencyLimit()
+	return effectiveAccountCapacity(user.RechargeTotalCents, user.ConcurrencyLimit, common.GetDefaultUserConcurrencyLimit())
 }
 
 func (user *UserBase) EffectiveRPMLimit() int {
-	if user != nil && user.RPMLimitOverride && user.RPMLimit > 0 {
-		return user.RPMLimit
+	if user == nil {
+		return common.GetDefaultUserRPMLimit()
 	}
-	if user != nil && common.RechargeCapacityEnabled {
-		return RechargeCapacityForCents(user.RechargeTotalCents).RPMLimit
-	}
-	return common.GetDefaultUserRPMLimit()
+	return effectiveAccountCapacity(user.RechargeTotalCents, user.RPMLimit, common.GetDefaultUserRPMLimit())
 }
 
 func (user *UserBase) WriteContext(c *gin.Context) {

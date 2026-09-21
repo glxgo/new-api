@@ -19,7 +19,6 @@ For commercial licensing, please contact support@quantumnous.com
 import { flexRender, type Cell, type Table } from '@tanstack/react-table'
 import { Database } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import {
   Empty,
@@ -29,13 +28,7 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  dotColorMap,
-  textColorMap,
-  type StatusVariant,
-} from '@/components/status-badge'
 import { LOG_TYPE_ENUM } from '../constants'
-import { getLogTypeConfig } from '../lib/utils'
 import type { LogCategory } from '../types'
 
 const logTypeRowTint: Record<number, string> = {
@@ -139,40 +132,6 @@ function SummaryField<TData>({
   )
 }
 
-function MobileLogTimeStatus({
-  createdAt,
-  type,
-}: {
-  createdAt: unknown
-  type: unknown
-}) {
-  const { t } = useTranslation()
-  const timestamp = typeof createdAt === 'number' ? createdAt : undefined
-  const logType = typeof type === 'number' ? type : undefined
-  const config = getLogTypeConfig(logType ?? LOG_TYPE_ENUM.UNKNOWN)
-  const variant = config.color as StatusVariant
-
-  return (
-    <div className='space-y-1'>
-      <div className='font-mono text-xs leading-tight tabular-nums'>
-        {formatTimestampToDate(timestamp)}
-      </div>
-      <div
-        className={cn(
-          'inline-flex items-center gap-1 text-xs leading-none font-medium',
-          textColorMap[variant]
-        )}
-      >
-        <span
-          className={cn('size-1.5 shrink-0 rounded-full', dotColorMap[variant])}
-          aria-hidden='true'
-        />
-        <span>{t(config.label)}</span>
-      </div>
-    </div>
-  )
-}
-
 function CommonLogsCard<TData>({
   cells,
 }: {
@@ -182,9 +141,6 @@ function CommonLogsCard<TData>({
 
   const modelCell = cells.get('model_name')
   const quotaCell = cells.get('quota')
-  const rowData = cells.get('created_at')?.row.original as
-    | Record<string, unknown>
-    | undefined
 
   return (
     <div className='space-y-2.5'>
@@ -201,10 +157,7 @@ function CommonLogsCard<TData>({
           <div className='text-muted-foreground mb-1 text-[11px] leading-none font-medium select-none'>
             {t('Time')}
           </div>
-          <MobileLogTimeStatus
-            createdAt={rowData?.created_at}
-            type={rowData?.type}
-          />
+          <CompactCell cell={cells.get('created_at')} />
         </div>
         <SummaryField
           label={t('Channel')}

@@ -30,6 +30,7 @@ import type {
   SubscriptionRenewalPreview,
   SubscriptionTokenBindingItem,
   BatchSubscriptionBindingPayload,
+  SubscriptionSpendLimitPayload,
   UserSubscription,
   SubscriptionConsumptionOrder,
 } from './types'
@@ -254,6 +255,17 @@ export async function updateSubscriptionRemark(
   const res = await api.patch(
     `/api/subscription/self/instances/${subscriptionId}/remark`,
     { remark }
+  )
+  return res.data
+}
+
+export async function updateSubscriptionSpendLimit(
+  subscriptionId: number,
+  payload: SubscriptionSpendLimitPayload
+): Promise<ApiResponse<UserSubscription>> {
+  const res = await api.patch(
+    `/api/subscription/self/instances/${subscriptionId}/spend-limit`,
+    payload
   )
   return res.data
 }

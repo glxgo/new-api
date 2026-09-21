@@ -194,7 +194,9 @@ func SearchUserTokens(userId int, keyword string, token string, offset int, limi
 		baseQuery = baseQuery.Where(commonKeyCol+" LIKE ? ESCAPE '!'", tokenPattern)
 	}
 
-	// 先查匹配总数（用于分页，受 maxTokens 上限保护，避免全表 COUNT）
+	// Keep the historical bounded COUNT semantics used by the API-key page.
+	// The limit protects oversized fuzzy searches while preserving the exact
+	// total for all normal searches and the old pagination contract.
 	err = baseQuery.Limit(maxTokens).Count(&total).Error
 	if err != nil {
 		common.SysError("failed to count search tokens: " + err.Error())

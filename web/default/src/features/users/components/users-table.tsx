@@ -97,7 +97,7 @@ export function UsersTable() {
       groupFilter,
       refreshTrigger,
     ],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const hasFilter = globalFilter?.trim()
       const hasColumnFilter =
         Boolean(statusFilterValue) ||
@@ -110,14 +110,17 @@ export function UsersTable() {
 
       const result =
         hasFilter || hasColumnFilter
-          ? await searchUsers({
-              ...params,
-              keyword: globalFilter,
-              status: statusFilterValue,
-              role: roleFilterValue,
-              group: groupFilter,
-            })
-          : await getUsers(params)
+          ? await searchUsers(
+              {
+                ...params,
+                keyword: globalFilter,
+                status: statusFilterValue,
+                role: roleFilterValue,
+                group: groupFilter,
+              },
+              signal
+            )
+          : await getUsers(params, signal)
 
       if (!result.success) {
         toast.error(

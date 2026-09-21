@@ -33,19 +33,21 @@ func (PerfMetric) TableName() string {
 // upstream channel. Internal retry attempts never reach this table, while
 // client-side and invalid-request failures are filtered before recording.
 type ChannelPerfMetric struct {
-	Id             int    `json:"id" gorm:"primaryKey"`
-	ModelName      string `json:"model_name" gorm:"size:128;uniqueIndex:idx_channel_perf_model_channel_bucket,priority:1"`
-	ChannelId      int    `json:"channel_id" gorm:"uniqueIndex:idx_channel_perf_model_channel_bucket,priority:2;index:idx_channel_perf_channel"`
-	BucketTs       int64  `json:"bucket_ts" gorm:"uniqueIndex:idx_channel_perf_model_channel_bucket,priority:3;index:idx_channel_perf_bucket_ts"`
-	RequestCount   int64  `json:"-" gorm:"default:0"`
-	SuccessCount   int64  `json:"-" gorm:"default:0"`
-	TotalLatencyMs int64  `json:"-" gorm:"default:0"`
-	TtftSumMs      int64  `json:"-" gorm:"default:0"`
-	TtftCount      int64  `json:"-" gorm:"default:0"`
-	OutputTokens   int64  `json:"-" gorm:"default:0"`
-	GenerationMs   int64  `json:"-" gorm:"default:0"`
-	CacheTokens    int64  `json:"-" gorm:"default:0"`
-	PromptTokens   int64  `json:"-" gorm:"default:0"`
+	Id        int    `json:"id" gorm:"primaryKey"`
+	ModelName string `json:"model_name" gorm:"size:128;uniqueIndex:idx_channel_perf_model_channel_bucket,priority:1"`
+	ChannelId int    `json:"channel_id" gorm:"uniqueIndex:idx_channel_perf_model_channel_bucket,priority:2;index:idx_channel_perf_channel;index:idx_channel_perf_channel_bucket,priority:1"`
+	BucketTs  int64  `json:"bucket_ts" gorm:"uniqueIndex:idx_channel_perf_model_channel_bucket,priority:3;index:idx_channel_perf_bucket_ts;index:idx_channel_perf_channel_bucket,priority:2"`
+	// Existing rows have unknown resolution (up to one hour). New rows use 60s.
+	BucketSeconds  int64 `json:"-" gorm:"default:3600"`
+	RequestCount   int64 `json:"-" gorm:"default:0"`
+	SuccessCount   int64 `json:"-" gorm:"default:0"`
+	TotalLatencyMs int64 `json:"-" gorm:"default:0"`
+	TtftSumMs      int64 `json:"-" gorm:"default:0"`
+	TtftCount      int64 `json:"-" gorm:"default:0"`
+	OutputTokens   int64 `json:"-" gorm:"default:0"`
+	GenerationMs   int64 `json:"-" gorm:"default:0"`
+	CacheTokens    int64 `json:"-" gorm:"default:0"`
+	PromptTokens   int64 `json:"-" gorm:"default:0"`
 }
 
 func (ChannelPerfMetric) TableName() string {
@@ -65,6 +67,7 @@ func UpsertChannelPerfMetric(metric *ChannelPerfMetric) error {
 			{Name: "bucket_ts"},
 		},
 		DoUpdates: clause.Assignments(map[string]interface{}{
+			"bucket_seconds":   gorm.Expr("CASE WHEN channel_perf_metrics_v2.bucket_seconds > ? THEN channel_perf_metrics_v2.bucket_seconds ELSE ? END", channelMetricResolution(metric), channelMetricResolution(metric)),
 			"request_count":    gorm.Expr("channel_perf_metrics_v2.request_count + ?", metric.RequestCount),
 			"success_count":    gorm.Expr("channel_perf_metrics_v2.success_count + ?", metric.SuccessCount),
 			"total_latency_ms": gorm.Expr("channel_perf_metrics_v2.total_latency_ms + ?", metric.TotalLatencyMs),
@@ -76,6 +79,13 @@ func UpsertChannelPerfMetric(metric *ChannelPerfMetric) error {
 			"prompt_tokens":    gorm.Expr("channel_perf_metrics_v2.prompt_tokens + ?", metric.PromptTokens),
 		}),
 	}).Create(metric).Error
+}
+
+func channelMetricResolution(metric *ChannelPerfMetric) int64 {
+	if metric.BucketSeconds <= 0 {
+		return 3600
+	}
+	return metric.BucketSeconds
 }
 
 func GetChannelPerfMetrics(startTs int64, endTs int64, channelIds []int) ([]ChannelPerfMetric, error) {

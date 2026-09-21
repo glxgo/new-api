@@ -34,6 +34,11 @@ type updateSubscriptionRemarkRequest struct {
 	Remark string `json:"remark"`
 }
 
+type updateSubscriptionSpendLimitRequest struct {
+	Period string `json:"period"`
+	Quota  int64  `json:"quota"`
+}
+
 func UpdateSelfSubscriptionRemark(c *gin.Context) {
 	userId := c.GetInt("id")
 	subscriptionId, err := strconv.Atoi(c.Param("id"))
@@ -47,6 +52,39 @@ func UpdateSelfSubscriptionRemark(c *gin.Context) {
 		return
 	}
 	sub, err := model.UpdateUserSubscriptionRemark(userId, subscriptionId, req.Remark)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, sub)
+}
+
+// UpdateSelfSubscriptionSpendLimit updates an optional per-instance guardrail.
+// Sending an empty period or zero quota disables the limit.
+func UpdateSelfSubscriptionSpendLimit(c *gin.Context) {
+	userId := c.GetInt("id")
+	subscriptionId, err := strconv.Atoi(c.Param("id"))
+	if err != nil || subscriptionId <= 0 {
+		common.ApiErrorMsg(c, "订阅实例编号无效")
+		return
+	}
+	var req updateSubscriptionSpendLimitRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	if req.Period != "" && req.Period != model.SubscriptionSpendLimitHour && req.Period != model.SubscriptionSpendLimitDay {
+		common.ApiErrorMsg(c, "消费限额周期无效")
+		return
+	}
+	if req.Period == "" {
+		req.Quota = 0
+	}
+	if req.Period != "" && req.Quota <= 0 {
+		common.ApiErrorMsg(c, "消费限额必须大于 0")
+		return
+	}
+	sub, err := model.UpdateUserSubscriptionSpendLimit(userId, subscriptionId, req.Period, req.Quota)
 	if err != nil {
 		common.ApiError(c, err)
 		return

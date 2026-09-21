@@ -19,6 +19,7 @@ const (
 	StreamEndReasonEOF         StreamEndReason = "eof"
 	StreamEndReasonPanic       StreamEndReason = "panic"
 	StreamEndReasonPingFail    StreamEndReason = "ping_fail"
+	StreamEndReasonWriteFail   StreamEndReason = "write_error"
 )
 
 const maxStreamErrorEntries = 20
@@ -97,6 +98,8 @@ func (s *StreamStatus) SetEndReason(reason StreamEndReason, err error) {
 // otherwise a completed response is persisted as a false stream failure.
 func streamEndReasonPriority(reason StreamEndReason) int {
 	switch reason {
+	case StreamEndReasonWriteFail:
+		return 110
 	case StreamEndReasonDone:
 		return 100
 	case StreamEndReasonHandlerStop:
@@ -153,6 +156,8 @@ func (s *StreamStatus) IsNormalEnd() bool {
 	if s == nil {
 		return true
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.EndReason == StreamEndReasonDone ||
 		s.EndReason == StreamEndReasonEOF ||
 		s.EndReason == StreamEndReasonHandlerStop
@@ -162,15 +167,15 @@ func (s *StreamStatus) Summary() string {
 	if s == nil {
 		return "StreamStatus<nil>"
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	b := &strings.Builder{}
 	fmt.Fprintf(b, "reason=%s", s.EndReason)
 	if s.EndError != nil {
 		fmt.Fprintf(b, " end_error=%q", s.EndError.Error())
 	}
-	s.mu.Lock()
 	if s.ErrorCount > 0 {
 		fmt.Fprintf(b, " soft_errors=%d", s.ErrorCount)
 	}
-	s.mu.Unlock()
 	return b.String()
 }

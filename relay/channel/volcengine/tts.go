@@ -1,14 +1,15 @@
 package volcengine
 
 import (
-	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/relay/helper"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -154,7 +155,7 @@ func handleTTSResponse(c *gin.Context, resp *http.Response, info *relaycommon.Re
 	defer resp.Body.Close()
 
 	var volcResp VolcengineTTSResponse
-	if unmarshalErr := json.Unmarshal(body, &volcResp); unmarshalErr != nil {
+	if unmarshalErr := common.Unmarshal(body, &volcResp); unmarshalErr != nil {
 		return nil, types.NewErrorWithStatusCode(
 			errors.New("failed to parse volcengine response"),
 			types.ErrorCodeBadResponseBody,
@@ -209,9 +210,16 @@ func handleTTSWebSocketResponse(c *gin.Context, requestURL string, volcRequest V
 	header := http.Header{}
 	header.Set("Authorization", fmt.Sprintf("Bearer;%s", token))
 
-	conn, resp, dialErr := websocket.DefaultDialer.DialContext(context.Background(), requestURL, header)
+	requestContext := c.Request.Context()
+	conn, resp, dialErr := websocket.DefaultDialer.DialContext(requestContext, requestURL, header)
 	if dialErr != nil {
+		if requestContext.Err() != nil {
+			return nil, types.NewErrorWithStatusCode(requestContext.Err(), "client_canceled", 499, types.ErrOptionWithSkipRetry())
+		}
 		if resp != nil {
+			if resp.Body != nil {
+				_ = resp.Body.Close()
+			}
 			return nil, types.NewErrorWithStatusCode(
 				fmt.Errorf("failed to connect to websocket: %w, status: %d", dialErr, resp.StatusCode),
 				types.ErrorCodeBadResponseStatusCode,
@@ -225,8 +233,17 @@ func handleTTSWebSocketResponse(c *gin.Context, requestURL string, volcRequest V
 		)
 	}
 	defer conn.Close()
+	stopWatch := helper.WatchWebSocketCancellation(requestContext, conn)
+	defer stopWatch()
+	defer http.NewResponseController(c.Writer).SetWriteDeadline(time.Time{})
+	defer func() {
+		if err != nil && helper.HasStreamOutput(c) {
+			types.ErrOptionWithSkipRetry()(err)
+		}
+	}()
+	_ = conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
 
-	payload, marshalErr := json.Marshal(volcRequest)
+	payload, marshalErr := common.Marshal(volcRequest)
 	if marshalErr != nil {
 		return nil, types.NewErrorWithStatusCode(
 			fmt.Errorf("failed to marshal request: %w", marshalErr),
@@ -248,15 +265,16 @@ func handleTTSWebSocketResponse(c *gin.Context, requestURL string, volcRequest V
 	c.Header("Transfer-Encoding", "chunked")
 
 	for {
+		_ = conn.SetReadDeadline(helper.WebSocketReadDeadline())
 		msg, recvErr := ReceiveMessage(conn)
 		if recvErr != nil {
-			if websocket.IsCloseError(recvErr, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-				break
+			if requestContext.Err() != nil {
+				return nil, types.NewErrorWithStatusCode(requestContext.Err(), "client_canceled", 499, types.ErrOptionWithSkipRetry())
 			}
 			return nil, types.NewErrorWithStatusCode(
-				fmt.Errorf("failed to receive message: %w", recvErr),
-				types.ErrorCodeBadResponse,
-				http.StatusInternalServerError,
+				fmt.Errorf("TTS stream ended before terminal audio frame: %w", recvErr),
+				types.ErrorCodeChannelIncompleteStream,
+				http.StatusBadGateway,
 			)
 		}
 
@@ -271,14 +289,9 @@ func handleTTSWebSocketResponse(c *gin.Context, requestURL string, volcRequest V
 			continue
 		case MsgTypeAudioOnlyServer:
 			if len(msg.Payload) > 0 {
-				if _, writeErr := c.Writer.Write(msg.Payload); writeErr != nil {
-					return nil, types.NewErrorWithStatusCode(
-						fmt.Errorf("failed to write audio data: %w", writeErr),
-						types.ErrorCodeBadResponse,
-						http.StatusInternalServerError,
-					)
+				if writeErr := helper.WriteStreamBytes(c, msg.Payload); writeErr != nil {
+					return nil, types.NewErrorWithStatusCode(writeErr, "client_write_error", 499, types.ErrOptionWithSkipRetry())
 				}
-				c.Writer.Flush()
 			}
 
 			if msg.Sequence < 0 {
@@ -295,11 +308,4 @@ func handleTTSWebSocketResponse(c *gin.Context, requestURL string, volcRequest V
 		}
 	}
 
-	c.Status(http.StatusOK)
-	usage = &dto.Usage{
-		PromptTokens:     info.GetEstimatePromptTokens(),
-		CompletionTokens: 0,
-		TotalTokens:      info.GetEstimatePromptTokens(),
-	}
-	return usage, nil
 }

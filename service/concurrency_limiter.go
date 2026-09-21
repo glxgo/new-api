@@ -84,7 +84,7 @@ if redis.call('ZSCORE', key, request_id) then
   return {1, redis.call('ZCARD', key)}
 end
 local current = redis.call('ZCARD', key)
-if current >= max_concurrency then
+if max_concurrency > 0 and current >= max_concurrency then
   return {0, current}
 end
 redis.call('ZADD', key, now, request_id)
@@ -274,9 +274,7 @@ func acquireConcurrencySlotWithTiming(key string, limit int, ttl, heartbeatInter
 }
 
 func acquireConcurrencySlotWithTimingAndCount(key string, limit int, ttl, heartbeatInterval time.Duration) (*ConcurrencyLease, bool, int) {
-	if limit <= 0 {
-		return &ConcurrencyLease{}, true, 0
-	}
+	// Unlimited pools still need leases for live counts and request snapshots.
 	if ttl <= 0 {
 		ttl = concurrencySlotTTL
 	}
@@ -321,7 +319,7 @@ func acquireLocalConcurrencySlot(key string, limit int, requestId string, ttl, h
 			delete(bucket.members, member)
 		}
 	}
-	if len(bucket.members) >= limit {
+	if limit > 0 && len(bucket.members) >= limit {
 		return nil, false, len(bucket.members)
 	}
 	bucket.members[requestId] = now

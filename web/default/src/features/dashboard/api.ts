@@ -71,7 +71,8 @@ export async function getDashboardTraffic(
     end_timestamp: number
     timezone_offset: number
   },
-  isAdmin = false
+  isAdmin = false,
+  signal?: AbortSignal
 ) {
   const endpoint = isAdmin
     ? '/api/dashboard/traffic'
@@ -79,7 +80,7 @@ export async function getDashboardTraffic(
   const res = await api.get<{
     success: boolean
     data: DashboardTrafficResult
-  }>(endpoint, { params })
+  }>(endpoint, { params, signal, disableDuplicate: Boolean(signal) })
   return res.data
 }
 

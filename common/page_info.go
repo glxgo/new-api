@@ -10,8 +10,11 @@ type PageInfo struct {
 	Page     int `json:"page"`      // page num 页码
 	PageSize int `json:"page_size"` // page size 页大小
 
-	Total int `json:"total"` // 总条数，后设置
-	Items any `json:"items"` // 数据，后设置
+	Total      int    `json:"total"` // 总条数，后设置
+	Items      any    `json:"items"` // 数据，后设置
+	HasMore    bool   `json:"has_more,omitempty"`
+	NextCursor string `json:"next_cursor,omitempty"`
+	Cursor     string `json:"-"`
 }
 
 func (p *PageInfo) GetStartIdx() int {
@@ -38,8 +41,12 @@ func (p *PageInfo) SetItems(items any) {
 	p.Items = items
 }
 
+func (p *PageInfo) SetHasMore(hasMore bool)     { p.HasMore = hasMore }
+func (p *PageInfo) SetNextCursor(cursor string) { p.NextCursor = cursor }
+
 func GetPageQuery(c *gin.Context) *PageInfo {
 	pageInfo := &PageInfo{}
+	pageInfo.Cursor = c.Query("cursor")
 	// 手动获取并处理每个参数
 	if page, err := strconv.Atoi(c.Query("p")); err == nil {
 		pageInfo.Page = page
@@ -57,13 +64,13 @@ func GetPageQuery(c *gin.Context) *PageInfo {
 		}
 	}
 
-	if pageInfo.PageSize == 0 {
+	if pageInfo.PageSize <= 0 {
 		// 兼容
 		pageSize, _ := strconv.Atoi(c.Query("ps"))
 		if pageSize != 0 {
 			pageInfo.PageSize = pageSize
 		}
-		if pageInfo.PageSize == 0 {
+		if pageInfo.PageSize <= 0 {
 			pageSize, _ = strconv.Atoi(c.Query("size")) // token page
 			if pageSize != 0 {
 				pageInfo.PageSize = pageSize
@@ -76,6 +83,12 @@ func GetPageQuery(c *gin.Context) *PageInfo {
 
 	if pageInfo.PageSize > 100 {
 		pageInfo.PageSize = 100
+	}
+	if pageInfo.PageSize <= 0 {
+		pageInfo.PageSize = ItemsPerPage
+	}
+	if pageInfo.Page < 1 || pageInfo.Page > int(^uint(0)>>1)/pageInfo.PageSize {
+		pageInfo.Page = 1
 	}
 
 	return pageInfo

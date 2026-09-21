@@ -20,8 +20,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
-
-	"github.com/bytedance/gopkg/util/gopool"
 )
 
 const (
@@ -41,8 +39,12 @@ type CPAQuotaWindow struct {
 }
 
 type CPAAccountUsage struct {
-	Code      string           `json:"code"`
-	PlanType  string           `json:"plan_type"`
+	Code string `json:"code"`
+	// Source identifies the sanitized CPA instance that supplied this account.
+	// It is intentionally a coarse label (for example cpa1/cpa2), never an
+	// email, auth-file name or credential value.
+	Source    string           `json:"source,omitempty"`
+	PlanType  string           `json:"-"`
 	Available bool             `json:"available"`
 	Enabled   bool             `json:"enabled"`
 	Windows   []CPAQuotaWindow `json:"windows"`
@@ -83,6 +85,7 @@ type cpaUsageConfig struct {
 	managementURL string
 	managementKey string
 	anonymizeKey  string
+	source        string
 }
 
 type cpaAuthFile struct {
@@ -135,34 +138,93 @@ var (
 )
 
 func loadCPAUsageConfig() (cpaUsageConfig, error) {
-	managementKey, err := readCPAUsageSecret("CPA_USAGE_MANAGEMENT_KEY", "CPA_USAGE_MANAGEMENT_KEY_FILE")
-	if err != nil {
-		return cpaUsageConfig{}, err
+	config, err, configured := loadCPAUsageConfigVariant("", "cpa1")
+	if !configured && err == nil {
+		return config, fmt.Errorf("CPA usage management URL or key is not configured")
 	}
-	anonymizeKey, err := readCPAUsageSecret("CPA_USAGE_ANONYMIZATION_KEY", "CPA_USAGE_ANONYMIZATION_KEY_FILE")
+	return config, err
+}
+
+// loadCPAUsageConfigVariant reads one isolated CPA management configuration.
+// The configured return value distinguishes an intentionally omitted second
+// instance from a partially configured (and therefore invalid) instance.
+func loadCPAUsageConfigVariant(suffix, source string) (cpaUsageConfig, error, bool) {
+	urlEnv := "CPA_USAGE_MANAGEMENT_URL" + suffix
+	managementKeyEnv := "CPA_USAGE_MANAGEMENT_KEY" + suffix
+	managementKeyFileEnv := "CPA_USAGE_MANAGEMENT_KEY_FILE" + suffix
+	anonymizeKeyEnv := "CPA_USAGE_ANONYMIZATION_KEY" + suffix
+	anonymizeKeyFileEnv := "CPA_USAGE_ANONYMIZATION_KEY_FILE" + suffix
+	configured := strings.TrimSpace(os.Getenv(urlEnv)) != "" ||
+		strings.TrimSpace(os.Getenv(managementKeyEnv)) != "" ||
+		strings.TrimSpace(os.Getenv(managementKeyFileEnv)) != "" ||
+		strings.TrimSpace(os.Getenv(anonymizeKeyEnv)) != "" ||
+		strings.TrimSpace(os.Getenv(anonymizeKeyFileEnv)) != ""
+
+	managementKey, err := readCPAUsageSecret(managementKeyEnv, managementKeyFileEnv)
 	if err != nil {
-		return cpaUsageConfig{}, err
+		return cpaUsageConfig{source: source}, err, configured
+	}
+	anonymizeKey, err := readCPAUsageSecret(anonymizeKeyEnv, anonymizeKeyFileEnv)
+	if err != nil {
+		return cpaUsageConfig{source: source}, err, configured
 	}
 	config := cpaUsageConfig{
-		managementURL: strings.TrimRight(strings.TrimSpace(os.Getenv("CPA_USAGE_MANAGEMENT_URL")), "/"),
+		managementURL: strings.TrimRight(strings.TrimSpace(os.Getenv(urlEnv)), "/"),
 		managementKey: managementKey,
 		anonymizeKey:  anonymizeKey,
+		source:        source,
 	}
 	if config.managementURL == "" || config.managementKey == "" {
-		return config, fmt.Errorf("CPA usage management URL or key is not configured")
+		return config, fmt.Errorf("CPA usage management URL or key is not configured"), configured
 	}
 	parsed, err := url.Parse(config.managementURL)
 	if err != nil || parsed.Scheme != "http" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return config, fmt.Errorf("CPA usage management URL must be a plain internal HTTP URL")
+		return config, fmt.Errorf("CPA usage management URL must be a plain internal HTTP URL"), configured
 	}
 	ip := net.ParseIP(parsed.Hostname())
 	if ip == nil || (!ip.IsPrivate() && !ip.IsLoopback()) {
-		return config, fmt.Errorf("CPA usage management URL must use a private or loopback IP")
+		return config, fmt.Errorf("CPA usage management URL must use a private or loopback IP"), configured
 	}
 	if config.anonymizeKey == "" {
 		config.anonymizeKey = config.managementKey
 	}
-	return config, nil
+	return config, nil, configured
+}
+
+// loadCPAUsageConfigs supports CPA1 plus an optional isolated CPA2. A valid
+// instance remains usable when the other instance is unavailable; callers can
+// surface the partial state without failing the entire public pool.
+func loadCPAUsageConfigs() ([]cpaUsageConfig, error) {
+	variants := []struct {
+		suffix string
+		source string
+	}{
+		{suffix: "", source: "cpa1"},
+		{suffix: "_2", source: "cpa2"},
+	}
+	configs := make([]cpaUsageConfig, 0, len(variants))
+	var configErrors []string
+	for _, variant := range variants {
+		config, err, configured := loadCPAUsageConfigVariant(variant.suffix, variant.source)
+		if !configured {
+			continue
+		}
+		if err != nil {
+			configErrors = append(configErrors, variant.source+": "+err.Error())
+			continue
+		}
+		configs = append(configs, config)
+	}
+	if len(configs) == 0 {
+		if len(configErrors) > 0 {
+			return nil, fmt.Errorf("CPA usage configuration invalid: %s", strings.Join(configErrors, "; "))
+		}
+		return nil, fmt.Errorf("CPA usage management URL or key is not configured")
+	}
+	if len(configErrors) > 0 {
+		return configs, fmt.Errorf("CPA usage configuration partial: %s", strings.Join(configErrors, "; "))
+	}
+	return configs, nil
 }
 
 func readCPAUsageSecret(valueEnv, fileEnv string) (string, error) {
@@ -189,23 +251,27 @@ func StartCPAPlatformUsageTask() {
 		if !common.IsMasterNode {
 			return
 		}
-		config, err := loadCPAUsageConfig()
-		if err != nil {
+		configs, configErr := loadCPAUsageConfigs()
+		if len(configs) == 0 {
 			logger.LogWarn(context.Background(), "CPA platform usage task disabled: required internal configuration is missing or invalid")
 			return
 		}
 		cpaUsageMu.Lock()
 		cpaUsageState.Configured = true
-		cpaUsageState.Status = "syncing"
+		if configErr != nil {
+			cpaUsageState.Status = "partial"
+		} else {
+			cpaUsageState.Status = "syncing"
+		}
 		cpaUsageMu.Unlock()
 
-		gopool.Go(func() {
-			logger.LogInfo(context.Background(), fmt.Sprintf("CPA platform usage task started: tick=%s", cpaUsageRefreshInterval))
-			runCPAPlatformUsageRefresh(config)
+		common.BackgroundCtxGo("report", context.Background(), func() {
+			logger.LogInfo(context.Background(), fmt.Sprintf("CPA platform usage task started: tick=%s instances=%d", cpaUsageRefreshInterval, len(configs)))
+			runCPAPlatformUsageRefresh(configs, configErr != nil)
 			ticker := time.NewTicker(cpaUsageRefreshInterval)
 			defer ticker.Stop()
 			for range ticker.C {
-				runCPAPlatformUsageRefresh(config)
+				runCPAPlatformUsageRefresh(configs, configErr != nil)
 			}
 		})
 	})
@@ -220,7 +286,11 @@ func GetCPAUsageSnapshot() CPAUsageSnapshot {
 	return snapshot
 }
 
-func runCPAPlatformUsageRefresh(config cpaUsageConfig) {
+func runCPAPlatformUsageRefresh(configs []cpaUsageConfig, configPartial bool) {
+	if !common.BackgroundWorkAllowed() {
+		logger.LogInfo(context.Background(), "CPA platform usage refresh deferred while system protection is active")
+		return
+	}
 	if !cpaUsageRunning.CompareAndSwap(false, true) {
 		return
 	}
@@ -229,23 +299,68 @@ func runCPAPlatformUsageRefresh(config cpaUsageConfig) {
 	ctx, cancel := context.WithTimeout(context.Background(), cpaUsageRequestTimeout*time.Duration(4))
 	defer cancel()
 	client := &http.Client{Timeout: cpaUsageRequestTimeout}
-	accounts, accountPartial, err := fetchCPAAccounts(ctx, client, config)
-	if err != nil {
+	type instanceResult struct {
+		accounts []CPAAccountUsage
+		models   []CPAModelUsage
+		partial  bool
+		modelErr bool
+		err      error
+	}
+	results := make(chan instanceResult, len(configs))
+	for _, config := range configs {
+		config := config
+		go func() {
+			accounts, accountPartial, err := fetchCPAAccounts(ctx, client, config)
+			if err != nil {
+				results <- instanceResult{partial: true, err: err}
+				return
+			}
+			models, modelErr := fetchCPAModelUsage(ctx, client, config)
+			results <- instanceResult{accounts: accounts, models: models, partial: accountPartial || modelErr != nil, modelErr: modelErr != nil, err: modelErr}
+		}()
+	}
+	accounts := make([]CPAAccountUsage, 0)
+	models := make([]CPAModelUsage, 0)
+	accountSuccesses := 0
+	partial := configPartial
+	var modelErrors []string
+	modelFailed := false
+	for range configs {
+		result := <-results
+		if result.err != nil && len(result.accounts) == 0 {
+			partial = true
+			if result.modelErr {
+				modelFailed = true
+				modelErrors = append(modelErrors, result.err.Error())
+			}
+			continue
+		}
+		accountSuccesses++
+		accounts = append(accounts, result.accounts...)
+		models = append(models, result.models...)
+		partial = partial || result.partial
+		if result.modelErr {
+			modelFailed = true
+			modelErrors = append(modelErrors, result.err.Error())
+		}
+	}
+	if accountSuccesses == 0 {
 		markCPAUsageRefreshFailed()
 		logger.LogWarn(context.Background(), "CPA platform usage refresh failed while reading account quotas")
 		return
 	}
-	models, modelErr := fetchCPAModelUsage(ctx, client, config)
+	sortCPAAccounts(accounts)
+	models = mergeCPAModelUsage(models)
 	now := time.Now()
 
 	cpaUsageMu.Lock()
-	if modelErr != nil && len(cpaUsageState.Models) > 0 {
+	if modelFailed && len(cpaUsageState.Models) > 0 {
 		models = cpaUsageState.Models
 	}
 	cpaUsageState = CPAUsageSnapshot{
 		Configured: true,
 		Status: func() string {
-			if accountPartial || modelErr != nil {
+			if partial || len(modelErrors) > 0 {
 				return "partial"
 			}
 			return "fresh"
@@ -254,7 +369,7 @@ func runCPAPlatformUsageRefresh(config cpaUsageConfig) {
 		Accounts: accounts, Models: models,
 	}
 	cpaUsageMu.Unlock()
-	if modelErr != nil {
+	if len(modelErrors) > 0 {
 		logger.LogWarn(context.Background(), "CPA platform usage model summary refresh failed; retained the previous model snapshot when available")
 	}
 }
@@ -318,7 +433,7 @@ func fetchCPAAccounts(ctx context.Context, client *http.Client, config cpaUsageC
 			defer wg.Done()
 			file := files[index]
 			account := CPAAccountUsage{
-				Code: stableCPAAccountCode(file.Name, config.anonymizeKey), PlanType: strings.ToLower(file.PlanType),
+				Code: stableCPAAccountCode(config.source+":"+file.Name, config.anonymizeKey), Source: config.source, PlanType: strings.ToLower(file.PlanType),
 				Available: false, Enabled: !file.Disabled, Windows: []CPAQuotaWindow{},
 			}
 			if file.Disabled || file.Unavailable {
@@ -505,6 +620,66 @@ func fetchCPAModelUsage(ctx context.Context, client *http.Client, config cpaUsag
 		return models[i].Requests > models[j].Requests
 	})
 	return models, nil
+}
+
+// mergeCPAModelUsage combines the same model/provider row across CPA
+// instances so the public traffic table remains an aggregate rather than a
+// duplicate list. Latencies are weighted by request count; token and failure
+// counters are summed exactly.
+func mergeCPAModelUsage(models []CPAModelUsage) []CPAModelUsage {
+	if len(models) < 2 {
+		return models
+	}
+	type key struct{ model, alias, provider string }
+	merged := make(map[key]CPAModelUsage, len(models))
+	for _, item := range models {
+		k := key{model: item.Model, alias: item.Alias, provider: item.Provider}
+		current, exists := merged[k]
+		if !exists {
+			merged[k] = item
+			continue
+		}
+		oldRequests := current.Requests
+		newRequests := oldRequests + item.Requests
+		if newRequests > 0 {
+			oldWeight := oldRequests
+			if oldWeight < 0 {
+				oldWeight = 0
+			}
+			newWeight := item.Requests
+			if newWeight < 0 {
+				newWeight = 0
+			}
+			current.AvgLatencyMS = (current.AvgLatencyMS*float64(oldWeight) + item.AvgLatencyMS*float64(newWeight)) / float64(newRequests)
+			current.AvgTTFTMS = (current.AvgTTFTMS*float64(oldWeight) + item.AvgTTFTMS*float64(newWeight)) / float64(newRequests)
+			current.OutputTokensPerSecond = (current.OutputTokensPerSecond*float64(oldWeight) + item.OutputTokensPerSecond*float64(newWeight)) / float64(newRequests)
+		}
+		current.Requests = newRequests
+		current.Failed += item.Failed
+		current.TotalTokens += item.TotalTokens
+		current.InputTokens += item.InputTokens
+		current.OutputTokens += item.OutputTokens
+		current.ReasoningTokens += item.ReasoningTokens
+		current.CachedTokens += item.CachedTokens
+		current.CacheReadTokens += item.CacheReadTokens
+		current.CacheCreationTokens += item.CacheCreationTokens
+		current.CostUSD += item.CostUSD
+		current.CostAvailable = current.CostAvailable || item.CostAvailable
+		current.SlowRequests += item.SlowRequests
+		current.SlowTTFTRequests += item.SlowTTFTRequests
+		merged[k] = current
+	}
+	result := make([]CPAModelUsage, 0, len(merged))
+	for _, item := range merged {
+		result = append(result, item)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Requests == result[j].Requests {
+			return result[i].TotalTokens > result[j].TotalTokens
+		}
+		return result[i].Requests > result[j].Requests
+	})
+	return result
 }
 
 func findCPAField(value interface{}, key string) (interface{}, bool) {

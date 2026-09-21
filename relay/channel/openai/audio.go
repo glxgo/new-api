@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -19,13 +20,11 @@ import (
 )
 
 func OpenaiTTSHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) *dto.Usage {
-	// the status code has been judged before, if there is a body reading failure,
-	// it should be regarded as a non-recoverable error, so it should not return err for external retry.
-	// Analogous to nginx's load balancing, it will only retry if it can't be requested or
-	// if the upstream returns a specific status code, once the upstream has already written the header,
-	// the subsequent failure of the response body should be regarded as a non-recoverable error,
-	// and can be terminated directly.
+	// Preserve read/write failures for the adaptor. Binary output is never
+	// replayed after any bytes have been exposed to the client.
 	defer service.CloseResponseBodyGracefully(resp)
+	defer http.NewResponseController(c.Writer).SetWriteDeadline(time.Time{})
+	info.StreamStatus = relaycommon.NewStreamStatus()
 	usage := &dto.Usage{}
 	usage.PromptTokens = info.GetEstimatePromptTokens()
 	usage.TotalTokens = info.GetEstimatePromptTokens()
@@ -39,11 +38,15 @@ func OpenaiTTSHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 
 	if info.IsStream {
 		helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
+			if apiErr := helper.ParseStreamError(data); apiErr != nil {
+				sr.Stop(apiErr)
+				return
+			}
 			if service.SundaySearch(data, "usage") {
 				var simpleResponse dto.SimpleResponse
 				if err := common.Unmarshal([]byte(data), &simpleResponse); err != nil {
 					logger.LogError(c, err.Error())
-					sr.Error(err)
+					sr.Stop(err)
 				} else if simpleResponse.Usage.TotalTokens != 0 {
 					usage.PromptTokens = simpleResponse.Usage.InputTokens
 					usage.CompletionTokens = simpleResponse.OutputTokens
@@ -51,7 +54,7 @@ func OpenaiTTSHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 				}
 			}
 			if err := helper.StringData(c, data); err != nil {
-				sr.Error(err)
+				sr.Stop(err)
 			}
 		})
 	} else {
@@ -60,16 +63,20 @@ func OpenaiTTSHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			logger.LogError(c, fmt.Sprintf("failed to read TTS response body: %v", err))
-			c.Writer.WriteHeaderNow()
+			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, err)
+			c.Writer.Header().Del("Content-Length")
+			c.Writer.Header().Del("Content-Type")
 			return usage
 		}
 
 		// 写入响应到客户端
-		c.Writer.WriteHeaderNow()
-		_, err = c.Writer.Write(bodyBytes)
-		if err != nil {
+		if err = helper.WriteStreamBytes(c, bodyBytes); err != nil {
 			logger.LogError(c, fmt.Sprintf("failed to write TTS response: %v", err))
+			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonWriteFail, err)
+			return usage
 		}
+		info.ReceivedResponseCount++
+		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonDone, nil)
 
 		// 计算音频时长并更新 usage
 		audioFormat := "mp3" // 默认格式

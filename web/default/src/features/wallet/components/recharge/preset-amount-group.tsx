@@ -58,7 +58,8 @@ export function PresetAmountGroup({
       <div className='grid grid-cols-2 gap-1.5 sm:gap-3 md:grid-cols-4'>
         {presetAmounts.map((preset, index) => {
           const discount =
-            preset.discount || topupInfo?.discount?.[preset.value] || 1.0
+            (preset.discount || topupInfo?.discount?.[preset.value] || 1.0) *
+            (topupInfo?.recharge_discount?.current_tier.rate ?? 1)
           const { displayValue, actualPrice, savedAmount, hasDiscount } =
             calculatePresetPricing(
               preset.value,

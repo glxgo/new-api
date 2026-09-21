@@ -20,7 +20,7 @@ import { useState } from 'react'
 import { Filter, RotateCcw, Calendar, Search } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
-import { getRollingDateRange, type TimeGranularity } from '@/lib/time'
+import type { TimeGranularity } from '@/lib/time'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -44,6 +44,7 @@ import {
   buildDefaultDashboardFilters,
   cleanFilters,
 } from '@/features/dashboard/lib'
+import { getDashboardSnapshotRange } from '@/features/dashboard/lib/filters'
 import type {
   DashboardChartPreferences,
   DashboardFilters,
@@ -104,7 +105,7 @@ export function ModelsFilter(props: ModelsFilterProps) {
 
   const handleReset = () => {
     const days = props.preferences.defaultTimeRangeDays
-    const { start, end } = getRollingDateRange(days)
+    const { start, end } = getDashboardSnapshotRange(days)
     setFilters({
       ...buildDefaultDashboardFilters(props.preferences),
       start_timestamp: start,
@@ -125,7 +126,7 @@ export function ModelsFilter(props: ModelsFilterProps) {
   }
 
   const handleQuickRange = (days: number) => {
-    const { start, end } = getRollingDateRange(days)
+    const { start, end } = getDashboardSnapshotRange(days)
 
     setFilters((prev) => ({
       ...prev,

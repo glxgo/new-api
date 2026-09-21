@@ -21,6 +21,7 @@ import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useAuthStore } from '@/stores/auth-store'
 import { ROLE } from '@/lib/roles'
 import { UsageLogs } from '@/features/usage-logs'
+import { getDefaultCommonLogTimeRange } from '@/features/usage-logs/lib/utils'
 import {
   isUsageLogsSectionId,
   USAGE_LOGS_DEFAULT_SECTION,
@@ -39,6 +40,8 @@ const logTypeSearchSchema = z
   .catch([])
 
 const usageLogsSearchSchema = z.object({
+  clientFamily: z.string().optional().catch(''),
+  cursor: z.string().optional(),
   page: z.number().optional().catch(1),
   pageSize: z.number().optional().catch(undefined),
   type: logTypeSearchSchema.optional(),
@@ -60,6 +63,27 @@ export const Route = createFileRoute('/_authenticated/usage-logs/$section')({
       throw redirect({
         to: '/usage-logs/$section',
         params: { section: USAGE_LOGS_DEFAULT_SECTION },
+      })
+    }
+    // Pin the default window in the URL so prefetch, list, statistics and
+    // subsequent pages all query today 00:00 through now + one hour.
+    if (
+      params.section === 'common' &&
+      ((!search.startTime && !search.endTime) ||
+        ((search.page ?? 1) > 1 && !search.cursor))
+    ) {
+      const { start, end } = getDefaultCommonLogTimeRange()
+      throw redirect({
+        to: '/usage-logs/$section',
+        params: { section: 'common' },
+        search: {
+          ...search,
+          page: 1,
+          cursor: undefined,
+          startTime: search.startTime ?? start.getTime(),
+          endTime: search.endTime ?? end.getTime(),
+        },
+        replace: true,
       })
     }
     // type 仅 common 使用，非 common 时清掉 URL 里的 type

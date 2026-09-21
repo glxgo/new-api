@@ -58,8 +58,8 @@ func TestOaiResponsesStreamHandler_DONEWithoutCompletedIsRetryableIncomplete(t *
 	require.Nil(t, usage)
 	require.NotNil(t, apiErr)
 	require.Equal(t, types.ErrorCodeChannelIncompleteStream, apiErr.GetErrorCode())
-	require.False(t, types.IsSkipRetryError(apiErr))
-	require.Empty(t, recorder.Body.String())
+	require.True(t, types.IsSkipRetryError(apiErr))
+	require.Contains(t, recorder.Body.String(), "event: response.created")
 	require.Equal(t, relaycommon.StreamEndReasonEOF, info.StreamStatus.EndReason)
 }
 
@@ -110,7 +110,7 @@ func TestOaiResponsesStreamHandler_PrematureEOFIsIncomplete(t *testing.T) {
 	require.Greater(t, info.UpstreamEventBytes, int64(0))
 	require.Equal(t, "resp_partial_1", info.StreamStatus.UpstreamTerminalSnapshot().ResponseID)
 	require.True(t, common.GetContextKeyBool(c, appconstant.ContextKeyRelayErrorAlreadyStreamed))
-	require.NotContains(t, recorder.Body.String(), "event: response.failed")
+	require.Contains(t, recorder.Body.String(), "event: response.failed")
 }
 
 func TestOaiResponsesStreamHandler_EmptyEOFRemainsRetryableBeforeOutput(t *testing.T) {
@@ -276,7 +276,7 @@ func TestOaiResponsesStreamHandler_CodexTransientErrorBeforeOutputRemainsRetryab
 	require.Empty(t, recorder.Body.String())
 }
 
-func TestOaiResponsesStreamHandler_CodexTransientErrorAfterPreludeRemainsRetryable(t *testing.T) {
+func TestOaiResponsesStreamHandler_CodexTransientErrorAfterPreludeEndsAfterForwardingPrelude(t *testing.T) {
 	c, info, resp, recorder := newResponsesStreamTest(t,
 		"data: {\"type\":\"response.created\",\"sequence_number\":1,\"response\":{\"id\":\"resp_retryable_1\",\"status\":\"in_progress\"}}\n\n"+
 			"data: {\"type\":\"response.in_progress\",\"sequence_number\":2,\"response\":{\"id\":\"resp_retryable_1\",\"status\":\"in_progress\"}}\n\n"+
@@ -288,9 +288,34 @@ func TestOaiResponsesStreamHandler_CodexTransientErrorAfterPreludeRemainsRetryab
 	require.Nil(t, usage)
 	require.NotNil(t, apiErr)
 	require.Equal(t, types.ErrorCode("server_is_overloaded"), apiErr.GetErrorCode())
-	require.False(t, types.IsSkipRetryError(apiErr))
-	require.False(t, common.GetContextKeyBool(c, appconstant.ContextKeyRelayErrorAlreadyStreamed))
-	require.Empty(t, recorder.Body.String(), "control-only prelude must stay buffered so another channel can retry invisibly")
+	require.True(t, types.IsSkipRetryError(apiErr))
+	require.True(t, common.GetContextKeyBool(c, appconstant.ContextKeyRelayErrorAlreadyStreamed))
+	body := recorder.Body.String()
+	require.Contains(t, body, "event: response.created")
+	require.Contains(t, body, "event: response.in_progress")
+	require.Contains(t, body, "event: response.failed")
+}
+
+func TestOaiResponsesStreamHandler_CodexTransientErrorAfterOutputSendsFailedTerminal(t *testing.T) {
+	c, info, resp, recorder := newResponsesStreamTest(t,
+		"data: {\"type\":\"response.created\",\"sequence_number\":1,\"response\":{\"id\":\"resp_partial_1\",\"status\":\"in_progress\"}}\n\n"+
+			"data: {\"type\":\"response.output_text.delta\",\"sequence_number\":2,\"delta\":\"partial\"}\n\n"+
+			"data: {\"type\":\"error\",\"sequence_number\":3,\"code\":\"server_is_overloaded\",\"message\":\"Our servers are currently overloaded. Please try again later.\",\"param\":null}\n\n")
+	c.Request.Header.Set("User-Agent", "Codex Desktop/1.2.3")
+
+	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
+
+	require.NotNil(t, usage)
+	require.Greater(t, usage.CompletionTokens, 0)
+	require.NotNil(t, apiErr)
+	require.Equal(t, types.ErrorCode("server_is_overloaded"), apiErr.GetErrorCode())
+	require.True(t, types.IsSkipRetryError(apiErr))
+	require.True(t, common.GetContextKeyBool(c, appconstant.ContextKeyRelayErrorAlreadyStreamed))
+	body := recorder.Body.String()
+	require.Contains(t, body, "event: response.output_text.delta")
+	require.Contains(t, body, "event: response.failed")
+	require.Contains(t, body, "\"code\":\"server_is_overloaded\"")
+	require.NotContains(t, body, "event: error")
 }
 
 func TestOaiResponsesStreamHandler_NonCodexPreservesOfficialErrorEvent(t *testing.T) {

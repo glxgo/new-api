@@ -40,8 +40,8 @@ export function usageLogsQueryOptions(config: FetchLogsConfig) {
 
   return queryOptions({
     queryKey: ['logs', requestConfig.logCategory, requestConfig],
-    queryFn: async (): Promise<UsageLogsQueryResult> => {
-      const result = await fetchLogsByCategory(requestConfig)
+    queryFn: async ({ signal }): Promise<UsageLogsQueryResult> => {
+      const result = await fetchLogsByCategory(requestConfig, signal)
       if (!result?.success) {
         return {
           data: DEFAULT_LOGS_DATA,
@@ -50,7 +50,9 @@ export function usageLogsQueryOptions(config: FetchLogsConfig) {
       }
       return { data: result.data || DEFAULT_LOGS_DATA }
     },
-    staleTime: 10_000,
+    staleTime: 30_000,
+    retry: false,
+    refetchOnWindowFocus: false,
   })
 }
 

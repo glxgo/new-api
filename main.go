@@ -127,6 +127,15 @@ func main() {
 	// compact usage/billing aggregates.
 	service.StartDetailedUsageLogRetentionTask()
 
+	// Optional minute/hour/day usage projection. The worker is feature-off by
+	// default and only runs on the master node when explicitly enabled.
+	service.StartUsageMetricRollupTask()
+
+	// Optional wallet financial-flow daily projection. The worker is
+	// feature-off by default and never changes the legacy endpoint unless its
+	// read switch is enabled separately.
+	service.StartWalletConsumeAggregateTask()
+
 	// Wire task polling adaptor factory (breaks service -> relay import cycle)
 	service.GetTaskAdaptorFunc = func(platform constant.TaskPlatform) service.TaskPollingAdaptor {
 		a := relay.GetTaskAdaptor(platform)

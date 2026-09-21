@@ -20,6 +20,7 @@ import (
 )
 
 type ollamaChatStreamChunk struct {
+	Error     string `json:"error,omitempty"`
 	Model     string `json:"model"`
 	CreatedAt string `json:"created_at"`
 	// chat
@@ -69,7 +70,6 @@ func ollamaStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	defer service.CloseResponseBodyGracefully(resp)
 
 	helper.SetEventStreamHeaders(c)
-	scanner := helper.NewStreamScanner(resp.Body)
 	usage := &dto.Usage{}
 	var model = info.UpstreamModelName
 	var responseId = common.GetUUID()
@@ -80,16 +80,20 @@ func ollamaStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		_ = helper.StringData(c, string(data))
 	}
 
-	for scanner.Scan() {
-		line := scanner.Text()
+	helper.StreamScannerHandlerWithOptions(c, resp, info, helper.StreamScannerOptions{RawLines: true}, func(line string, sr *helper.StreamResult) {
 		line = strings.TrimSpace(line)
 		if line == "" {
-			continue
+			return
 		}
 		var chunk ollamaChatStreamChunk
 		if err := json.Unmarshal([]byte(line), &chunk); err != nil {
 			logger.LogError(c, "ollama stream json decode error: "+err.Error()+" line="+line)
-			return usage, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+			sr.Stop(types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway))
+			return
+		}
+		if chunk.Error != "" {
+			sr.Stop(types.NewErrorWithStatusCode(fmt.Errorf("%s", chunk.Error), types.ErrorCodeUpstreamResponseFailed, http.StatusBadGateway))
+			return
 		}
 		if chunk.Model != "" {
 			model = chunk.Model
@@ -146,7 +150,7 @@ func ollamaStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 			if data, err := common.Marshal(delta); err == nil {
 				_ = helper.StringData(c, string(data))
 			}
-			continue
+			return
 		}
 		// done frame
 		// finalize once and break loop
@@ -170,13 +174,13 @@ func ollamaStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 			}
 		}
 		// send [DONE]
-		helper.Done(c)
-		break
+		sr.Done()
+	})
+	if err := helper.StreamFailure(c, info, true); err != nil {
+		return nil, err
 	}
-	if err := scanner.Err(); err != nil && err != io.EOF {
-		logger.LogError(c, "ollama stream scan error: "+err.Error())
-	}
-	return usage, nil
+	helper.Done(c)
+	return usage, helper.StreamFailure(c, info, false)
 }
 
 // non-stream handler for chat/generate

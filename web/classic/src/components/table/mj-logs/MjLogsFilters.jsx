@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
+import { ClientFamilyField } from '../usage-logs/ClientTimeCell';
 import { Button, Form } from '@douyinfe/semi-ui';
 import { IconSearch } from '@douyinfe/semi-icons';
 
@@ -46,6 +47,7 @@ const MjLogsFilters = ({
     >
       <div className='flex flex-col gap-2'>
         <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2'>
+          <ClientFamilyField />
           {/* 时间选择器 */}
           <div className='col-span-1 lg:col-span-2'>
             <Form.DatePicker

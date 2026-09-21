@@ -12,8 +12,6 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
-
-	"github.com/bytedance/gopkg/util/gopool"
 )
 
 const (
@@ -38,7 +36,7 @@ func StartCodexCredentialAutoRefreshTask() {
 			return
 		}
 
-		gopool.Go(func() {
+		common.BackgroundCtxGo("general", context.Background(), func() {
 			logger.LogInfo(context.Background(), fmt.Sprintf("codex credential auto-refresh task started: tick=%s threshold=%s", codexCredentialRefreshTickInterval, codexCredentialRefreshThreshold))
 
 			ticker := time.NewTicker(codexCredentialRefreshTickInterval)
@@ -57,6 +55,9 @@ func runCodexCredentialAutoRefreshOnce() {
 		return
 	}
 	defer codexCredentialRefreshRunning.Store(false)
+	if !common.BackgroundWorkAllowed() {
+		return
+	}
 
 	ctx := context.Background()
 	now := time.Now()

@@ -815,7 +815,7 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 				data = patchClaudeMessageDeltaUsageData(data, buildMessageDeltaPatchUsage(&claudeResponse, claudeInfo))
 			}
 		}
-		helper.ClaudeChunkData(c, claudeResponse, data)
+		err = helper.ClaudeChunkData(c, claudeResponse, data)
 	} else if info.RelayFormat == types.RelayFormatOpenAI {
 		response := StreamResponseClaude2OpenAI(&claudeResponse)
 
@@ -827,6 +827,9 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		if err != nil {
 			logger.LogError(c, "send_stream_response_failed: "+err.Error())
 		}
+	}
+	if err != nil {
+		return types.NewErrorWithStatusCode(err, "client_write_error", 499, types.ErrOptionWithSkipRetry())
 	}
 	return nil
 }
@@ -882,14 +885,24 @@ func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 		err = HandleStreamResponseData(c, info, claudeInfo, data)
 		if err != nil {
 			sr.Stop(err)
+			return
+		}
+		var event struct {
+			Type string `json:"type"`
+		}
+		if common.UnmarshalJsonStr(data, &event) == nil && event.Type == "message_stop" {
+			sr.Done()
 		}
 	})
 	if err != nil {
 		return nil, err
 	}
+	if streamErr := helper.StreamFailure(c, info, true); streamErr != nil {
+		return nil, streamErr
+	}
 
 	HandleStreamFinalResponse(c, info, claudeInfo)
-	return claudeInfo.Usage, nil
+	return claudeInfo.Usage, helper.StreamFailure(c, info, false)
 }
 
 func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claudeInfo *ClaudeResponseInfo, httpResp *http.Response, data []byte) *types.NewAPIError {

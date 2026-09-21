@@ -39,7 +39,8 @@ function buildApiPath(endpoint: string, isAdmin: boolean): string {
 async function fetchLogs<T>(
   endpoint: string,
   params: T,
-  isAdmin: boolean
+  isAdmin: boolean,
+  signal?: AbortSignal
 ): Promise<GetLogsResponse> {
   const paramRecord = params as unknown as Record<string, unknown>
   const queryParams = buildQueryParams({
@@ -48,20 +49,27 @@ async function fetchLogs<T>(
     ...params,
   })
   const path = buildApiPath(endpoint, isAdmin)
-  const res = await api.get(`${path}?${queryParams}`)
+  const res = await api.get(`${path}?${queryParams}`, {
+    signal,
+    disableDuplicate: Boolean(signal),
+  })
   return res.data
 }
 
 async function fetchLogStats<T>(
   endpoint: string,
   params: T,
-  isAdmin: boolean
+  isAdmin: boolean,
+  signal?: AbortSignal
 ): Promise<GetLogStatsResponse> {
   const queryParams = buildQueryParams(
     params as unknown as Record<string, unknown>
   )
   const path = buildApiPath(endpoint, isAdmin)
-  const res = await api.get(`${path}/stat?${queryParams}`)
+  const res = await api.get(`${path}/stat?${queryParams}`, {
+    signal,
+    disableDuplicate: Boolean(signal),
+  })
   return res.data
 }
 
@@ -69,19 +77,23 @@ async function fetchLogStats<T>(
 // Common Log APIs
 // ============================================================================
 
-export const getAllLogs = (params: GetLogsParams = {}) =>
-  fetchLogs('/api/log', params, true)
+export const getAllLogs = (params: GetLogsParams = {}, signal?: AbortSignal) =>
+  fetchLogs('/api/log', params, true, signal)
 
 export const getUserLogs = (
-  params: Omit<GetLogsParams, 'username' | 'channel'> = {}
-) => fetchLogs('/api/log', params, false)
+  params: Omit<GetLogsParams, 'username' | 'channel'> = {},
+  signal?: AbortSignal
+) => fetchLogs('/api/log', params, false, signal)
 
-export const getLogStats = (params: GetLogStatsParams = {}) =>
-  fetchLogStats('/api/log', params, true)
+export const getLogStats = (
+  params: GetLogStatsParams = {},
+  signal?: AbortSignal
+) => fetchLogStats('/api/log', params, true, signal)
 
 export const getUserLogStats = (
-  params: Omit<GetLogStatsParams, 'username' | 'channel'> = {}
-) => fetchLogStats('/api/log', params, false)
+  params: Omit<GetLogStatsParams, 'username' | 'channel'> = {},
+  signal?: AbortSignal
+) => fetchLogStats('/api/log', params, false, signal)
 
 export async function getUserInfo(
   userId: number

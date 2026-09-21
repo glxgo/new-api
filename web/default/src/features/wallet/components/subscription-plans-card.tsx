@@ -28,7 +28,11 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { formatQuota } from '@/lib/format'
+import {
+  formatBeijingDate,
+  formatBeijingTimestampToDate,
+  formatQuota,
+} from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -548,9 +552,7 @@ export function SubscriptionPlansCard({
                                 {t('Start Time')}
                               </div>
                               <div className='text-xs'>
-                                {new Date(
-                                  (subscription?.start_time || 0) * 1000
-                                ).toLocaleDateString()}
+                                {formatBeijingDate(subscription?.start_time)}
                               </div>
                             </div>
                             <div>
@@ -562,9 +564,7 @@ export function SubscriptionPlansCard({
                                     : t('Expired at')}
                               </div>
                               <div className='text-xs'>
-                                {new Date(
-                                  (subscription?.end_time || 0) * 1000
-                                ).toLocaleDateString()}
+                                {formatBeijingDate(subscription?.end_time)}
                               </div>
                             </div>
                           </div>
@@ -654,11 +654,20 @@ export function SubscriptionPlansCard({
                             (subscription?.next_reset_time ?? 0) > 0 && (
                               <div className='text-muted-foreground text-[10px]'>
                                 {t('Next reset')}:{' '}
-                                {new Date(
-                                  subscription!.next_reset_time! * 1000
-                                ).toLocaleString()}
+                                {formatBeijingTimestampToDate(
+                                  subscription?.next_reset_time
+                                )}{' '}
+                                ({t('Beijing Time')})
                               </div>
                             )}
+
+                          {isActive && subscription?.is_final_reset_cycle && (
+                            <div className='text-warning text-[10px] font-medium'>
+                              {t(
+                                'Current cycle is the last cycle; no next reset'
+                              )}
+                            </div>
+                          )}
 
                           {subscription?.remark && (
                             <div className='bg-muted/60 rounded-md px-2 py-1.5 text-[11px]'>
@@ -765,9 +774,7 @@ export function SubscriptionPlansCard({
                           </div>
                           <div className='text-muted-foreground mt-2 text-[10px]'>
                             {t('Until')}{' '}
-                            {new Date(
-                              (subscription?.end_time || 0) * 1000
-                            ).toLocaleDateString()}
+                            {formatBeijingDate(subscription?.end_time)}
                             {remainDays > 0 &&
                               ` · ${t('{{count}} days remaining', { count: remainDays })}`}
                           </div>

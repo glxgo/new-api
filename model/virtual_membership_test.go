@@ -101,6 +101,33 @@ func TestVirtualMembershipExternalPaymentCreditsRechargeLuckyProgressAndCommissi
 	require.EqualValues(t, 1, rechargeLogCount, "payment callback replay must not duplicate the recharge log")
 }
 
+func TestVirtualMembershipPaymentExpectationAllowsIdempotentZeroFeeRetry(t *testing.T) {
+	db := setupVirtualMembershipTestDB(t)
+	plan := VirtualMembershipPlan{
+		Code: "vm-zero-fee", Title: "GPT Plus", PriceAmount: 129,
+		DurationDays: 30, WeeklyQuota: 100,
+		AllowedGroup: VirtualMembershipDefaultAllowedGroup, Enabled: true,
+	}
+	require.NoError(t, db.Create(&plan).Error)
+	order, err := CreateVirtualMembershipEpayOrder(901, plan.Id, 1, "vm-zero-fee-order", "alipay")
+	require.NoError(t, err)
+	require.Equal(t, VirtualMembershipOrderPending, order.Status)
+	require.EqualValues(t, 12_900, order.ExpectedPaymentAmountMinor)
+	require.Equal(t, "CNY", order.ExpectedPaymentCurrency)
+
+	// The controller repeats this update after applying a zero gateway fee.
+	// MySQL reports RowsAffected=0 for that no-op UPDATE; it must remain a
+	// valid pending order rather than being closed as a snapshot failure.
+	expected := PaymentSnapshot{AmountMinor: order.ExpectedPaymentAmountMinor, Currency: order.ExpectedPaymentCurrency}
+	require.NoError(t, UpdateVirtualMembershipOrderPaymentExpectation(order.Id, expected, 0))
+
+	var current VirtualMembershipOrder
+	require.NoError(t, db.First(&current, order.Id).Error)
+	require.Equal(t, VirtualMembershipOrderPending, current.Status)
+	require.EqualValues(t, order.ExpectedPaymentAmountMinor, current.ExpectedPaymentAmountMinor)
+	require.Equal(t, order.ExpectedPaymentCurrency, current.ExpectedPaymentCurrency)
+}
+
 func TestVirtualMembershipVariantFallsBackToBasePrice(t *testing.T) {
 	plan := &VirtualMembershipPlan{PriceAmount: 12, WeeklyQuota: 100}
 
@@ -188,13 +215,13 @@ func setupVirtualMembershipTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open test database: %v", err)
 	}
-	if err := db.AutoMigrate(&User{}, &Option{}, &VirtualMembershipPlan{}, &VirtualMembershipOrder{}, &VirtualMembershipResetOrder{}, &UserVirtualMembership{}, &VirtualMembershipPreConsumeRecord{}); err != nil {
+	if err := db.AutoMigrate(&User{}, &Option{}, &VirtualMembershipPlan{}, &VirtualMembershipOrder{}, &VirtualMembershipResetOrder{}, &UserVirtualMembership{}, &VirtualMembershipPreConsumeRecord{}, &Log{}); err != nil {
 		t.Fatalf("migrate test database: %v", err)
 	}
-	previousDB := DB
-	DB = db
+	previousDB, previousLogDB := DB, LOG_DB
+	DB, LOG_DB = db, db
 	t.Cleanup(func() {
-		DB = previousDB
+		DB, LOG_DB = previousDB, previousLogDB
 		_ = ratio_setting.UpdateGroupRatioByJSONString(previousRatio)
 		common.OptionMapRWMutex.Lock()
 		common.OptionMap = previousOptionMap

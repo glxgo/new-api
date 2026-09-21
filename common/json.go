@@ -22,6 +22,8 @@ func Marshal(v any) ([]byte, error) {
 	return json.Marshal(v)
 }
 
+func IsValidJSON(data []byte) bool { return json.Valid(data) }
+
 func GetJsonType(data json.RawMessage) string {
 	trimmed := bytes.TrimSpace(data)
 	if len(trimmed) == 0 {

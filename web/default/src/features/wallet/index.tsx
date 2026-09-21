@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Plus } from 'lucide-react'
+import { FileText, Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { useAuthStore, type AuthUser } from '@/stores/auth-store'
@@ -313,7 +313,10 @@ export function Wallet(props: WalletProps) {
 
   // Get discount rate for current topup amount
   const getDiscountRate = useCallback(() => {
-    return topupInfo?.discount?.[topupAmount] || DEFAULT_DISCOUNT_RATE
+    return (
+      (topupInfo?.discount?.[topupAmount] || DEFAULT_DISCOUNT_RATE) *
+      (topupInfo?.recharge_discount?.current_tier.rate ?? 1)
+    )
   }, [topupInfo, topupAmount])
 
   return (
@@ -321,6 +324,13 @@ export function Wallet(props: WalletProps) {
       <SectionPageLayout>
         <SectionPageLayout.Title>{t('Wallet')}</SectionPageLayout.Title>
         <SectionPageLayout.Actions>
+          <Button
+            variant='outline'
+            onClick={() => window.location.assign('/invoices')}
+          >
+            <FileText className='h-4 w-4' />
+            发票中心
+          </Button>
           <Button
             variant='outline'
             onClick={() => setWithdrawOpen(true)}

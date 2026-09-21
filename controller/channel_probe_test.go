@@ -63,12 +63,13 @@ func TestClassifyChannelProbeError(t *testing.T) {
 	require.Equal(t, "upstream", classifyChannelProbeError(testResult{httpStatus: 502}))
 }
 
-func TestModelStatusBucketWindowUsesThirtyMinuteCadence(t *testing.T) {
+func TestModelStatusBucketWindowUsesRangeCadence(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	for _, test := range []struct {
 		hours int
 		count int
 	}{
+		{hours: 1, count: 12},
 		{hours: 24, count: 48},
 		{hours: 24 * 7, count: 48},
 		{hours: 24 * 30, count: 48},
@@ -78,6 +79,8 @@ func TestModelStatusBucketWindowUsesThirtyMinuteCadence(t *testing.T) {
 		require.EqualValues(t, int64(count-1)*bucketSeconds, last-first)
 		require.Zero(t, last%bucketSeconds)
 		switch test.hours {
+		case 1:
+			require.EqualValues(t, 5*60, bucketSeconds)
 		case 24:
 			require.EqualValues(t, 30*60, bucketSeconds)
 		case 24 * 7:

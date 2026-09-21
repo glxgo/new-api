@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-
 export interface PlatformSiteUsage {
   request_count: number
   prompt_tokens: number
@@ -38,7 +37,7 @@ export interface CPAQuotaWindow {
 
 export interface CPAAccountUsage {
   code: string
-  plan_type: string
+  source?: string
   available: boolean
   enabled: boolean
   windows: CPAQuotaWindow[]

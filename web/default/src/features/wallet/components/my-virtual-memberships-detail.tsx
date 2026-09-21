@@ -81,7 +81,20 @@ export function MyVirtualMembershipsDetail() {
           )
         )
           return
-        const result = await activeResetVirtualMembership(membership.id)
+        let result = await activeResetVirtualMembership(membership.id)
+        if (!result.success && result.code === 'settlement_in_progress') {
+          const pendingCount =
+            'pending_count' in (result.data || {})
+              ? (result.data as { pending_count: number }).pending_count
+              : 1
+          if (
+            !window.confirm(
+              `仍有 ${pendingCount} 个请求未返回最终用量。确认强制封账并重置吗？强制封账会按已预留额度结算，无法恢复。`
+            )
+          )
+            return
+          result = await activeResetVirtualMembership(membership.id, true)
+        }
         if (!result.success) {
           toast.error(result.message || '主动重置失败')
           return

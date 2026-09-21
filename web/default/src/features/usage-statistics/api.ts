@@ -20,10 +20,13 @@ import { api } from '@/lib/api'
 import type { UsageStatisticsRange, UsageStatisticsResponse } from './types'
 
 export async function getUsageStatistics(
-  range: UsageStatisticsRange
+  range: UsageStatisticsRange,
+  signal?: AbortSignal
 ): Promise<UsageStatisticsResponse> {
   const response = await api.get('/api/usage-statistics/self', {
-    params: { range },
+    params: { range, snapshot: true },
+    signal,
+    disableDuplicate: Boolean(signal),
     skipErrorHandler: true,
   })
   return response.data
@@ -31,10 +34,13 @@ export async function getUsageStatistics(
 
 export async function getAdminUsageStatistics(
   range: UsageStatisticsRange,
-  user: string
+  user: string,
+  signal?: AbortSignal
 ): Promise<UsageStatisticsResponse> {
   const response = await api.get('/api/usage-statistics/admin', {
-    params: { range, user },
+    params: { range, user, snapshot: true },
+    signal,
+    disableDuplicate: Boolean(signal),
     skipErrorHandler: true,
   })
   return response.data

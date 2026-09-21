@@ -24,6 +24,54 @@ func TestReadCPAUsageSecretFromFile(t *testing.T) {
 	}
 }
 
+func TestLoadCPAUsageConfigsSupportsOptionalCPA2(t *testing.T) {
+	for _, name := range []string{
+		"CPA_USAGE_MANAGEMENT_URL",
+		"CPA_USAGE_MANAGEMENT_KEY",
+		"CPA_USAGE_MANAGEMENT_KEY_FILE",
+		"CPA_USAGE_ANONYMIZATION_KEY",
+		"CPA_USAGE_ANONYMIZATION_KEY_FILE",
+		"CPA_USAGE_MANAGEMENT_URL_2",
+		"CPA_USAGE_MANAGEMENT_KEY_2",
+		"CPA_USAGE_MANAGEMENT_KEY_FILE_2",
+		"CPA_USAGE_ANONYMIZATION_KEY_2",
+		"CPA_USAGE_ANONYMIZATION_KEY_FILE_2",
+	} {
+		t.Setenv(name, "")
+	}
+	t.Setenv("CPA_USAGE_MANAGEMENT_URL", "http://127.0.0.1:18096")
+	t.Setenv("CPA_USAGE_MANAGEMENT_KEY", "cpa1-management")
+	t.Setenv("CPA_USAGE_ANONYMIZATION_KEY", "cpa1-anonymize")
+	t.Setenv("CPA_USAGE_MANAGEMENT_URL_2", "http://127.0.0.1:18097")
+	t.Setenv("CPA_USAGE_MANAGEMENT_KEY_2", "cpa2-management")
+	t.Setenv("CPA_USAGE_ANONYMIZATION_KEY_2", "cpa2-anonymize")
+
+	configs, err := loadCPAUsageConfigs()
+	if err != nil || len(configs) != 2 {
+		t.Fatalf("loadCPAUsageConfigs() = (%+v, %v)", configs, err)
+	}
+	if configs[0].source != "cpa1" || configs[1].source != "cpa2" {
+		t.Fatalf("unexpected CPA sources: %+v", configs)
+	}
+}
+
+func TestMergeCPAModelUsageAggregatesCountersAndWeightedLatency(t *testing.T) {
+	merged := mergeCPAModelUsage([]CPAModelUsage{
+		{Model: "gpt-test", Provider: "codex", Requests: 2, Failed: 1, TotalTokens: 10, AvgLatencyMS: 100, AvgTTFTMS: 20, OutputTokensPerSecond: 5},
+		{Model: "gpt-test", Provider: "codex", Requests: 1, Failed: 0, TotalTokens: 7, AvgLatencyMS: 400, AvgTTFTMS: 50, OutputTokensPerSecond: 11},
+		{Model: "other", Provider: "codex", Requests: 1, TotalTokens: 99},
+	})
+	if len(merged) != 2 {
+		t.Fatalf("merged model count = %d, want 2", len(merged))
+	}
+	if merged[0].Model != "gpt-test" || merged[0].Requests != 3 || merged[0].Failed != 1 || merged[0].TotalTokens != 17 {
+		t.Fatalf("unexpected aggregate: %+v", merged[0])
+	}
+	if merged[0].AvgLatencyMS != 200 || merged[0].AvgTTFTMS != 30 || merged[0].OutputTokensPerSecond != 7 {
+		t.Fatalf("unexpected weighted metrics: %+v", merged[0])
+	}
+}
+
 func TestStableCPAAccountCodeIsKeyedAndStable(t *testing.T) {
 	first := stableCPAAccountCode("account.json", "secret-one")
 	if first != stableCPAAccountCode("account.json", "secret-one") {
@@ -98,7 +146,7 @@ func TestFetchCPAAccountsSanitizesIdentityAndReadsQuotaViaFixedProxy(t *testing.
 	}))
 	defer server.Close()
 
-	accounts, partial, err := fetchCPAAccounts(context.Background(), server.Client(), cpaUsageConfig{managementURL: server.URL, managementKey: "management-secret", anonymizeKey: "anonymous-secret"})
+	accounts, partial, err := fetchCPAAccounts(context.Background(), server.Client(), cpaUsageConfig{managementURL: server.URL, managementKey: "management-secret", anonymizeKey: "anonymous-secret", source: "cpa1"})
 	if err != nil || partial {
 		t.Fatalf("fetchCPAAccounts() error=%v partial=%v", err, partial)
 	}
@@ -114,6 +162,12 @@ func TestFetchCPAAccountsSanitizesIdentityAndReadsQuotaViaFixedProxy(t *testing.
 	}
 	if strings.Contains(string(payload), "email") || strings.Contains(string(payload), "user@example.com") {
 		t.Fatalf("email identity must not be serialized: %s", payload)
+	}
+	if strings.Contains(string(payload), "plan_type") {
+		t.Fatalf("account plan type must not be serialized: %s", payload)
+	}
+	if !strings.Contains(string(payload), `"source":"cpa1"`) {
+		t.Fatalf("account source should identify the sanitized instance: %s", payload)
 	}
 	if got := *accounts[0].Windows[0].RemainingPercent; got != 97 {
 		t.Fatalf("remaining percent = %v, want 97", got)

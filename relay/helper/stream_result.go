@@ -8,8 +8,9 @@ import (
 // to record soft errors, signal fatal stops, or mark normal completion.
 // StreamScannerHandler checks IsStopped() after each callback invocation.
 type StreamResult struct {
-	status  *relaycommon.StreamStatus
-	stopped bool
+	EventType string // SSE event name, or "meta" for legacy Zhipu metadata.
+	status    *relaycommon.StreamStatus
+	stopped   bool
 }
 
 func newStreamResult(status *relaycommon.StreamStatus) *StreamResult {

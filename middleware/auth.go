@@ -475,8 +475,8 @@ func TokenAuth() func(c *gin.Context) {
 			if capacityErr != nil {
 				common.SysLog(fmt.Sprintf("resolve virtual membership capacity failed for user %d membership %d: %v", token.UserId, token.VirtualMembershipId, capacityErr))
 			} else if capacity != nil {
-				concurrencyLimit = capacity.ConcurrencyLimit
-				rpmLimit = capacity.RPMLimit
+				concurrencyLimit = model.MergeAccountAndMembershipCapacity(concurrencyLimit, capacity.ConcurrencyLimit)
+				rpmLimit = model.MergeAccountAndMembershipCapacity(rpmLimit, capacity.RPMLimit)
 				concurrencyPoolKey = service.VirtualMembershipConcurrencyKey(token.UserId, capacity.MembershipId)
 				rpmPoolKey = service.VirtualMembershipRPMKey(token.UserId, capacity.MembershipId)
 			}

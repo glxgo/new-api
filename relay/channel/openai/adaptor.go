@@ -20,6 +20,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/ai360"
 	"github.com/QuantumNous/new-api/relay/channel/lingyiwanwu"
+	"github.com/QuantumNous/new-api/relay/helper"
 
 	//"github.com/QuantumNous/new-api/relay/channel/minimax"
 	"github.com/QuantumNous/new-api/relay/channel/openrouter"
@@ -624,6 +625,9 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 		err, usage = OpenaiRealtimeHandler(c, info)
 	case relayconstant.RelayModeAudioSpeech:
 		usage = OpenaiTTSHandler(c, resp, info)
+		if streamErr := helper.StreamFailure(c, info, false); streamErr != nil {
+			return nil, streamErr
+		}
 	case relayconstant.RelayModeAudioTranslation:
 		fallthrough
 	case relayconstant.RelayModeAudioTranscription:

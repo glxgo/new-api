@@ -231,7 +231,9 @@ export const useMjLogsData = () => {
     const url = isAdminUser
       ? `/api/mj/?p=${page}&page_size=${size}&channel_id=${channel_id}&mj_id=${mj_id}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`
       : `/api/mj/self/?p=${page}&page_size=${size}&mj_id=${mj_id}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`;
-    const res = await API.get(url);
+    const res = await API.get(url, {
+      params: { client_family: formApi?.getValue('client_family') || '' },
+    });
     const { success, message, data } = res.data;
     if (success) {
       syncPageData(data);

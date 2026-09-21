@@ -1,8 +1,10 @@
 package controller
 
 import (
+	"context"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -10,8 +12,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func logListContext(c *gin.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(model.WithClientLogFilter(c.Request.Context(), c.Query("client_family")), 15*time.Second)
+}
+
 func GetAllLogs(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
+	ctx, cancel := logListContext(c)
+	defer cancel()
+	var page *model.LogPageMetadata
+	if c.Query("pagination") == "cursor" {
+		page = &model.LogPageMetadata{}
+	}
 	logType, _ := strconv.Atoi(c.Query("type"))
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
@@ -22,9 +34,13 @@ func GetAllLogs(c *gin.Context) {
 	group := c.Query("group")
 	requestId := c.Query("request_id")
 	upstreamRequestId := c.Query("upstream_request_id")
-	logs, total, err := model.GetAllLogs(logType, startTimestamp, endTimestamp, modelName, username, tokenName, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), channel, group, requestId, upstreamRequestId)
+	logs, total, err := model.GetAllLogsWithContextCursor(ctx, logType, startTimestamp, endTimestamp, modelName, username, tokenName, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), channel, group, requestId, upstreamRequestId, pageInfo.Cursor, page)
 	if err != nil {
 		common.ApiError(c, err)
+		return
+	}
+	if page != nil {
+		common.ApiSuccess(c, gin.H{"items": logs, "total": -1, "page": pageInfo.Page, "page_size": pageInfo.PageSize, "has_more": page.HasMore, "next_cursor": page.NextCursor})
 		return
 	}
 	pageInfo.SetTotal(int(total))
@@ -35,6 +51,12 @@ func GetAllLogs(c *gin.Context) {
 
 func GetUserLogs(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
+	ctx, cancel := logListContext(c)
+	defer cancel()
+	var page *model.LogPageMetadata
+	if c.Query("pagination") == "cursor" {
+		page = &model.LogPageMetadata{}
+	}
 	userId := c.GetInt("id")
 	logType, _ := strconv.Atoi(c.Query("type"))
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
@@ -44,9 +66,13 @@ func GetUserLogs(c *gin.Context) {
 	group := c.Query("group")
 	requestId := c.Query("request_id")
 	upstreamRequestId := c.Query("upstream_request_id")
-	logs, total, err := model.GetUserLogs(userId, logType, startTimestamp, endTimestamp, modelName, tokenName, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), group, requestId, upstreamRequestId)
+	logs, total, err := model.GetUserLogsWithContextCursor(ctx, userId, logType, startTimestamp, endTimestamp, modelName, tokenName, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), group, requestId, upstreamRequestId, pageInfo.Cursor, page)
 	if err != nil {
 		common.ApiError(c, err)
+		return
+	}
+	if page != nil {
+		common.ApiSuccess(c, gin.H{"items": logs, "total": -1, "page": pageInfo.Page, "page_size": pageInfo.PageSize, "has_more": page.HasMore, "next_cursor": page.NextCursor})
 		return
 	}
 	pageInfo.SetTotal(int(total))
@@ -72,7 +98,7 @@ func GetUserFinancialConsumeDaily(c *gin.Context) {
 		})
 		return
 	}
-	items, err := model.GetUserFinancialConsumeDaily(userId, startTimestamp, endTimestamp)
+	items, err := model.GetUserFinancialConsumeDailyWithContext(c.Request.Context(), userId, startTimestamp, endTimestamp)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -129,7 +155,7 @@ func GetLogsStat(c *gin.Context) {
 	modelName := c.Query("model_name")
 	channel, _ := strconv.Atoi(c.Query("channel"))
 	group := c.Query("group")
-	stat, err := model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group)
+	stat, err := model.SumUsedQuotaWithContext(model.WithClientLogFilter(c.Request.Context(), c.Query("client_family")), logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -158,7 +184,7 @@ func GetLogsSelfStat(c *gin.Context) {
 	modelName := c.Query("model_name")
 	channel, _ := strconv.Atoi(c.Query("channel"))
 	group := c.Query("group")
-	quotaNum, err := model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group)
+	quotaNum, err := model.SumUsedQuotaWithContext(model.WithClientLogFilter(c.Request.Context(), c.Query("client_family")), logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group)
 	if err != nil {
 		common.ApiError(c, err)
 		return

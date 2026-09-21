@@ -150,26 +150,26 @@ var TelegramBotName = ""
 var QuotaForNewUser = 0
 var QuotaForInviter = 0
 var QuotaForInvitee = 0
-var DefaultUserConcurrencyLimit = 8
-var DefaultUserRPMLimit = 12
+var DefaultUserConcurrencyLimit = 200
+var DefaultUserRPMLimit = 1000
 var RechargeCapacityEnabled = true
 
 func GetDefaultUserConcurrencyLimit() int {
 	OptionMapRWMutex.RLock()
 	defer OptionMapRWMutex.RUnlock()
-	if DefaultUserConcurrencyLimit > 0 {
+	if DefaultUserConcurrencyLimit > 200 {
 		return DefaultUserConcurrencyLimit
 	}
-	return 8
+	return 200
 }
 
 func GetDefaultUserRPMLimit() int {
 	OptionMapRWMutex.RLock()
 	defer OptionMapRWMutex.RUnlock()
-	if DefaultUserRPMLimit > 0 {
+	if DefaultUserRPMLimit > 1000 {
 		return DefaultUserRPMLimit
 	}
-	return 12
+	return 1000
 }
 
 // AffiliateRewardIsWithdrawable reports whether referral rewards should enter
@@ -283,6 +283,9 @@ var (
 	TokenUsageRateLimitEnable         = true
 	TokenUsageRateLimitNum            = 120
 	TokenUsageRateLimitDuration int64 = 60
+	// TokenUsageStatsEnabled is a kill switch for the expensive progressive
+	// usage projection. A disabled projection must never be represented as 0.
+	TokenUsageStatsEnabled = true
 )
 
 var RateLimitKeyExpirationDuration = 20 * time.Minute

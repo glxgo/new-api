@@ -166,6 +166,10 @@ func taskAdjustTokenQuota(ctx context.Context, task *model.Task, delta int) {
 // taskBillingOther 从 task 的 BillingContext 构建日志 Other 字段。
 func taskBillingOther(task *model.Task) map[string]interface{} {
 	other := make(map[string]interface{})
+	if task.Client != nil {
+		other["client"] = task.Client
+		other["coding_group"] = task.CodingGroup
+	}
 	if bc := task.PrivateData.BillingContext; bc != nil {
 		other["model_price"] = bc.ModelPrice
 		if bc.ModelRatio > 0 {

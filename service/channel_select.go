@@ -127,7 +127,16 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 		}
 
+		var clientAccessErr error
+		eligibleGroups := 0
 		for i := startGroupIndex; i < len(autoGroups); i++ {
+			if snapshot, ok := common.GetClientSnapshot(param.Ctx); ok {
+				if _, accessErr := model.CheckClientGroupAccess(param.Ctx.Request.Context(), snapshot, autoGroups[i]); accessErr != nil {
+					clientAccessErr = accessErr
+					continue
+				}
+			}
+			eligibleGroups++
 			autoGroup := autoGroups[i]
 			// Calculate priorityRetry for current group
 			// 计算当前分组的 priorityRetry
@@ -175,6 +184,10 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 				common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroupIndex, i)
 			}
 			break
+		}
+		if channel == nil && eligibleGroups == 0 && clientAccessErr != nil {
+			param.Ctx.Set(common.ClientCodingContextKey, true)
+			return nil, selectGroup, types.NewErrorWithStatusCode(clientAccessErr, "client_not_allowed", 403, types.ErrOptionWithSkipRetry())
 		}
 	} else {
 		channel, err = model.GetRandomSatisfiedChannel(param.TokenGroup, param.ModelName, param.GetRetry(), param.RelayFormat, excludedChannelIds)

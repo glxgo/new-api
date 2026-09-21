@@ -84,6 +84,25 @@ func TestMainlandAllowlistSupportsIPv6AndRejectsUnauthorisedIdentity(t *testing.
 	require.True(t, IsMainlandIPWhitelisted(ip))
 }
 
+func TestMainlandAllowlistHasNoPerUserCountLimit(t *testing.T) {
+	db := setupIdentityAccessTestDB(t)
+	user := User{Username: "unlimited-allowlist-user", Password: "hashed", Role: 1, Status: 1}
+	require.NoError(t, db.Create(&user).Error)
+	require.NoError(t, db.Create(&UserIdentity{UserID: user.Id, IdentityType: IdentityTypeEnterprise}).Error)
+
+	for i := 1; i <= 25; i++ {
+		ip := net.IPv4(198, 51, 100, byte(i))
+		_, err := AddMainlandIPWhitelist(user.Id, user.Id, ip, MainlandIPAllowlistSourceSelf)
+		require.NoError(t, err, "adding allowlist IP %d", i)
+	}
+
+	var count int64
+	require.NoError(t, db.Model(&MainlandIPAllowlist{}).
+		Where("user_id = ? AND status = ?", user.Id, MainlandIPAllowlistStatusActive).
+		Count(&count).Error)
+	require.EqualValues(t, 25, count)
+}
+
 func TestGetUserByUsernameOmitsPassword(t *testing.T) {
 	db := setupIdentityAccessTestDB(t)
 	user := User{Username: "public-identity-user", Password: "password-hash", Role: 1, Status: 1}

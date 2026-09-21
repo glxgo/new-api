@@ -88,7 +88,6 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	var latestResponseSnapshot *responsesFailureSnapshot
 	lastSequenceNumber := 0
 	forwardedEventCount := 0
-	pendingPrelude := make([]responsesBufferedEvent, 0, 2)
 	failureItemText := make(map[string]string)
 	info.ForwardedResponsesEventCount = 0
 	info.ResponsesFailureUsageEligible = false
@@ -171,31 +170,55 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 				http.StatusBadGateway,
 				types.ErrOptionWithSkipRetry(),
 			)
-			sr.Error(err)
+			sr.Stop(streamErr)
 			return false
 		}
 		forwardedEventCount++
 		info.ForwardedResponsesEventCount = forwardedEventCount
 		return true
 	}
-	flushPrelude := func(sr *helper.StreamResult) bool {
-		for _, event := range pendingPrelude {
-			if !forwardEvent(event.Response, event.Data, sr) {
-				return false
-			}
-		}
-		pendingPrelude = pendingPrelude[:0]
-		return true
-	}
-
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 
 		// 检查当前数据是否包含 completed 状态和 usage 信息
 		var streamResponse dto.ResponsesStreamResponse
 		if err := common.UnmarshalJsonStr(data, &streamResponse); err != nil {
 			logger.LogError(c, "failed to unmarshal stream response: "+err.Error())
-			sr.Error(err)
+			streamErr = types.NewErrorWithStatusCode(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+			sr.Stop(streamErr)
 			return
+		}
+		// Some compatible upstreams use response.done for every terminal state.
+		// The nested failure/incomplete state must not become a successful end.
+		originalType := streamResponse.Type
+		if streamResponse.Type == "" {
+			streamResponse.Type = sr.EventType
+		}
+		if streamResponse.Type == "response.done" || streamResponse.Type == "response.completed" {
+			if streamResponse.Response != nil {
+				switch jsonRawString(streamResponse.Response.Status) {
+				case "failed":
+					streamResponse.Type = "response.failed"
+				case "incomplete":
+					streamResponse.Type = "response.incomplete"
+				}
+			}
+		}
+		if streamResponse.Type == "" && streamResponse.GetOpenAIError() != nil {
+			streamResponse.Type = "error"
+		}
+		if streamResponse.Type == "" {
+			streamErr = types.NewErrorWithStatusCode(errors.New("Responses event has no type"), types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+			sr.Stop(streamErr)
+			return
+		}
+		if streamResponse.Type != originalType {
+			var event map[string]json.RawMessage
+			if common.UnmarshalJsonStr(data, &event) == nil {
+				event["type"], _ = common.Marshal(streamResponse.Type)
+				if rewritten, err := common.Marshal(event); err == nil {
+					data = string(rewritten)
+				}
+			}
 		}
 		info.UpstreamEventBytes += int64(len(data))
 		info.UpstreamLastEventType = streamResponse.Type
@@ -219,13 +242,11 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			streamErr = responsesTerminalError(streamResponse, types.ErrorCodeUpstreamResponseFailed, false)
 			nonRetryableRequestError := isNonRetryableResponsesRequestError(streamErr)
 
-			// Prelude-only failures have not exposed a response ID or output to the
-			// downstream yet. Keep those control events buffered and let the outer
-			// channel loop retry transparently for transient provider/transport
-			// failures. Billing is outside that loop, so this does not pre-consume
-			// twice. Deterministic request errors must be surfaced instead.
+			// If no event has been sent, let the outer channel loop retry
+			// transparently for transient provider/transport failures. Once a
+			// prelude event has been sent, the downstream has a visible Responses
+			// stream and the attempt must end explicitly instead of being replayed.
 			if forwardedEventCount == 0 && !nonRetryableRequestError {
-				pendingPrelude = pendingPrelude[:0]
 				sr.Stop(streamErr)
 				return
 			}
@@ -240,11 +261,12 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			}
 
 			// Official Codex clients do not treat event:error as a Responses
-			// terminal event. Convert only deterministic request faults; transient
-			// provider failures remain reconnectable, matching CPA's compatibility
-			// policy and avoiding a hard failure where recovery is possible.
+			// terminal event. Convert deterministic request faults, and also
+			// transient failures that arrive after downstream output has already
+			// been exposed. The latter cannot be transparently replayed without
+			// duplicating output, so the client needs a typed terminal event.
 			if (streamResponse.Type == "error" || streamResponse.Type == "response.error") &&
-				nonRetryableRequestError && isCodexResponsesClient(c) {
+				(nonRetryableRequestError || forwardedEventCount > 0) && isCodexResponsesClient(c) {
 				clientError := streamResponse.GetOpenAIError()
 				if clientError == nil || (common.CyberPolicyInterceptionEnabled && service.IsCyberPolicyError(streamErr)) {
 					safeError := streamErr.ToOpenAIError()
@@ -269,14 +291,10 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 				}
 			}
 
-			// Once semantic output was forwarded, never replay another channel.
-			// For a transient Codex error, close the typed stream cleanly and let
-			// the client perform its own recovery; forwarding event:error would be
-			// misread as a non-terminal event by Codex.
-			if !(forwardedEventCount > 0 && !nonRetryableRequestError && isCodexResponsesClient(c)) {
-				if !forwardEvent(streamResponse, data, sr) {
-					return
-				}
+			// Every upstream terminal must reach the client, including an already
+			// typed response.failed. Conversion is never a reason to discard it.
+			if !forwardEvent(streamResponse, data, sr) {
+				return
 			}
 			common.SetContextKey(c, constant.ContextKeyRelayErrorAlreadyStreamed, true)
 			sr.Stop(streamErr)
@@ -284,11 +302,17 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		}
 
 		if isResponsesPreludeEvent(streamResponse.Type) {
-			pendingPrelude = append(pendingPrelude, responsesBufferedEvent{Response: streamResponse, Data: data})
+			// Send control events immediately. They establish the downstream
+			// Responses stream and are used by compatible gateways to measure
+			// time-to-first-event. Buffering them until semantic output can make
+			// a healthy stream appear stalled for the full idle timeout.
+			if !forwardEvent(streamResponse, data, sr) {
+				return
+			}
 			return
 		}
 		markFailureUsageProgress(streamResponse.Type)
-		if !flushPrelude(sr) || !forwardEvent(streamResponse, data, sr) {
+		if !forwardEvent(streamResponse, data, sr) {
 			return
 		}
 		switch streamResponse.Type {
@@ -339,8 +363,28 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			}
 		}
 	})
+	if helper.StreamWriteError(c) != nil {
+		streamErr = helper.StreamFailure(c, info, true)
+	}
+	finishFailure := func(apiErr *types.NewAPIError) {
+		if forwardedEventCount == 0 {
+			return
+		}
+		types.ErrOptionWithSkipRetry()(apiErr)
+		if common.GetContextKeyBool(c, constant.ContextKeyRelayErrorAlreadyStreamed) || c.Request.Context().Err() != nil || helper.StreamWriteError(c) != nil {
+			return
+		}
+		failed, data, err := buildResponsesFailedEvent(c, info, latestResponseSnapshot, common.GetPointer(lastSequenceNumber+1), apiErr.ToOpenAIError())
+		if err == nil {
+			if sendErr := sendResponsesStreamData(c, failed, data); sendErr == nil {
+				info.ForwardedResponsesEventCount++
+			}
+			common.SetContextKey(c, constant.ContextKeyRelayErrorAlreadyStreamed, true)
+		}
+	}
 
 	if streamErr != nil {
+		finishFailure(streamErr)
 		service.PreventChannelAffinityRecord(c)
 		service.ClearCurrentChannelAffinityCache(c)
 		return buildFailureUsage(), streamErr
@@ -363,17 +407,16 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			// from the failed channel.
 			errorOptions = append(errorOptions, types.ErrOptionWithSkipRetry())
 		}
-		if forwardedEventCount > 0 {
-			// The downstream already received SSE data. Prevent the controller from
-			// corrupting that stream by appending a non-SSE JSON error document.
-			common.SetContextKey(c, constant.ContextKeyRelayErrorAlreadyStreamed, true)
-		}
 		incompleteErr := types.NewErrorWithStatusCode(
 			streamErr,
 			types.ErrorCodeChannelIncompleteStream,
 			http.StatusBadGateway,
 			errorOptions...,
 		)
+		if transportErr := helper.StreamFailure(c, info, true); transportErr != nil {
+			incompleteErr = transportErr
+		}
+		finishFailure(incompleteErr)
 		return buildFailureUsage(), incompleteErr
 	}
 
@@ -409,11 +452,6 @@ func isResponsesBillingProgressEvent(eventType string) bool {
 	}
 	return eventType == "response.output_item.added" || eventType == "response.output_item.done" ||
 		eventType == "response.content_part.added" || eventType == "response.content_part.done"
-}
-
-type responsesBufferedEvent struct {
-	Response dto.ResponsesStreamResponse
-	Data     string
 }
 
 func isResponsesPreludeEvent(eventType string) bool {
@@ -668,13 +706,15 @@ func recordResponsesUpstreamTerminal(info *relaycommon.RelayInfo, upstreamHTTPSt
 			}
 		}
 		if oaiErr := streamResponse.Response.GetOpenAIError(); oaiErr != nil {
-			terminal.ErrorCode = fmt.Sprintf("%v", oaiErr.Code)
+			if oaiErr.Code != nil {
+				terminal.ErrorCode = fmt.Sprintf("%v", oaiErr.Code)
+			}
 			terminal.ErrorMessage = oaiErr.Message
 		}
 	}
 	if terminal.ErrorCode == "" || terminal.ErrorMessage == "" {
 		if oaiErr := streamResponse.GetOpenAIError(); oaiErr != nil {
-			if terminal.ErrorCode == "" {
+			if terminal.ErrorCode == "" && oaiErr.Code != nil {
 				terminal.ErrorCode = fmt.Sprintf("%v", oaiErr.Code)
 			}
 			if terminal.ErrorMessage == "" {
@@ -692,7 +732,7 @@ func responsesTerminalError(streamResponse dto.ResponsesStreamResponse, fallback
 		errorOptions = append(errorOptions, types.ErrOptionWithSkipRetry())
 	}
 	if oaiErr != nil {
-		if strings.TrimSpace(fmt.Sprintf("%v", oaiErr.Code)) == "" {
+		if oaiErr.Code == nil || strings.TrimSpace(fmt.Sprintf("%v", oaiErr.Code)) == "" {
 			oaiErr.Code = fallbackCode
 		}
 		if oaiErr.Message == "" {

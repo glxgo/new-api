@@ -1,7 +1,6 @@
 package tencent
 
 import (
-	"bufio"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -91,46 +90,36 @@ func streamResponseTencent2OpenAI(TencentResponse *TencentChatResponse) *dto.Cha
 }
 
 func tencentStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
-	var responseText string
-	scanner := helper.NewStreamScanner(resp.Body)
-	scanner.Split(bufio.ScanLines)
-
-	helper.SetEventStreamHeaders(c)
-
-	for scanner.Scan() {
-		data := scanner.Text()
-		if len(data) < 5 || !strings.HasPrefix(data, "data:") {
-			continue
+	var responseText strings.Builder
+	finished := false
+	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
+		var upstream TencentChatResponse
+		if err := common.UnmarshalJsonStr(data, &upstream); err != nil {
+			sr.Stop(err)
+			return
 		}
-		data = strings.TrimPrefix(data, "data:")
-
-		var tencentResponse TencentChatResponse
-		err := common.Unmarshal([]byte(data), &tencentResponse)
-		if err != nil {
-			common.SysLog("error unmarshalling stream response: " + err.Error())
-			continue
+		if upstream.Error.Code != 0 || upstream.Error.Message != "" {
+			sr.Stop(types.WithOpenAIError(types.OpenAIError{Code: upstream.Error.Code, Message: upstream.Error.Message}, http.StatusBadGateway))
+			return
 		}
-
-		response := streamResponseTencent2OpenAI(&tencentResponse)
-		if len(response.Choices) != 0 {
-			responseText += response.Choices[0].Delta.GetContentString()
+		response := streamResponseTencent2OpenAI(&upstream)
+		for _, choice := range response.Choices {
+			responseText.WriteString(choice.Delta.GetContentString())
 		}
-
-		err = helper.ObjectData(c, response)
-		if err != nil {
-			common.SysLog(err.Error())
+		for _, choice := range upstream.Choices {
+			if choice.FinishReason != "" {
+				finished = true
+			}
 		}
+		if err := helper.ObjectData(c, response); err != nil {
+			sr.Stop(err)
+		}
+	})
+	if err := helper.StreamFailure(c, info, !finished); err != nil {
+		return nil, err
 	}
-
-	if err := scanner.Err(); err != nil {
-		common.SysLog("error reading stream: " + err.Error())
-	}
-
 	helper.Done(c)
-
-	service.CloseResponseBodyGracefully(resp)
-
-	return service.ResponseText2Usage(c, responseText, info.UpstreamModelName, info.GetEstimatePromptTokens()), nil
+	return service.ResponseText2Usage(c, responseText.String(), info.UpstreamModelName, info.GetEstimatePromptTokens()), helper.StreamFailure(c, info, false)
 }
 
 func tencentHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {

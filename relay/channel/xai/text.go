@@ -44,10 +44,14 @@ func xAIStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	helper.SetEventStreamHeaders(c)
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
+		if apiErr := helper.ParseStreamError(data); apiErr != nil {
+			sr.Stop(apiErr)
+			return
+		}
 		var xAIResp *dto.ChatCompletionsStreamResponse
 		if err := common.UnmarshalJsonStr(data, &xAIResp); err != nil {
 			common.SysLog("error unmarshalling stream response: " + err.Error())
-			sr.Error(err)
+			sr.Stop(err)
 			return
 		}
 
@@ -63,9 +67,12 @@ func xAIStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		_ = openai.ProcessStreamResponse(*openaiResponse, &responseTextBuilder, &toolCount)
 		if err := helper.ObjectData(c, openaiResponse); err != nil {
 			common.SysLog(err.Error())
-			sr.Error(err)
+			sr.Stop(err)
 		}
 	})
+	if streamErr := helper.StreamFailure(c, info, false); streamErr != nil {
+		return nil, streamErr
+	}
 
 	if !containStreamUsage {
 		usage = service.ResponseText2Usage(c, responseTextBuilder.String(), info.UpstreamModelName, info.GetEstimatePromptTokens())
@@ -74,7 +81,7 @@ func xAIStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 
 	helper.Done(c)
 	service.CloseResponseBodyGracefully(resp)
-	return usage, nil
+	return usage, helper.StreamFailure(c, info, false)
 }
 
 func xAIHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {

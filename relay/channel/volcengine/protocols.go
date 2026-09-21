@@ -498,6 +498,9 @@ func (m *Message) readPayload(buf *bytes.Buffer) error {
 	}
 
 	if size > 0 {
+		if uint64(size) > uint64(buf.Len()) {
+			return io.ErrUnexpectedEOF
+		}
 		m.Payload = buf.Next(int(size))
 	}
 

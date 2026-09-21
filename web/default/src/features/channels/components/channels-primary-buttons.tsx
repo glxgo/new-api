@@ -29,6 +29,7 @@ import {
   SortAsc,
   RefreshCw,
   ArrowUpFromLine,
+  Activity,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -79,6 +80,14 @@ export function ChannelsPrimaryButtons() {
   return (
     <>
       <div className='flex items-center gap-2'>
+        <Button
+          variant='outline'
+          size='sm'
+          onClick={() => setOpen('channel-metrics')}
+        >
+          <Activity className='h-4 w-4' aria-hidden='true' />
+          {t('Channel metrics')}
+        </Button>
         {/* Desktop: Toggle switches visible */}
         <div className='hidden items-center gap-2 rounded-md border px-3 py-1.5 sm:flex'>
           <Tags className='text-muted-foreground h-4 w-4' />

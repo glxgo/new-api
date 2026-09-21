@@ -156,6 +156,12 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		if err != nil {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}
+		jsonData, err := storage.Bytes()
+		if err != nil {
+			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+		}
+		// Pass-through sends the original body, not the adapted request above.
+		info.CaptureEffectiveReasoningEffort(jsonData)
 		info.UpstreamRequestBodySize = storage.Size()
 		info.UpstreamRequestGetBody = storage.NewReader
 		requestBody = common.ReaderOnly(storage)
@@ -184,6 +190,8 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 			}
 		}
 
+		// Capture after conversion and channel overrides so logs match the wire.
+		info.CaptureEffectiveReasoningEffort(jsonData)
 		logger.LogDebug(c, "requestBody: %s", jsonData)
 		body, size, getBody, closer, err := relaycommon.NewOutboundJSONBody(jsonData)
 		if err != nil {

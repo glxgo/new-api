@@ -50,7 +50,7 @@ export interface Withdraw {
   status: WithdrawStatus
   handler_id: number
   handler_name: string
-  // Payment info (required for principal withdrawal by regular users)
+  // Payment info (required for principal and agent commission withdrawals)
   alipay_name: string
   alipay_account: string
   wechat_qrcode: string // base64, backup payment QR

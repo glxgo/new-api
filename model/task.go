@@ -42,6 +42,10 @@ const (
 )
 
 type Task struct {
+	Client       *common.ClientSnapshot `json:"client,omitempty" gorm:"serializer:json;type:text"`
+	ClientFamily string                 `json:"client_family,omitempty" gorm:"type:varchar(40);default:''"`
+	CodingGroup  bool                   `json:"coding_group"`
+
 	ID         int64                 `json:"id" gorm:"primary_key;AUTO_INCREMENT"`
 	CreatedAt  int64                 `json:"created_at" gorm:"index"`
 	UpdatedAt  int64                 `json:"updated_at"`
@@ -161,6 +165,7 @@ func (p TaskPrivateData) Value() (driver.Value, error) {
 
 // SyncTaskQueryParams 用于包含所有搜索条件的结构体，可以根据需求添加更多字段
 type SyncTaskQueryParams struct {
+	ClientFamily   string
 	Platform       constant.TaskPlatform
 	ChannelID      string
 	TaskID         string
@@ -197,6 +202,8 @@ func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) 
 	}
 
 	t := &Task{
+		Client:      relayInfo.ClientSnapshot,
+		CodingGroup: relayInfo.ClientCodingGroup,
 		TaskID:      taskID,
 		UserId:      relayInfo.UserId,
 		Group:       relayInfo.UsingGroup,
@@ -208,6 +215,9 @@ func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) 
 		Properties:  properties,
 		PrivateData: privateData,
 	}
+	if t.Client != nil {
+		t.ClientFamily = t.Client.Family
+	}
 	return t
 }
 
@@ -217,6 +227,7 @@ func TaskGetAllUserTask(userId int, startIdx int, num int, queryParams SyncTaskQ
 
 	// 初始化查询构建器
 	query := DB.Where("user_id = ?", userId)
+	query = applyClientFamilyFilter(query, queryParams.ClientFamily)
 
 	if queryParams.TaskID != "" {
 		query = query.Where("task_id = ?", queryParams.TaskID)
@@ -253,6 +264,7 @@ func TaskGetAllTasks(startIdx int, num int, queryParams SyncTaskQueryParams) []*
 
 	// 初始化查询构建器
 	query := DB
+	query = applyClientFamilyFilter(query, queryParams.ClientFamily)
 
 	// 添加过滤条件
 	if queryParams.ChannelID != "" {
@@ -453,6 +465,7 @@ type TaskQuotaUsage struct {
 func TaskCountAllTasks(queryParams SyncTaskQueryParams) int64 {
 	var total int64
 	query := DB.Model(&Task{})
+	query = applyClientFamilyFilter(query, queryParams.ClientFamily)
 	if queryParams.ChannelID != "" {
 		query = query.Where("channel_id = ?", queryParams.ChannelID)
 	}
@@ -488,6 +501,7 @@ func TaskCountAllTasks(queryParams SyncTaskQueryParams) int64 {
 func TaskCountAllUserTask(userId int, queryParams SyncTaskQueryParams) int64 {
 	var total int64
 	query := DB.Model(&Task{}).Where("user_id = ?", userId)
+	query = applyClientFamilyFilter(query, queryParams.ClientFamily)
 	if queryParams.TaskID != "" {
 		query = query.Where("task_id = ?", queryParams.TaskID)
 	}

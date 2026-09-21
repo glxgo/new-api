@@ -28,12 +28,6 @@ func init() {
 func setupStreamTest(t *testing.T, body io.Reader) (*gin.Context, *http.Response, *relaycommon.RelayInfo) {
 	t.Helper()
 
-	oldTimeout := constant.StreamingTimeout
-	constant.StreamingTimeout = 30
-	t.Cleanup(func() {
-		constant.StreamingTimeout = oldTimeout
-	})
-
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
@@ -185,6 +179,19 @@ func TestStreamScannerHandler_DoneStopsScanner(t *testing.T) {
 	assert.Equal(t, int64(50), count.Load(), "data after [DONE] must not be processed")
 }
 
+func TestStreamScannerHandler_BareDoneStopsScanner(t *testing.T) {
+	t.Parallel()
+
+	c, resp, info := setupStreamTest(t, strings.NewReader("data: first\n[DONE]\ndata: should_not_appear\n"))
+	var count atomic.Int64
+	StreamScannerHandler(c, resp, info, func(data string, sr *StreamResult) {
+		count.Add(1)
+	})
+
+	assert.Equal(t, int64(1), count.Load(), "a bare [DONE] line must terminate the stream")
+	assert.Equal(t, relaycommon.StreamEndReasonDone, info.StreamStatus.EndReason)
+}
+
 func TestStreamScannerHandler_StopStopsStream(t *testing.T) {
 	t.Parallel()
 
@@ -303,7 +310,7 @@ func TestStreamScannerHandler_ClientCancelAbortsUpstreamAndReturns(t *testing.T)
 // ---------- Decoupling ----------
 
 func TestStreamScannerHandler_ScannerDecoupledFromSlowHandler(t *testing.T) {
-	t.Parallel()
+	// Serial: this case changes process-wide stream settings.
 
 	const numChunks = 50
 	const upstreamDelay = 10 * time.Millisecond
@@ -390,7 +397,7 @@ func TestStreamScannerHandler_SlowUpstreamFastHandler(t *testing.T) {
 // ---------- Ping tests ----------
 
 func TestStreamScannerHandler_PingSentDuringSlowUpstream(t *testing.T) {
-	t.Parallel()
+	// Serial: this case changes process-wide stream settings.
 
 	setting := operation_setting.GetGeneralSetting()
 	oldEnabled := setting.PingIntervalEnabled
@@ -450,7 +457,7 @@ func TestStreamScannerHandler_PingSentDuringSlowUpstream(t *testing.T) {
 }
 
 func TestStreamScannerHandler_PingDisabledByRelayInfo(t *testing.T) {
-	t.Parallel()
+	// Serial: this case changes process-wide stream settings.
 
 	setting := operation_setting.GetGeneralSetting()
 	oldEnabled := setting.PingIntervalEnabled
@@ -704,7 +711,7 @@ func TestStreamScannerHandler_StreamStatus_ReplacesPreInitialized(t *testing.T) 
 }
 
 func TestStreamScannerHandler_PingInterleavesWithSlowUpstream(t *testing.T) {
-	t.Parallel()
+	// Serial: this case changes process-wide stream settings.
 
 	setting := operation_setting.GetGeneralSetting()
 	oldEnabled := setting.PingIntervalEnabled

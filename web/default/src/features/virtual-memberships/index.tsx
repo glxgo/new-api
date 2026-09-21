@@ -45,6 +45,7 @@ import {
 } from '@/features/virtual-membership/api'
 import type { VirtualMembershipPlan } from '@/features/virtual-membership/types'
 import { AdminMembershipsSheet } from './components/admin-memberships-sheet'
+import { ResetCalendarAdminPanel } from './components/reset-calendar-admin-panel'
 
 const emptyPlan: Partial<VirtualMembershipPlan> = {
   code: '',
@@ -240,6 +241,7 @@ export function VirtualMemberships() {
                   </Button>
                 </div>
               </div>
+              <ResetCalendarAdminPanel />
               <div className='bg-card overflow-hidden rounded-2xl border'>
                 <div className='border-b p-5'>
                   <h2 className='font-semibold'>方案列表</h2>

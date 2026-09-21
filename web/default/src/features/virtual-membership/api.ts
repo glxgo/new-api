@@ -23,6 +23,8 @@ import type {
   UserVirtualMembership,
   VirtualMembershipPageData,
   VirtualMembershipPlan,
+  VirtualMembershipResetCalendarData,
+  VirtualMembershipResetCalendarEntry,
 } from './types'
 
 export async function getVirtualMembershipPage(): Promise<
@@ -71,9 +73,25 @@ export async function setSelfVirtualMembershipHidden(
 }
 
 export async function activeResetVirtualMembership(
-  membershipId: number
-): Promise<ApiResponse<{ membership: UserVirtualMembership }>> {
-  const res = await api.post(`/api/virtual-membership/${membershipId}/reset`)
+  membershipId: number,
+  force = false
+): Promise<
+  ApiResponse<{ membership: UserVirtualMembership }> & {
+    code?: string
+    data?:
+      | { membership: UserVirtualMembership }
+      | {
+          pending_count: number
+          can_force: boolean
+          latest_activity_at: number
+        }
+  }
+> {
+  const res = await api.post(
+    `/api/virtual-membership/${membershipId}/reset`,
+    { force },
+    { skipBusinessError: true }
+  )
   return res.data
 }
 
@@ -195,6 +213,43 @@ export async function setAdminVirtualMembershipHidden(
   const res = await api.patch(
     `/api/virtual-membership/admin/memberships/${membershipId}/visibility`,
     { hidden }
+  )
+  return res.data
+}
+
+export async function getVirtualMembershipResetCalendar(
+  year: number,
+  month: number,
+  admin = false
+): Promise<ApiResponse<VirtualMembershipResetCalendarData>> {
+  const path = admin
+    ? '/api/virtual-membership/admin/reset-calendar'
+    : '/api/virtual-membership/reset-calendar'
+  const res = await api.get(`${path}?year=${year}&month=${month}`)
+  return res.data
+}
+
+export async function saveAdminVirtualMembershipResetCalendarEntry(
+  data: Pick<
+    VirtualMembershipResetCalendarEntry,
+    'reset_at' | 'count' | 'reason'
+  > & { id?: number }
+): Promise<ApiResponse<VirtualMembershipResetCalendarEntry>> {
+  const { id, ...payload } = data
+  const res = id
+    ? await api.put(
+        `/api/virtual-membership/admin/reset-calendar/${id}`,
+        payload
+      )
+    : await api.post('/api/virtual-membership/admin/reset-calendar', payload)
+  return res.data
+}
+
+export async function deleteAdminVirtualMembershipResetCalendarEntry(
+  id: number
+): Promise<ApiResponse> {
+  const res = await api.delete(
+    `/api/virtual-membership/admin/reset-calendar/${id}`
   )
   return res.data
 }

@@ -74,6 +74,7 @@ export function WithdrawRequestSheet({
 }: WithdrawRequestSheetProps) {
   const { t } = useTranslation()
   const isPrincipal = type === WITHDRAW_TYPE.PRINCIPAL
+  const requiresPaymentInfo = isPrincipal || commissionMode
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [wechatPreview, setWechatPreview] = useState<string>('')
 
@@ -84,8 +85,9 @@ export function WithdrawRequestSheet({
       alipay_account: z.string(),
     })
     .superRefine((data, ctx) => {
-      // Principal withdrawals require Alipay payment info; dividend ones don't.
-      if (isPrincipal) {
+      // Principal withdrawals and agent commission withdrawals both require
+      // payout details. Admin/root dividend withdrawals keep the legacy flow.
+      if (requiresPaymentInfo) {
         if (!data.alipay_name.trim()) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
@@ -179,9 +181,10 @@ export function WithdrawRequestSheet({
       const res = await requestWithdraw({
         type,
         amount: amountQuota,
-        alipay_name: isPrincipal ? values.alipay_name : undefined,
-        alipay_account: isPrincipal ? values.alipay_account : undefined,
-        wechat_qrcode: isPrincipal && wechatPreview ? wechatPreview : undefined,
+        alipay_name: requiresPaymentInfo ? values.alipay_name : undefined,
+        alipay_account: requiresPaymentInfo ? values.alipay_account : undefined,
+        wechat_qrcode:
+          requiresPaymentInfo && wechatPreview ? wechatPreview : undefined,
       })
       if (res.success) {
         toast.success(t('Withdrawal request submitted'))
@@ -262,7 +265,7 @@ export function WithdrawRequestSheet({
                 )}
               />
 
-              {isPrincipal && (
+              {requiresPaymentInfo && (
                 <>
                   <FormField
                     control={form.control}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
@@ -19,6 +20,7 @@ func SystemPerformanceCheck() gin.HandlerFunc {
 		path := c.Request.URL.Path
 		if strings.HasPrefix(path, "/v1/messages") {
 			if err := checkSystemPerformance(); err != nil {
+				c.Header("Retry-After", "5")
 				c.JSON(err.StatusCode, gin.H{
 					"error": err.ToClaudeError(),
 				})
@@ -27,6 +29,7 @@ func SystemPerformanceCheck() gin.HandlerFunc {
 			}
 		} else {
 			if err := checkSystemPerformance(); err != nil {
+				c.Header("Retry-After", "5")
 				c.JSON(err.StatusCode, gin.H{
 					"error": err.ToOpenAIError(),
 				})
@@ -47,24 +50,33 @@ func checkSystemPerformance() *types.NewAPIError {
 
 	status := common.GetSystemStatus()
 
-	// 检查 CPU
-	if config.CPUThreshold > 0 && int(status.CPUUsage) > config.CPUThreshold {
+	// CPU uses a debounced EWMA state. This avoids the previous behaviour of
+	// rejecting new requests on one noisy five-second point sample.
+	if common.SystemProtectionActive() || (status.SampleAtUnix > 0 && common.SystemSampleStale(30*time.Second)) {
+		if common.SystemSampleStale(30 * time.Second) {
+			return types.NewErrorWithStatusCode(
+				fmt.Errorf("performance sample is stale"),
+				"performance_sample_stale", http.StatusServiceUnavailable)
+		}
+		message := i18n.Translate(i18n.LangZhCN, i18n.MsgSystemCpuOverloaded, map[string]any{"Current": fmt.Sprintf("%.1f", status.CPUUsage), "Threshold": config.CPUThreshold})
 		return types.NewErrorWithStatusCode(
-			fmt.Errorf(i18n.Translate(i18n.LangZhCN, i18n.MsgSystemCpuOverloaded, map[string]any{"Current": fmt.Sprintf("%.1f", status.CPUUsage), "Threshold": config.CPUThreshold})),
+			fmt.Errorf("%s", message),
 			"system_cpu_overloaded", http.StatusServiceUnavailable)
 	}
 
 	// 检查内存
 	if config.MemoryThreshold > 0 && int(status.MemoryUsage) > config.MemoryThreshold {
+		message := i18n.Translate(i18n.LangZhCN, i18n.MsgSystemMemoryOverloaded, map[string]any{"Current": fmt.Sprintf("%.1f", status.MemoryUsage), "Threshold": config.MemoryThreshold})
 		return types.NewErrorWithStatusCode(
-			fmt.Errorf(i18n.Translate(i18n.LangZhCN, i18n.MsgSystemMemoryOverloaded, map[string]any{"Current": fmt.Sprintf("%.1f", status.MemoryUsage), "Threshold": config.MemoryThreshold})),
+			fmt.Errorf("%s", message),
 			"system_memory_overloaded", http.StatusServiceUnavailable)
 	}
 
 	// 检查磁盘
 	if config.DiskThreshold > 0 && int(status.DiskUsage) > config.DiskThreshold {
+		message := i18n.Translate(i18n.LangZhCN, i18n.MsgSystemDiskOverloaded, map[string]any{"Current": fmt.Sprintf("%.1f", status.DiskUsage), "Threshold": config.DiskThreshold})
 		return types.NewErrorWithStatusCode(
-			fmt.Errorf(i18n.Translate(i18n.LangZhCN, i18n.MsgSystemDiskOverloaded, map[string]any{"Current": fmt.Sprintf("%.1f", status.DiskUsage), "Threshold": config.DiskThreshold})),
+			fmt.Errorf("%s", message),
 			"system_disk_overloaded", http.StatusServiceUnavailable)
 	}
 

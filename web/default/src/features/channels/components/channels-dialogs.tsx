@@ -19,6 +19,12 @@ For commercial licensing, please contact support@quantumnous.com
 import { lazy, Suspense } from 'react'
 import { useChannels } from './channels-provider'
 
+const ChannelMetricsDialog = lazy(() =>
+  import('./dialogs/channel-metrics-dialog').then((module) => ({
+    default: module.ChannelMetricsDialog,
+  }))
+)
+
 const BalanceQueryDialog = lazy(() =>
   import('./dialogs/balance-query-dialog').then((module) => ({
     default: module.BalanceQueryDialog,
@@ -71,6 +77,7 @@ const ChannelMutateDrawer = lazy(() =>
 )
 
 type DeferredDialog =
+  | 'channel-metrics'
   | 'channel-mutate'
   | 'test-channel'
   | 'balance-query'
@@ -93,6 +100,9 @@ export function ChannelsDialogs() {
 
   return (
     <Suspense fallback={null}>
+      {shouldRender('channel-metrics') && (
+        <ChannelMetricsDialog open onOpenChange={(v) => !v && setOpen(null)} />
+      )}
       {/* Channel Create/Update Drawer */}
       {shouldRender('channel-mutate') && (
         <ChannelMutateDrawer

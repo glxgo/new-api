@@ -25,13 +25,27 @@ type RechargeCapacityTier struct {
 	RPMLimit         int   `json:"rpm_limit"`
 }
 
+// Zero is the limiter's unlimited sentinel. Legacy flags cannot restore the old tiers.
+const UnlimitedRechargeCents int64 = 100000
+
+func effectiveAccountCapacity(totalCents int64, stored, defaultLimit int) int {
+	if totalCents >= UnlimitedRechargeCents {
+		return 0
+	}
+	return max(stored, defaultLimit)
+}
+
+// Membership capacity is an additional entitlement, never a lower account cap.
+func MergeAccountAndMembershipCapacity(account, membership int) int {
+	if account <= 0 || membership <= 0 {
+		return 0
+	}
+	return max(account, membership)
+}
+
 var rechargeCapacityTiers = []RechargeCapacityTier{
-	{MinimumCents: 0, MaximumCents: 1000, ConcurrencyLimit: 8, RPMLimit: 15},
-	{MinimumCents: 1000, MaximumCents: 5000, ConcurrencyLimit: 15, RPMLimit: 30},
-	{MinimumCents: 5000, MaximumCents: 20000, ConcurrencyLimit: 20, RPMLimit: 50},
-	{MinimumCents: 20000, MaximumCents: 50000, ConcurrencyLimit: 30, RPMLimit: 80},
-	{MinimumCents: 50000, MaximumCents: 100000, ConcurrencyLimit: 50, RPMLimit: 100},
-	{MinimumCents: 100000, MaximumCents: 0, ConcurrencyLimit: 70, RPMLimit: 150},
+	{MinimumCents: 0, MaximumCents: UnlimitedRechargeCents, ConcurrencyLimit: 200, RPMLimit: 1000},
+	{MinimumCents: UnlimitedRechargeCents, MaximumCents: 0, ConcurrencyLimit: 0, RPMLimit: 0},
 }
 
 type RechargeCapacityProgress struct {
@@ -99,7 +113,7 @@ func BuildRechargeCapacityProgress(totalCents int64, effectiveConcurrency int, e
 	}
 	current := rechargeCapacityTiers[currentIndex]
 	result := RechargeCapacityProgress{
-		Enabled:          common.RechargeCapacityEnabled,
+		Enabled:          true,
 		TotalCents:       totalCents,
 		CurrentTier:      current,
 		Tiers:            RechargeCapacityTiers(),

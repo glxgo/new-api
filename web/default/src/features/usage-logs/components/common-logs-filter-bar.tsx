@@ -39,8 +39,10 @@ import {
 } from '@/components/ui/tooltip'
 import { LOG_TYPE_ALL_VALUE, LOG_TYPE_FILTERS } from '../constants'
 import { buildSearchParams } from '../lib/filter'
-import { getDefaultTimeRange } from '../lib/utils'
+import { getDefaultCommonLogTimeRange } from '../lib/utils'
 import type { CommonLogFilters } from '../types'
+import { ClientApprovalPanel } from './client-approval-panel'
+import { ClientFamilyFilter } from './client-family-filter'
 import { CompactDateTimeRangePicker } from './compact-date-time-range-picker'
 import {
   LogsFilterField,
@@ -74,13 +76,13 @@ export function CommonLogsFilterBar<TData>(
   const fetchingLogs = useIsFetching({ queryKey: ['logs'] })
 
   const [filters, setFilters] = useState<CommonLogFilters>(() => {
-    const { start, end } = getDefaultTimeRange()
+    const { start, end } = getDefaultCommonLogTimeRange()
     return { startTime: start, endTime: end }
   })
   const [logType, setLogType] = useState<LogTypeValue>(LOG_TYPE_ALL_VALUE)
 
   useEffect(() => {
-    const { start, end } = getDefaultTimeRange()
+    const { start, end } = getDefaultCommonLogTimeRange()
     // Keep the editable filter form aligned with URL changes from navigation.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setFilters({
@@ -88,6 +90,7 @@ export function CommonLogsFilterBar<TData>(
         ? new Date(searchParams.startTime)
         : start,
       endTime: searchParams.endTime ? new Date(searchParams.endTime) : end,
+      clientFamily: searchParams.clientFamily || undefined,
       channel: searchParams.channel || undefined,
       model: searchParams.model || undefined,
       token: searchParams.token || undefined,
@@ -108,6 +111,7 @@ export function CommonLogsFilterBar<TData>(
   }, [
     searchParams.startTime,
     searchParams.endTime,
+    searchParams.clientFamily,
     searchParams.channel,
     searchParams.model,
     searchParams.token,
@@ -141,7 +145,7 @@ export function CommonLogsFilterBar<TData>(
   }, [filters, logType, navigate, queryClient])
 
   const handleReset = useCallback(() => {
-    const { start, end } = getDefaultTimeRange()
+    const { start, end } = getDefaultCommonLogTimeRange()
     const resetFilters: CommonLogFilters = { startTime: start, endTime: end }
     setFilters(resetFilters)
     setLogType(LOG_TYPE_ALL_VALUE)
@@ -169,6 +173,7 @@ export function CommonLogsFilterBar<TData>(
 
   const hasTypeFilter = logType !== LOG_TYPE_ALL_VALUE
   const hasExpandedFilters =
+    !!filters.clientFamily ||
     !!filters.model ||
     !!filters.group ||
     hasTypeFilter ||
@@ -180,6 +185,7 @@ export function CommonLogsFilterBar<TData>(
   const hasAdditionalFilters = !!filters.token || hasExpandedFilters
 
   const expandedFilterCount = [
+    filters.clientFamily,
     filters.model,
     filters.group,
     hasTypeFilter ? logType : undefined,
@@ -202,6 +208,7 @@ export function CommonLogsFilterBar<TData>(
 
   const statsBar = (
     <div className='flex flex-wrap items-center gap-2'>
+      {isAdmin && <ClientApprovalPanel />}
       <Tooltip>
         <TooltipTrigger
           render={
@@ -295,6 +302,12 @@ export function CommonLogsFilterBar<TData>(
   )
   const advancedFilters = (
     <>
+      <LogsFilterField>
+        <ClientFamilyFilter
+          value={filters.clientFamily}
+          onChange={(value) => handleChange('clientFamily', value)}
+        />
+      </LogsFilterField>
       {modelFilter}
       {groupFilter}
       {typeFilter}

@@ -44,6 +44,14 @@ import type {
 // Type Checkers & Utilities
 // ============================================================================
 
+export function formatCapacitySnapshot(
+  current: number,
+  limit: number
+): string | null {
+  if (!(current > 0 || limit > 0)) return null
+  return `${current}/${limit > 0 ? limit : '\u221e'}`
+}
+
 /**
  * Check if log type is displayable (has detailed info)
  */
@@ -84,6 +92,10 @@ export function getDefaultTimeRange(): { start: Date; end: Date } {
   return { start, end }
 }
 
+export function getDefaultCommonLogTimeRange() {
+  return getDefaultTimeRange()
+}
+
 /**
  * Convert milliseconds timestamp to seconds for API
  */
@@ -115,10 +127,15 @@ export function buildQueryParams(
  */
 function buildTimeRangeParams(
   searchParams: Record<string, unknown>,
-  useMilliseconds: boolean
+  useMilliseconds: boolean,
+  commonLogs = false
 ): { start_timestamp?: number; end_timestamp?: number } {
   const hasTimeParams = searchParams.startTime ?? searchParams.endTime
-  const defaultTimeRange = !hasTimeParams ? getDefaultTimeRange() : null
+  const defaultTimeRange = !hasTimeParams
+    ? commonLogs
+      ? getDefaultCommonLogTimeRange()
+      : getDefaultTimeRange()
+    : null
 
   const convertTimestamp = (timestamp: number) =>
     useMilliseconds ? timestamp : timestampToSeconds(timestamp)
@@ -162,6 +179,9 @@ export function buildBaseParams(config: {
       ? {
           channel_id: String(searchParams.channel),
         }
+      : {}),
+    ...(searchParams.clientFamily
+      ? { client_family: String(searchParams.clientFamily) }
       : {}),
     ...buildTimeRangeParams(searchParams, useMilliseconds),
   }
@@ -215,7 +235,10 @@ export function buildApiParams(config: {
     ...(searchParams.upstreamRequestId
       ? { upstream_request_id: String(searchParams.upstreamRequestId) }
       : {}),
-    ...buildTimeRangeParams(searchParams, false),
+    ...(searchParams.clientFamily
+      ? { client_family: String(searchParams.clientFamily) }
+      : {}),
+    ...buildTimeRangeParams(searchParams, false, true),
   }
 
   // Override with column filters if present
@@ -257,7 +280,8 @@ export function buildApiParams(config: {
  * Fetch logs based on category type
  */
 export async function fetchLogsByCategory(
-  config: FetchLogsConfig
+  config: FetchLogsConfig,
+  signal?: AbortSignal
 ): Promise<GetLogsResponse> {
   const { logCategory, isAdmin, page, pageSize, searchParams, columnFilters } =
     config
@@ -270,7 +294,11 @@ export async function fetchLogsByCategory(
       columnFilters,
       isAdmin,
     })
-    return isAdmin ? await getAllLogs(params) : await getUserLogs(params)
+    params.pagination = 'cursor'
+    params.cursor = searchParams.cursor as string | undefined
+    return isAdmin
+      ? await getAllLogs(params, signal)
+      : await getUserLogs(params, signal)
   }
 
   // For drawing and task logs

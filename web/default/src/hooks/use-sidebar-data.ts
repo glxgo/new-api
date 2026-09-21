@@ -22,6 +22,7 @@ import {
   CreditCard,
   Crown,
   FileText,
+  FileCheck2,
   FlaskConical,
   Gift,
   HandCoins,
@@ -40,7 +41,6 @@ import {
   Wallet,
   Dices,
   Sparkles,
-  Gauge,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
@@ -161,6 +161,11 @@ export function useSidebarData(): SidebarData {
         title: '幸运大转盘管理',
         url: '/lucky-wheel-admin',
         icon: Dices,
+      },
+      {
+        title: '发票审核',
+        url: '/invoice-review',
+        icon: FileCheck2,
       }
     )
   }
@@ -201,11 +206,6 @@ export function useSidebarData(): SidebarData {
             title: t('Usage Statistics'),
             url: '/usage-statistics',
             icon: ChartLine,
-          },
-          {
-            title: t('Platform Usage'),
-            url: '/platform-usage',
-            icon: Gauge,
           },
           {
             title: t('Usage Logs'),

@@ -6,7 +6,7 @@ it under the terms of the GNU Affero General Public License as
 published by the Free Software Foundation, either version 3 of the
 License, or (at your option) any later version.
 */
-import { useMemo, useState } from 'react'
+import { lazy, Suspense, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   Activity,
@@ -21,10 +21,12 @@ import {
   TimerReset,
   Zap,
 } from 'lucide-react'
+import { motion, useReducedMotion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { useIsAdmin } from '@/hooks/use-admin'
 import { Button } from '@/components/ui/button'
+import { CountUp } from '@/components/ui/count-up'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog } from '@/components/dialog'
@@ -34,6 +36,8 @@ import type {
   GroupCacheSummary,
   PerformanceSeriesPoint,
 } from '@/features/performance-metrics/types'
+import { ModelCard } from '@/features/pricing/components/model-card'
+import { DEFAULT_TOKEN_UNIT } from '@/features/pricing/constants'
 import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
 import type { PricingModel } from '@/features/pricing/types'
 import {
@@ -45,9 +49,7 @@ import {
 import { ChannelProbeDialog } from './components/channel-probe-dialog'
 import {
   formatProbeTime,
-  probeErrorLabel,
   probeLabel,
-  probeSeriesHealthyPercentage,
   probeSeriesTone,
   probeTone,
 } from './probe'
@@ -58,12 +60,20 @@ import {
   UNSTABLE_AVAILABILITY_THRESHOLD,
 } from './visuals'
 
+const ModelDetailsDrawer = lazy(() =>
+  import('@/features/pricing/components/model-details').then((module) => ({
+    default: module.ModelDetailsDrawer,
+  }))
+)
+
+const formatSuccessRate = (value: number) => `${value.toFixed(2)}%`
+
 type HealthTone = 'healthy' | 'unstable' | 'critical' | 'empty'
 
 const TIME_RANGES = [
-  { hours: 24, label: '24小时', shortLabel: '24H' },
-  { hours: 24 * 7, label: '7天', shortLabel: '7D' },
-  { hours: 24 * 30, label: '30天', shortLabel: '30D' },
+  { hours: 1, label: '1h', shortLabel: '1h' },
+  { hours: 24, label: '24h', shortLabel: '24h' },
+  { hours: 24 * 7, label: '7d', shortLabel: '7d' },
 ] as const
 
 function healthTone(summary?: GroupCacheSummary): HealthTone {
@@ -96,6 +106,7 @@ function AvailabilityBars({
   series?: PerformanceSeriesPoint[]
   hours: number
 }) {
+  const reduceMotion = useReducedMotion()
   if (!series?.length) {
     return (
       <div className='border-border/60 bg-muted/15 text-muted-foreground flex h-10 items-center justify-center rounded-lg border border-dashed text-[11px]'>
@@ -108,12 +119,19 @@ function AvailabilityBars({
 
   return (
     <div className='flex h-10 items-end gap-px' aria-label='所选周期可用率趋势'>
-      {segments.map((point) => (
-        <span
+      {segments.map((point, index) => (
+        <motion.span
+          initial={reduceMotion ? false : { scaleY: 0 }}
+          animate={{ scaleY: 1 }}
+          transition={{
+            duration: 0.55,
+            delay: reduceMotion ? 0 : index * 0.018,
+            ease: 'easeOut',
+          }}
           key={point.ts}
           title={`${new Date(point.ts * 1000).toLocaleString()} · ${point.hasData ? `${point.successRate.toFixed(1)}%` : '暂无请求样本'}`}
           className={cn(
-            'min-w-0 flex-1 rounded-[2px] transition-[height,opacity] duration-200 hover:opacity-60',
+            'min-w-0 flex-1 origin-bottom rounded-[2px] transition-[height,opacity] duration-200 hover:opacity-60',
             point.hasData
               ? availabilityBarClass(point.successRate)
               : 'bg-muted-foreground/35'
@@ -128,6 +146,8 @@ function AvailabilityBars({
 }
 
 function ProbeStatusBand({ summary }: { summary?: GroupCacheSummary }) {
+  const { t } = useTranslation()
+  const reduceMotion = useReducedMotion()
   const probe = summary?.probe
   const tone = probeTone(probe)
   const series = probe?.series ?? []
@@ -171,11 +191,18 @@ function ProbeStatusBand({ summary }: { summary?: GroupCacheSummary }) {
         <div className='shrink-0 text-right'>
           <div>
             <p className='font-mono text-sm font-semibold tabular-nums'>
-              {probe?.total_channels
-                ? `${probe.healthy_channels} / ${probe.total_channels}`
-                : '—'}
+              {probe && series.some((point) => point.probe_count > 0) ? (
+                <CountUp
+                  value={probe.success_rate}
+                  format={formatSuccessRate}
+                />
+              ) : (
+                '—'
+              )}
             </p>
-            <p className='text-muted-foreground mt-0.5 text-[9px]'>正常渠道</p>
+            <p className='text-muted-foreground mt-0.5 text-[9px]'>
+              {t('Success rate')}
+            </p>
           </div>
         </div>
       </div>
@@ -185,15 +212,25 @@ function ProbeStatusBand({ summary }: { summary?: GroupCacheSummary }) {
           className='mt-3 flex h-5 items-end gap-0.5'
           aria-label='主动探测趋势'
         >
-          {series.map((point) => {
-            const healthyPercentage = probeSeriesHealthyPercentage(point)
+          {series.map((point, index) => {
+            const healthyPercentage = Math.min(
+              100,
+              Math.max(0, point.success_rate)
+            )
             const pointTone = probeSeriesTone(point)
             return (
-              <span
+              <motion.span
+                initial={reduceMotion ? false : { scaleY: 0 }}
+                animate={{ scaleY: 1 }}
+                transition={{
+                  duration: 0.55,
+                  delay: reduceMotion ? 0 : index * 0.018,
+                  ease: 'easeOut',
+                }}
                 key={point.ts}
-                title={`${new Date(point.ts * 1000).toLocaleString()} · 正常渠道 ${point.healthy_channels} / ${point.total_channels}（${healthyPercentage.toFixed(0)}%）`}
+                title={`${new Date(point.ts * 1000).toLocaleString()} · ${point.probe_count ? `${healthyPercentage.toFixed(2)}%` : t('No probe samples')}`}
                 className={cn(
-                  'min-w-1 flex-1 rounded-[2px] transition-[height,opacity] duration-200 hover:opacity-60',
+                  'min-w-0 flex-1 origin-bottom rounded-[2px] transition-[height,opacity] duration-200 hover:opacity-60',
                   pointTone === 'healthy'
                     ? 'bg-emerald-500/90 dark:bg-emerald-400/85'
                     : pointTone === 'degraded'
@@ -214,11 +251,7 @@ function ProbeStatusBand({ summary }: { summary?: GroupCacheSummary }) {
       <div className='text-muted-foreground mt-2 flex items-center justify-between gap-3 text-[10px]'>
         <span>{formatProbeTime(probe?.last_probe_ts)}</span>
         <span className='truncate text-right'>
-          {probe?.last_error_category
-            ? probeErrorLabel(probe.last_error_category)
-            : probe?.avg_latency_ms
-              ? `平均 ${probe.avg_latency_ms}ms`
-              : '独立于真实请求统计'}
+          {t('Independent of request statistics')}
         </span>
       </div>
     </div>
@@ -274,7 +307,7 @@ function GroupHealthCard({
             </span>
           </div>
           <p className='text-muted-foreground mt-1.5 line-clamp-1 text-xs'>
-            {description || `该分组关联渠道最近${rangeName}的真实请求表现`}
+            {description || `该分组最近${rangeName}的真实请求表现`}
           </p>
         </div>
         <div className='shrink-0 text-right'>
@@ -318,12 +351,17 @@ function GroupHealthCard({
         <div className='flex items-end justify-between gap-4'>
           <div>
             <p className='text-muted-foreground text-[10px] tracking-[0.12em] uppercase'>
-              渠道真实请求可用率
+              真实请求成功率
             </p>
             <p className='mt-1 font-mono text-3xl font-semibold tracking-tight tabular-nums'>
-              {requestCount && hasHealth
-                ? `${summary?.success_rate?.toFixed(2)}%`
-                : '—'}
+              {requestCount && hasHealth ? (
+                <CountUp
+                  value={summary?.success_rate ?? 0}
+                  format={formatSuccessRate}
+                />
+              ) : (
+                '—'
+              )}
             </p>
           </div>
           <p className='text-muted-foreground pb-1 text-right text-xs'>
@@ -381,7 +419,10 @@ export function ModelStatus() {
   const [rangeHours, setRangeHours] = useState(24)
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
   const [probeDialogOpen, setProbeDialogOpen] = useState(false)
-  const { models, usableGroup, isLoading: pricingLoading } = usePricingData()
+  const pricing = usePricingData()
+  const { models, usableGroup, isLoading: pricingLoading } = pricing
+  const [selectedModel, setSelectedModel] = useState<PricingModel | null>(null)
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const summaryQuery = useQuery({
     queryKey: ['perf-metrics-group-summary-model-status', rangeHours],
     queryFn: () => getPerfMetricsGroupSummary(rangeHours),
@@ -437,7 +478,7 @@ export function ModelStatus() {
         <SectionPageLayout.Title>{t('Model Status')}</SectionPageLayout.Title>
         <SectionPageLayout.Description>
           按分组并排查看最近{activeRange.label}
-          的关联渠道真实请求表现与独立渠道探测。
+          的真实请求表现与独立主动探测。
         </SectionPageLayout.Description>
         <SectionPageLayout.Content>
           <div className='space-y-5'>
@@ -528,32 +569,66 @@ export function ModelStatus() {
       <Dialog
         open={Boolean(selectedGroup)}
         onOpenChange={(open) => {
-          if (!open) setSelectedGroup(null)
+          if (!open) {
+            setSelectedGroup(null)
+            setSelectedModel(null)
+          }
         }}
-        title={selectedGroup ? `${selectedGroup} · 可用模型` : '可用模型'}
-        description={`当前共 ${selectedModels.length} 个模型可在该分组使用`}
-        contentClassName='sm:max-w-2xl'
+        title={
+          selectedModel?.model_name ??
+          (selectedGroup
+            ? `${selectedGroup} · ${t('Available models')}`
+            : t('Available models'))
+        }
+        description={
+          selectedModel
+            ? t('Prices for {{group}}', { group: selectedGroup })
+            : t('{{count}} models available. Select a model to view pricing.', {
+                count: selectedModels.length,
+              })
+        }
+        contentClassName={selectedModel ? 'sm:max-w-xl' : 'sm:max-w-2xl'}
         bodyClassName='max-h-[60vh] overflow-y-auto'
       >
-        {selectedModels.length ? (
+        {selectedModel ? (
+          <div className='space-y-3'>
+            <Button variant='ghost' onClick={() => setSelectedModel(null)}>
+              {t('Back to models')}
+            </Button>
+            <ModelCard
+              model={selectedModel}
+              priceRate={pricing.priceRate}
+              usdExchangeRate={pricing.usdExchangeRate}
+              groupRatios={pricing.groupRatio}
+              onClick={() => setDetailsOpen(true)}
+            />
+          </div>
+        ) : selectedModels.length ? (
           <div className='grid gap-2 sm:grid-cols-2'>
             {selectedModels.map((model) => (
-              <div
+              <button
+                type='button'
+                onClick={() =>
+                  setSelectedModel({
+                    ...model,
+                    enable_groups: [selectedGroup!],
+                  })
+                }
                 key={model.model_name}
-                className='bg-muted/15 flex min-w-0 items-center gap-3 rounded-xl border px-3 py-2.5'
+                className='bg-muted/15 hover:bg-muted/40 focus-visible:ring-ring flex min-w-0 items-center gap-3 rounded-xl border px-3 py-2.5 text-left focus-visible:ring-2'
               >
                 <span className='bg-background flex size-8 shrink-0 items-center justify-center rounded-lg border'>
                   <Boxes className='size-4' />
                 </span>
                 <div className='min-w-0'>
-                  <p className='truncate text-sm font-medium'>
+                  <p className='text-sm font-medium break-all'>
                     {model.model_name}
                   </p>
                   <p className='text-muted-foreground truncate text-[10px]'>
                     {model.vendor_name || '模型服务'}
                   </p>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         ) : (
@@ -563,6 +638,22 @@ export function ModelStatus() {
         )}
       </Dialog>
 
+      {selectedModel && (
+        <Suspense fallback={null}>
+          <ModelDetailsDrawer
+            open={detailsOpen}
+            onOpenChange={setDetailsOpen}
+            model={selectedModel}
+            groupRatio={pricing.groupRatio}
+            usableGroup={usableGroup}
+            endpointMap={pricing.endpointMap}
+            autoGroups={pricing.autoGroups}
+            priceRate={pricing.priceRate}
+            usdExchangeRate={pricing.usdExchangeRate}
+            tokenUnit={DEFAULT_TOKEN_UNIT}
+          />
+        </Suspense>
+      )}
       {isAdmin ? (
         <ChannelProbeDialog
           open={probeDialogOpen}

@@ -46,6 +46,7 @@ import {
   mjSubmitResultMapper,
 } from '../../lib/mappers'
 import type { MidjourneyLog } from '../../types'
+import { ClientTimeCell } from '../client-time-cell'
 import { ImageDialog } from '../dialogs/image-dialog'
 import { PromptDialog } from '../dialogs/prompt-dialog'
 import {
@@ -92,20 +93,22 @@ export function useDrawingLogsColumns(
         const submitTime = row.getValue('submit_time') as number
 
         return (
-          <div className='flex min-w-0 flex-col gap-0.5'>
-            <span className='truncate font-mono text-xs tabular-nums'>
-              {formatTimestampToDate(submitTime)}
-            </span>
-            <StatusBadge
-              label={t(mjStatusMapper.getLabel(log.status))}
-              variant={mjStatusMapper.getVariant(log.status)}
-              size='sm'
-              copyable={false}
-            />
-          </div>
+          <ClientTimeCell
+            time={formatTimestampToDate(submitTime)}
+            client={log.client}
+            coding={log.coding_group}
+            status={
+              <StatusBadge
+                label={t(mjStatusMapper.getLabel(log.status))}
+                variant={mjStatusMapper.getVariant(log.status)}
+                size='sm'
+                copyable={false}
+              />
+            }
+          />
         )
       },
-      size: 180,
+      size: 260,
     },
   ]
 

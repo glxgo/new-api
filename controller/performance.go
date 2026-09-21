@@ -18,6 +18,9 @@ import (
 
 // PerformanceStats 性能统计信息
 type PerformanceStats struct {
+	// Low-cardinality request counters for capacity/overload diagnostics.
+	TrafficMetrics    map[string]common.TrafficMetric `json:"traffic_metrics"`
+	ConsumeLogMetrics common.ConsumeLogMetrics        `json:"consume_log_metrics"`
 	// 缓存统计
 	CacheStats common.DiskCacheStats `json:"cache_stats"`
 	// 系统内存统计
@@ -120,7 +123,9 @@ func GetPerformanceStats(c *gin.Context) {
 	diskSpaceInfo = common.GetDiskSpaceInfo()
 
 	stats := PerformanceStats{
-		CacheStats: cacheStats,
+		TrafficMetrics:    common.SnapshotTrafficMetrics(),
+		ConsumeLogMetrics: common.SnapshotConsumeLogMetrics(),
+		CacheStats:        cacheStats,
 		MemoryStats: MemoryStats{
 			Alloc:        memStats.Alloc,
 			TotalAlloc:   memStats.TotalAlloc,

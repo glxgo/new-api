@@ -91,6 +91,8 @@ type TokenCountMeta struct {
 }
 
 type RelayInfo struct {
+	ClientSnapshot                  *common.ClientSnapshot
+	ClientCodingGroup               bool
 	TokenId                         int
 	TokenKey                        string
 	TokenGroup                      string
@@ -537,7 +539,9 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 		reqId = common.GetTimeString() + common.GetRandomString(8)
 	}
 	info := &RelayInfo{
-		Request: request,
+		ClientSnapshot:    common.ClientSnapshotPointer(c),
+		ClientCodingGroup: c.GetBool(common.ClientCodingContextKey),
+		Request:           request,
 
 		RequestId:  reqId,
 		UserId:     common.GetContextKeyInt(c, constant.ContextKeyUserId),
@@ -715,9 +719,10 @@ func (info *RelayInfo) CaptureEffectiveServiceTier(jsonData []byte) {
 }
 
 // CaptureEffectiveReasoningEffort records the reasoning effort present in the
-// final outbound OpenAI-compatible JSON payload. Chat Completions uses the
+// final outbound JSON payload. Chat Completions uses the
 // top-level reasoning_effort field, while Responses and some compatible
-// providers use reasoning.effort. A model suffix is the final fallback.
+// providers use reasoning.effort; Claude uses output_config.effort.
+// A model suffix is the final fallback. Thinking token budgets are not effort levels.
 func (info *RelayInfo) CaptureEffectiveReasoningEffort(jsonData []byte) {
 	if info == nil {
 		return
@@ -726,6 +731,9 @@ func (info *RelayInfo) CaptureEffectiveReasoningEffort(jsonData []byte) {
 	effort := strings.TrimSpace(gjson.GetBytes(jsonData, "reasoning_effort").String())
 	if effort == "" {
 		effort = strings.TrimSpace(gjson.GetBytes(jsonData, "reasoning.effort").String())
+	}
+	if effort == "" {
+		effort = strings.TrimSpace(gjson.GetBytes(jsonData, "output_config.effort").String())
 	}
 	if effort == "" {
 		effort, _ = reasoning.ParseOpenAIReasoningEffortFromModelSuffix(

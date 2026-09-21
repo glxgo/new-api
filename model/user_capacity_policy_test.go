@@ -24,23 +24,36 @@ func withUserCapacityDefaults(t *testing.T, concurrency, rpm int) {
 	})
 }
 
-func TestUserCapacityLimitsInheritIndependently(t *testing.T) {
+func TestUserCapacityLimitsPreserveHigherEntitlements(t *testing.T) {
 	withUserCapacityDefaults(t, 8, 12)
-	user := User{ConcurrencyLimit: 99, RPMLimit: 999}
-	require.Equal(t, 8, user.EffectiveConcurrencyLimit())
-	require.Equal(t, 12, user.EffectiveRPMLimit())
+	for _, override := range []bool{false, true} {
+		for _, test := range []struct {
+			total                                    int64
+			concurrent, rpm, wantConcurrent, wantRPM int
+		}{
+			{0, 8, 12, 200, 1000}, {99999, 300, 2000, 300, 2000}, {0, 300, 12, 300, 1000},
+			{0, 8, 2000, 200, 2000}, {100000, 300, 2000, 0, 0}, {100001, 0, 0, 0, 0},
+		} {
+			user := User{RechargeTotalCents: test.total, ConcurrencyLimit: test.concurrent, RPMLimit: test.rpm, ConcurrencyLimitOverride: override, RPMLimitOverride: override}
+			require.Equal(t, test.wantConcurrent, user.EffectiveConcurrencyLimit())
+			require.Equal(t, test.wantRPM, user.EffectiveRPMLimit())
+			cached := user.ToBaseUser()
+			require.Equal(t, test.wantConcurrent, cached.EffectiveConcurrencyLimit())
+			require.Equal(t, test.wantRPM, cached.EffectiveRPMLimit())
+		}
+	}
+	common.DefaultUserConcurrencyLimit = 500
+	common.DefaultUserRPMLimit = 3000
+	user := User{}
+	require.Equal(t, 500, user.EffectiveConcurrencyLimit())
+	require.Equal(t, 3000, user.EffectiveRPMLimit())
+}
 
-	user.ConcurrencyLimitOverride = true
-	require.Equal(t, 99, user.EffectiveConcurrencyLimit())
-	require.Equal(t, 12, user.EffectiveRPMLimit())
-
-	common.DefaultUserConcurrencyLimit = 16
-	common.DefaultUserRPMLimit = 30
-	require.Equal(t, 99, user.EffectiveConcurrencyLimit())
-	require.Equal(t, 30, user.EffectiveRPMLimit())
-
-	user.RPMLimitOverride = true
-	require.Equal(t, 999, user.EffectiveRPMLimit())
+func TestMembershipCannotReduceAccountCapacity(t *testing.T) {
+	require.Equal(t, 200, MergeAccountAndMembershipCapacity(200, 10))
+	require.Equal(t, 300, MergeAccountAndMembershipCapacity(200, 300))
+	require.Zero(t, MergeAccountAndMembershipCapacity(0, 300))
+	require.Zero(t, MergeAccountAndMembershipCapacity(200, 0))
 }
 
 func TestUserEditKeepsCapacityOverridesIndependent(t *testing.T) {
@@ -69,8 +82,8 @@ func TestUserEditKeepsCapacityOverridesIndependent(t *testing.T) {
 	require.False(t, stored.RPMLimitOverride)
 	common.DefaultUserConcurrencyLimit = 16
 	common.DefaultUserRPMLimit = 30
-	require.Equal(t, 20, stored.EffectiveConcurrencyLimit())
-	require.Equal(t, 30, stored.EffectiveRPMLimit())
+	require.Equal(t, 200, stored.EffectiveConcurrencyLimit())
+	require.Equal(t, 1000, stored.EffectiveRPMLimit())
 
 	falseValue := false
 	require.NoError(t, (&User{
@@ -78,7 +91,7 @@ func TestUserEditKeepsCapacityOverridesIndependent(t *testing.T) {
 	}).Edit(false, UserCapacityLimitUpdate{ConcurrencyLimitOverride: &falseValue}))
 	require.NoError(t, db.First(&stored, user.Id).Error)
 	require.False(t, stored.ConcurrencyLimitOverride)
-	require.Equal(t, 16, stored.EffectiveConcurrencyLimit())
+	require.Equal(t, 200, stored.EffectiveConcurrencyLimit())
 }
 
 func TestMigrateUserCapacityOverridesPreservesLegacyCustomConcurrency(t *testing.T) {

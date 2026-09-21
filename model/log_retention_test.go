@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/glebarez/sqlite"
@@ -78,16 +79,30 @@ func TestArchiveDetailedUsageLogsRetainsAggregatesAndAuditRows(t *testing.T) {
 	require.EqualValues(t, 60, cost)
 }
 
+func TestAggregateDetailedUsageLogsUsesLargestSourceIdAtSameTimestamp(t *testing.T) {
+	firstBalance, lastBalance := int64(80), int64(60)
+	rows := aggregateDetailedUsageLogs([]Log{
+		{Id: 141, UserId: 1, CreatedAt: 100, Type: LogTypeConsume, ModelName: "same-second", Quota: 10, BalanceAfter: &firstBalance},
+		{Id: 142, UserId: 1, CreatedAt: 100, Type: LogTypeConsume, ModelName: "same-second", Quota: 20, BalanceAfter: &lastBalance},
+	}, 200)
+	require.Len(t, rows, 1)
+	require.EqualValues(t, 142, rows[0].LastLogId)
+	require.NotNil(t, rows[0].BalanceAfter)
+	require.EqualValues(t, 60, *rows[0].BalanceAfter)
+}
+
 func TestUsageStatisticsIncludesArchivedDailyAggregates(t *testing.T) {
 	db := setupUsageLogRetentionTestDB(t)
+	dayStart := usageLogAggregateBucketStart(time.Date(2024, 1, 10, 0, 0, 0, 0, time.Local).Unix())
+	dayEnd := usageStatisticsNextLocalDay(dayStart)
 	require.NoError(t, db.Create(&UsageLogDailyAggregate{
-		BucketStart: 0, UserId: 1, Type: LogTypeConsume, ModelName: "archived-model",
+		BucketStart: dayStart, UserId: 1, Type: LogTypeConsume, ModelName: "archived-model",
 		BillingSource: "subscription", SubscriptionId: 10, RequestCount: 2,
 		Quota: 300, PromptTokens: 80, CacheTokens: 20, EffectivePromptTokens: 80, CompletionTokens: 10,
 	}).Error)
 	require.NoError(t, db.Create(&UserSubscription{Id: 10, UserId: 1, PlanTitle: "Archived plan", Status: "active"}).Error)
 
-	stats, err := GetUserUsageStatistics(1, 1, 86400, 3600)
+	stats, err := GetUserUsageStatistics(1, dayStart, dayEnd, 3600)
 	require.NoError(t, err)
 	require.EqualValues(t, 2, stats.Summary.RequestCount)
 	require.EqualValues(t, 300, stats.Summary.Quota)

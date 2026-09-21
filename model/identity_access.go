@@ -37,13 +37,11 @@ const (
 	// the public username form so administrators can audit how an address was
 	// granted without treating API-key traffic as a browser exception.
 	MainlandIPAllowlistSourceBrowserSession = "browser_session"
-	MainlandIPAllowlistMaxPerUser           = 10
 )
 
 var (
 	ErrInvalidIdentityType = errors.New("invalid identity type")
 	ErrIdentityRequired    = errors.New("enterprise or education identity is required")
-	ErrWhitelistLimit      = errors.New("too many active mainland IP allowlist entries")
 )
 
 // UserIdentity stores the operator-granted identity and its audit metadata.
@@ -361,15 +359,6 @@ func AddMainlandIPWhitelist(userID, creatorID int, ip net.IP, source string) (*M
 		return &row, nil
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
-	}
-	var activeCount int64
-	if err := DB.Model(&MainlandIPAllowlist{}).
-		Where("user_id = ? AND status = ? AND (expires_at = 0 OR expires_at > ?)", userID, MainlandIPAllowlistStatusActive, now).
-		Count(&activeCount).Error; err != nil {
-		return nil, err
-	}
-	if activeCount >= MainlandIPAllowlistMaxPerUser {
-		return nil, ErrWhitelistLimit
 	}
 	row = MainlandIPAllowlist{
 		UserID:               userID,

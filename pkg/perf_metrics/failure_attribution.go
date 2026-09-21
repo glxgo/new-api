@@ -56,6 +56,8 @@ func ClassifyRelayFailure(apiError *types.NewAPIError, clientCanceled bool) Fail
 		return FailureSourceUser
 	}
 	switch code {
+	case "client_write_error", "client_canceled":
+		return FailureSourceClient
 	case "invalid_prompt", "invalid_request_error", "context_length_exceeded",
 		"input_too_long", "content_policy_violation", "content_filter",
 		"max_output_tokens":

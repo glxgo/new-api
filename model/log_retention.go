@@ -16,7 +16,8 @@ const (
 
 // UsageLogDailyAggregate deliberately excludes request content, IPs, request
 // IDs, upstream IDs, token names and free-form Other metadata. It keeps only
-// the dimensions and counters required for historical usage/billing reports.
+// the dimensions, counters and source boundary metadata required for
+// historical usage/billing reports.
 // Multiple rows for the same dimensions are valid: each cleanup batch writes
 // and deletes atomically, so report queries simply SUM all segments.
 type UsageLogDailyAggregate struct {
@@ -45,7 +46,9 @@ type UsageLogDailyAggregate struct {
 	BalanceAfter          *int64 `json:"balance_after" gorm:"default:null"`
 	FirstLogAt            int64  `json:"first_log_at" gorm:"type:bigint;not null"`
 	LastLogAt             int64  `json:"last_log_at" gorm:"type:bigint;not null"`
-	CreatedAt             int64  `json:"created_at" gorm:"type:bigint;not null"`
+	// Preserve the source-log tie breaker after detail rows are compacted.
+	LastLogId int64 `json:"last_log_id" gorm:"type:bigint;not null;default:0"`
+	CreatedAt int64 `json:"created_at" gorm:"type:bigint;not null"`
 }
 
 type usageLogAggregateKey struct {
@@ -74,7 +77,7 @@ func aggregateDetailedUsageLogs(logs []Log, archivedAt int64) []UsageLogDailyAgg
 				BucketStart: key.BucketStart, UserId: log.UserId, Type: log.Type,
 				ModelName: log.ModelName, ChannelId: log.ChannelId, TokenId: log.TokenId,
 				GroupName: log.Group, BillingSource: log.BillingSource, SubscriptionId: log.SubscriptionId,
-				FirstLogAt: log.CreatedAt, LastLogAt: log.CreatedAt, BalanceAfter: log.BalanceAfter, CreatedAt: archivedAt,
+				FirstLogAt: log.CreatedAt, LastLogAt: log.CreatedAt, LastLogId: int64(log.Id), BalanceAfter: log.BalanceAfter, CreatedAt: archivedAt,
 			}
 			grouped[key] = item
 		}
@@ -105,8 +108,9 @@ func aggregateDetailedUsageLogs(logs []Log, archivedAt int64) []UsageLogDailyAgg
 		if log.CreatedAt < item.FirstLogAt {
 			item.FirstLogAt = log.CreatedAt
 		}
-		if log.CreatedAt > item.LastLogAt {
+		if log.CreatedAt > item.LastLogAt || (log.CreatedAt == item.LastLogAt && int64(log.Id) > item.LastLogId) {
 			item.LastLogAt = log.CreatedAt
+			item.LastLogId = int64(log.Id)
 			item.BalanceAfter = log.BalanceAfter
 		}
 	}
@@ -124,18 +128,19 @@ func ArchiveDetailedUsageLogs(ctx context.Context, cutoff int64, limit int) (arc
 	if LOG_DB == nil {
 		return 0, 0, errors.New("log database is unavailable")
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if cutoff <= 0 {
 		return 0, 0, errors.New("invalid detailed log retention cutoff")
 	}
 	if limit <= 0 || limit > 5000 {
 		limit = 1000
 	}
+	archiveHasLastLogId := walletConsumeArchiveHasLastLogId(LOG_DB)
 	err = LOG_DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var logs []Log
-		if queryErr := tx.Where(
-			"created_at < ? AND (type = ? OR (type = ? AND settled = ?))",
-			cutoff, LogTypeError, LogTypeConsume, true,
-		).Order("id asc").Limit(limit).Find(&logs).Error; queryErr != nil {
+		logs, queryErr := findOldDetailedUsageLogs(tx, cutoff, limit)
+		if queryErr != nil {
 			return queryErr
 		}
 		if len(logs) == 0 {
@@ -143,7 +148,14 @@ func ArchiveDetailedUsageLogs(ctx context.Context, cutoff int64, limit int) (arc
 		}
 		aggregates := aggregateDetailedUsageLogs(logs, cutoff)
 		if len(aggregates) > 0 {
-			if createErr := tx.CreateInBatches(&aggregates, 200).Error; createErr != nil {
+			archiveWrite := tx
+			if !archiveHasLastLogId {
+				// A pre-v2 archive table may still be present while the explicit
+				// metadata migration is pending. Keep retention operational and
+				// let the source-id field take its default once it is added.
+				archiveWrite = tx.Omit("last_log_id")
+			}
+			if createErr := archiveWrite.CreateInBatches(&aggregates, 200).Error; createErr != nil {
 				return fmt.Errorf("archive usage log aggregates: %w", createErr)
 			}
 		}
@@ -163,4 +175,45 @@ func ArchiveDetailedUsageLogs(ctx context.Context, cutoff int64, limit int) (arc
 		return nil
 	})
 	return archived, deleted, err
+}
+
+// findOldDetailedUsageLogs deliberately avoids the OR predicate used by the
+// old retention query. The two eligible log classes have different indexed
+// predicates; querying them separately lets MySQL use
+// idx_log_retention(type, settled, created_at, id), then we merge only the
+// oldest rows in memory. This keeps an empty retention pass cheap and bounds
+// the amount of data loaded into a transaction.
+func findOldDetailedUsageLogs(tx *gorm.DB, cutoff int64, limit int) ([]Log, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	var errors, consumes []Log
+	if err := tx.Where("type = ? AND created_at < ?", LogTypeError, cutoff).
+		Order("id asc").Limit(limit).Find(&errors).Error; err != nil {
+		return nil, err
+	}
+	if err := tx.Where("type = ? AND settled = ? AND created_at < ?", LogTypeConsume, true, cutoff).
+		Order("id asc").Limit(limit).Find(&consumes).Error; err != nil {
+		return nil, err
+	}
+	merged := make([]Log, 0, minInt(limit, len(errors)+len(consumes)))
+	errorIndex, consumeIndex := 0, 0
+	for len(merged) < limit && (errorIndex < len(errors) || consumeIndex < len(consumes)) {
+		if consumeIndex >= len(consumes) ||
+			(errorIndex < len(errors) && errors[errorIndex].Id <= consumes[consumeIndex].Id) {
+			merged = append(merged, errors[errorIndex])
+			errorIndex++
+		} else {
+			merged = append(merged, consumes[consumeIndex])
+			consumeIndex++
+		}
+	}
+	return merged, nil
+}
+
+func minInt(left, right int) int {
+	if left < right {
+		return left
+	}
+	return right
 }

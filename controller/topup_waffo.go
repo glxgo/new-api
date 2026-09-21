@@ -119,13 +119,16 @@ func RequestWaffoAmount(c *gin.Context) {
 		return
 	}
 
-	payMoney := getWaffoPayMoney(float64(req.Amount), group)
+	payMoney, discountOK := applyUserRechargeDiscount(c, getWaffoPayMoney(float64(req.Amount), group))
+	if !discountOK {
+		return
+	}
 	if payMoney <= 0.01 {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "充值金额过低"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "success", "data": strconv.FormatFloat(payMoney, 'f', 2, 64)})
+	c.JSON(http.StatusOK, gin.H{"message": "success", "data": model.FormatPaymentGatewayAmount(payMoney)})
 }
 
 // RequestWaffoPay 创建 Waffo 支付订单
@@ -186,7 +189,10 @@ func RequestWaffoPay(c *gin.Context) {
 	// resolvedPayMethodType/Name 为空时，Waffo 自动选择支付方式
 
 	group, _ := model.GetUserGroup(id, true)
-	payMoney := getWaffoPayMoney(float64(req.Amount), group)
+	payMoney, discountOK := applyUserRechargeDiscount(c, getWaffoPayMoney(float64(req.Amount), group))
+	if !discountOK {
+		return
+	}
 	if payMoney < 0.01 {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "充值金额过低"})
 		return

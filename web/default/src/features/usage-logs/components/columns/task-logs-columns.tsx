@@ -29,6 +29,7 @@ import { StatusBadge } from '@/components/status-badge'
 import { TASK_ACTIONS, TASK_STATUS } from '../../constants'
 import { taskActionMapper, taskStatusMapper } from '../../lib/mappers'
 import type { TaskLog } from '../../types'
+import { ClientTimeCell } from '../client-time-cell'
 import {
   AudioPreviewDialog,
   type AudioClip,
@@ -99,21 +100,27 @@ export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
         const submitTime = row.getValue('submit_time') as number
 
         return (
-          <div className='flex min-w-0 flex-col gap-0.5'>
-            <span className='truncate font-mono text-xs tabular-nums'>
-              {formatTimestampToDate(submitTime, 'seconds')}
-            </span>
-            {log.finish_time ? (
-              <span className='text-muted-foreground/60 truncate font-mono text-[11px] tabular-nums'>
-                {formatTimestampToDate(log.finish_time, 'seconds')}
-              </span>
-            ) : (
-              <span className='text-muted-foreground/50 text-[11px]'>-</span>
-            )}
-          </div>
+          <ClientTimeCell
+            time={formatTimestampToDate(submitTime, 'seconds')}
+            client={log.client}
+            coding={log.coding_group}
+            status={
+              <StatusBadge
+                label={t(
+                  taskStatusMapper.getLabel(
+                    log.status,
+                    log.status || 'Submitting'
+                  )
+                )}
+                variant={taskStatusMapper.getVariant(log.status)}
+                size='sm'
+                copyable={false}
+              />
+            }
+          />
         )
       },
-      size: 180,
+      size: 260,
     },
   ]
 

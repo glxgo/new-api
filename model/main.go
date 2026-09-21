@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -191,9 +192,7 @@ func InitDB() (err error) {
 		if err != nil {
 			return err
 		}
-		sqlDB.SetMaxIdleConns(common.GetEnvOrDefault("SQL_MAX_IDLE_CONNS", 100))
-		sqlDB.SetMaxOpenConns(common.GetEnvOrDefault("SQL_MAX_OPEN_CONNS", 1000))
-		sqlDB.SetConnMaxLifetime(time.Second * time.Duration(common.GetEnvOrDefault("SQL_MAX_LIFETIME", 60)))
+		configureSQLPool(sqlDB, "SQL", 16, 64)
 
 		if !common.IsMasterNode {
 			return nil
@@ -213,7 +212,13 @@ func InitDB() (err error) {
 func InitLogDB() (err error) {
 	if os.Getenv("LOG_SQL_DSN") == "" {
 		LOG_DB = DB
-		return
+		if !common.IsMasterNode {
+			return nil
+		}
+		if err := MaybeMigrateLogQueryIndexes(context.Background(), LOG_DB); err != nil {
+			return err
+		}
+		return MaybeMigrateUsageMetricSchema(context.Background())
 	}
 	db, err := chooseDB("LOG_SQL_DSN", true)
 	if err == nil {
@@ -231,15 +236,22 @@ func InitLogDB() (err error) {
 		if err != nil {
 			return err
 		}
-		sqlDB.SetMaxIdleConns(common.GetEnvOrDefault("SQL_MAX_IDLE_CONNS", 100))
-		sqlDB.SetMaxOpenConns(common.GetEnvOrDefault("SQL_MAX_OPEN_CONNS", 1000))
-		sqlDB.SetConnMaxLifetime(time.Second * time.Duration(common.GetEnvOrDefault("SQL_MAX_LIFETIME", 60)))
+		configureSQLPool(sqlDB, "LOG_SQL", 8, 32)
 
 		if !common.IsMasterNode {
 			return nil
 		}
 		common.SysLog("database migration started")
 		err = migrateLOGDB()
+		if err == nil {
+			if err = MaybeMigrateLogQueryIndexes(context.Background(), LOG_DB); err != nil {
+				return err
+			}
+			// The usage projection has its own explicit opt-in migration. It is
+			// deliberately invoked only after LOG_DB is selected, so the same
+			// path works for shared DB and an independent LOG_SQL_DSN.
+			err = MaybeMigrateUsageMetricSchema(context.Background())
+		}
 		return err
 	} else {
 		common.FatalLog(err)
@@ -247,7 +259,23 @@ func InitLogDB() (err error) {
 	return err
 }
 
+func configureSQLPool(sqlDB interface {
+	SetMaxIdleConns(int)
+	SetMaxOpenConns(int)
+	SetConnMaxLifetime(time.Duration)
+}, prefix string, defaultIdle, defaultOpen int) {
+	idleKey := prefix + "_MAX_IDLE_CONNS"
+	openKey := prefix + "_MAX_OPEN_CONNS"
+	lifetimeKey := prefix + "_MAX_LIFETIME"
+	sqlDB.SetMaxIdleConns(common.GetEnvOrDefault(idleKey, defaultIdle))
+	sqlDB.SetMaxOpenConns(common.GetEnvOrDefault(openKey, defaultOpen))
+	sqlDB.SetConnMaxLifetime(time.Second * time.Duration(common.GetEnvOrDefault(lifetimeKey, 300)))
+}
+
 func migrateDB() error {
+	if err := migrateChannelGroupsToLongText(DB); err != nil {
+		return err
+	}
 	// Migrate price_amount column from float/double to decimal for existing tables
 	migrateSubscriptionPlanPriceAmount()
 	// Migrate model_limits column from varchar to text for existing tables
@@ -267,7 +295,7 @@ func migrateDB() error {
 		&Redemption{},
 		&Ability{},
 		&Log{},
-		&UsageLogDailyAggregate{},
+		&ClientIdentity{}, &ClientReview{}, &ClientGroupPolicy{}, &ClientGroupPolicyReview{},
 		&Midjourney{},
 		&TopUp{},
 		&QuotaData{},
@@ -294,6 +322,8 @@ func migrateDB() error {
 		&DividendRecord{},
 		&AffiliateSettle{},
 		&Withdraw{},
+		&InvoiceApplication{},
+		&InvoiceApplicationOrder{},
 		&ConcurrencyApplication{},
 		&RechargeCredit{},
 		&TopUpCoupon{},
@@ -317,9 +347,13 @@ func migrateDB() error {
 		&VirtualMembershipResetOrder{},
 		&UserVirtualMembership{},
 		&VirtualMembershipPreConsumeRecord{},
+		&VirtualMembershipResetCalendarEntry{},
 		&UserAnnouncementRead{},
 	)
 	if err != nil {
+		return err
+	}
+	if err := migrateUsageLogDailyAggregate(DB); err != nil {
 		return err
 	}
 	if err := migrateUserCapacityOverridesV1(); err != nil {
@@ -359,6 +393,9 @@ func migrateDB() error {
 }
 
 func migrateDBFast() error {
+	if err := migrateChannelGroupsToLongText(DB); err != nil {
+		return err
+	}
 	if err := prepareUserSubscriptionRenewalSQLiteMigration(); err != nil {
 		return err
 	}
@@ -377,7 +414,7 @@ func migrateDBFast() error {
 		{&Redemption{}, "Redemption"},
 		{&Ability{}, "Ability"},
 		{&Log{}, "Log"},
-		{&UsageLogDailyAggregate{}, "UsageLogDailyAggregate"},
+		{&ClientIdentity{}, "ClientIdentity"}, {&ClientReview{}, "ClientReview"}, {&ClientGroupPolicy{}, "ClientGroupPolicy"}, {&ClientGroupPolicyReview{}, "ClientGroupPolicyReview"},
 		{&Midjourney{}, "Midjourney"},
 		{&TopUp{}, "TopUp"},
 		{&QuotaData{}, "QuotaData"},
@@ -404,6 +441,8 @@ func migrateDBFast() error {
 		{&DividendRecord{}, "DividendRecord"},
 		{&AffiliateSettle{}, "AffiliateSettle"},
 		{&Withdraw{}, "Withdraw"},
+		{&InvoiceApplication{}, "InvoiceApplication"},
+		{&InvoiceApplicationOrder{}, "InvoiceApplicationOrder"},
 		{&ConcurrencyApplication{}, "ConcurrencyApplication"},
 		{&RechargeCredit{}, "RechargeCredit"},
 		{&TopUpCoupon{}, "TopUpCoupon"},
@@ -427,6 +466,7 @@ func migrateDBFast() error {
 		{&VirtualMembershipResetOrder{}, "VirtualMembershipResetOrder"},
 		{&UserVirtualMembership{}, "UserVirtualMembership"},
 		{&VirtualMembershipPreConsumeRecord{}, "VirtualMembershipPreConsumeRecord"},
+		{&VirtualMembershipResetCalendarEntry{}, "VirtualMembershipResetCalendarEntry"},
 		{&UserAnnouncementRead{}, "UserAnnouncementRead"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
@@ -451,6 +491,9 @@ func migrateDBFast() error {
 		if err != nil {
 			return err
 		}
+	}
+	if err := migrateUsageLogDailyAggregate(DB); err != nil {
+		return err
 	}
 	if err := migrateUserCapacityOverridesV1(); err != nil {
 		return err
@@ -502,9 +545,33 @@ func migrateDBFast() error {
 
 func migrateLOGDB() error {
 	var err error
-	if err = LOG_DB.AutoMigrate(&Log{}, &UsageLogDailyAggregate{}); err != nil {
+	if err = LOG_DB.AutoMigrate(&Log{}); err != nil {
 		return err
 	}
+	return migrateUsageLogDailyAggregate(LOG_DB)
+}
+
+// migrateUsageLogDailyAggregate preserves the long-standing ability to create
+// the archive table on a fresh installation while keeping the new source-log
+// metadata column out of ordinary startup DDL. Existing installations must
+// opt into USAGE_METRIC_SCHEMA_MIGRATION before an ALTER can add last_log_id;
+// the retention writer has a legacy-column fallback until then.
+func migrateUsageLogDailyAggregate(db *gorm.DB) error {
+	if db == nil {
+		return fmt.Errorf("log database is unavailable")
+	}
+	migrator := db.Migrator()
+	if migrator.HasTable(&UsageLogDailyAggregate{}) &&
+		!migrator.HasColumn(&UsageLogDailyAggregate{}, "last_log_id") &&
+		!common.GetEnvOrDefaultBool(UsageMetricSchemaMigrationEnv, false) {
+		common.SysLog("usage_log_daily_aggregates exists without last_log_id; skipping implicit archive ALTER (run explicit schema migration before strict wallet tie-breaks)")
+		invalidateWalletConsumeArchiveSchemaCache(db)
+		return nil
+	}
+	if err := db.AutoMigrate(&UsageLogDailyAggregate{}); err != nil {
+		return err
+	}
+	invalidateWalletConsumeArchiveSchemaCache(db)
 	return nil
 }
 

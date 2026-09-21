@@ -135,8 +135,8 @@ func TestOpenaiImageHandlersReturnJSONError(t *testing.T) {
 }
 
 // TestOpenaiImageStreamHandlerRecordsUpstreamErrorEvent verifies that an error
-// event inside the SSE stream is recorded as a soft error while the payload is
-// still forwarded to the client.
+// event inside the SSE stream is a failed terminal while its payload is still
+// forwarded to a client that has already received partial output.
 func TestOpenaiImageStreamHandlerRecordsUpstreamErrorEvent(t *testing.T) {
 	oldMode := gin.Mode()
 	gin.SetMode(gin.TestMode)
@@ -158,10 +158,11 @@ func TestOpenaiImageStreamHandlerRecordsUpstreamErrorEvent(t *testing.T) {
 	c, recorder, resp, info := newImageTestContext(t, body, "text/event-stream", true)
 
 	usage, err := OpenaiImageStreamHandler(c, info, resp)
-	require.Nil(t, err)
-	require.NotNil(t, usage)
+	require.NotNil(t, err)
+	require.Equal(t, http.StatusBadGateway, err.StatusCode)
+	require.Nil(t, usage)
 	require.NotNil(t, info.StreamStatus)
-	require.Equal(t, relaycommon.StreamEndReasonEOF, info.StreamStatus.EndReason)
+	require.Equal(t, relaycommon.StreamEndReasonHandlerStop, info.StreamStatus.EndReason)
 	require.True(t, info.StreamStatus.HasErrors())
 	require.Equal(t, 1, info.StreamStatus.TotalErrorCount())
 	require.Contains(t, info.StreamStatus.Errors[0].Message, "INTERNAL_ERROR")

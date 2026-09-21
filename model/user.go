@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -81,23 +82,17 @@ type User struct {
 }
 
 func (user *User) EffectiveConcurrencyLimit() int {
-	if user != nil && user.ConcurrencyLimitOverride && user.ConcurrencyLimit > 0 {
-		return user.ConcurrencyLimit
+	if user == nil {
+		return common.GetDefaultUserConcurrencyLimit()
 	}
-	if user != nil && common.RechargeCapacityEnabled {
-		return RechargeCapacityForCents(user.RechargeTotalCents).ConcurrencyLimit
-	}
-	return common.GetDefaultUserConcurrencyLimit()
+	return effectiveAccountCapacity(user.RechargeTotalCents, user.ConcurrencyLimit, common.GetDefaultUserConcurrencyLimit())
 }
 
 func (user *User) EffectiveRPMLimit() int {
-	if user != nil && user.RPMLimitOverride && user.RPMLimit > 0 {
-		return user.RPMLimit
+	if user == nil {
+		return common.GetDefaultUserRPMLimit()
 	}
-	if user != nil && common.RechargeCapacityEnabled {
-		return RechargeCapacityForCents(user.RechargeTotalCents).RPMLimit
-	}
-	return common.GetDefaultUserRPMLimit()
+	return effectiveAccountCapacity(user.RechargeTotalCents, user.RPMLimit, common.GetDefaultUserRPMLimit())
 }
 
 func (user *User) ApplyEffectiveCapacityLimits() {
@@ -110,10 +105,10 @@ func (user *User) ApplyEffectiveCapacityLimits() {
 
 func (user *User) prepareInheritedCapacityLimits() {
 	if !user.ConcurrencyLimitOverride {
-		user.ConcurrencyLimit = common.GetDefaultUserConcurrencyLimit()
+		user.ConcurrencyLimit = max(user.ConcurrencyLimit, common.GetDefaultUserConcurrencyLimit())
 	}
 	if !user.RPMLimitOverride {
-		user.RPMLimit = common.GetDefaultUserRPMLimit()
+		user.RPMLimit = max(user.RPMLimit, common.GetDefaultUserRPMLimit())
 	}
 }
 
@@ -264,9 +259,13 @@ func GetMaxUserId() int {
 	return user.Id
 }
 
-func GetAllUsers(pageInfo *common.PageInfo) (users []*User, total int64, err error) {
+func GetAllUsers(pageInfo *common.PageInfo) ([]*User, int64, error) {
+	return GetAllUsersWithContext(context.Background(), pageInfo)
+}
+
+func GetAllUsersWithContext(ctx context.Context, pageInfo *common.PageInfo) (users []*User, total int64, err error) {
 	// Start transaction
-	tx := DB.Begin()
+	tx := DB.WithContext(ctx).Begin()
 	if tx.Error != nil {
 		return nil, 0, tx.Error
 	}
@@ -302,12 +301,16 @@ func GetAllUsers(pageInfo *common.PageInfo) (users []*User, total int64, err err
 }
 
 func SearchUsers(keyword string, group string, role *int, status *int, startIdx int, num int) ([]*User, int64, error) {
+	return SearchUsersWithContext(context.Background(), keyword, group, role, status, startIdx, num)
+}
+
+func SearchUsersWithContext(ctx context.Context, keyword string, group string, role *int, status *int, startIdx int, num int) ([]*User, int64, error) {
 	var users []*User
 	var total int64
 	var err error
 
 	// 开始事务
-	tx := DB.Begin()
+	tx := DB.WithContext(ctx).Begin()
 	if tx.Error != nil {
 		return nil, 0, tx.Error
 	}
@@ -1296,38 +1299,68 @@ func FreezeUserBalance(id int, wtype, amount int) error {
 		return errors.New("amount 必须大于 0")
 	}
 	updates := map[string]interface{}{}
+	query := DB.Model(&User{}).Where("id = ?", id)
 	if wtype == WithdrawTypePrincipal {
+		query = query.Where("quota >= ?", amount)
 		updates["quota"] = gorm.Expr("quota - ?", amount)
 		updates["frozen_quota"] = gorm.Expr("frozen_quota + ?", amount)
 	} else {
+		query = query.Where("dividend_balance >= ?", amount)
 		updates["dividend_balance"] = gorm.Expr("dividend_balance - ?", amount)
 		updates["frozen_dividend"] = gorm.Expr("frozen_dividend + ?", amount)
 	}
-	return DB.Model(&User{}).Where("id = ?", id).Updates(updates).Error
+	result := query.Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errors.New("可用余额不足")
+	}
+	return nil
 }
 
 // ApproveUserWithdraw 提现审核通过: 清冻结额度(钱已线下打款给用户, 不退可用余额)。
 func ApproveUserWithdraw(id int, wtype, amount int) error {
 	updates := map[string]interface{}{}
+	query := DB.Model(&User{}).Where("id = ?", id)
 	if wtype == WithdrawTypePrincipal {
+		query = query.Where("frozen_quota >= ?", amount)
 		updates["frozen_quota"] = gorm.Expr("frozen_quota - ?", amount)
 	} else {
+		query = query.Where("frozen_dividend >= ?", amount)
 		updates["frozen_dividend"] = gorm.Expr("frozen_dividend - ?", amount)
 	}
-	return DB.Model(&User{}).Where("id = ?", id).Updates(updates).Error
+	result := query.Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errors.New("冻结余额不足或已处理")
+	}
+	return nil
 }
 
 // RejectUserWithdraw 提现审核拒绝: 解冻退回可用余额(冻结 -= amount, 可用 += amount)。
 func RejectUserWithdraw(id int, wtype, amount int) error {
 	updates := map[string]interface{}{}
+	query := DB.Model(&User{}).Where("id = ?", id)
 	if wtype == WithdrawTypePrincipal {
+		query = query.Where("frozen_quota >= ?", amount)
 		updates["quota"] = gorm.Expr("quota + ?", amount)
 		updates["frozen_quota"] = gorm.Expr("frozen_quota - ?", amount)
 	} else {
+		query = query.Where("frozen_dividend >= ?", amount)
 		updates["dividend_balance"] = gorm.Expr("dividend_balance + ?", amount)
 		updates["frozen_dividend"] = gorm.Expr("frozen_dividend - ?", amount)
 	}
-	return DB.Model(&User{}).Where("id = ?", id).Updates(updates).Error
+	result := query.Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errors.New("冻结余额不足或已处理")
+	}
+	return nil
 }
 
 func DeltaUpdateUserQuota(id int, delta int) (err error) {

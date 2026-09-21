@@ -2,8 +2,11 @@ package model
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,7 +17,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/samber/hot"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
@@ -36,6 +38,8 @@ func applyExplicitLogTextFilter(tx *gorm.DB, column string, value string) (*gorm
 }
 
 type Log struct {
+	ClientKey            string `json:"client_key,omitempty" gorm:"type:varchar(96);default:''"`
+	ClientFamily         string `json:"client_family,omitempty" gorm:"type:varchar(40);default:''"`
 	Id                   int    `json:"id" gorm:"index:idx_created_at_id,priority:2;index:idx_user_id_id,priority:2"`
 	UserId               int    `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1;index:idx_user_type_created_at,priority:1"`
 	CreatedAt            int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:1;index:idx_created_at_type;index:idx_type_created_at,priority:2;index:idx_user_type_created_at,priority:3"`
@@ -115,7 +119,11 @@ func formatUserLogs(logs []*Log, startIdx int) {
 }
 
 func GetLogByTokenId(tokenId int) (logs []*Log, err error) {
-	err = LOG_DB.Model(&Log{}).Where("token_id = ?", tokenId).Order("id desc").Limit(common.MaxRecentItems).Find(&logs).Error
+	return GetLogByTokenIdWithContext(context.Background(), tokenId)
+}
+
+func GetLogByTokenIdWithContext(ctx context.Context, tokenId int) (logs []*Log, err error) {
+	err = LOG_DB.WithContext(ctx).Model(&Log{}).Where("token_id = ?", tokenId).Order("id desc").Limit(common.MaxRecentItems).Find(&logs).Error
 	formatUserLogs(logs, 0)
 	return logs, err
 }
@@ -300,7 +308,7 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 	username := c.GetString("username")
 	requestId := c.GetString(common.RequestIdKey)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
-	otherStr := common.MapToJsonStr(other)
+	otherStr := common.MapToJsonStr(WithRequestClientLog(c, other))
 	// 判断是否需要记录 IP
 	needRecordIp := false
 	if settingMap, err := GetUserSetting(userId, false); err == nil {
@@ -374,11 +382,16 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	if !common.LogConsumeEnabled {
 		return
 	}
-	logger.LogInfo(c, fmt.Sprintf("record consume log: userId=%d, params=%s", userId, common.GetJsonString(params)))
+	// Keep the hot-path INFO record bounded. Full billing/audit fields remain in
+	// the structured logs table; serializing the entire request payload here
+	// needlessly adds JSON/GC work for every successful relay.
+	logger.LogInfo(c, fmt.Sprintf("record consume log: userId=%d model=%s token=%d quota=%d", userId, params.ModelName, params.TokenId, params.Quota))
 	username := c.GetString("username")
 	requestId := c.GetString(common.RequestIdKey)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
-	otherStr := common.MapToJsonStr(params.Other)
+	jsonStartedAt := time.Now()
+	otherStr := common.MapToJsonStr(WithRequestClientLog(c, params.Other))
+	jsonDuration := time.Since(jsonStartedAt)
 	// 判断是否需要记录 IP
 	needRecordIp := false
 	if settingMap, err := GetUserSetting(userId, false); err == nil {
@@ -435,17 +448,34 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	}
 	// 强制从主库单次读取两池余额，避免扣费后的 Redis 异步更新尚未完成时
 	// 把扣费前余额写入财务流水。
+	balanceStartedAt := time.Now()
 	if balanceAfter, balanceErr := GetUserTotalQuotaFromDB(userId); balanceErr == nil {
 		log.BalanceAfter = &balanceAfter
 	}
+	balanceDuration := time.Since(balanceStartedAt)
+	logStartedAt := time.Now()
 	err := LOG_DB.Create(log).Error
+	logWriteDuration := time.Since(logStartedAt)
+	common.RecordConsumeLogMetrics(jsonDuration, balanceDuration, logWriteDuration, err != nil)
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
 	}
 	if common.DataExportEnabled {
-		gopool.Go(func() {
+		requestContext := context.Background()
+		if c != nil && c.Request != nil {
+			requestContext = c.Request.Context()
+		}
+		if common.BackgroundCtxGo("report", requestContext, func() {
 			LogQuotaData(userId, username, params.ModelName, params.Quota, common.GetTimestamp(), params.PromptTokens+params.CompletionTokens)
-		})
+		}) {
+			common.RecordQuotaDataEnqueued()
+		} else {
+			// Preserve dashboard data when the optional queue is saturated. The
+			// fallback is bounded to one aggregation operation and never drops it.
+			common.RecordQuotaDataQueueFull()
+			common.RecordQuotaDataInline()
+			LogQuotaData(userId, username, params.ModelName, params.Quota, common.GetTimestamp(), params.PromptTokens+params.CompletionTokens)
+		}
 	}
 }
 
@@ -527,69 +557,207 @@ type FinancialConsumeDaily struct {
 // operation's balance snapshot.
 // Streaming avoids loading an unbounded 30-day request history into memory.
 func GetUserFinancialConsumeDaily(userId int, startTimestamp int64, endTimestamp int64) ([]FinancialConsumeDaily, error) {
-	startBucket := usageLogAggregateBucketStart(startTimestamp)
-	rows, err := LOG_DB.Raw(`
-		SELECT created_at, quota, balance_after
-		FROM logs
-		WHERE user_id = ? AND type = ? AND created_at >= ? AND created_at < ?
-		UNION ALL
-		SELECT last_log_at AS created_at, quota, balance_after
-		FROM usage_log_daily_aggregates
-		WHERE user_id = ? AND type = ? AND bucket_start >= ? AND bucket_start < ?
-		ORDER BY created_at ASC`,
-		userId, LogTypeConsume, startTimestamp, endTimestamp,
-		userId, LogTypeConsume, startBucket, endTimestamp,
-	).Rows()
+	return GetUserFinancialConsumeDailyWithContext(context.Background(), userId, startTimestamp, endTimestamp)
+}
+
+func GetUserFinancialConsumeDailyWithContext(ctx context.Context, userId int, startTimestamp int64, endTimestamp int64) ([]FinancialConsumeDaily, error) {
+	if items, ready, err := readWalletConsumeDailyAggregatesWithContext(ctx, userId, startTimestamp, endTimestamp); ready && err == nil {
+		return items, nil
+	}
+	return getUserFinancialConsumeDailyLegacyWithContext(ctx, userId, startTimestamp, endTimestamp)
+}
+
+// getUserFinancialConsumeDailyLegacyWithContext is the exact compatibility
+// path. It remains available when the opt-in wallet projection is disabled,
+// missing, incomplete, or unavailable, preserving the historical JSON and
+// error behavior while the projection is rolled out gradually.
+func getUserFinancialConsumeDailyLegacyWithContext(ctx context.Context, userId int, startTimestamp int64, endTimestamp int64) ([]FinancialConsumeDaily, error) {
+	if LOG_DB == nil {
+		return nil, errors.New("log database is unavailable")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if startTimestamp <= 0 || endTimestamp <= startTimestamp || userId <= 0 {
+		return []FinancialConsumeDaily{}, nil
+	}
+
+	// Archive rows are daily segments.  Include a segment when its whole
+	// interval is inside the requested range, or when the requested range
+	// contains the complete local day.  A segment crossing a partial boundary
+	// is deliberately omitted: its exact source rows no longer exist, and
+	// counting the whole segment would overstate wallet consumption.
+	startBucket := walletConsumeDayStart(startTimestamp)
+	endBucket := walletConsumeDayStart(endTimestamp - 1)
+	fullArchiveStart := startBucket
+	if startTimestamp > startBucket {
+		fullArchiveStart = walletConsumeDayEnd(startBucket)
+	}
+	// endBucket is the last day touched by the half-open query. Complete archive
+	// days always stop at the start of the day containing endTimestamp: whether
+	// the end is exactly midnight or lies inside that day, that end day is only a
+	// partial edge and must not be counted as a whole bucket.
+	endDayStart := walletConsumeDayStart(endTimestamp)
+	fullArchiveEnd := endDayStart
+	archiveScanEnd := walletConsumeDayEnd(endBucket)
+
+	type financialConsumeRow struct {
+		UserId       int           `gorm:"column:user_id"`
+		DayStart     int64         `gorm:"column:day_start"`
+		FirstLogAt   int64         `gorm:"column:first_log_at"`
+		CreatedAt    int64         `gorm:"column:created_at"`
+		SourceId     int64         `gorm:"column:source_id"`
+		SourceKind   int           `gorm:"column:source_kind"`
+		RequestCount int64         `gorm:"column:request_count"`
+		Quota        int64         `gorm:"column:quota"`
+		BalanceAfter sql.NullInt64 `gorm:"column:balance_after"`
+	}
+
+	archiveAvailable := LOG_DB.Migrator().HasTable(&UsageLogDailyAggregate{})
+	var query *gorm.DB
+	if archiveAvailable {
+		archiveSourceID := walletConsumeArchiveSourceIDExpression(LOG_DB)
+		query = LOG_DB.WithContext(ctx).Raw(fmt.Sprintf(`
+			SELECT user_id, 0 AS day_start, created_at AS first_log_at, created_at, id AS source_id,
+				0 AS source_kind, 1 AS request_count, quota, balance_after
+			FROM logs
+			WHERE user_id = ? AND type = ? AND created_at >= ? AND created_at < ?
+			UNION ALL
+			SELECT user_id, bucket_start AS day_start, first_log_at, last_log_at AS created_at,
+				%s AS source_id,
+				1 AS source_kind, request_count, quota, balance_after
+			FROM usage_log_daily_aggregates
+			WHERE user_id = ? AND type = ? AND bucket_start >= ? AND bucket_start < ?
+				AND ((bucket_start >= ? AND bucket_start < ?)
+					OR (first_log_at >= ? AND last_log_at < ?))
+			ORDER BY source_kind ASC, user_id ASC, created_at ASC, source_id ASC`, archiveSourceID),
+			userId, LogTypeConsume, startTimestamp, endTimestamp,
+			userId, LogTypeConsume, startBucket, archiveScanEnd,
+			fullArchiveStart, fullArchiveEnd, startTimestamp, endTimestamp,
+		)
+	} else {
+		query = LOG_DB.WithContext(ctx).Raw(`
+			SELECT user_id, 0 AS day_start, created_at AS first_log_at, created_at, id AS source_id,
+				0 AS source_kind, 1 AS request_count, quota, balance_after
+			FROM logs
+			WHERE user_id = ? AND type = ? AND created_at >= ? AND created_at < ?
+			ORDER BY created_at ASC, id ASC`,
+			userId, LogTypeConsume, startTimestamp, endTimestamp,
+		)
+	}
+	rows, err := query.Rows()
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	type financialConsumeRow struct {
-		CreatedAt    int64
-		Quota        int64
-		BalanceAfter *int64
+	// The UNION is ordered with raw rows first. If an archived segment's
+	// timestamp interval intersects the remaining raw rows for the same
+	// user/day, source ownership is ambiguous because archive rows do not retain
+	// individual source IDs. Skip that segment to prevent duplicate quota. A
+	// segment entirely before or after the raw interval remains countable.
+	type rawSourceBounds struct {
+		First int64
+		Last  int64
 	}
-	items := make([]FinancialConsumeDaily, 0, 31)
+	rawBoundsByDay := make(map[int64]rawSourceBounds)
+	daily := make(map[int64]*walletConsumeAggregateAccumulator)
 	for rows.Next() {
 		var row financialConsumeRow
 		if err := LOG_DB.ScanRows(rows, &row); err != nil {
 			return nil, err
 		}
-		createdAt := time.Unix(row.CreatedAt, 0).In(time.Local)
-		dayStart := time.Date(
-			createdAt.Year(),
-			createdAt.Month(),
-			createdAt.Day(),
-			0, 0, 0, 0,
-			time.Local,
-		).Unix()
-		if len(items) == 0 || items[len(items)-1].DayStart != dayStart {
-			items = append(items, FinancialConsumeDaily{
-				DayStart:     dayStart,
-				Quota:        row.Quota,
-				BalanceAfter: row.BalanceAfter,
-			})
+		dayStart := row.DayStart
+		if dayStart == 0 {
+			dayStart = walletConsumeDayStart(row.CreatedAt)
+		}
+		if row.SourceKind == 0 {
+			bounds := rawBoundsByDay[dayStart]
+			if bounds.First == 0 || row.FirstLogAt < bounds.First {
+				bounds.First = row.FirstLogAt
+			}
+			if row.CreatedAt > bounds.Last {
+				bounds.Last = row.CreatedAt
+			}
+			rawBoundsByDay[dayStart] = bounds
+		} else if bounds, ok := rawBoundsByDay[dayStart]; ok && walletConsumeSourceIntervalsOverlap(row.FirstLogAt, row.CreatedAt, bounds.First, bounds.Last) {
 			continue
 		}
-		items[len(items)-1].Quota += row.Quota
-		items[len(items)-1].BalanceAfter = row.BalanceAfter
+		acc := daily[dayStart]
+		if acc == nil {
+			acc = &walletConsumeAggregateAccumulator{UserId: userId}
+			daily[dayStart] = acc
+		}
+		acc.add(walletConsumeAggregateRow{
+			UserId: row.UserId, CreatedAt: row.CreatedAt, SourceId: row.SourceId,
+			SourceKind: row.SourceKind, RequestCount: row.RequestCount,
+			Quota: row.Quota, BalanceAfter: row.BalanceAfter,
+		})
 	}
-
-	for left, right := 0, len(items)-1; left < right; left, right = left+1, right-1 {
-		items[left], items[right] = items[right], items[left]
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
+	items := make([]FinancialConsumeDaily, 0, len(daily))
+	for dayStart, acc := range daily {
+		item := FinancialConsumeDaily{DayStart: dayStart, Quota: acc.Quota}
+		if acc.BalanceAfter != nil {
+			value := *acc.BalanceAfter
+			item.BalanceAfter = &value
+		}
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].DayStart > items[j].DayStart })
 	return items, nil
 }
 
 func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
+	return GetAllLogsWithContext(context.Background(), logType, startTimestamp, endTimestamp, modelName, username, tokenName, startIdx, num, channel, group, requestId, upstreamRequestId)
+}
+
+func GetAllLogsWithContext(ctx context.Context, logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
+	return GetAllLogsWithContextCursor(ctx, logType, startTimestamp, endTimestamp, modelName, username, tokenName, startIdx, num, channel, group, requestId, upstreamRequestId, "")
+}
+
+// LogPageMetadata opts a caller into count-free pagination. Cursors are
+// constructed from database IDs before user-facing log IDs are anonymized.
+type LogPageMetadata struct {
+	HasMore    bool   `json:"has_more"`
+	NextCursor string `json:"next_cursor"`
+}
+
+func finishLogPage(logs []*Log, size int, page *LogPageMetadata) []*Log {
+	if page == nil {
+		return logs
+	}
+	page.HasMore = len(logs) > size
+	if page.HasMore {
+		logs = logs[:size]
+		last := logs[len(logs)-1]
+		page.NextCursor = fmt.Sprintf("%d:%d", last.CreatedAt, last.Id)
+	}
+	return logs
+}
+
+// GetAllLogsWithContextCursor supports stable keyset pagination. The legacy
+// page/offset arguments remain for old clients; when cursor is non-empty the
+// (created_at,id) cursor takes precedence and no deep OFFSET is executed.
+func GetAllLogsWithContextCursor(ctx context.Context, logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string, cursor string, pages ...*LogPageMetadata) (logs []*Log, total int64, err error) {
+	var page *LogPageMetadata
+	if len(pages) > 0 {
+		page = pages[0]
+	}
+	querySize := num
+	if page != nil {
+		querySize++
+	}
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
-		tx = LOG_DB
+		tx = LOG_DB.WithContext(ctx)
 	} else {
-		tx = LOG_DB.Where("logs.type = ?", logType)
+		tx = LOG_DB.WithContext(ctx).Where("logs.type = ?", logType)
 	}
 
+	tx = applyClientFamilyFilter(tx, ClientLogFilter(ctx))
 	if tx, err = applyExplicitLogTextFilter(tx, "logs.model_name", modelName); err != nil {
 		return nil, 0, err
 	}
@@ -617,15 +785,31 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 	if group != "" {
 		tx = tx.Where("logs."+logGroupCol+" = ?", group)
 	}
-	err = tx.Model(&Log{}).Count(&total).Error
-	if err != nil {
-		return nil, 0, err
+	if cursor != "" {
+		createdAt, id, parseErr := parseLogCursor(cursor)
+		if parseErr != nil {
+			return nil, 0, parseErr
+		}
+		tx = tx.Where("(logs.created_at < ?) OR (logs.created_at = ? AND logs.id < ?)", createdAt, createdAt, id)
+	} else if page == nil {
+		// Keep the legacy exact-count contract. A cached total can become
+		// observably stale as soon as a new log is written or an old one is
+		// deleted, changing pagination metadata while the row query is intact.
+		err = tx.Model(&Log{}).Count(&total).Error
+		if err != nil {
+			return nil, 0, err
+		}
 	}
-	err = tx.Order("logs.created_at desc, logs.id desc").Limit(num).Offset(startIdx).Find(&logs).Error
+	query := tx.Order("logs.created_at desc, logs.id desc").Limit(querySize)
+	if cursor == "" && page == nil {
+		query = query.Offset(startIdx)
+	}
+	err = query.Find(&logs).Error
 	if err != nil {
 		return nil, 0, err
 	}
 
+	logs = finishLogPage(logs, num, page)
 	channelIds := types.NewSet[int]()
 	for _, log := range logs {
 		if log.ChannelId != 0 {
@@ -653,7 +837,7 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 			}
 		} else {
 			// Bulk query channels from DB
-			if err = DB.Table("channels").Select("id, name").Where("id IN ?", channelIds.Items()).Find(&channels).Error; err != nil {
+			if err = DB.WithContext(ctx).Table("channels").Select("id, name").Where("id IN ?", channelIds.Items()).Find(&channels).Error; err != nil {
 				return logs, total, err
 			}
 		}
@@ -672,13 +856,31 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 const logSearchCountLimit = 10000
 
 func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, startIdx int, num int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
+	return GetUserLogsWithContext(context.Background(), userId, logType, startTimestamp, endTimestamp, modelName, tokenName, startIdx, num, group, requestId, upstreamRequestId)
+}
+
+func GetUserLogsWithContext(ctx context.Context, userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, startIdx int, num int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
+	return GetUserLogsWithContextCursor(ctx, userId, logType, startTimestamp, endTimestamp, modelName, tokenName, startIdx, num, group, requestId, upstreamRequestId, "")
+}
+
+// GetUserLogsWithContextCursor is the user-scoped keyset pagination variant.
+func GetUserLogsWithContextCursor(ctx context.Context, userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, startIdx int, num int, group string, requestId string, upstreamRequestId string, cursor string, pages ...*LogPageMetadata) (logs []*Log, total int64, err error) {
+	var page *LogPageMetadata
+	if len(pages) > 0 {
+		page = pages[0]
+	}
+	querySize := num
+	if page != nil {
+		querySize++
+	}
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
-		tx = LOG_DB.Where("logs.user_id = ?", userId)
+		tx = LOG_DB.WithContext(ctx).Where("logs.user_id = ?", userId)
 	} else {
-		tx = LOG_DB.Where("logs.user_id = ? and logs.type = ?", userId, logType)
+		tx = LOG_DB.WithContext(ctx).Where("logs.user_id = ? and logs.type = ?", userId, logType)
 	}
 
+	tx = applyClientFamilyFilter(tx, ClientLogFilter(ctx))
 	if tx, err = applyExplicitLogTextFilter(tx, "logs.model_name", modelName); err != nil {
 		return nil, 0, err
 	}
@@ -700,19 +902,62 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 	if group != "" {
 		tx = tx.Where("logs."+logGroupCol+" = ?", group)
 	}
-	err = tx.Model(&Log{}).Limit(logSearchCountLimit).Count(&total).Error
-	if err != nil {
-		common.SysError("failed to count user logs: " + err.Error())
-		return nil, 0, errors.New("查询日志失败")
+	if cursor != "" {
+		createdAt, id, parseErr := parseLogCursor(cursor)
+		if parseErr != nil {
+			return nil, 0, parseErr
+		}
+		if page != nil {
+			tx = tx.Where("logs.id < ?", id)
+		} else {
+			tx = tx.Where("(logs.created_at < ?) OR (logs.created_at = ? AND logs.id < ?)", createdAt, createdAt, id)
+		}
+	} else if page == nil {
+		// Keep the legacy bounded COUNT semantics and do not cache pagination
+		// metadata; callers expect total to reflect the current log table.
+		err = tx.Model(&Log{}).Limit(logSearchCountLimit).Count(&total).Error
+		if err != nil {
+			common.SysError("failed to count user logs: " + err.Error())
+			return nil, 0, errors.New("查询日志失败")
+		}
 	}
-	err = tx.Order("logs.id desc").Limit(num).Offset(startIdx).Find(&logs).Error
+	// Preserve the legacy user-log ordering for offset pagination. The
+	// composite timestamp/id order is only needed by the internal cursor path;
+	// changing the old wrapper would subtly reorder rows with corrected or
+	// imported timestamps.
+	order := "logs.id desc"
+	if cursor != "" && page == nil {
+		order = "logs.created_at desc, logs.id desc"
+	}
+	query := tx.Order(order).Limit(querySize)
+	if cursor == "" && page == nil {
+		query = query.Offset(startIdx)
+	}
+	err = query.Find(&logs).Error
 	if err != nil {
 		common.SysError("failed to search user logs: " + err.Error())
 		return nil, 0, errors.New("查询日志失败")
 	}
 
+	logs = finishLogPage(logs, num, page)
 	formatUserLogs(logs, startIdx)
 	return logs, total, err
+}
+
+func parseLogCursor(cursor string) (int64, int, error) {
+	parts := strings.Split(cursor, ":")
+	if len(parts) != 2 {
+		return 0, 0, errors.New("无效的日志分页游标")
+	}
+	createdAt, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || createdAt <= 0 {
+		return 0, 0, errors.New("无效的日志分页游标")
+	}
+	id64, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil || id64 <= 0 || id64 > int64(^uint(0)>>1) {
+		return 0, 0, errors.New("无效的日志分页游标")
+	}
+	return createdAt, int(id64), nil
 }
 
 type Stat struct {
@@ -721,11 +966,38 @@ type Stat struct {
 	Rpm              int   `json:"rpm"`
 	Tpm              int   `json:"tpm"`
 	Tokens           int64 `json:"tokens"`
+	// Stale is an internal observability marker. The legacy /api/log/*/stat
+	// response is assembled explicitly by the controller and must not gain a
+	// new field when stale fallback is used.
+	Stale bool `json:"-"`
 }
 
 const (
 	logStatCacheCapacity = 1024
 	logStatCacheTTL      = 5 * time.Second
+	logStatStaleTTL      = 5 * time.Minute
+)
+
+type cacheRateProjection struct {
+	CacheTokens  int64 `json:"cache_tokens"`
+	PromptTokens int64 `json:"prompt_tokens"`
+}
+
+const (
+	userCacheRateTTL      = 30 * time.Second
+	userCacheRateStaleTTL = 5 * time.Minute
+)
+
+var (
+	userCacheRateHotCache = hot.NewHotCache[string, cacheRateProjection](hot.LRU, 256).
+				WithTTL(userCacheRateTTL).
+				WithJanitor().
+				Build()
+	userCacheRateStaleCache = hot.NewHotCache[string, cacheRateProjection](hot.LRU, 256).
+				WithTTL(userCacheRateStaleTTL).
+				WithJanitor().
+				Build()
+	userCacheRateQueryGroup singleflight.Group
 )
 
 var (
@@ -733,10 +1005,24 @@ var (
 			WithTTL(logStatCacheTTL).
 			WithJanitor().
 			Build()
+	logStatStaleCache = hot.NewHotCache[string, Stat](hot.LRU, logStatCacheCapacity).
+				WithTTL(logStatStaleTTL).
+				WithJanitor().
+				Build()
 	logStatQueryGroup singleflight.Group
 )
 
 func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string) (stat Stat, err error) {
+	return SumUsedQuotaWithContext(context.Background(), logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group)
+}
+
+func SumUsedQuotaWithContext(ctx context.Context, logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string) (stat Stat, err error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return stat, err
+	}
 	cacheEndTimestamp := endTimestamp
 	if endTimestamp >= time.Now().Unix() {
 		// The log UI deliberately sends a future upper bound for its live
@@ -744,9 +1030,8 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 		// so normalize them to let nearby requests share the same aggregate.
 		cacheEndTimestamp = 0
 	}
-	cacheKey := fmt.Sprintf(
-		"%p|%d|%d|%d|%q|%q|%q|%d|%q",
-		LOG_DB,
+	cacheKey := usageCacheLocalKey(fmt.Sprintf(
+		"log-stat|%d|%d|%d|%q|%q|%q|%d|%q",
 		logType,
 		startTimestamp,
 		cacheEndTimestamp,
@@ -755,17 +1040,21 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 		tokenName,
 		channel,
 		group,
-	)
+	))
+	cacheKey += "|client:" + ClientLogFilter(ctx)
 	if cached, found := logStatCache.MustGet(cacheKey); found {
 		return cached, nil
 	}
 
-	value, err, _ := logStatQueryGroup.Do(cacheKey, func() (any, error) {
+	resultCh := logStatQueryGroup.DoChan(cacheKey, func() (any, error) {
+		workCtx, workCancel := usageProjectionWorkContext(ctx)
+		defer workCancel()
 		if cached, found := logStatCache.MustGet(cacheKey); found {
 			return cached, nil
 		}
 
-		queried, queryErr := queryUsedQuota(
+		queried, queryErr := queryUsedQuotaWithContext(WithClientLogFilter(workCtx, ClientLogFilter(ctx)),
+			logType,
 			startTimestamp,
 			endTimestamp,
 			modelName,
@@ -775,11 +1064,18 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 			group,
 		)
 		if queryErr != nil {
+			if stale, found := logStatStaleCache.MustGet(cacheKey); found {
+				stale.Stale = true
+				return stale, nil
+			}
 			return Stat{}, queryErr
 		}
+		queried.Stale = false
 		logStatCache.SetWithTTL(cacheKey, queried, logStatCacheTTL)
+		logStatStaleCache.SetWithTTL(cacheKey, queried, logStatStaleTTL)
 		return queried, nil
 	})
+	value, err := waitUsageProjectionResult(ctx, resultCh)
 	if err != nil {
 		return stat, err
 	}
@@ -787,60 +1083,73 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 }
 
 func queryUsedQuota(startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string) (stat Stat, err error) {
-	tx := LOG_DB.Table("logs").Select(
-		"coalesce(sum(quota), 0) quota, coalesce(sum(CASE WHEN pre_discount_quota > 0 THEN pre_discount_quota ELSE quota END), 0) pre_discount_quota, coalesce(sum(prompt_tokens), 0) + coalesce(sum(completion_tokens), 0) tokens",
+	return queryUsedQuotaWithContext(context.Background(), LogTypeConsume, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group)
+}
+
+func queryUsedQuotaWithContext(ctx context.Context, logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string) (stat Stat, err error) {
+	// Historical /api/log/*/stat semantics always report consumption usage,
+	// even when the UI sends the "all" type value. Keep that contract while
+	// allowing the internal query signature to carry the caller's value.
+	logType = LogTypeConsume
+	minuteCutoff := time.Now().Add(-60 * time.Second).Unix()
+	selectedTimePredicate := "1 = 1"
+	selectedTimeArgs := make([]interface{}, 0, 2)
+	if startTimestamp != 0 {
+		selectedTimePredicate += " AND created_at >= ?"
+		selectedTimeArgs = append(selectedTimeArgs, startTimestamp)
+	}
+	if endTimestamp != 0 {
+		selectedTimePredicate += " AND created_at <= ?"
+		selectedTimeArgs = append(selectedTimeArgs, endTimestamp)
+	}
+	// Keep the legacy distinction between the selected-range aggregates and
+	// RPM/TPM: the latter have always represented the last 60 seconds, even
+	// when the log page is browsing an older range. Include the union of both
+	// time windows in one scan, then conditionally assign each row to the
+	// appropriate aggregate. This preserves the old JSON values without
+	// bringing back the previous two full aggregate scans.
+	selectArgs := make([]interface{}, 0, len(selectedTimeArgs)*3+2)
+	selectArgs = append(selectArgs, selectedTimeArgs...)
+	selectArgs = append(selectArgs, selectedTimeArgs...)
+	selectArgs = append(selectArgs, selectedTimeArgs...)
+	selectArgs = append(selectArgs, minuteCutoff, minuteCutoff)
+	tx := LOG_DB.WithContext(ctx).Table("logs").Select(
+		"coalesce(sum(CASE WHEN "+selectedTimePredicate+" THEN quota ELSE 0 END), 0) quota, "+
+			"coalesce(sum(CASE WHEN "+selectedTimePredicate+" THEN CASE WHEN pre_discount_quota > 0 THEN pre_discount_quota ELSE quota END ELSE 0 END), 0) pre_discount_quota, "+
+			"coalesce(sum(CASE WHEN "+selectedTimePredicate+" THEN prompt_tokens + completion_tokens ELSE 0 END), 0) tokens, "+
+			"coalesce(sum(CASE WHEN created_at >= ? THEN 1 ELSE 0 END), 0) rpm, "+
+			"coalesce(sum(CASE WHEN created_at >= ? THEN prompt_tokens + completion_tokens ELSE 0 END), 0) tpm",
+		selectArgs...,
 	)
 
-	// 为rpm和tpm创建单独的查询
-	rpmTpmQuery := LOG_DB.Table("logs").Select("count(*) rpm, sum(prompt_tokens) + sum(completion_tokens) tpm")
-
+	tx = applyClientFamilyFilter(tx, ClientLogFilter(ctx))
 	if tx, err = applyExplicitLogTextFilter(tx, "username", username); err != nil {
-		return stat, err
-	}
-	if rpmTpmQuery, err = applyExplicitLogTextFilter(rpmTpmQuery, "username", username); err != nil {
 		return stat, err
 	}
 	if tokenName != "" {
 		tx = tx.Where("token_name = ?", tokenName)
-		rpmTpmQuery = rpmTpmQuery.Where("token_name = ?", tokenName)
 	}
-	if startTimestamp != 0 {
-		tx = tx.Where("created_at >= ?", startTimestamp)
-	}
-	if endTimestamp != 0 {
-		tx = tx.Where("created_at <= ?", endTimestamp)
+	if selectedTimePredicate != "1 = 1" {
+		whereArgs := append(append([]interface{}{}, selectedTimeArgs...), minuteCutoff)
+		tx = tx.Where("("+selectedTimePredicate+") OR created_at >= ?", whereArgs...)
 	}
 	if tx, err = applyExplicitLogTextFilter(tx, "model_name", modelName); err != nil {
 		return stat, err
 	}
-	if rpmTpmQuery, err = applyExplicitLogTextFilter(rpmTpmQuery, "model_name", modelName); err != nil {
-		return stat, err
-	}
 	if channel != 0 {
 		tx = tx.Where("channel_id = ?", channel)
-		rpmTpmQuery = rpmTpmQuery.Where("channel_id = ?", channel)
 	}
 	if group != "" {
 		tx = tx.Where(logGroupCol+" = ?", group)
-		rpmTpmQuery = rpmTpmQuery.Where(logGroupCol+" = ?", group)
 	}
 
-	tx = tx.Where("type = ?", LogTypeConsume)
-	rpmTpmQuery = rpmTpmQuery.Where("type = ?", LogTypeConsume)
-
-	// 只统计最近60秒的rpm和tpm
-	rpmTpmQuery = rpmTpmQuery.Where("created_at >= ?", time.Now().Add(-60*time.Second).Unix())
+	tx = tx.Where("type = ?", logType)
 
 	// 执行查询
 	if err := tx.Scan(&stat).Error; err != nil {
 		common.SysError("failed to query log stat: " + err.Error())
 		return stat, errors.New("查询统计数据失败")
 	}
-	if err := rpmTpmQuery.Scan(&stat).Error; err != nil {
-		common.SysError("failed to query rpm/tpm stat: " + err.Error())
-		return stat, errors.New("查询统计数据失败")
-	}
-
 	return stat, nil
 }
 
@@ -913,22 +1222,112 @@ func CountUnresolvedWalletCostLogs(dayStart, dayEnd int64) (int64, error) {
 // 2. prompt_tokens 只含非缓存输入: 当 cache_tokens > prompt_tokens 时, 分母=prompt_tokens+cache_tokens
 // prompt_tokens<=0 的不完整日志不参与计算, 避免异常日志把命中率顶成 100%。
 func GetUserCacheRate(userId int, startTime, endTime int64) (cacheTokens, promptTokens int64, err error) {
+	return GetUserCacheRateWithContext(context.Background(), int64(userId), startTime, endTime)
+}
+
+// GetUserCacheRateWithContext shares the unified usage projection with the
+// usage query cache. The response still exposes only the historical
+// cache_tokens/prompt_tokens pair. Keeping this projection lightweight avoids
+// building the model/subscription maps when the dashboard only needs cache
+// efficiency. The raw logs query is deliberately the compatibility fallback:
+// it does not depend on usage_log_daily_aggregates or the optional bucket
+// projection, so a missing/failed archive migration cannot turn this legacy
+// endpoint into a new error contract.
+func GetUserCacheRateWithContext(ctx context.Context, userId, startTime, endTime int64) (cacheTokens, promptTokens int64, err error) {
 	if userId <= 0 {
 		return 0, 0, nil
 	}
-	type cacheResult struct {
-		CacheTokens  int64
-		PromptTokens int64
+	if LOG_DB == nil {
+		return 0, 0, errors.New("log database is unavailable")
 	}
-	var r cacheResult
-	err = LOG_DB.Model(&Log{}).
-		Where("user_id = ? AND type = ? AND created_at >= ? AND created_at < ?", userId, LogTypeConsume, startTime, endTime).
-		Select("COALESCE(SUM(CASE WHEN prompt_tokens <= 0 THEN 0 ELSE cache_tokens END),0) as cache_tokens, COALESCE(SUM(CASE WHEN prompt_tokens <= 0 THEN 0 WHEN cache_tokens > prompt_tokens THEN prompt_tokens + cache_tokens ELSE prompt_tokens END),0) as prompt_tokens").
-		Scan(&r).Error
-	if err != nil {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
 		return 0, 0, err
 	}
-	return r.CacheTokens, r.PromptTokens, nil
+	keyStart, keyEnd := normalizeHotUsageWindow(startTime, endTime)
+	remoteKey := usageCacheKey("cache-rate:user", int(userId), keyStart, keyEnd, int64(time.Hour/time.Second), usageMetricTimezoneName(), "cache-rate-v1")
+	key := usageCacheLocalKey(remoteKey)
+	if cached, found := userCacheRateHotCache.MustGet(key); found {
+		return cached.CacheTokens, cached.PromptTokens, nil
+	}
+	var remote cacheRateProjection
+	if found, remoteErr := usageCacheGet(ctx, remoteKey, &remote); remoteErr == nil && found {
+		userCacheRateHotCache.SetWithTTL(key, remote, userCacheRateTTL)
+		return remote.CacheTokens, remote.PromptTokens, nil
+	}
+	resultCh := userCacheRateQueryGroup.DoChan(key, func() (any, error) {
+		workCtx, workCancel := usageProjectionWorkContext(ctx)
+		defer workCancel()
+		if cached, found := userCacheRateHotCache.MustGet(key); found {
+			return cached, nil
+		}
+		var projection cacheRateProjection
+		var err error
+		if metricCache, metricPrompt, ready, metricErr := readUserCacheRateFromMetricBuckets(workCtx, userId, startTime, endTime); ready && metricErr == nil {
+			projection.CacheTokens = metricCache
+			projection.PromptTokens = metricPrompt
+		} else {
+			// Projection readiness is advisory. During backfill or a partial
+			// bucket failure, preserve the exact raw-log calculation.
+			err = queryUserCacheRateFromLogsInto(workCtx, userId, startTime, endTime, &projection)
+		}
+		if err != nil {
+			if stale, found := userCacheRateStaleCache.MustGet(key); found {
+				return stale, nil
+			}
+			var remoteStale cacheRateProjection
+			if found, remoteErr := usageCacheGet(workCtx, remoteKey+":stale", &remoteStale); remoteErr == nil && found {
+				userCacheRateStaleCache.SetWithTTL(key, remoteStale, userCacheRateStaleTTL)
+				return remoteStale, nil
+			}
+			return nil, err
+		}
+		userCacheRateHotCache.SetWithTTL(key, projection, userCacheRateTTL)
+		userCacheRateStaleCache.SetWithTTL(key, projection, userCacheRateStaleTTL)
+		_ = usageCacheSet(workCtx, remoteKey, projection, userCacheRateTTL)
+		_ = usageCacheSet(workCtx, remoteKey+":stale", projection, userCacheRateStaleTTL)
+		return projection, nil
+	})
+	value, queryErr := waitUsageProjectionResult(ctx, resultCh)
+	if queryErr != nil {
+		return 0, 0, queryErr
+	}
+	projection, ok := value.(cacheRateProjection)
+	if !ok {
+		return 0, 0, errors.New("invalid cache-rate projection")
+	}
+	return projection.CacheTokens, projection.PromptTokens, nil
+}
+
+// queryUserCacheRateFromLogs is the stable pre-projection implementation used
+// as the final fallback for cache-rate. Keep the calculation in one place so
+// future hourly-bucket reads can fail closed to this exact raw-log contract.
+// It intentionally retains the pair-returning shape used by the metric-bucket
+// reader for its exact hot-tail fallback.
+func queryUserCacheRateFromLogs(ctx context.Context, userId, startTime, endTime int64) (cacheTokens, promptTokens int64, err error) {
+	var destination cacheRateProjection
+	if err := queryUserCacheRateFromLogsInto(ctx, userId, startTime, endTime, &destination); err != nil {
+		return 0, 0, err
+	}
+	return destination.CacheTokens, destination.PromptTokens, nil
+}
+
+func queryUserCacheRateFromLogsInto(ctx context.Context, userId, startTime, endTime int64, destination *cacheRateProjection) error {
+	if destination == nil {
+		return errors.New("cache-rate destination is nil")
+	}
+	if LOG_DB == nil {
+		return errors.New("log database is unavailable")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return LOG_DB.WithContext(ctx).Model(&Log{}).
+		Where("user_id = ? AND type = ? AND created_at >= ? AND created_at < ?", userId, LogTypeConsume, startTime, endTime).
+		Select("COALESCE(SUM(CASE WHEN prompt_tokens <= 0 THEN 0 ELSE cache_tokens END),0) as cache_tokens, COALESCE(SUM(CASE WHEN prompt_tokens <= 0 THEN 0 WHEN cache_tokens > prompt_tokens THEN prompt_tokens + cache_tokens ELSE prompt_tokens END),0) as prompt_tokens").
+		Scan(destination).Error
 }
 
 // MarkLogsSettled 批量标记日志已结算(原子 WHERE settled=false 防重跑重复算)。走 LOG_DB。

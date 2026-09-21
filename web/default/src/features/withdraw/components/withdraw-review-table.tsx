@@ -65,7 +65,7 @@ export function WithdrawReviewTable() {
   const [remark, setRemark] = useState('')
 
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['withdraws-review', page, statusFilter],
+    queryKey: ['withdraws-review', page, statusFilter, t],
     queryFn: async () => {
       const res = await getAllWithdraws({
         page: page + 1,
@@ -151,7 +151,9 @@ export function WithdrawReviewTable() {
         header: t('Payment Info'),
         size: 170,
         cell: ({ row }) =>
-          row.original.type === WITHDRAW_TYPE.PRINCIPAL ? (
+          row.original.alipay_name ||
+          row.original.alipay_account ||
+          row.original.wechat_qrcode ? (
             <div className='text-xs'>
               <div className='font-medium'>{row.original.alipay_name}</div>
               <div className='text-muted-foreground'>

@@ -34,6 +34,13 @@ const (
 	SubscriptionResetCustom  = "custom"
 )
 
+// User-configurable subscription spend limit periods. A zero-value period
+// means the optional limit is disabled.
+const (
+	SubscriptionSpendLimitHour = "hour"
+	SubscriptionSpendLimitDay  = "day"
+)
+
 // Quota reset anchors are snapshotted with a purchased subscription.  The
 // default (empty) value remains purchase-time anchored; midnight is an
 // explicit, narrowly-scoped override for legacy/support adjustments and does
@@ -508,11 +515,15 @@ type UserSubscription struct {
 	Hidden bool `json:"hidden" gorm:"not null;default:false;index"`
 	// PlanSnapshot freezes the purchased entitlements for reset/runtime logic.
 	// Existing rows may be empty and continue to use the historical fallback.
-	PlanSnapshot  string `json:"-" gorm:"type:text"`
-	PlanTitle     string `json:"plan_title" gorm:"type:varchar(128);not null;default:''"`
-	PlanVersion   string `json:"plan_version" gorm:"-"`
-	Remark        string `json:"remark" gorm:"type:varchar(128);not null;default:''"`
-	RenewedFromId *int   `json:"renewed_from_id" gorm:"default:null;uniqueIndex"`
+	PlanSnapshot string `json:"-" gorm:"type:text"`
+	PlanTitle    string `json:"plan_title" gorm:"type:varchar(128);not null;default:''"`
+	PlanVersion  string `json:"plan_version" gorm:"-"`
+	// QuotaResetPeriod and IsFinalResetCycle are read-only presentation metadata
+	// populated for subscription summaries. They are not persisted columns.
+	QuotaResetPeriod  string `json:"quota_reset_period,omitempty" gorm:"-"`
+	IsFinalResetCycle bool   `json:"is_final_reset_cycle,omitempty" gorm:"-"`
+	Remark            string `json:"remark" gorm:"type:varchar(128);not null;default:''"`
+	RenewedFromId     *int   `json:"renewed_from_id" gorm:"default:null;uniqueIndex"`
 
 	AmountTotal int64 `json:"amount_total" gorm:"type:bigint;not null;default:0"`
 	AmountUsed  int64 `json:"amount_used" gorm:"type:bigint;not null;default:0"`
@@ -536,6 +547,17 @@ type UserSubscription struct {
 
 	// AllowedGroup: 冗余自 plan, 扣费时按 relayInfo.UsingGroup 过滤(订阅级分组限制)
 	AllowedGroup string `json:"allowed_group" gorm:"type:varchar(64);default:''"`
+
+	// SpendLimitPeriod/SpendLimitQuota are optional, per-instance guardrails.
+	// They never change AmountTotal/AmountCap or the purchased entitlement;
+	// pre-consume simply refuses new requests after the calendar period reaches
+	// the configured amount.
+	SpendLimitPeriod string `json:"spend_limit_period" gorm:"type:varchar(16);not null;default:''"`
+	SpendLimitQuota  int64  `json:"spend_limit_quota" gorm:"type:bigint;not null;default:0"`
+	// Read-only metadata populated for user-facing summaries.
+	SpendLimitUsed        int64 `json:"spend_limit_used,omitempty" gorm:"-"`
+	SpendLimitWindowStart int64 `json:"spend_limit_window_start,omitempty" gorm:"-"`
+	SpendLimitWindowEnd   int64 `json:"spend_limit_window_end,omitempty" gorm:"-"`
 
 	// PaidRevenueQuota is the immutable actual paid amount snapshot in quota units.
 	// CostAccumulator stores the exact sum of sale_quota*channel_ratio_ppm and is
@@ -711,6 +733,69 @@ var subscriptionBusinessLocation = func() *time.Location {
 	}
 	return location
 }()
+
+// NormalizeSubscriptionSpendLimitPeriod validates the user-configurable
+// recurring guardrail. Empty means the limit is disabled.
+func NormalizeSubscriptionSpendLimitPeriod(period string) string {
+	switch strings.ToLower(strings.TrimSpace(period)) {
+	case SubscriptionSpendLimitHour:
+		return SubscriptionSpendLimitHour
+	case SubscriptionSpendLimitDay:
+		return SubscriptionSpendLimitDay
+	default:
+		return ""
+	}
+}
+
+// subscriptionSpendLimitWindow returns the current recurring window in the
+// shared Beijing business calendar. Daily limits start at 00:00 Beijing time;
+// hourly limits start at the beginning of the current Beijing clock hour.
+func subscriptionSpendLimitWindow(period string, now int64) (start, end int64, ok bool) {
+	period = NormalizeSubscriptionSpendLimitPeriod(period)
+	if period == "" {
+		return 0, 0, false
+	}
+	if now <= 0 {
+		now = common.GetTimestamp()
+	}
+	current := time.Unix(now, 0).In(subscriptionBusinessLocation)
+	var startTime time.Time
+	switch period {
+	case SubscriptionSpendLimitHour:
+		startTime = time.Date(
+			current.Year(), current.Month(), current.Day(), current.Hour(), 0, 0, 0,
+			subscriptionBusinessLocation,
+		)
+		end = startTime.Add(time.Hour).Unix()
+	case SubscriptionSpendLimitDay:
+		startTime = time.Date(
+			current.Year(), current.Month(), current.Day(), 0, 0, 0, 0,
+			subscriptionBusinessLocation,
+		)
+		end = startTime.AddDate(0, 0, 1).Unix()
+	default:
+		return 0, 0, false
+	}
+	return startTime.Unix(), end, true
+}
+
+// subscriptionSpendLimitUsageTx sums effective usage in a window. Reserved
+// requests count their pre-consumed amount; settled/provisional requests count
+// the final amount reported by billing so a cheaper request releases capacity.
+func subscriptionSpendLimitUsageTx(tx *gorm.DB, subscriptionId int, windowStart int64) (int64, error) {
+	if tx == nil || subscriptionId <= 0 || windowStart <= 0 {
+		return 0, nil
+	}
+	var used int64
+	err := tx.Model(&SubscriptionPreConsumeRecord{}).
+		Select(`COALESCE(SUM(CASE WHEN status IN ('final', 'provisional') THEN final_sale_quota ELSE pre_consumed END), 0)`).
+		Where(
+			"user_subscription_id = ? AND created_at >= ? AND status <> ?",
+			subscriptionId, windowStart, SubscriptionCostStatusRefunded,
+		).
+		Scan(&used).Error
+	return used, err
+}
 
 func calcNextResetTime(base time.Time, plan *SubscriptionPlan, endUnix int64, startUnix int64) int64 {
 	if plan == nil {
@@ -1743,6 +1828,48 @@ func SetUserSubscriptionHiddenForUser(subscriptionId, userId int, hidden bool) e
 	return nil
 }
 
+// UpdateUserSubscriptionSpendLimit updates the owner's optional recurring
+// spend guardrail. Empty period/quota disables it; it never changes the
+// subscription's purchased total or lifetime cap.
+func UpdateUserSubscriptionSpendLimit(userId, subscriptionId int, period string, quota int64) (*UserSubscription, error) {
+	if userId <= 0 || subscriptionId <= 0 {
+		return nil, errors.New("invalid subscription id")
+	}
+	period = NormalizeSubscriptionSpendLimitPeriod(period)
+	if period == "" {
+		quota = 0
+	} else if quota <= 0 {
+		return nil, errors.New("周期消费限额必须大于 0")
+	}
+
+	var subscription UserSubscription
+	if err := DB.Where("id = ? AND user_id = ?", subscriptionId, userId).First(&subscription).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("订阅实例不存在")
+		}
+		return nil, err
+	}
+	if subscription.Status != "active" {
+		return nil, errors.New("订阅实例当前不可用")
+	}
+	if err := DB.Model(&UserSubscription{}).
+		Where("id = ? AND user_id = ?", subscriptionId, userId).
+		Updates(map[string]interface{}{
+			"spend_limit_period": period,
+			"spend_limit_quota":  quota,
+			"updated_at":         common.GetTimestamp(),
+		}).Error; err != nil {
+		return nil, err
+	}
+	subscription.SpendLimitPeriod = period
+	subscription.SpendLimitQuota = quota
+	summaries := buildSubscriptionSummaries([]UserSubscription{subscription})
+	if len(summaries) == 0 {
+		return &subscription, nil
+	}
+	return summaries[0].Subscription, nil
+}
+
 // HasActiveUserSubscription returns whether the user has any active subscription.
 // This is a lightweight existence check to avoid heavy pre-consume transactions.
 func HasActiveUserSubscription(userId int) (bool, error) {
@@ -1768,6 +1895,24 @@ func HasActiveUserSubscriptionByGroup(userId int, group string) (bool, error) {
 	var count int64
 	if err := DB.Model(&UserSubscription{}).
 		Where("user_id = ? AND status = ? AND start_time <= ? AND end_time > ? AND allowed_group = ?", userId, "active", now, now, group).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// HasActiveUnrestrictedUserSubscription reports whether the user holds an
+// active subscription without a group restriction (AllowedGroup == "").
+// Such subscriptions are usable in every group, so "subscription only"
+// billing must keep suppressing wallet billing outside plan groups for them.
+func HasActiveUnrestrictedUserSubscription(userId int) (bool, error) {
+	if userId <= 0 {
+		return false, errors.New("invalid userId")
+	}
+	now := common.GetTimestamp()
+	var count int64
+	if err := DB.Model(&UserSubscription{}).
+		Where("user_id = ? AND status = ? AND start_time <= ? AND end_time > ? AND (allowed_group IS NULL OR allowed_group = '')", userId, "active", now, now).
 		Count(&count).Error; err != nil {
 		return false, err
 	}
@@ -2052,31 +2197,54 @@ func GetSubscriptionSubscribers() ([]SubscriberSummary, error) {
 	return results, err
 }
 
+func subscriptionIsFinalResetCycle(sub *UserSubscription, plan *SubscriptionPlan) bool {
+	if sub == nil || plan == nil || sub.NextResetTime > 0 {
+		return false
+	}
+	if NormalizeResetPeriod(plan.QuotaResetPeriod) == SubscriptionResetNever {
+		return false
+	}
+	baseUnix := sub.LastResetTime
+	if baseUnix <= 0 {
+		baseUnix = sub.StartTime
+	}
+	if baseUnix <= 0 {
+		return false
+	}
+	return calcNextResetTime(
+		time.Unix(baseUnix, 0),
+		plan,
+		sub.EndTime,
+		sub.StartTime,
+	) == 0
+}
+
 func buildSubscriptionSummaries(subs []UserSubscription) []SubscriptionSummary {
 	if len(subs) == 0 {
 		return []SubscriptionSummary{}
 	}
 
 	// The public plan endpoint intentionally hides disabled plans, but an
-	// existing subscription must keep its purchased name and visual tier.
-	// Prefer the immutable purchase snapshot, then fall back to the live plan
-	// row (including disabled rows) for legacy subscriptions without a
-	// snapshot/title.
+	// existing subscription must keep its purchased name, visual tier and reset
+	// metadata. Prefer the immutable purchase snapshot, then fall back to the
+	// live plan row for legacy subscriptions without a snapshot/title.
+	plansByID := make(map[int]SubscriptionPlan, len(subs))
 	missingPlanIds := make(map[int]struct{})
 	for index := range subs {
 		sub := &subs[index]
 		if snapshot, err := ParseSubscriptionPlanSnapshot(sub.PlanSnapshot); err == nil {
+			plansByID[sub.PlanId] = *snapshot
 			if strings.TrimSpace(sub.PlanTitle) == "" {
 				sub.PlanTitle = strings.TrimSpace(snapshot.Title)
 			}
 			sub.PlanVersion = NormalizePlanVersion(snapshot.PlanVersion)
 		}
-		if strings.TrimSpace(sub.PlanTitle) == "" || sub.PlanVersion == "" {
+		if _, ok := plansByID[sub.PlanId]; !ok ||
+			strings.TrimSpace(sub.PlanTitle) == "" || sub.PlanVersion == "" {
 			missingPlanIds[sub.PlanId] = struct{}{}
 		}
 	}
 
-	planPresentation := make(map[int]SubscriptionPlan, len(missingPlanIds))
 	if len(missingPlanIds) > 0 {
 		planIds := make([]int, 0, len(missingPlanIds))
 		for planId := range missingPlanIds {
@@ -2086,25 +2254,40 @@ func buildSubscriptionSummaries(subs []UserSubscription) []SubscriptionSummary {
 		}
 		if len(planIds) > 0 {
 			var plans []SubscriptionPlan
-			if err := DB.Select("id", "title", "plan_version").
-				Where("id IN ?", planIds).
-				Find(&plans).Error; err == nil {
+			if err := DB.Select(
+				"id", "title", "plan_version", "quota_reset_period",
+				"quota_reset_custom_seconds", "duration_unit", "duration_value",
+			).Where("id IN ?", planIds).Find(&plans).Error; err == nil {
 				for _, plan := range plans {
-					planPresentation[plan.Id] = plan
+					plansByID[plan.Id] = plan
 				}
 			}
 		}
 	}
 
+	now := common.GetTimestamp()
 	result := make([]SubscriptionSummary, 0, len(subs))
 	for _, sub := range subs {
 		subCopy := sub
-		if plan, ok := planPresentation[subCopy.PlanId]; ok {
+		if plan, ok := plansByID[subCopy.PlanId]; ok {
 			if strings.TrimSpace(subCopy.PlanTitle) == "" {
 				subCopy.PlanTitle = strings.TrimSpace(plan.Title)
 			}
 			if subCopy.PlanVersion == "" {
 				subCopy.PlanVersion = NormalizePlanVersion(plan.PlanVersion)
+			}
+			subCopy.QuotaResetPeriod = NormalizeResetPeriod(plan.QuotaResetPeriod)
+			subCopy.IsFinalResetCycle = subscriptionIsFinalResetCycle(&subCopy, &plan)
+		}
+		if period := NormalizeSubscriptionSpendLimitPeriod(subCopy.SpendLimitPeriod); period != "" && subCopy.SpendLimitQuota > 0 {
+			windowStart, windowEnd, ok := subscriptionSpendLimitWindow(period, now)
+			if ok {
+				subCopy.SpendLimitPeriod = period
+				subCopy.SpendLimitWindowStart = windowStart
+				subCopy.SpendLimitWindowEnd = windowEnd
+				if used, err := subscriptionSpendLimitUsageTx(DB, subCopy.Id, windowStart); err == nil {
+					subCopy.SpendLimitUsed = used
+				}
 			}
 		}
 		result = append(result, SubscriptionSummary{
@@ -2560,6 +2743,7 @@ func PreConsumeUserSubscriptionForToken(requestId string, userId int, modelName 
 		if len(subs) == 0 {
 			return errors.New("no active subscription")
 		}
+		blockedBySpendLimit := false
 		for _, candidate := range subs {
 			sub := candidate
 			if sub.Status != "active" || sub.StartTime > now || sub.EndTime <= now {
@@ -2587,6 +2771,19 @@ func PreConsumeUserSubscriptionForToken(requestId string, userId int, modelName 
 				capRemain := sub.AmountCap - sub.AmountCapUsed
 				if capRemain < amount {
 					continue
+				}
+			}
+			if limitPeriod := NormalizeSubscriptionSpendLimitPeriod(sub.SpendLimitPeriod); limitPeriod != "" && sub.SpendLimitQuota > 0 {
+				windowStart, _, ok := subscriptionSpendLimitWindow(limitPeriod, now)
+				if ok {
+					used, err := subscriptionSpendLimitUsageTx(tx, sub.Id, windowStart)
+					if err != nil {
+						return err
+					}
+					if used >= sub.SpendLimitQuota || amount > sub.SpendLimitQuota-used {
+						blockedBySpendLimit = true
+						continue
+					}
 				}
 			}
 			record := &SubscriptionPreConsumeRecord{
@@ -2666,6 +2863,9 @@ func PreConsumeUserSubscriptionForToken(requestId string, userId int, modelName 
 			returnValue.AmountUsedBefore = usedBefore
 			returnValue.AmountUsedAfter = sub.AmountUsed
 			return nil
+		}
+		if blockedBySpendLimit {
+			return fmt.Errorf("subscription quota insufficient: subscription spend limit reached, need=%d", amount)
 		}
 		return fmt.Errorf("subscription quota insufficient, need=%d", amount)
 	})

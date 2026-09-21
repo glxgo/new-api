@@ -187,6 +187,7 @@ func SetApiRouter(router *gin.Engine) {
 			subscriptionRoute.PUT("/self/preference", controller.UpdateSubscriptionPreference)
 			subscriptionRoute.PATCH("/self/instances/:id/visibility", controller.SetSelfSubscriptionVisibility)
 			subscriptionRoute.PATCH("/self/instances/:id/remark", controller.UpdateSelfSubscriptionRemark)
+			subscriptionRoute.PATCH("/self/instances/:id/spend-limit", controller.UpdateSelfSubscriptionSpendLimit)
 			subscriptionRoute.GET("/self/instances/:id/renewal-preview", controller.GetSelfSubscriptionRenewalPreview)
 			subscriptionRoute.GET("/self/instances/:id/keys", controller.ListSelfSubscriptionTokenBindings)
 			subscriptionRoute.PUT("/self/instances/:id/keys", controller.ReplaceSelfSubscriptionTokenBindings)
@@ -203,6 +204,7 @@ func SetApiRouter(router *gin.Engine) {
 		virtualMembershipRoute.Use(middleware.UserAuth())
 		{
 			virtualMembershipRoute.GET("/page", controller.GetVirtualMembershipPage)
+			virtualMembershipRoute.GET("/reset-calendar", controller.GetVirtualMembershipResetCalendar)
 			virtualMembershipRoute.POST("/balance/pay", middleware.CriticalRateLimit(), controller.PurchaseVirtualMembership)
 			virtualMembershipRoute.POST("/epay/pay", middleware.CriticalRateLimit(), controller.VirtualMembershipRequestEpay)
 			virtualMembershipRoute.POST("/:id/reset/epay", middleware.CriticalRateLimit(), controller.VirtualMembershipActiveResetRequestEpay)
@@ -219,6 +221,10 @@ func SetApiRouter(router *gin.Engine) {
 			virtualMembershipAdminRoute.PUT("/plans/:id", controller.AdminSaveVirtualMembershipPlan)
 			virtualMembershipAdminRoute.GET("/setting", controller.AdminGetVirtualMembershipSetting)
 			virtualMembershipAdminRoute.PUT("/setting", controller.AdminSaveVirtualMembershipSetting)
+			virtualMembershipAdminRoute.GET("/reset-calendar", controller.GetVirtualMembershipResetCalendar)
+			virtualMembershipAdminRoute.POST("/reset-calendar", controller.AdminSaveVirtualMembershipResetCalendar)
+			virtualMembershipAdminRoute.PUT("/reset-calendar/:id", controller.AdminSaveVirtualMembershipResetCalendar)
+			virtualMembershipAdminRoute.DELETE("/reset-calendar/:id", controller.AdminDeleteVirtualMembershipResetCalendar)
 			virtualMembershipAdminRoute.POST("/reset", controller.AdminResetVirtualMemberships)
 			virtualMembershipAdminRoute.GET("/memberships", controller.AdminListVirtualMemberships)
 			virtualMembershipAdminRoute.POST("/memberships", controller.AdminGrantVirtualMembership)
@@ -227,6 +233,20 @@ func SetApiRouter(router *gin.Engine) {
 			virtualMembershipAdminRoute.PATCH("/memberships/:id/visibility", controller.AdminSetVirtualMembershipVisibility)
 			virtualMembershipAdminRoute.DELETE("/memberships/:id", controller.AdminDeleteVirtualMembership)
 			virtualMembershipAdminRoute.GET("/orders", controller.AdminListVirtualMembershipOrders)
+		}
+		invoiceRoute := apiRouter.Group("/invoices")
+		invoiceRoute.Use(middleware.UserAuth())
+		{
+			invoiceRoute.GET("/eligible-orders", controller.GetInvoiceEligibleOrders)
+			invoiceRoute.GET("/self", controller.GetUserInvoiceApplications)
+			invoiceRoute.POST("", middleware.CriticalRateLimit(), controller.CreateInvoiceApplication)
+		}
+		invoiceAdminRoute := apiRouter.Group("/invoices/admin")
+		invoiceAdminRoute.Use(middleware.RootAuth())
+		{
+			invoiceAdminRoute.GET("", controller.AdminListInvoiceApplications)
+			invoiceAdminRoute.POST("/:id/approve", controller.AdminApproveInvoiceApplication)
+			invoiceAdminRoute.POST("/:id/reject", controller.AdminRejectInvoiceApplication)
 		}
 		topUpCouponAdminRoute := apiRouter.Group("/topup-coupon/admin")
 		topUpCouponAdminRoute.Use(middleware.AdminAuth())
@@ -407,6 +427,7 @@ func SetApiRouter(router *gin.Engine) {
 			channelRoute.GET("/models", controller.ChannelListModels)
 			channelRoute.GET("/models_enabled", controller.EnabledListModels)
 			channelRoute.GET("/probe-status", controller.GetChannelProbeStatus)
+			channelRoute.GET("/metrics", controller.GetChannelMetrics)
 			channelRoute.POST("/probe/:id", controller.ProbeChannelNow)
 			channelRoute.GET("/:id", controller.GetChannel)
 			channelRoute.POST("/:id/key", middleware.RootAuth(), middleware.CriticalRateLimit(), middleware.DisableCache(), middleware.SecureVerificationRequired(), controller.GetChannelKey)
@@ -443,6 +464,7 @@ func SetApiRouter(router *gin.Engine) {
 		tokenRoute := apiRouter.Group("/token")
 		tokenRoute.Use(middleware.UserAuth())
 		{
+			tokenRoute.POST("/usage-stats", controller.GetTokenUsageStats)
 			tokenRoute.GET("/", controller.GetAllTokens)
 			tokenRoute.GET("/search", middleware.SearchRateLimit(), controller.SearchTokens)
 			tokenRoute.GET("/:id", controller.GetToken)
@@ -505,6 +527,14 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			logRoute.GET("/token", middleware.TokenAuthReadOnly(), controller.GetLogByKey)
 		}
+		clientRoute := apiRouter.Group("/clients", middleware.AdminAuth())
+		clientRoute.GET("", controller.ListClientIdentities)
+		clientRoute.POST("/review", controller.ReviewClientIdentity)
+		clientRoute.GET("/reviews", controller.GetClientReviews)
+		clientRoute.GET("/groups", controller.GetClientGroupPolicies)
+		clientRoute.PUT("/groups", controller.UpdateClientGroupPolicy)
+		clientRoute.GET("/group-reviews", controller.GetClientGroupPolicyReviews)
+
 		groupRoute := apiRouter.Group("/group")
 		groupRoute.Use(middleware.AdminAuth())
 		{

@@ -7,7 +7,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
@@ -68,39 +67,13 @@ func getDashboardTraffic(c *gin.Context, userId int, includeChannels bool) {
 	if !ok {
 		return
 	}
-	records, err := model.GetDashboardTrafficRecords(userId, query.startTime, query.endTime)
+	result, err := service.GetDashboardTrafficResultWithContext(
+		c.Request.Context(), userId, query.startTime, query.endTime, query.location, includeChannels,
+	)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-
-	channelNames := map[int]string{}
-	if includeChannels {
-		channelSet := make(map[int]struct{})
-		for _, record := range records {
-			if record.ChannelId > 0 {
-				channelSet[record.ChannelId] = struct{}{}
-			}
-		}
-		channelIds := make([]int, 0, len(channelSet))
-		for channelId := range channelSet {
-			channelIds = append(channelIds, channelId)
-		}
-		channelNames, err = model.GetDashboardChannelNames(channelIds)
-		if err != nil {
-			common.ApiError(c, err)
-			return
-		}
-	}
-
-	result := service.BuildDashboardTraffic(
-		records,
-		channelNames,
-		query.startTime,
-		query.endTime,
-		query.location,
-		includeChannels,
-	)
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": result})
 }
 

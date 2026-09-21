@@ -21,6 +21,7 @@ import { useQuery } from '@tanstack/react-query'
 import { computeTimeRange } from '@/lib/time'
 import { getDashboardTraffic } from '@/features/dashboard/api'
 import { getDefaultDays } from '@/features/dashboard/lib'
+import { getDashboardSnapshotRange } from '@/features/dashboard/lib/filters'
 import type { DashboardFilters } from '@/features/dashboard/types'
 
 export function useDashboardTraffic(
@@ -28,10 +29,13 @@ export function useDashboardTraffic(
   isAdmin: boolean
 ) {
   const params = useMemo(() => {
+    const fallback = getDashboardSnapshotRange(
+      getDefaultDays(filters?.time_granularity)
+    )
     const range = computeTimeRange(
       getDefaultDays(filters?.time_granularity),
-      filters?.start_timestamp,
-      filters?.end_timestamp
+      filters?.start_timestamp ?? fallback.start,
+      filters?.end_timestamp ?? fallback.end
     )
     return {
       start_timestamp: range.start_timestamp,
@@ -45,15 +49,10 @@ export function useDashboardTraffic(
   ])
 
   return useQuery({
-    queryKey: [
-      'dashboard',
-      'traffic',
-      isAdmin ? 'admin' : 'self',
-      params.start_timestamp,
-      params.end_timestamp,
-      params.timezone_offset,
-    ],
-    queryFn: () => getDashboardTraffic(params, isAdmin),
+    queryKey: ['dashboard', 'traffic', isAdmin ? 'admin' : 'self', params],
+    queryFn: ({ signal }) => getDashboardTraffic(params, isAdmin, signal),
+    retry: false,
+    refetchOnWindowFocus: false,
     select: (response) => (response.success ? response.data : null),
     staleTime: 60_000,
   })

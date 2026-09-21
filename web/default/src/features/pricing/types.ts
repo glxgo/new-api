@@ -116,7 +116,7 @@ export type PricingData = {
   vendors: PricingVendor[]
   group_ratio: Record<string, number>
   usable_group: Record<string, { desc: string; ratio: number }>
-  supported_endpoint: Record<string, string>
+  supported_endpoint: Record<string, { path?: string; method?: string }>
   auto_groups: string[]
   model_pricing_source?: Record<string, PublicPricingSource>
 }

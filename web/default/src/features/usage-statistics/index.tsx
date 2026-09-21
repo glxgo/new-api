@@ -277,17 +277,17 @@ function SubscriptionsPanel({
 
 export function UsageStatistics() {
   const { t } = useTranslation()
-  const [range, setRange] = useState<UsageStatisticsRange>('7d')
+  const [range, setRange] = useState<UsageStatisticsRange>('24h')
   const [searchInput, setSearchInput] = useState('')
   const [targetUser, setTargetUser] = useState('')
   const currentUser = useAuthStore((state) => state.auth.user)
   const isRoot = (currentUser?.role ?? 0) >= ROLE.SUPER_ADMIN
   const query = useQuery({
     queryKey: ['usage-statistics', range, targetUser],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const response = targetUser
-        ? await getAdminUsageStatistics(range, targetUser)
-        : await getUsageStatistics(range)
+        ? await getAdminUsageStatistics(range, targetUser, signal)
+        : await getUsageStatistics(range, signal)
       if (!response.success || !response.data) {
         throw new Error(response.message || 'Failed to load usage statistics')
       }

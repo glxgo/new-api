@@ -33,30 +33,37 @@ import type {
 
 // Get paginated API keys list
 export async function getApiKeys(
-  params: GetApiKeysParams = {}
+  params: GetApiKeysParams = {},
+  signal?: AbortSignal
 ): Promise<GetApiKeysResponse> {
   const { p = 1, size = 10 } = params
-  const res = await api.get(`/api/token/?p=${p}&size=${size}`)
+  const res = await api.get(
+    `/api/token/?p=${p}&size=${size}&include_usage=false`,
+    { signal, disableDuplicate: Boolean(signal) }
+  )
   return res.data
 }
 
 // Search API keys by keyword or token (with pagination)
 export async function searchApiKeys(
-  params: SearchApiKeysParams
+  params: SearchApiKeysParams,
+  signal?: AbortSignal
 ): Promise<GetApiKeysResponse> {
   const { keyword = '', token = '', p, size } = params
-  const queryParams = new URLSearchParams()
+  const queryParams = new URLSearchParams({ include_usage: 'false' })
   if (keyword) queryParams.set('keyword', keyword)
   if (token) queryParams.set('token', token)
   if (p != null) queryParams.set('p', String(p))
   if (size != null) queryParams.set('size', String(size))
-  const res = await api.get(`/api/token/search?${queryParams.toString()}`)
+  const res = await api.get(`/api/token/search?${queryParams.toString()}`, {
+    signal,
+  })
   return res.data
 }
 
 // Get single API key by ID
 export async function getApiKey(id: number): Promise<ApiResponse<ApiKey>> {
-  const res = await api.get(`/api/token/${id}`)
+  const res = await api.get(`/api/token/${id}?include_usage=false`)
   return res.data
 }
 
@@ -129,4 +136,25 @@ export async function fetchTokenKeysBatch(ids: number[]): Promise<{
     { skipBusinessError: true, skipErrorHandler: true }
   )
   return res.data
+}
+
+export async function getApiKeyUsageStats(ids: number[], signal?: AbortSignal) {
+  const response = await api.post<
+    ApiResponse<{
+      items: Array<{
+        id: number
+        today_used_quota: number
+        lifetime_used_quota: number
+        stale: boolean
+      }>
+      as_of: number
+    }>
+  >(
+    '/api/token/usage-stats',
+    { ids },
+    { signal, disableDuplicate: Boolean(signal) }
+  )
+  if (!response.data.success || !response.data.data)
+    throw new Error(response.data.message || 'Failed to load usage')
+  return response.data.data
 }

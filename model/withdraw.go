@@ -17,9 +17,9 @@ type Withdraw struct {
 	Status        int    `json:"status" gorm:"index;not null"`  // 0 待审 1 通过 2 拒绝
 	HandlerId     int    `json:"handler_id"`
 	HandlerName   string `json:"handler_name" gorm:"type:varchar(64)"`
-	AlipayName    string `json:"alipay_name" gorm:"type:varchar(64)"`     // 普通用户本金提现必填
-	AlipayAccount string `json:"alipay_account" gorm:"type:varchar(128)"` // 普通用户本金提现必填
-	WechatQrcode  string `json:"wechat_qrcode" gorm:"type:longtext"`      // base64, 备用收款码(longtext 容纳压缩后图片)
+	AlipayName    string `json:"alipay_name" gorm:"type:varchar(64)"`     // 本金/代理佣金提现必填
+	AlipayAccount string `json:"alipay_account" gorm:"type:varchar(128)"` // 本金/代理佣金提现必填
+	WechatQrcode  string `json:"wechat_qrcode" gorm:"type:longtext"`      // base64, 本金/代理佣金备用收款码(longtext 容纳压缩后图片)
 	Remark        string `json:"remark" gorm:"type:varchar(255)"`         // 审核备注
 	CreatedAt     int64  `json:"created_at" gorm:"bigint;index"`
 	HandledAt     int64  `json:"handled_at" gorm:"bigint"`
@@ -74,15 +74,19 @@ func GetAllWithdraws(status int, page, pageSize int) ([]*Withdraw, int64, error)
 }
 
 // FinishWithdraw 审核完成(通过/拒绝), 原子更新(WHERE status=Pending 防并发重复审核), 记录审核人+备注+时间。
-func FinishWithdraw(id, status, handlerId int, handlerName, remark string) error {
-	return DB.Model(&Withdraw{}).Where("id = ? AND status = ?", id, WithdrawStatusPending).
+func FinishWithdraw(id, status, handlerId int, handlerName, remark string) (bool, error) {
+	result := DB.Model(&Withdraw{}).Where("id = ? AND status = ?", id, WithdrawStatusPending).
 		Updates(map[string]interface{}{
 			"status":       status,
 			"handler_id":   handlerId,
 			"handler_name": handlerName,
 			"remark":       remark,
 			"handled_at":   common.GetTimestamp(),
-		}).Error
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
 }
 
 // CalcWithdrawFee 手续费 = amount × feeRate(默认 0.05), decimal 精算取整。

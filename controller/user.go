@@ -286,7 +286,7 @@ func Register(c *gin.Context) {
 
 func GetAllUsers(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
-	users, total, err := model.GetAllUsers(pageInfo)
+	users, total, err := model.GetAllUsersWithContext(c.Request.Context(), pageInfo)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -317,7 +317,7 @@ func SearchUsers(c *gin.Context) {
 		}
 	}
 	pageInfo := common.GetPageQuery(c)
-	users, total, err := model.SearchUsers(keyword, group, role, status, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	users, total, err := model.SearchUsersWithContext(c.Request.Context(), keyword, group, role, status, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -546,6 +546,7 @@ func GetSelf(c *gin.Context) {
 		"rpm_limit":                  effectiveRPM,
 		"rpm_limit_override":         user.RPMLimitOverride,
 		"current_rpm":                service.GetUserRPM(user.Id),
+		"recharge_discount":          model.BuildRechargeDiscountProgress(user.RechargeTotalCents),
 		"recharge_capacity": model.BuildRechargeCapacityProgress(
 			user.RechargeTotalCents,
 			effectiveConcurrency,
@@ -711,7 +712,7 @@ func GetUserCacheRate(c *gin.Context) {
 	}
 	endTime := common.GetTimestamp()
 	startTime := endTime - int64(hours)*3600
-	cacheTokens, promptTokens, err := model.GetUserCacheRate(userId, startTime, endTime)
+	cacheTokens, promptTokens, err := model.GetUserCacheRateWithContext(c.Request.Context(), int64(userId), startTime, endTime)
 	if err != nil {
 		common.ApiError(c, err)
 		return

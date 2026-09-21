@@ -65,3 +65,14 @@ func TestRedisUserRPMAcquireIsAtomic(t *testing.T) {
 	require.Equal(t, limit, accepted)
 	require.EqualValues(t, limit, client.ZCard(context.Background(), userRPMKey(userId)).Val(), fmt.Sprintf("Redis should retain exactly %d rolling-window requests", limit))
 }
+
+func TestRedisUnlimitedUserRPMStillCounts(t *testing.T) {
+	client, userId := setupRedisUserRPMIntegrationTest(t)
+	for i := 1; i <= 3; i++ {
+		allowed, count := AcquireUserRPM(userId, 0)
+		require.True(t, allowed)
+		require.Equal(t, i, count)
+	}
+	require.Equal(t, 3, GetUserRPM(userId))
+	require.Positive(t, client.PTTL(context.Background(), userRPMKey(userId)).Val())
+}

@@ -37,7 +37,20 @@ export type LogCategory = 'common' | 'drawing' | 'task'
 /**
  * Common filters (shared across all log types)
  */
+export interface ClientSnapshot {
+  client_key: string
+  family: string
+  variant: string
+  display_name: string
+  version: string
+  confidence: string
+  source: string
+  user_agent: string
+  truncated: boolean
+}
+
 export interface CommonFilters {
+  clientFamily?: string
   startTime?: Date
   endTime?: Date
   channel?: string
@@ -93,6 +106,8 @@ export interface ChannelAffinityInfo {
 }
 
 export interface LogOtherData {
+  client?: ClientSnapshot
+  coding_group?: boolean
   admin_info?: {
     is_multi_key?: boolean
     multi_key_index?: number
@@ -258,6 +273,8 @@ export interface MidjourneyLog {
   code: number
   mj_id: string
   action: string // IMAGINE, UPSCALE, VARIATION, etc. (backend field name)
+  client?: ClientSnapshot
+  coding_group?: boolean
   submit_time: number // milliseconds
   finish_time?: number // milliseconds
   start_time?: number // milliseconds
@@ -287,6 +304,8 @@ export interface TaskLog {
   task_id: string
   action: string // MUSIC, LYRICS, GENERATE, TEXT_GENERATE, etc.
   channel_id: number
+  client?: ClientSnapshot
+  coding_group?: boolean
   submit_time: number // seconds
   finish_time?: number // seconds
   progress?: string
@@ -304,6 +323,9 @@ export interface TaskLog {
 // ============================================================================
 
 export interface GetLogsParams {
+  client_family?: string
+  pagination?: 'cursor'
+  cursor?: string
   p?: number
   page_size?: number
   type?: number
@@ -322,6 +344,8 @@ export interface GetLogsResponse {
   success: boolean
   message?: string
   data?: {
+    has_more?: boolean
+    next_cursor?: string
     items: UsageLog[] | MidjourneyLog[] | TaskLog[]
     total: number
     page: number
@@ -330,6 +354,7 @@ export interface GetLogsResponse {
 }
 
 export interface GetLogStatsParams {
+  client_family?: string
   type?: number
   username?: string
   token_name?: string
@@ -353,6 +378,7 @@ export interface GetLogStatsResponse {
 // ============================================================================
 
 export interface GetMidjourneyLogsParams {
+  client_family?: string
   p?: number
   page_size?: number
   channel_id?: string
@@ -366,6 +392,7 @@ export interface GetMidjourneyLogsParams {
 // ============================================================================
 
 export interface GetTaskLogsParams {
+  client_family?: string
   p?: number
   page_size?: number
   channel_id?: string

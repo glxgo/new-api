@@ -118,15 +118,35 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	var usage = &dto.Usage{}
 	var lastStreamData string
 	var secondLastStreamData string // 存储倒数第二个stream data，用于音频模型
+	finishedChoices := make(map[int]bool)
+	expectedChoices := 1
+	if request, ok := info.Request.(*dto.GeneralOpenAIRequest); ok && request.N != nil && *request.N > 0 {
+		expectedChoices = int(*request.N)
+	}
 
 	// 检查是否为音频模型
 	isAudioModel := strings.Contains(strings.ToLower(model), "audio")
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
+		if apiErr := helper.ParseStreamError(data); apiErr != nil {
+			sr.Stop(apiErr)
+			return
+		}
+		if strings.Contains(data, "finish_reason") {
+			var chunk dto.ChatCompletionsStreamResponse
+			if common.UnmarshalJsonStr(data, &chunk) == nil {
+				for _, choice := range chunk.Choices {
+					if choice.FinishReason != nil && *choice.FinishReason != "" {
+						finishedChoices[choice.Index] = true
+					}
+				}
+			}
+		}
 		if lastStreamData != "" {
 			if err := HandleStreamFormat(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent); err != nil {
 				common.SysLog("error handling stream format: " + err.Error())
-				sr.Error(err)
+				sr.Stop(err)
+				return
 			}
 		}
 		if len(data) > 0 {
@@ -138,10 +158,13 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 			lastStreamData = data
 			if err := processTokenData(info.RelayMode, data, &responseTextBuilder, &toolCount); err != nil {
 				logger.LogError(c, "error processing stream token data: "+err.Error())
-				sr.Error(err)
+				sr.Stop(err)
 			}
 		}
 	})
+	if streamErr := helper.StreamFailure(c, info, len(finishedChoices) < expectedChoices); streamErr != nil {
+		return nil, streamErr
+	}
 
 	// 对音频模型，从倒数第二个stream data中提取usage信息
 	if isAudioModel && secondLastStreamData != "" {
@@ -183,7 +206,7 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 
 	HandleFinalResponse(c, info, lastStreamData, responseId, createAt, model, systemFingerprint, usage, containStreamUsage)
 
-	return usage, nil
+	return usage, helper.StreamFailure(c, info, false)
 }
 
 func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {

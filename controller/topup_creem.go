@@ -6,7 +6,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/QuantumNous/new-api/common"
@@ -76,7 +75,7 @@ func (*CreemAdaptor) RequestPay(c *gin.Context, req *CreemPayRequest) {
 
 	// 解析产品列表
 	var products []CreemProduct
-	err := json.Unmarshal([]byte(setting.CreemProducts), &products)
+	err := common.Unmarshal([]byte(setting.CreemProducts), &products)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Creem 产品配置解析失败 user_id=%d error=%q", c.GetInt("id"), err.Error()))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "产品配置错误"})
@@ -98,7 +97,13 @@ func (*CreemAdaptor) RequestPay(c *gin.Context, req *CreemPayRequest) {
 	}
 
 	id := c.GetInt("id")
-	user, _ := model.GetUserById(id, false)
+	user, userErr := model.GetUserById(id, false)
+	if userErr != nil || user == nil {
+		common.ApiErrorMsg(c, "用户不存在")
+		return
+	}
+	discountRate := model.BuildRechargeDiscountProgress(user.RechargeTotalCents).CurrentTier.Rate
+	payMoney := model.ApplyRechargeDiscount(selectedProduct.Price, user.RechargeTotalCents)
 
 	// 生成唯一的订单引用ID
 	reference := fmt.Sprintf("creem-api-ref-%d-%d-%s", user.Id, time.Now().UnixMilli(), randstr.String(4))
@@ -108,14 +113,14 @@ func (*CreemAdaptor) RequestPay(c *gin.Context, req *CreemPayRequest) {
 	topUp := &model.TopUp{
 		UserId:          id,
 		Amount:          selectedProduct.Quota, // 充值额度
-		Money:           selectedProduct.Price, // 支付金额
+		Money:           payMoney,              // 支付金额
 		TradeNo:         referenceId,
 		PaymentMethod:   model.PaymentMethodCreem,
 		PaymentProvider: model.PaymentProviderCreem,
 		CreateTime:      time.Now().Unix(),
 		Status:          common.TopUpStatusPending,
 	}
-	creemSnapshot, snapshotErr := model.NewPaymentSnapshotFromMoney(selectedProduct.Price, selectedProduct.Currency)
+	creemSnapshot, snapshotErr := model.NewPaymentSnapshotFromMoney(payMoney, selectedProduct.Currency)
 	if snapshotErr != nil || model.SetTopUpPaymentExpectation(topUp, creemSnapshot) != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Creem 支付金额快照失败 user_id=%d trade_no=%s product_id=%s currency=%q", id, referenceId, selectedProduct.ProductId, selectedProduct.Currency))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "支付金额快照失败"})
@@ -129,7 +134,7 @@ func (*CreemAdaptor) RequestPay(c *gin.Context, req *CreemPayRequest) {
 	}
 
 	// 创建支付链接，传入用户邮箱
-	checkoutUrl, err := genCreemLink(c.Request.Context(), referenceId, selectedProduct, user.Email, user.Username)
+	checkoutUrl, err := genCreemLink(c.Request.Context(), referenceId, selectedProduct, user.Email, user.Username, discountRate)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Creem 创建支付链接失败 user_id=%d trade_no=%s product_id=%s error=%q", id, referenceId, selectedProduct.ProductId, err.Error()))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "拉起支付失败"})
@@ -365,9 +370,10 @@ func handleCheckoutCompleted(c *gin.Context, event *CreemWebhookEvent) {
 }
 
 type CreemCheckoutRequest struct {
-	ProductId string `json:"product_id"`
-	RequestId string `json:"request_id"`
-	Customer  struct {
+	ProductId    string `json:"product_id"`
+	DiscountCode string `json:"discount_code,omitempty"`
+	RequestId    string `json:"request_id"`
+	Customer     struct {
 		Email string `json:"email"`
 	} `json:"customer"`
 	Metadata map[string]string `json:"metadata,omitempty"`
@@ -378,7 +384,7 @@ type CreemCheckoutResponse struct {
 	Id          string `json:"id"`
 }
 
-func genCreemLink(ctx context.Context, referenceId string, product *CreemProduct, email string, username string) (string, error) {
+func genCreemLink(ctx context.Context, referenceId string, product *CreemProduct, email string, username string, rechargeRates ...float64) (string, error) {
 	if setting.CreemApiKey == "" {
 		return "", fmt.Errorf("未配置Creem API密钥")
 	}
@@ -407,8 +413,15 @@ func genCreemLink(ctx context.Context, referenceId string, product *CreemProduct
 		},
 	}
 
+	if len(rechargeRates) > 0 && rechargeRates[0] < 1 {
+		code, err := createCreemRechargeDiscount(ctx, referenceId, product.ProductId, rechargeRates[0])
+		if err != nil {
+			return "", err
+		}
+		requestData.DiscountCode = code
+	}
 	// 序列化请求数据
-	jsonData, err := json.Marshal(requestData)
+	jsonData, err := common.Marshal(requestData)
 	if err != nil {
 		return "", fmt.Errorf("序列化请求数据失败: %v", err)
 	}
@@ -449,7 +462,7 @@ func genCreemLink(ctx context.Context, referenceId string, product *CreemProduct
 	}
 	// 解析响应
 	var checkoutResp CreemCheckoutResponse
-	err = json.Unmarshal(body, &checkoutResp)
+	err = common.Unmarshal(body, &checkoutResp)
 	if err != nil {
 		return "", fmt.Errorf("解析响应失败: %v", err)
 	}

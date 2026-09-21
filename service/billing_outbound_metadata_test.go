@@ -27,6 +27,11 @@ func TestPreparePriorityBillingForOutboundCapturesReasoningEffort(t *testing.T) 
 			want:    "xhigh",
 		},
 		{
+			name:    "converted Claude request",
+			payload: `{"model":"claude-opus-4-6","thinking":{"type":"adaptive"},"output_config":{"effort":"max"}}`,
+			want:    "max",
+		},
+		{
 			name:    "removed by final payload",
 			payload: `{"model":"gpt-5.6"}`,
 			want:    "",

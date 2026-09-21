@@ -96,6 +96,14 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			if common.GetContextKeyBool(c, constant.ContextKeyRelayErrorAlreadyStreamed) {
 				return
 			}
+			if helper.IsSSEWritten(c) {
+				_ = helper.WriteStreamError(c, relayFormat, newAPIError)
+				return
+			}
+			// Binary streams cannot carry a JSON error after audio bytes were sent.
+			if helper.HasStreamOutput(c) && c.Writer.Written() {
+				return
+			}
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
 				helper.WssError(c, ws, newAPIError.ToOpenAIError())
@@ -231,7 +239,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			if relayInfo.Billing != nil {
 				relayInfo.Billing.Refund(c)
 			}
-			service.ChargeViolationFeeIfNeeded(c, relayInfo, newAPIError)
+			if newAPIError.GetErrorCode() != "client_not_allowed" {
+				service.ChargeViolationFeeIfNeeded(c, relayInfo, newAPIError)
+			}
 		}
 	}()
 
@@ -247,6 +257,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	var lastRetryChannelError *types.ChannelError
 	var lastRetryAPIError *types.NewAPIError
 	var sameChannelRetryCandidate *model.Channel
+	sameChannelRetryCount := 0
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
 		relayInfo.RetryIndex = retryParam.GetRetry()
@@ -257,10 +268,18 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		fallbackChannel := sameChannelRetryCandidate
 		sameChannelRetryCandidate = nil
 		channel, channelLease, channelErr := getChannelWithCapacity(c, relayInfo, retryParam)
-		if channelErr != nil && fallbackChannel != nil {
+		if channelErr != nil && shouldUseSameChannelRetry(fallbackChannel, sameChannelRetryCount) {
 			channel, channelLease, channelErr = getSameChannelRetryWithCapacity(c, relayInfo, fallbackChannel)
+			if channelErr == nil {
+				sameChannelRetryCount++
+			}
 		}
 		if channelErr != nil {
+			if channelErr.GetErrorCode() == "client_not_allowed" {
+				newAPIError = channelErr
+				service.RecordClientAccessDenied(c, relayInfo.OriginModelName, channelErr)
+				return
+			}
 			logger.LogError(c, channelErr.Error())
 			if lastRetryChannelError != nil && lastRetryAPIError != nil {
 				recordChannelErrorLog(c, *lastRetryChannelError, lastRetryAPIError)
@@ -273,6 +292,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		newAPIError = func() *types.NewAPIError {
 			defer channelLease.Release()
+			if accessErr := service.CheckRequestClientAccess(c); accessErr != nil {
+				return accessErr
+			}
 			bodyStorage, bodyErr := common.GetBodyStorage(c)
 			if bodyErr != nil {
 				// Ensure consistent 413 for oversized bodies even when error occurs later (e.g., retry path)
@@ -299,6 +321,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			return
 		}
 
+		if newAPIError.GetErrorCode() == "client_not_allowed" {
+			service.RecordClientAccessDenied(c, relayInfo.OriginModelName, newAPIError)
+			return
+		}
+
 		newAPIError = service.NormalizeViolationFeeError(newAPIError)
 		relayInfo.LastError = newAPIError
 		if isClientRequestCanceled(c) {
@@ -314,7 +341,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if willRetry {
 			lastRetryChannelError = &selectedChannelError
 			lastRetryAPIError = newAPIError
-			if canRetrySameResponsesChannel(c, relayInfo, newAPIError) {
+			if canRetrySameResponsesChannel(c, relayInfo, newAPIError) && sameChannelRetryCount < 1 {
 				sameChannelRetryCandidate = channel
 			}
 			service.ClearCurrentChannelAffinityCache(c)
@@ -434,7 +461,7 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 	info.PriceData.GroupRatioInfo = helper.HandleGroupRatio(c, info)
 
 	if err != nil {
-		return nil, types.NewError(fmt.Errorf("获取分组 %s 下模型 %s 的可用渠道失败（retry）: %s", selectGroup, info.OriginModelName, err.Error()), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		return nil, types.NewError(fmt.Errorf("获取分组 %s 下模型 %s 的可用渠道失败（retry）: %w", selectGroup, info.OriginModelName, err), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
 	if channel == nil {
 		if len(c.GetStringSlice("capacity_skipped_channel")) > 0 {
@@ -516,6 +543,16 @@ func getSameChannelRetryWithCapacity(c *gin.Context, info *relaycommon.RelayInfo
 	if channel == nil {
 		return nil, nil, types.NewError(errors.New("same-channel retry candidate is nil"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
+	// The first channel selection can intentionally use a lightweight Channel
+	// snapshot from request context. That snapshot contains routing metadata but
+	// not the secret key/BaseURL required to build an upstream request. Reload by
+	// ID before reusing it so a same-channel Responses retry cannot turn into a
+	// relative URL such as /v1/responses.
+	completeChannel, setupErr := loadSameChannelRetryCandidate(channel)
+	if setupErr != nil {
+		return nil, nil, setupErr
+	}
+	channel = completeChannel
 	lease, acquired, reason, snapshot := service.AcquireChannelCapacityWithSnapshot(channel.Id, channel.ConcurrencyLimit, channel.RPMLimit)
 	if !acquired {
 		addCapacitySkippedChannel(c, channel.Id, reason)
@@ -535,8 +572,26 @@ func getSameChannelRetryWithCapacity(c *gin.Context, info *relaycommon.RelayInfo
 	return channel, lease, nil
 }
 
+func loadSameChannelRetryCandidate(channel *model.Channel) (*model.Channel, *types.NewAPIError) {
+	if channel == nil || channel.Id <= 0 {
+		return nil, types.NewError(errors.New("same-channel retry candidate has invalid channel ID"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+	}
+	complete, err := model.GetChannelById(channel.Id, true)
+	if err != nil {
+		return nil, types.NewError(fmt.Errorf("reload same-channel retry candidate #%d failed: %w", channel.Id, err), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+	}
+	return complete, nil
+}
+
+func shouldUseSameChannelRetry(channel *model.Channel, retryCount int) bool {
+	return channel != nil && retryCount < 1
+}
+
 func canRetrySameResponsesChannel(c *gin.Context, info *relaycommon.RelayInfo, err *types.NewAPIError) bool {
 	if c == nil || info == nil || err == nil || isClientRequestCanceled(c) {
+		return false
+	}
+	if helper.HasStreamOutput(c) || helper.StreamWriteError(c) != nil || common.GetContextKeyBool(c, constant.ContextKeyRelayErrorAlreadyStreamed) {
 		return false
 	}
 	if info.RelayFormat != types.RelayFormatOpenAIResponses || info.ForwardedResponsesEventCount != 0 {
@@ -556,6 +611,9 @@ func canRetrySameResponsesChannel(c *gin.Context, info *relaycommon.RelayInfo, e
 
 func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
 	if openaiErr == nil {
+		return false
+	}
+	if helper.HasStreamOutput(c) || helper.StreamWriteError(c) != nil || common.GetContextKeyBool(c, constant.ContextKeyRelayErrorAlreadyStreamed) {
 		return false
 	}
 	if isClientRequestCanceled(c) {
@@ -596,7 +654,7 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 }
 
 func isClientRequestCanceled(c *gin.Context) bool {
-	return c != nil && c.Request != nil && c.Request.Context().Err() != nil
+	return c != nil && (helper.StreamWriteError(c) != nil || (c.Request != nil && c.Request.Context().Err() != nil))
 }
 
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError, recordUserError bool) {
@@ -693,6 +751,11 @@ func RelayMidjourney(c *gin.Context) {
 		}
 		addUsedChannel(c, channel.Id)
 		defer channelLease.Release()
+		if accessErr := service.CheckRequestClientAccess(c); accessErr != nil {
+			service.RecordClientAccessDenied(c, relayInfo.OriginModelName, accessErr)
+			c.JSON(accessErr.StatusCode, gin.H{"description": accessErr.Error(), "type": "client_not_allowed", "code": 4})
+			return
+		}
 		if relayInfo.RelayMode == relayconstant.RelayModeSwapFace {
 			mjErr = relay.RelaySwapFace(c, relayInfo)
 		} else {
@@ -820,7 +883,10 @@ func RelayTask(c *gin.Context) {
 			channel, channelLease, channelErr = getChannelWithCapacity(c, relayInfo, retryParam)
 			if channelErr != nil {
 				logger.LogError(c, channelErr.Error())
-				taskErr = service.TaskErrorWrapperLocal(channelErr.Err, "get_channel_failed", http.StatusInternalServerError)
+				taskErr = service.TaskErrorWrapperLocal(channelErr, "get_channel_failed", http.StatusInternalServerError)
+				if taskErr.Code == "client_not_allowed" {
+					service.RecordClientAccessDenied(c, relayInfo.OriginModelName, channelErr)
+				}
 				break
 			}
 		}
@@ -829,6 +895,10 @@ func RelayTask(c *gin.Context) {
 
 		func() {
 			defer channelLease.Release()
+			if accessErr := service.CheckRequestClientAccess(c); accessErr != nil {
+				taskErr = service.TaskErrorWrapperLocal(accessErr, "client_not_allowed", accessErr.StatusCode)
+				return
+			}
 			bodyStorage, bodyErr := common.GetBodyStorage(c)
 			if bodyErr != nil {
 				if common.IsRequestBodyTooLargeError(bodyErr) || errors.Is(bodyErr, common.ErrRequestBodyTooLarge) {
@@ -845,6 +915,10 @@ func RelayTask(c *gin.Context) {
 			break
 		}
 
+		if taskErr.Code == "client_not_allowed" {
+			service.RecordClientAccessDenied(c, relayInfo.OriginModelName, taskErr.Error)
+			break
+		}
 		willRetry := shouldRetryTaskRelay(c, channel.Id, taskErr, common.RetryTimes-retryParam.GetRetry())
 		if !taskErr.LocalError {
 			processChannelError(c,
@@ -871,6 +945,7 @@ func RelayTask(c *gin.Context) {
 		}
 		service.LogTaskConsumption(c, relayInfo)
 
+		relayInfo.ClientCodingGroup = c.GetBool(common.ClientCodingContextKey)
 		task := model.InitTask(result.Platform, relayInfo)
 		task.PrivateData.UpstreamTaskID = result.UpstreamTaskID
 		task.PrivateData.BillingSource = relayInfo.BillingSource

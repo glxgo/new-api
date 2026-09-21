@@ -383,6 +383,9 @@ func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBod
 }
 
 func DoWssRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader) (*websocket.Conn, error) {
+	if accessErr := service.CheckRequestClientAccess(c); accessErr != nil {
+		return nil, accessErr
+	}
 	fullRequestURL, err := a.GetRequestURL(info)
 	if err != nil {
 		return nil, fmt.Errorf("get request url failed: %w", err)
@@ -402,7 +405,7 @@ func DoWssRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 		targetHeader.Set(key, value)
 	}
 	targetHeader.Set("Content-Type", c.Request.Header.Get("Content-Type"))
-	targetConn, _, err := websocket.DefaultDialer.Dial(fullRequestURL, targetHeader)
+	targetConn, _, err := websocket.DefaultDialer.DialContext(c.Request.Context(), fullRequestURL, targetHeader)
 	if err != nil {
 		return nil, fmt.Errorf("dial failed to %s: %w", fullRequestURL, err)
 	}
@@ -412,7 +415,7 @@ func DoWssRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	return targetConn, nil
 }
 
-func startPingKeepAlive(c *gin.Context, pingInterval time.Duration) (context.CancelFunc, <-chan struct{}) {
+func startPingKeepAlive(c *gin.Context, pingInterval time.Duration, onFailure ...context.CancelFunc) (context.CancelFunc, <-chan struct{}) {
 	pingerCtx, stopPinger := context.WithCancel(context.Background())
 	done := make(chan struct{})
 
@@ -451,6 +454,9 @@ func startPingKeepAlive(c *gin.Context, pingInterval time.Duration) (context.Can
 			case <-ticker.C:
 				if err := sendPingData(c, &pingMutex); err != nil {
 					logger.LogDebug(c, "SSE ping error, stopping goroutine: %s", err.Error())
+					for _, cancel := range onFailure {
+						cancel()
+					}
 					return
 				}
 			// 收到退出信号
@@ -488,12 +494,23 @@ func DoRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	return doRequest(c, req, info)
 }
 func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
+	if accessErr := service.CheckRequestClientAccess(c); accessErr != nil {
+		return nil, accessErr
+	}
 	var client *http.Client
 	var err error
 	client, err = service.GetHttpClientWithProxySettings(info.ChannelSetting.Proxy, info.ChannelSetting)
 	if err != nil {
 		return nil, fmt.Errorf("new channel http client failed: %w", err)
 	}
+	requestCtx, cancelRequest := context.WithCancel(req.Context())
+	req = req.WithContext(requestCtx)
+	responseOwnsCancel := false
+	defer func() {
+		if !responseOwnsCancel {
+			cancelRequest()
+		}
+	}()
 
 	var stopPinger context.CancelFunc
 	var pingerDone <-chan struct{}
@@ -503,12 +520,13 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		generalSettings := operation_setting.GetGeneralSetting()
 		pingEnabled, pingInterval := helper.ResolveStreamPing(info, generalSettings)
 		if pingEnabled {
-			stopPinger, pingerDone = startPingKeepAlive(c, pingInterval)
+			stopPinger, pingerDone = startPingKeepAlive(c, pingInterval, cancelRequest)
 			// 使用defer确保在任何情况下都能停止ping goroutine
 			defer func() {
 				if stopPinger != nil {
 					stopPinger()
 					<-pingerDone
+					_ = http.NewResponseController(c.Writer).SetWriteDeadline(time.Time{})
 					logger.LogDebug(c, "SSE ping goroutine stopped by defer")
 				}
 			}()
@@ -524,11 +542,16 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	info.UpstreamTransportTrace.RecordResponse(resp, time.Now())
 	if err != nil {
 		logger.LogError(c, "do request failed: "+err.Error())
+		if writeErr := helper.StreamWriteError(c); writeErr != nil {
+			return nil, types.NewErrorWithStatusCode(writeErr, "client_write_error", 499, types.ErrOptionWithSkipRetry())
+		}
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
 	}
 	if resp == nil {
 		return nil, errors.New("resp is nil")
 	}
+	resp.Body = &cancelOnCloseBody{ReadCloser: resp.Body, cancel: cancelRequest}
+	responseOwnsCancel = true
 
 	if upID := resp.Header.Get(common2.RequestIdKey); upID != "" {
 		c.Set(common2.UpstreamRequestIdKey, upID)
@@ -537,6 +560,16 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	_ = req.Body.Close()
 	_ = c.Request.Body.Close()
 	return resp, nil
+}
+
+type cancelOnCloseBody struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (b *cancelOnCloseBody) Close() error {
+	b.cancel()
+	return b.ReadCloser.Close()
 }
 
 func DoTaskApiRequest(a TaskAdaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader) (*http.Response, error) {

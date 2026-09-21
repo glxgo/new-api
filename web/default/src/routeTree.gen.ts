@@ -59,6 +59,8 @@ import { Route as AuthenticatedModelStatusIndexRouteImport } from './routes/_aut
 import { Route as AuthenticatedLuckyWheelIndexRouteImport } from './routes/_authenticated/lucky-wheel/index'
 import { Route as AuthenticatedLuckyWheelAdminIndexRouteImport } from './routes/_authenticated/lucky-wheel-admin/index'
 import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authenticated/keys/index'
+import { Route as AuthenticatedInvoicesIndexRouteImport } from './routes/_authenticated/invoices/index'
+import { Route as AuthenticatedInvoiceReviewIndexRouteImport } from './routes/_authenticated/invoice-review/index'
 import { Route as AuthenticatedDividendIndexRouteImport } from './routes/_authenticated/dividend/index'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
 import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authenticated/channels/index'
@@ -354,6 +356,18 @@ const AuthenticatedKeysIndexRoute = AuthenticatedKeysIndexRouteImport.update({
   path: '/keys/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedInvoicesIndexRoute =
+  AuthenticatedInvoicesIndexRouteImport.update({
+    id: '/invoices/',
+    path: '/invoices/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedInvoiceReviewIndexRoute =
+  AuthenticatedInvoiceReviewIndexRouteImport.update({
+    id: '/invoice-review/',
+    path: '/invoice-review/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedDividendIndexRoute =
   AuthenticatedDividendIndexRouteImport.update({
     id: '/dividend/',
@@ -548,6 +562,8 @@ export interface FileRoutesByFullPath {
   '/channels/': typeof AuthenticatedChannelsIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/dividend/': typeof AuthenticatedDividendIndexRoute
+  '/invoice-review/': typeof AuthenticatedInvoiceReviewIndexRoute
+  '/invoices/': typeof AuthenticatedInvoicesIndexRoute
   '/keys/': typeof AuthenticatedKeysIndexRoute
   '/lucky-wheel-admin/': typeof AuthenticatedLuckyWheelAdminIndexRoute
   '/lucky-wheel/': typeof AuthenticatedLuckyWheelIndexRoute
@@ -623,6 +639,8 @@ export interface FileRoutesByTo {
   '/channels': typeof AuthenticatedChannelsIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/dividend': typeof AuthenticatedDividendIndexRoute
+  '/invoice-review': typeof AuthenticatedInvoiceReviewIndexRoute
+  '/invoices': typeof AuthenticatedInvoicesIndexRoute
   '/keys': typeof AuthenticatedKeysIndexRoute
   '/lucky-wheel-admin': typeof AuthenticatedLuckyWheelAdminIndexRoute
   '/lucky-wheel': typeof AuthenticatedLuckyWheelIndexRoute
@@ -702,6 +720,8 @@ export interface FileRoutesById {
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/dividend/': typeof AuthenticatedDividendIndexRoute
+  '/_authenticated/invoice-review/': typeof AuthenticatedInvoiceReviewIndexRoute
+  '/_authenticated/invoices/': typeof AuthenticatedInvoicesIndexRoute
   '/_authenticated/keys/': typeof AuthenticatedKeysIndexRoute
   '/_authenticated/lucky-wheel-admin/': typeof AuthenticatedLuckyWheelAdminIndexRoute
   '/_authenticated/lucky-wheel/': typeof AuthenticatedLuckyWheelIndexRoute
@@ -780,6 +800,8 @@ export interface FileRouteTypes {
     | '/channels/'
     | '/dashboard/'
     | '/dividend/'
+    | '/invoice-review/'
+    | '/invoices/'
     | '/keys/'
     | '/lucky-wheel-admin/'
     | '/lucky-wheel/'
@@ -855,6 +877,8 @@ export interface FileRouteTypes {
     | '/channels'
     | '/dashboard'
     | '/dividend'
+    | '/invoice-review'
+    | '/invoices'
     | '/keys'
     | '/lucky-wheel-admin'
     | '/lucky-wheel'
@@ -933,6 +957,8 @@ export interface FileRouteTypes {
     | '/_authenticated/channels/'
     | '/_authenticated/dashboard/'
     | '/_authenticated/dividend/'
+    | '/_authenticated/invoice-review/'
+    | '/_authenticated/invoices/'
     | '/_authenticated/keys/'
     | '/_authenticated/lucky-wheel-admin/'
     | '/_authenticated/lucky-wheel/'
@@ -1346,6 +1372,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedKeysIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/invoices/': {
+      id: '/_authenticated/invoices/'
+      path: '/invoices'
+      fullPath: '/invoices/'
+      preLoaderRoute: typeof AuthenticatedInvoicesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/invoice-review/': {
+      id: '/_authenticated/invoice-review/'
+      path: '/invoice-review'
+      fullPath: '/invoice-review/'
+      preLoaderRoute: typeof AuthenticatedInvoiceReviewIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/dividend/': {
       id: '/_authenticated/dividend/'
       path: '/dividend'
@@ -1628,6 +1668,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedDividendIndexRoute: typeof AuthenticatedDividendIndexRoute
+  AuthenticatedInvoiceReviewIndexRoute: typeof AuthenticatedInvoiceReviewIndexRoute
+  AuthenticatedInvoicesIndexRoute: typeof AuthenticatedInvoicesIndexRoute
   AuthenticatedKeysIndexRoute: typeof AuthenticatedKeysIndexRoute
   AuthenticatedLuckyWheelAdminIndexRoute: typeof AuthenticatedLuckyWheelAdminIndexRoute
   AuthenticatedLuckyWheelIndexRoute: typeof AuthenticatedLuckyWheelIndexRoute
@@ -1665,6 +1707,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedChannelsIndexRoute: AuthenticatedChannelsIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedDividendIndexRoute: AuthenticatedDividendIndexRoute,
+  AuthenticatedInvoiceReviewIndexRoute: AuthenticatedInvoiceReviewIndexRoute,
+  AuthenticatedInvoicesIndexRoute: AuthenticatedInvoicesIndexRoute,
   AuthenticatedKeysIndexRoute: AuthenticatedKeysIndexRoute,
   AuthenticatedLuckyWheelAdminIndexRoute:
     AuthenticatedLuckyWheelAdminIndexRoute,

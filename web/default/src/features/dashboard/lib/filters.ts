@@ -128,10 +128,19 @@ export function getDefaultDays(granularity?: TimeGranularity): number {
   return TIME_RANGE_BY_GRANULARITY[getSavedGranularity(granularity)]
 }
 
+// The displayed range and every query use the same boundary. Custom dates
+// bypass this helper and retain their exact timestamps.
+export function getDashboardSnapshotRange(days: number, now = new Date()) {
+  const asOf = new Date(Math.floor(now.getTime() / 30_000) * 30_000)
+  return getRollingDateRange(days, asOf)
+}
+
 export function buildDefaultDashboardFilters(
   preferences: DashboardChartPreferences = getSavedChartPreferences()
 ): DashboardFilters {
-  const { start, end } = getRollingDateRange(preferences.defaultTimeRangeDays)
+  const { start, end } = getDashboardSnapshotRange(
+    preferences.defaultTimeRangeDays
+  )
   return {
     ...EMPTY_DASHBOARD_FILTERS,
     start_timestamp: start,

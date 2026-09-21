@@ -139,6 +139,50 @@ export function formatTimestampToDate(
   return dayjs(ms).format('YYYY-MM-DD HH:mm:ss')
 }
 
+const BEIJING_TIME_ZONE = 'Asia/Shanghai'
+
+/**
+ * Format a Unix timestamp as a YYYY/MM/DD date in Beijing time.
+ */
+export function formatBeijingDate(
+  timestamp?: number,
+  unit: 'seconds' | 'milliseconds' = 'seconds'
+): string {
+  if (!timestamp || timestamp === -1 || timestamp === 0) {
+    return '-'
+  }
+  const ms = unit === 'seconds' ? timestamp * 1000 : timestamp
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: BEIJING_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(ms))
+}
+
+/**
+ * Format a Unix timestamp as YYYY/MM/DD HH:mm:ss in Beijing time.
+ */
+export function formatBeijingTimestampToDate(
+  timestamp?: number,
+  unit: 'seconds' | 'milliseconds' = 'seconds'
+): string {
+  if (!timestamp || timestamp === -1 || timestamp === 0) {
+    return '-'
+  }
+  const ms = unit === 'seconds' ? timestamp * 1000 : timestamp
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: BEIJING_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).format(new Date(ms))
+}
+
 /** Format a Date object to YYYY-MM-DD HH:mm:ss */
 export function formatDateTimeStr(date: Date): string {
   return dayjs(date).format('YYYY-MM-DD HH:mm:ss')

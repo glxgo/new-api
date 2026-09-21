@@ -22,16 +22,19 @@ const (
 	// membership-only billing boundary by the billing session.
 	VirtualMembershipDefaultAllowedGroup = "gpt会员分组"
 
-	VirtualMembershipStatusActive    = "active"
-	VirtualMembershipStatusExpired   = "expired"
-	VirtualMembershipStatusCancelled = "cancelled"
-	VirtualMembershipOrderPending    = "pending"
-	VirtualMembershipOrderSuccess    = "success"
-	VirtualMembershipOrderClosed     = "closed"
-	VirtualMembershipRecordPending   = "pending"
-	VirtualMembershipRecordSettled   = "settled"
-	VirtualMembershipRecordRefunded  = "refunded"
-	VirtualMembershipAdminGrant      = "admin_grant"
+	VirtualMembershipStatusActive                  = "active"
+	VirtualMembershipStatusExpired                 = "expired"
+	VirtualMembershipStatusCancelled               = "cancelled"
+	VirtualMembershipOrderPending                  = "pending"
+	VirtualMembershipOrderSuccess                  = "success"
+	VirtualMembershipOrderClosed                   = "closed"
+	VirtualMembershipRecordPending                 = "pending"
+	VirtualMembershipRecordSettled                 = "settled"
+	VirtualMembershipRecordRefunded                = "refunded"
+	VirtualMembershipAdminGrant                    = "admin_grant"
+	VirtualMembershipSettlementReasonConsumeLog    = "consume_log"
+	VirtualMembershipSettlementReasonTimedOutReset = "timed_out_reset"
+	VirtualMembershipSettlementReasonForcedReset   = "forced_reset"
 	// VirtualMembershipResetOrderType identifies an Epay order that buys one
 	// user-triggered weekly reset credit.  It deliberately uses a separate
 	// ledger table so a paid add-on can never accidentally create a second
@@ -57,6 +60,19 @@ var (
 	ErrVirtualMembershipResetCreditsInsufficient = errors.New("主动重置次数不足，请先购买重置次数")
 	ErrVirtualMembershipSettlementInProgress     = errors.New("该会员存在正在结算的请求，请稍后再主动重置")
 )
+
+type VirtualMembershipSettlementInProgressError struct {
+	PendingCount     int   `json:"pending_count"`
+	LatestActivityAt int64 `json:"latest_activity_at"`
+}
+
+func (e *VirtualMembershipSettlementInProgressError) Error() string {
+	return ErrVirtualMembershipSettlementInProgress.Error()
+}
+
+func (e *VirtualMembershipSettlementInProgressError) Unwrap() error {
+	return ErrVirtualMembershipSettlementInProgress
+}
 
 type VirtualMembershipSetting struct {
 	Id           int    `json:"id"`
@@ -201,8 +217,27 @@ func UpdateVirtualMembershipOrderPaymentExpectation(orderId int, snapshot Paymen
 	if result.Error != nil {
 		return result.Error
 	}
+	if result.RowsAffected == 0 {
+		// MySQL reports RowsAffected=0 when an UPDATE leaves every column
+		// unchanged.  This is a valid idempotent retry when the pending order
+		// already contains the requested payment expectation (the common case
+		// for a zero-fee Alipay order), not evidence that the order disappeared.
+		var current VirtualMembershipOrder
+		if err := DB.Select("status", "payment_fee", "expected_payment_amount_minor", "expected_payment_currency", "commission_base_quota").
+			Where("id = ?", orderId).First(&current).Error; err != nil {
+			return errors.New("virtual membership order is no longer pending")
+		}
+		if current.Status != common.TopUpStatusPending ||
+			math.Round(current.PaymentFee*100) != math.Round(fee*100) ||
+			current.ExpectedPaymentAmountMinor != snapshot.AmountMinor ||
+			!strings.EqualFold(current.ExpectedPaymentCurrency, snapshot.Currency) ||
+			current.CommissionBaseQuota != baseQuota {
+			return errors.New("virtual membership order payment expectation mismatch")
+		}
+		return nil
+	}
 	if result.RowsAffected != 1 {
-		return errors.New("virtual membership order is no longer pending")
+		return errors.New("virtual membership order update affected multiple rows")
 	}
 	return nil
 }
@@ -347,15 +382,16 @@ type AdminVirtualMembershipRecord struct {
 }
 
 type VirtualMembershipPreConsumeRecord struct {
-	Id           int    `json:"id"`
-	RequestId    string `json:"request_id" gorm:"uniqueIndex;type:varchar(128)"`
-	MembershipId int    `json:"membership_id" gorm:"index"`
-	UserId       int    `json:"user_id" gorm:"index"`
-	PreConsumed  int64  `json:"pre_consumed" gorm:"type:bigint;not null;default:0"`
-	FinalQuota   int64  `json:"final_quota" gorm:"type:bigint;not null;default:0"`
-	Status       string `json:"status" gorm:"type:varchar(32);index"`
-	CreatedAt    int64  `json:"created_at" gorm:"bigint"`
-	UpdatedAt    int64  `json:"updated_at" gorm:"bigint"`
+	Id               int    `json:"id"`
+	RequestId        string `json:"request_id" gorm:"uniqueIndex;type:varchar(128)"`
+	MembershipId     int    `json:"membership_id" gorm:"index"`
+	UserId           int    `json:"user_id" gorm:"index"`
+	PreConsumed      int64  `json:"pre_consumed" gorm:"type:bigint;not null;default:0"`
+	FinalQuota       int64  `json:"final_quota" gorm:"type:bigint;not null;default:0"`
+	Status           string `json:"status" gorm:"type:varchar(32);index"`
+	SettlementReason string `json:"settlement_reason" gorm:"type:varchar(32);not null;default:''"`
+	CreatedAt        int64  `json:"created_at" gorm:"bigint"`
+	UpdatedAt        int64  `json:"updated_at" gorm:"bigint"`
 }
 
 // attachVirtualMembershipLifetimeUsage derives the non-resetting usage total
@@ -2272,12 +2308,16 @@ func GrantVirtualMembershipResetCredits(membershipId, credits int) (*UserVirtual
 // ActiveResetVirtualMembership consumes one administrator-granted credit and
 // performs the same reset as ResetVirtualMemberships: weekly and optional
 // five-hour usage are cleared, and both reset anchors move from the action
-// time.  Ownership and lifecycle are checked inside the locking transaction.
-func ActiveResetVirtualMembership(userId, membershipId int) (*UserVirtualMembership, error) {
+// time. Completed pending rows are reconciled from consume logs first. When
+// forceReset is true, unresolved rows are sealed at their reserved quota.
+// Ownership and lifecycle are checked inside the locking transaction.
+func ActiveResetVirtualMembership(userId, membershipId int, forceResetOpt ...bool) (*UserVirtualMembership, error) {
 	if userId <= 0 || membershipId <= 0 {
 		return nil, errors.New("虚拟会员不存在")
 	}
 	var membership UserVirtualMembership
+	forceReset := len(forceResetOpt) > 0 && forceResetOpt[0]
+	var settlementErr *VirtualMembershipSettlementInProgressError
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND user_id = ?", membershipId, userId).First(&membership).Error; err != nil {
@@ -2300,22 +2340,51 @@ func ActiveResetVirtualMembership(userId, membershipId int) (*UserVirtualMembers
 			return err
 		}
 		cutoff := now - int64(virtualMembershipPendingSettlementTimeout()/time.Second)
+		unresolved := 0
+		var latestActivity int64
 		for _, record := range pending {
+			// A consume log is the authoritative terminal usage record. This also
+			// repairs historical zero-delta settlements that never called Settle(0).
+			if LOG_DB != nil {
+				var log Log
+				if logErr := LOG_DB.Where("request_id = ? AND type = ? AND billing_source = ?", record.RequestId, LogTypeConsume, "virtual_membership").Order("id DESC").First(&log).Error; logErr == nil {
+					if err := tx.Model(&VirtualMembershipPreConsumeRecord{}).Where("id = ? AND status = ?", record.Id, VirtualMembershipRecordPending).Updates(map[string]interface{}{
+						"final_quota": log.Quota, "status": VirtualMembershipRecordSettled,
+						"settlement_reason": VirtualMembershipSettlementReasonConsumeLog, "updated_at": now,
+					}).Error; err != nil {
+						return err
+					}
+					continue
+				}
+			}
 			lastActivity := record.UpdatedAt
 			if lastActivity <= 0 {
 				lastActivity = record.CreatedAt
 			}
-			if lastActivity > cutoff {
-				return ErrVirtualMembershipSettlementInProgress
+			if lastActivity > latestActivity {
+				latestActivity = lastActivity
 			}
+			if lastActivity > cutoff && !forceReset {
+				unresolved++
+			}
+		}
+		if unresolved > 0 {
+			settlementErr = &VirtualMembershipSettlementInProgressError{PendingCount: unresolved, LatestActivityAt: latestActivity}
+			return nil
 		}
 		if len(pending) > 0 {
 			// A timed-out request can no longer safely hold this quota window.
 			// Mark it refunded before moving the window so a late settlement sees
 			// a terminal row and cannot add usage back after the reset.
+			updates := map[string]interface{}{"status": VirtualMembershipRecordRefunded, "updated_at": now, "settlement_reason": VirtualMembershipSettlementReasonTimedOutReset}
+			if forceReset {
+				updates["status"] = VirtualMembershipRecordSettled
+				updates["final_quota"] = gorm.Expr("pre_consumed")
+				updates["settlement_reason"] = VirtualMembershipSettlementReasonForcedReset
+			}
 			if err := tx.Model(&VirtualMembershipPreConsumeRecord{}).
 				Where("membership_id = ? AND status = ?", membershipId, VirtualMembershipRecordPending).
-				Updates(map[string]interface{}{"status": VirtualMembershipRecordRefunded, "updated_at": now}).Error; err != nil {
+				Updates(updates).Error; err != nil {
 				return err
 			}
 		}
@@ -2336,6 +2405,9 @@ func ActiveResetVirtualMembership(userId, membershipId int) (*UserVirtualMembers
 	})
 	if err != nil {
 		return nil, err
+	}
+	if settlementErr != nil {
+		return nil, settlementErr
 	}
 	return &membership, nil
 }

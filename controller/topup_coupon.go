@@ -63,7 +63,11 @@ func PreviewTopUpCoupon(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	quote, err := model.QuoteTopUpCoupon(c.GetInt("id"), req.CouponCode, getPayMoney(req.Amount, group))
+	payMoney, ok := applyUserRechargeDiscount(c, getPayMoney(req.Amount, group))
+	if !ok {
+		return
+	}
+	quote, err := model.QuoteTopUpCoupon(c.GetInt("id"), req.CouponCode, payMoney)
 	if err != nil {
 		common.ApiError(c, err)
 		return

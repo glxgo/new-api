@@ -26,8 +26,8 @@ import {
 
 const defaultSecuritySettings: SecuritySettings = {
   RechargeCapacityEnabled: true,
-  DefaultUserConcurrencyLimit: 8,
-  DefaultUserRPMLimit: 12,
+  DefaultUserConcurrencyLimit: 200,
+  DefaultUserRPMLimit: 1000,
   ModelRequestRateLimitEnabled: false,
   ModelRequestRateLimitCount: 0,
   ModelRequestRateLimitSuccessCount: 1000,

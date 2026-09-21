@@ -37,10 +37,14 @@ import type {
  * Get paginated users list
  */
 export async function getUsers(
-  params: GetUsersParams = {}
+  params: GetUsersParams = {},
+  signal?: AbortSignal
 ): Promise<GetUsersResponse> {
   const { p = 1, page_size = 10 } = params
-  const res = await api.get(`/api/user/?p=${p}&page_size=${page_size}`)
+  const res = await api.get(`/api/user/?p=${p}&page_size=${page_size}`, {
+    signal,
+    disableDuplicate: Boolean(signal),
+  })
   return res.data
 }
 
@@ -70,7 +74,8 @@ export async function reviewConcurrencyApplication(
  * Search users by keyword or group
  */
 export async function searchUsers(
-  params: SearchUsersParams
+  params: SearchUsersParams,
+  signal?: AbortSignal
 ): Promise<GetUsersResponse> {
   const {
     keyword = '',
@@ -87,7 +92,10 @@ export async function searchUsers(
   if (status) queryParams.set('status', status)
   queryParams.set('p', String(p))
   queryParams.set('page_size', String(page_size))
-  const res = await api.get(`/api/user/search?${queryParams.toString()}`)
+  const res = await api.get(`/api/user/search?${queryParams.toString()}`, {
+    signal,
+    disableDuplicate: Boolean(signal),
+  })
   return res.data
 }
 

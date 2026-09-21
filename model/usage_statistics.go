@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -187,7 +188,7 @@ func hydrateUsageStatisticsSubscriptionTitles(
 
 // GetUserUsageStatistics returns bounded, user-only usage analytics. It uses
 // bounded aggregate queries instead of loading individual logs into memory.
-func GetUserUsageStatistics(userID int, startTime, endTime, bucketSeconds int64) (UsageStatistics, error) {
+func getUserUsageStatisticsLegacy(userID int, startTime, endTime, bucketSeconds int64) (UsageStatistics, error) {
 	result := UsageStatistics{
 		Series:        make([]UsageStatisticsPoint, 0),
 		Models:        make([]UsageStatisticsModel, 0),
@@ -276,4 +277,12 @@ func GetUserUsageStatistics(userID int, startTime, endTime, bucketSeconds int64)
 	}
 
 	return result, nil
+}
+
+// GetUserUsageStatistics keeps the historical JSON contract while routing the
+// computation through one streamed base query and the shared projection
+// cache. The legacy implementation remains above as a diagnostic fallback and
+// reference for reconciliation tests.
+func GetUserUsageStatistics(userID int, startTime, endTime, bucketSeconds int64) (UsageStatistics, error) {
+	return GetUserUsageStatisticsWithContext(context.Background(), userID, startTime, endTime, bucketSeconds)
 }

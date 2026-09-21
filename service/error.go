@@ -217,6 +217,10 @@ func TaskErrorWrapperLocal(err error, code string, statusCode int) *dto.TaskErro
 }
 
 func TaskErrorWrapper(err error, code string, statusCode int) *dto.TaskError {
+	var clientErr *types.NewAPIError
+	if errors.As(err, &clientErr) && clientErr.GetErrorCode() == "client_not_allowed" {
+		return &dto.TaskError{Code: "client_not_allowed", Message: clientErr.Error(), StatusCode: clientErr.StatusCode, Error: err, LocalError: true}
+	}
 	text := err.Error()
 	lowerText := strings.ToLower(text)
 	if strings.Contains(lowerText, "post") || strings.Contains(lowerText, "dial") || strings.Contains(lowerText, "http") {

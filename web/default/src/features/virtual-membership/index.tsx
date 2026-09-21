@@ -55,6 +55,7 @@ import {
   purchaseVirtualMembership,
   setSelfVirtualMembershipHidden,
 } from './api'
+import { ResetCalendar } from './components/reset-calendar'
 import { VirtualMembershipManagementDialog } from './components/virtual-membership-management-dialog'
 import type { UserVirtualMembership, VirtualMembershipPlan } from './types'
 
@@ -705,7 +706,20 @@ export function VirtualMembership() {
           )
         )
           return
-        const result = await activeResetVirtualMembership(membership.id)
+        let result = await activeResetVirtualMembership(membership.id)
+        if (!result.success && result.code === 'settlement_in_progress') {
+          const pendingCount =
+            'pending_count' in (result.data || {})
+              ? (result.data as { pending_count: number }).pending_count
+              : 1
+          if (
+            !window.confirm(
+              `仍有 ${pendingCount} 个请求未返回最终用量。确认强制封账并重置吗？强制封账会按已预留额度结算，无法恢复。`
+            )
+          )
+            return
+          result = await activeResetVirtualMembership(membership.id, true)
+        }
         if (!result.success) {
           toast.error(result.message || '主动重置失败')
           return
@@ -869,6 +883,7 @@ export function VirtualMembership() {
                 </div>
               </div>
             )}
+            <ResetCalendar />
             <div>
               <h2 className='mb-3 text-lg font-semibold'>选择方案</h2>
               {isLoading ? (

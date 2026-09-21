@@ -35,6 +35,7 @@ import { LOG_TYPE_ALL_VALUE, LOG_TYPE_ENUM } from '../constants'
 import { useColumnsByCategory } from '../lib/columns'
 import { usageLogsQueryOptions } from '../lib/queries'
 import type { LogCategory } from '../types'
+import { CommonLogPagination } from './common-log-pagination'
 import { CommonLogsFilterBar } from './common-logs-filter-bar'
 import { CommonLogsStats } from './common-logs-stats'
 import { TaskLogsFilterBar } from './task-logs-filter-bar'
@@ -147,8 +148,9 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
     onColumnFiltersChange,
     manualPagination: true,
     manualFiltering: true,
-    totalCount: data?.total || 0,
-    ensurePageInRange,
+    totalCount: logCategory === 'common' ? undefined : data?.total || 0,
+    pageCount: logCategory === 'common' ? -1 : undefined,
+    ensurePageInRange: logCategory === 'common' ? undefined : ensurePageInRange,
   })
 
   const isCommon = logCategory === 'common'
@@ -163,6 +165,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
       )}
       <div className='min-h-0 flex-1'>
         <DataTablePage
+          showPagination={!isCommon}
           table={table}
           columns={columns as ColumnDef<Record<string, unknown>>[]}
           isLoading={isLoadingData}
@@ -208,6 +211,14 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
           }}
         />
       </div>
+      {isCommon && (
+        <CommonLogPagination
+          hasMore={data?.has_more ?? false}
+          nextCursor={data?.next_cursor}
+          loading={isFetching || isLoading}
+          pageSize={pagination.pageSize}
+        />
+      )}
     </div>
   )
 }

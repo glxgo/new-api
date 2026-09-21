@@ -26,7 +26,7 @@ local redis_time = redis.call('TIME')
 local now_ms = tonumber(redis_time[1]) * 1000 + math.floor(tonumber(redis_time[2]) / 1000)
 redis.call('ZREMRANGEBYSCORE', key, '-inf', now_ms - window_ms)
 local current = redis.call('ZCARD', key)
-if current >= max_requests then
+if max_requests > 0 and current >= max_requests then
   redis.call('PEXPIRE', key, window_ms)
   return {0, current}
 end
@@ -74,9 +74,7 @@ func AcquireUserRPM(userId, limit int) (bool, int) {
 // pool. Keeping the pool key separate lets a membership key have its own RPM
 // budget without sharing the user's normal wallet/API-key budget.
 func AcquireUserRPMByKey(key string, limit int) (bool, int) {
-	if limit <= 0 {
-		return true, 0
-	}
+	// Zero disables admission limits, not rolling-window observation.
 	if common.RedisEnabled && common.RDB != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		result, err := common.RDB.Eval(ctx, acquireRollingRPMScript, []string{key}, limit, userRPMWindow.Milliseconds(), nextUserRPMRequestId()).Int64Slice()
@@ -109,7 +107,7 @@ func acquireLocalUserRPMByKey(key string, limit int, now time.Time) (bool, int) 
 		}
 	}
 	bucket.requests = kept
-	if len(bucket.requests) >= limit {
+	if limit > 0 && len(bucket.requests) >= limit {
 		return false, len(bucket.requests)
 	}
 	bucket.requests = append(bucket.requests, now)

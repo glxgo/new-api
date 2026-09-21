@@ -235,7 +235,9 @@ export const useTaskLogsData = () => {
     let url = isAdminUser
       ? `/api/task/?p=${page}&page_size=${size}&channel_id=${channel_id}&task_id=${task_id}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`
       : `/api/task/self?p=${page}&page_size=${size}&task_id=${task_id}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`;
-    const res = await API.get(url);
+    const res = await API.get(url, {
+      params: { client_family: formApi?.getValue('client_family') || '' },
+    });
     const { success, message, data } = res.data;
     if (success) {
       syncPageData(data);

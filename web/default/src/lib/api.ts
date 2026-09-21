@@ -110,7 +110,9 @@ api.interceptors.response.use(
       if (!skip) {
         toast.error(t('Session expired!'))
       }
-    } else if (!skip) {
+    } else if (!skip && !axios.isCancel(error)) {
+      // Ignore intentional cancellations (route changes, unmounts, filter
+      // changes). They are not user-facing failures.
       // Other errors: show error message from response or default
       const msg =
         error?.response?.data?.message || error?.message || t('Request failed')

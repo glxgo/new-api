@@ -234,11 +234,6 @@ function AccountCard({ account }: { account: CPAAccountUsage }) {
           </div>
         </div>
         <div className='flex shrink-0 flex-col items-end gap-1.5'>
-          <span className='relative isolate overflow-hidden rounded-full border border-slate-300/90 bg-[linear-gradient(135deg,#f8fafc_0%,#cbd5e1_38%,#ffffff_58%,#94a3b8_100%)] px-2.5 py-1 text-[10px] font-extrabold tracking-[0.1em] text-slate-800 uppercase shadow-[inset_0_1px_0_rgba(255,255,255,.95),0_2px_8px_rgba(71,85,105,.18)] after:pointer-events-none after:absolute after:inset-y-[-35%] after:left-[-75%] after:w-1/2 after:skew-x-[-18deg] after:bg-[linear-gradient(90deg,transparent,rgba(255,255,255,.95),transparent)] after:transition-transform after:duration-700 group-hover:after:translate-x-[420%] motion-reduce:after:transition-none dark:border-slate-500/80 dark:bg-[linear-gradient(135deg,#475569_0%,#cbd5e1_42%,#f8fafc_58%,#64748b_100%)] dark:text-slate-950'>
-            <span className='relative z-10 drop-shadow-[0_1px_0_rgba(255,255,255,.75)]'>
-              {account.plan_type || t('Unknown plan')}
-            </span>
-          </span>
           <span
             className={cn(
               'rounded-full border px-2 py-0.5 text-[10px] font-semibold',

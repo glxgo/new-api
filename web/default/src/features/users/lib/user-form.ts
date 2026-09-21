@@ -54,9 +54,9 @@ export const USER_FORM_DEFAULT_VALUES: UserFormValues = {
   quota_dollars: 0,
   group: DEFAULT_GROUP,
   remark: '',
-  concurrency_limit: 8,
+  concurrency_limit: 200,
   concurrency_limit_override: false,
-  rpm_limit: 12,
+  rpm_limit: 1000,
   rpm_limit_override: false,
   identity_type: 'none',
 }
@@ -107,9 +107,9 @@ export function transformUserToFormDefaults(user: User): UserFormValues {
     quota_dollars: quotaUnitsToDollars(user.quota),
     group: user.group || DEFAULT_GROUP,
     remark: user.remark || '',
-    concurrency_limit: user.concurrency_limit || 8,
+    concurrency_limit: Math.max(200, user.concurrency_limit),
     concurrency_limit_override: user.concurrency_limit_override,
-    rpm_limit: user.rpm_limit || 12,
+    rpm_limit: Math.max(1000, user.rpm_limit),
     rpm_limit_override: user.rpm_limit_override,
     identity_type:
       user.identity_type === 'enterprise' || user.identity_type === 'education'

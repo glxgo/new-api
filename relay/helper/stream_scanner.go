@@ -81,8 +81,19 @@ func ExtendWriteDeadline(c *gin.Context) {
 }
 
 func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo, dataHandler func(data string, sr *StreamResult)) {
+	StreamScannerHandlerWithOptions(c, resp, info, StreamScannerOptions{}, dataHandler)
+}
 
-	if resp == nil || dataHandler == nil {
+type StreamScannerOptions struct {
+	RawLines    bool // NDJSON transports such as Ollama and Cohere.
+	IncludeMeta bool // Legacy Zhipu sends usage in a meta: field.
+}
+
+type streamChunk struct{ data, event string }
+
+func StreamScannerHandlerWithOptions(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo, options StreamScannerOptions, dataHandler func(data string, sr *StreamResult)) {
+
+	if resp == nil || resp.Body == nil || info == nil || dataHandler == nil {
 		return
 	}
 
@@ -91,6 +102,9 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 
 	ctx, cancel := context.WithCancel(context.Background())
 	streamingTimeout := time.Duration(constant.StreamingTimeout) * time.Second
+	if streamingTimeout <= 0 {
+		streamingTimeout = 300 * time.Second
+	}
 
 	var (
 		stopChan    = make(chan bool)
@@ -133,6 +147,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			// Gin may recycle c immediately after this function returns. Every
 			// goroutine that can access c must therefore be joined first.
 			wg.Wait()
+			_ = http.NewResponseController(c.Writer).SetWriteDeadline(time.Time{})
 		})
 	}
 	defer cleanup()
@@ -174,6 +189,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 					if err != nil {
 						logger.LogError(c, "ping data error: "+err.Error())
 						info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonPingFail, err)
+						stop()
 						return
 					}
 					logger.LogDebug(c, "ping data sent")
@@ -192,7 +208,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 		})
 	}
 
-	dataChan := make(chan string, 10)
+	dataChan := make(chan streamChunk, 10)
 
 	wg.Add(1)
 	gopool.Go(func() {
@@ -209,14 +225,30 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			wg.Done()
 		}()
 		sr := newStreamResult(info.StreamStatus)
-		for data := range dataChan {
+		for chunk := range dataChan {
+			data := chunk.data
+			if data == "[DONE]" {
+				isResponses := info.RelayMode == relayconstant.RelayModeResponses ||
+					info.RelayMode == relayconstant.RelayModeResponsesCompact
+				if !isResponses {
+					sr.Done()
+				}
+				return
+			}
+			info.SetFirstResponseTime()
+			info.ReceivedResponseCount++
 			sr.reset()
+			sr.EventType = chunk.event
 			func() {
 				writeMutex.Lock()
 				defer writeMutex.Unlock()
 				ExtendWriteDeadline(c)
 				dataHandler(data, sr)
 			}()
+			if err := StreamWriteError(c); err != nil {
+				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonWriteFail, err)
+				return
+			}
 			if sr.IsStopped() {
 				return
 			}
@@ -225,18 +257,41 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 
 	// Scanner goroutine with improved error handling
 	wg.Add(1)
-	common.RelayCtxGo(ctx, func() {
+	gopool.Go(func() {
 		defer func() {
 			close(dataChan)
 			if r := recover(); r != nil {
 				logger.LogError(c, fmt.Sprintf("scanner goroutine panic: %v", r))
 				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonPanic, fmt.Errorf("scanner panic: %v", r))
 			}
-			stop()
 			logger.LogDebug(c, "scanner goroutine exited")
 			wg.Done()
 		}()
 
+		var pending strings.Builder
+		var currentEvent string
+		dispatch := func(data string) bool {
+			if data != "[DONE]" {
+				ticker.Reset(streamingTimeout)
+			}
+			select {
+			case dataChan <- streamChunk{data: data, event: currentEvent}:
+				return data != "[DONE]"
+			case <-ctx.Done():
+				return false
+			case <-stopChan:
+				return false
+			}
+		}
+		flushPending := func() bool {
+			if pending.Len() == 0 {
+				return true
+			}
+			data := pending.String()
+			pending.Reset()
+			return dispatch(data)
+		}
+		firstLine := true
 		for scanner.Scan() {
 			// 检查是否需要停止
 			select {
@@ -248,43 +303,71 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			}
 
 			data := scanner.Text()
+			if firstLine {
+				data = strings.TrimPrefix(data, "\ufeff")
+				firstLine = false
+			}
 			logger.LogDebug(c, "stream scanner data: %s", data)
+			if data == "" {
+				if !flushPending() {
+					return
+				}
+				currentEvent = ""
+				continue
+			}
+			if !options.RawLines && strings.HasPrefix(data, "event:") {
+				if !flushPending() {
+					return
+				}
+				currentEvent = strings.TrimSpace(strings.TrimPrefix(data, "event:"))
+				continue
+			}
 
-			if len(data) < 6 {
+			trimmedLine := strings.TrimSpace(data)
+			bareDone := trimmedLine == "[DONE]"
+			isMeta := options.IncludeMeta && strings.HasPrefix(data, "meta:")
+			if !options.RawLines && !isMeta && !bareDone && (len(data) < 5 || data[:5] != "data:") {
 				continue
 			}
-			if data[:5] != "data:" && data[:6] != "[DONE]" {
-				continue
+			if bareDone {
+				data = "[DONE]"
+			} else if !options.RawLines {
+				data = data[5:]
 			}
-			data = data[5:]
+			if isMeta {
+				currentEvent = "meta"
+			}
 			data = strings.TrimSpace(data)
 			if data == "" {
 				continue
 			}
-			if !strings.HasPrefix(data, "[DONE]") {
-				// Reset the idle watchdog only after a complete SSE data event has
-				// been accepted. Blank lines and comments are transport keepalive,
-				// not model progress, so they must not hide a stalled response.
-				ticker.Reset(streamingTimeout)
-				info.SetFirstResponseTime()
-				info.ReceivedResponseCount++
-
-				select {
-				case dataChan <- data:
-				case <-ctx.Done():
-					return
-				case <-stopChan:
+			if data == "[DONE]" {
+				if !flushPending() {
 					return
 				}
-			} else {
-				isResponses := info.RelayMode == relayconstant.RelayModeResponses ||
-					info.RelayMode == relayconstant.RelayModeResponsesCompact
-				if !isResponses {
-					info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonDone, nil)
-				}
-				logger.LogDebug(c, "received [DONE], stopping scanner (responses=%t)", isResponses)
+				_ = dispatch(data)
 				return
 			}
+			// Providers also send one complete JSON value per line without blank
+			// separators. Keep that compatibility while assembling pretty-printed
+			// JSON split across several SSE data fields.
+			if options.RawLines || (pending.Len() == 0 && ((!strings.HasPrefix(data, "{") && !strings.HasPrefix(data, "[")) || common.IsValidJSON(common.StringToByteSlice(data)))) {
+				if !dispatch(data) {
+					return
+				}
+				continue
+			}
+			if pending.Len() > 0 {
+				pending.WriteByte('\n')
+			}
+			pending.WriteString(data)
+			if pending.Len() > getScannerBufferSize() {
+				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, fmt.Errorf("SSE event exceeds configured buffer limit"))
+				return
+			}
+		}
+		if !flushPending() {
+			return
 		}
 
 		if err := scanner.Err(); err != nil {

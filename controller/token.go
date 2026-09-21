@@ -99,7 +99,9 @@ func GetAllTokens(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	enrichTokenUsageStats(tokens)
+	if c.Query("include_usage") != "false" {
+		enrichTokenUsageStats(tokens)
+	}
 	total, _ := model.CountUserTokens(userId)
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(buildMaskedTokenResponses(tokens))
@@ -118,7 +120,9 @@ func SearchTokens(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	enrichTokenUsageStats(tokens)
+	if c.Query("include_usage") != "false" {
+		enrichTokenUsageStats(tokens)
+	}
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(buildMaskedTokenResponses(tokens))
 	common.ApiSuccess(c, pageInfo)
@@ -140,7 +144,9 @@ func GetToken(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	enrichTokenUsageStats([]*model.Token{token})
+	if c.Query("include_usage") != "false" {
+		enrichTokenUsageStats([]*model.Token{token})
+	}
 	common.ApiSuccess(c, buildMaskedTokenResponse(token))
 }
 

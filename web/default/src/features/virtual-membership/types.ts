@@ -109,5 +109,22 @@ export interface VirtualMembershipPageData {
   epay_methods?: { type: string; name?: string; fee_rate?: number }[]
 }
 
+export interface VirtualMembershipResetCalendarEntry {
+  id: number
+  reset_at: number
+  count: number
+  reason: string
+  created_at: number
+  updated_at: number
+}
+
+export interface VirtualMembershipResetCalendarData {
+  year: number
+  month: number
+  timezone: string
+  total_count: number
+  entries: VirtualMembershipResetCalendarEntry[]
+}
+
 export type VirtualMembershipPageResponse =
   ApiResponse<VirtualMembershipPageData>

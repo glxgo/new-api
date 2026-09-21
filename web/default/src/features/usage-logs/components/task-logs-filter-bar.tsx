@@ -25,6 +25,7 @@ import { useIsAdmin } from '@/hooks/use-admin'
 import { buildSearchParams } from '../lib/filter'
 import { getDefaultTimeRange } from '../lib/utils'
 import type { DrawingLogFilters, LogCategory, TaskLogFilters } from '../types'
+import { ClientFamilyFilter } from './client-family-filter'
 import { CompactDateTimeRangePicker } from './compact-date-time-range-picker'
 import {
   LogsFilterField,
@@ -79,6 +80,7 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
   useEffect(() => {
     const { start, end } = getDefaultTimeRange()
     const baseFilters = {
+      clientFamily: searchParams.clientFamily,
       startTime: searchParams.startTime
         ? new Date(searchParams.startTime)
         : start,
@@ -98,6 +100,8 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
             ...(searchParams.filter ? { taskId: searchParams.filter } : {}),
           }
 
+    // Keep the editable form synchronized with browser navigation.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFilters(next)
   }, [
     props.logCategory,
@@ -105,6 +109,7 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
     searchParams.endTime,
     searchParams.channel,
     searchParams.filter,
+    searchParams.clientFamily,
   ])
 
   const handleChange = useCallback(
@@ -163,7 +168,8 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
     props.logCategory === 'drawing'
       ? t('Filter by Midjourney task ID')
       : t('Filter by task ID')
-  const hasAdditionalFilters = !!filterValue || !!filters.channel
+  const hasAdditionalFilters =
+    !!filterValue || !!filters.channel || !!filters.clientFamily
   const dateRangeFilter = (
     <LogsFilterField wide>
       <CompactDateTimeRangePicker
@@ -206,6 +212,10 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
           {dateRangeFilter}
           {taskIdFilter}
           {channelFilter}
+          <ClientFamilyFilter
+            value={filters.clientFamily}
+            onChange={(value) => handleChange('clientFamily', value)}
+          />
         </>
       }
       mobilePinnedFilters={dateRangeFilter}
@@ -213,9 +223,16 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
         <>
           {taskIdFilter}
           {channelFilter}
+          <ClientFamilyFilter
+            value={filters.clientFamily}
+            onChange={(value) => handleChange('clientFamily', value)}
+          />
         </>
       }
-      mobileFilterCount={[filterValue, filters.channel].filter(Boolean).length}
+      mobileFilterCount={
+        [filterValue, filters.channel, filters.clientFamily].filter(Boolean)
+          .length
+      }
       hasActiveFilters={hasAdditionalFilters}
       onSearch={handleApply}
       searchLoading={fetchingLogs > 0}

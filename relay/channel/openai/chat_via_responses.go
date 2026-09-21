@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	appconstant "github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -332,8 +331,25 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		var streamResp dto.ResponsesStreamResponse
 		if err := common.UnmarshalJsonStr(data, &streamResp); err != nil {
 			logger.LogError(c, "failed to unmarshal responses stream event: "+err.Error())
-			sr.Error(err)
+			streamErr = types.NewErrorWithStatusCode(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+			sr.Stop(streamErr)
 			return
+		}
+		if streamResp.Type == "" {
+			streamResp.Type = sr.EventType
+		}
+		if streamResp.Type == "response.done" || streamResp.Type == "response.completed" {
+			if streamResp.Response != nil {
+				switch jsonRawString(streamResp.Response.Status) {
+				case "failed":
+					streamResp.Type = "response.failed"
+				case "incomplete":
+					streamResp.Type = "response.incomplete"
+				}
+			}
+		}
+		if streamResp.Type == "" && streamResp.GetOpenAIError() != nil {
+			streamResp.Type = "error"
 		}
 		if isResponsesBillingProgressEvent(streamResp.Type) {
 			info.ResponsesFailureUsageEligible = true
@@ -551,21 +567,12 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		case "response.incomplete":
 			info.ResponsesFailureUsageEligible = true
 			streamErr = responsesTerminalError(streamResp, types.ErrorCodeUpstreamResponseIncomplete, true)
-			common.SetContextKey(c, appconstant.ContextKeyRelayErrorAlreadyStreamed, true)
+			recordResponsesUpstreamTerminal(info, resp.StatusCode, streamResp)
 			sr.Stop(streamErr)
 
 		case "error", "response.error", "response.failed":
-			if streamResp.Response != nil {
-				if oaiErr := streamResp.Response.GetOpenAIError(); oaiErr != nil && oaiErr.Type != "" {
-					streamErr = types.WithOpenAIError(*oaiErr, http.StatusInternalServerError)
-					if sentStart {
-						types.ErrOptionWithSkipRetry()(streamErr)
-					}
-					sr.Stop(streamErr)
-					return
-				}
-			}
-			streamErr = types.NewOpenAIError(fmt.Errorf("responses stream error: %s", streamResp.Type), types.ErrorCodeBadResponse, http.StatusInternalServerError)
+			recordResponsesUpstreamTerminal(info, resp.StatusCode, streamResp)
+			streamErr = responsesTerminalError(streamResp, types.ErrorCodeUpstreamResponseFailed, false)
 			if sentStart {
 				types.ErrOptionWithSkipRetry()(streamErr)
 			}
@@ -575,8 +582,18 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		default:
 		}
 	})
+	if helper.StreamWriteError(c) != nil {
+		streamErr = helper.StreamFailure(c, info, true)
+	}
+	finishFailure := func(apiErr *types.NewAPIError) {
+		if sentStart || helper.HasStreamOutput(c) {
+			types.ErrOptionWithSkipRetry()(apiErr)
+			_ = helper.WriteStreamError(c, info.RelayFormat, apiErr)
+		}
+	}
 
 	if streamErr != nil {
+		finishFailure(streamErr)
 		return buildFailureUsage(), streamErr
 	}
 
@@ -595,9 +612,10 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 			http.StatusBadGateway,
 			errorOptions...,
 		)
-		if info.ResponsesFailureUsageEligible {
-			common.SetContextKey(c, appconstant.ContextKeyRelayErrorAlreadyStreamed, true)
+		if transportErr := helper.StreamFailure(c, info, true); transportErr != nil {
+			streamErr = transportErr
 		}
+		finishFailure(streamErr)
 		return buildFailureUsage(), streamErr
 	}
 

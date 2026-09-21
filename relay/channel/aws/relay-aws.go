@@ -249,44 +249,51 @@ func awsHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (*types
 }
 
 func awsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (*types.NewAPIError, *dto.Usage) {
-	ctx, cancel := newAwsInvokeContext()
+	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
-
+	if common.RelayTimeout > 0 {
+		var timeoutCancel context.CancelFunc
+		ctx, timeoutCancel = context.WithTimeout(ctx, time.Duration(common.RelayTimeout)*time.Second)
+		defer timeoutCancel()
+	}
 	awsResp, err := a.AwsClient.InvokeModelWithResponseStream(ctx, a.AwsReq.(*bedrockruntime.InvokeModelWithResponseStreamInput))
 	if err != nil {
-		statusCode := getAwsErrorStatusCode(err)
-		return types.NewOpenAIError(errors.Wrap(err, "InvokeModelWithResponseStream"), types.ErrorCodeAwsInvokeError, statusCode), nil
+		if c.Request.Context().Err() != nil {
+			return types.NewErrorWithStatusCode(c.Request.Context().Err(), "client_canceled", 499, types.ErrOptionWithSkipRetry()), nil
+		}
+		return types.NewOpenAIError(errors.Wrap(err, "InvokeModelWithResponseStream"), types.ErrorCodeAwsInvokeError, getAwsErrorStatusCode(err)), nil
 	}
 	stream := awsResp.GetStream()
-	defer stream.Close()
-
-	claudeInfo := &claude.ClaudeResponseInfo{
-		ResponseId:   helper.GetResponseID(c),
-		Created:      common.GetTimestamp(),
-		Model:        info.UpstreamModelName,
-		ResponseText: strings.Builder{},
-		Usage:        &dto.Usage{},
-	}
-
-	for event := range stream.Events() {
-		switch v := event.(type) {
-		case *bedrockruntimeTypes.ResponseStreamMemberChunk:
-			info.SetFirstResponseTime()
-			respErr := claude.HandleStreamResponseData(c, info, claudeInfo, string(v.Value.Bytes))
-			if respErr != nil {
-				return respErr, nil
+	reader, writer := io.Pipe()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer writer.Close()
+		for {
+			select {
+			case <-ctx.Done():
+				_ = writer.CloseWithError(ctx.Err())
+				return
+			case event, ok := <-stream.Events():
+				if !ok {
+					_ = writer.CloseWithError(stream.Err())
+					return
+				}
+				chunk, ok := event.(*bedrockruntimeTypes.ResponseStreamMemberChunk)
+				if !ok {
+					_ = writer.CloseWithError(fmt.Errorf("unexpected Bedrock stream event %T", event))
+					return
+				}
+				if _, err := fmt.Fprintf(writer, "data: %s\n\n", chunk.Value.Bytes); err != nil {
+					return
+				}
 			}
-		case *bedrockruntimeTypes.UnknownUnionMember:
-			fmt.Println("unknown tag:", v.Tag)
-			return types.NewError(errors.New("unknown response type"), types.ErrorCodeInvalidRequest), nil
-		default:
-			fmt.Println("union is nil or unknown type")
-			return types.NewError(errors.New("nil or unknown response type"), types.ErrorCodeInvalidRequest), nil
 		}
-	}
-
-	claude.HandleStreamFinalResponse(c, info, claudeInfo)
-	return nil, claudeInfo.Usage
+	}()
+	// Join the SDK bridge before Gin can recycle the request context.
+	defer func() { cancel(); _ = reader.Close(); _ = stream.Close(); <-done }()
+	usage, apiErr := claude.ClaudeStreamHandler(c, &http.Response{StatusCode: http.StatusOK, Body: reader}, info)
+	return apiErr, usage
 }
 
 // Nova模型处理函数

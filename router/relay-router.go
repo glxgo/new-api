@@ -11,6 +11,7 @@ import (
 )
 
 func SetRelayRouter(router *gin.Engine) {
+	router.Use(middleware.CaptureRequestClient())
 	router.Use(middleware.CORS())
 	router.Use(middleware.APIIngressResolver())
 	router.Use(middleware.DecompressRequestMiddleware())

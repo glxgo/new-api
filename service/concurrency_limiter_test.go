@@ -47,6 +47,29 @@ func TestLocalUserConcurrencyReturnsAdmissionCount(t *testing.T) {
 	require.Equal(t, 2, current)
 }
 
+func TestUnlimitedUserConcurrencyStillCountsAndReleases(t *testing.T) {
+	oldEnabled, oldRDB := common.RedisEnabled, common.RDB
+	common.RedisEnabled, common.RDB = false, nil
+	t.Cleanup(func() { common.RedisEnabled, common.RDB = oldEnabled, oldRDB })
+	resetLocalConcurrencyForTest()
+	for _, key := range []string{UserConcurrencyKey(71), VirtualMembershipConcurrencyKey(71, 9)} {
+		first, ok, count := AcquireConcurrencyWithCountByKey(key, 0)
+		t.Cleanup(first.Release)
+		require.True(t, ok)
+		require.Equal(t, 1, count)
+		second, ok, count := AcquireConcurrencyWithCountByKey(key, 0)
+		t.Cleanup(second.Release)
+		require.True(t, ok)
+		require.Equal(t, 2, count)
+		require.Equal(t, 2, GetConcurrencyByKey(key))
+		first.Release()
+		first.Release()
+		require.Equal(t, 1, GetConcurrencyByKey(key))
+		second.Release()
+		require.Zero(t, GetConcurrencyByKey(key))
+	}
+}
+
 func TestLocalConcurrencyAcquireIsAtomic(t *testing.T) {
 	oldRedisEnabled, oldRDB := common.RedisEnabled, common.RDB
 	common.RedisEnabled, common.RDB = false, nil

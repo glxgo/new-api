@@ -96,7 +96,13 @@ func GetTopUpInfo(c *gin.Context) {
 		}
 	}
 
+	discount, err := model.GetUserRechargeDiscount(c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	data := gin.H{
+		"recharge_discount":                discount,
 		"enable_online_topup":              isEpayTopUpEnabled(),
 		"enable_stripe_topup":              isStripeTopUpEnabled(),
 		"enable_creem_topup":               isCreemTopUpEnabled(),
@@ -111,7 +117,7 @@ func GetTopUpInfo(c *gin.Context) {
 			}
 			return nil
 		}(),
-		"creem_products":          setting.CreemProducts,
+		"creem_products":          discountedCreemProducts(discount.TotalCents),
 		"pay_methods":             payMethods,
 		"min_topup":               operation_setting.MinTopUp,
 		"stripe_min_topup":        setting.StripeMinTopUp,
@@ -208,7 +214,10 @@ func RequestEpay(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "获取用户分组失败"})
 		return
 	}
-	originalPayMoney := getPayMoney(req.Amount, group)
+	originalPayMoney, discountOK := applyUserRechargeDiscount(c, getPayMoney(req.Amount, group))
+	if !discountOK {
+		return
+	}
 	payMoney := originalPayMoney
 	if strings.TrimSpace(req.CouponCode) != "" {
 		quote, quoteErr := model.QuoteTopUpCoupon(id, req.CouponCode, originalPayMoney)
@@ -453,7 +462,10 @@ func RequestAmount(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "获取用户分组失败"})
 		return
 	}
-	payMoney := getPayMoney(req.Amount, group)
+	payMoney, discountOK := applyUserRechargeDiscount(c, getPayMoney(req.Amount, group))
+	if !discountOK {
+		return
+	}
 	if strings.TrimSpace(req.CouponCode) != "" {
 		quote, quoteErr := model.QuoteTopUpCoupon(id, req.CouponCode, payMoney)
 		if quoteErr != nil {

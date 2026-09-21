@@ -46,8 +46,10 @@ export function channelListQueryOptions(params: SearchChannelsParams) {
 
   return queryOptions({
     queryKey: [...channelsQueryKeys.list(normalized), shouldSearch] as const,
-    queryFn: () =>
-      shouldSearch ? searchChannels(normalized) : getChannels(normalized),
+    queryFn: ({ signal }) =>
+      shouldSearch
+        ? searchChannels(normalized, signal)
+        : getChannels(normalized, signal),
     staleTime: 15_000,
   })
 }

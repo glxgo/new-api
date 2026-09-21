@@ -10,8 +10,6 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
-
-	"github.com/bytedance/gopkg/util/gopool"
 )
 
 const (
@@ -31,7 +29,7 @@ func StartSubscriptionQuotaResetTask() {
 		if !common.IsMasterNode {
 			return
 		}
-		gopool.Go(func() {
+		common.BackgroundCtxGo("general", context.Background(), func() {
 			logger.LogInfo(context.Background(), fmt.Sprintf("subscription quota reset task started: tick=%s", subscriptionResetTickInterval))
 			ticker := time.NewTicker(subscriptionResetTickInterval)
 			defer ticker.Stop()

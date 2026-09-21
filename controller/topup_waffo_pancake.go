@@ -41,13 +41,16 @@ func RequestWaffoPancakeAmount(c *gin.Context) {
 		return
 	}
 
-	payMoney := getWaffoPancakePayMoney(req.Amount, group)
+	payMoney, discountOK := applyUserRechargeDiscount(c, getWaffoPancakePayMoney(req.Amount, group))
+	if !discountOK {
+		return
+	}
 	if payMoney <= 0.01 {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "充值金额过低"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "success", "data": fmt.Sprintf("%.2f", payMoney)})
+	c.JSON(http.StatusOK, gin.H{"message": "success", "data": model.FormatPaymentGatewayAmount(payMoney)})
 }
 
 func getWaffoPancakePayMoney(amount int64, group string) float64 {
@@ -374,7 +377,10 @@ func RequestWaffoPancakePay(c *gin.Context) {
 		return
 	}
 
-	payMoney := getWaffoPancakePayMoney(req.Amount, group)
+	payMoney, discountOK := applyUserRechargeDiscount(c, getWaffoPancakePayMoney(req.Amount, group))
+	if !discountOK {
+		return
+	}
 	if payMoney < 0.01 {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "充值金额过低"})
 		return

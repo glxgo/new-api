@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
 import { Activity, Gauge, Layers, ReceiptText, Waypoints } from 'lucide-react'
@@ -24,9 +24,9 @@ import { useTranslation } from 'react-i18next'
 import { formatLogQuota } from '@/lib/format'
 import { useIsAdmin } from '@/hooks/use-admin'
 import { useTokenCountFormatter } from '@/hooks/use-token-count-formatter'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { getLogStats, getUserLogStats } from '../api'
-import { DEFAULT_LOG_STATS } from '../constants'
+import { getLogStats, getUserLogStats, getAllLogs, getUserLogs } from '../api'
 import { buildApiParams } from '../lib/utils'
 import { useUsageLogsContext } from './usage-logs-provider'
 
@@ -82,31 +82,72 @@ export function CommonLogsStats(props: CommonLogsStatsProps) {
   const searchParams = route.useSearch()
   const { sensitiveVisible } = useUsageLogsContext()
 
-  const { data: stats, isPending } = useQuery({
-    queryKey: ['usage-logs-stats', isAdmin, searchParams],
+  // Pagination does not change aggregate filters. Reuse the same cache while
+  // browsing pages instead of issuing another SUM on every click.
+  const statsParams = buildApiParams({
+    page: 1,
+    pageSize: 1,
+    searchParams,
+    columnFilters: [],
+    isAdmin,
+  })
+  const countScope = JSON.stringify([isAdmin, statsParams])
+  const [requestedCountScope, setRequestedCountScope] = useState('')
+  const count = useQuery({
+    queryKey: ['usage-logs-count', isAdmin, statsParams],
+    enabled: props.enabled && requestedCountScope === countScope,
+    queryFn: async ({ signal }) => {
+      const response = isAdmin
+        ? await getAllLogs(statsParams, signal)
+        : await getUserLogs(statsParams, signal)
+      if (!response.success || !response.data)
+        throw new Error(response.message || 'Failed to load logs')
+      return response.data.total
+    },
+    staleTime: 30_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+  })
+  let countValue: ReactNode = count.data ?? props.totalCount
+  if (props.totalCount < 0 && count.data === undefined) {
+    countValue = (
+      <Button
+        variant='ghost'
+        size='sm'
+        disabled={count.isFetching}
+        onClick={() => {
+          setRequestedCountScope(countScope)
+          if (requestedCountScope === countScope) void count.refetch()
+        }}
+      >
+        {count.isFetching ? t('Loading...') : t('Calculate total')}
+      </Button>
+    )
+  }
+  const {
+    data: stats,
+    isPending,
+    isError,
+  } = useQuery({
+    queryKey: ['usage-logs-stats', isAdmin, statsParams],
     enabled: props.enabled,
-    queryFn: async () => {
-      const params = buildApiParams({
-        page: 1,
-        pageSize: 1,
-        searchParams,
-        columnFilters: [],
-        isAdmin,
-      })
+    queryFn: async ({ signal }) => {
+      const params = statsParams
 
       const result = isAdmin
-        ? await getLogStats(params)
-        : await getUserLogStats(params)
+        ? await getLogStats(params, signal)
+        : await getUserLogStats(params, signal)
 
-      return result.success
-        ? result.data || DEFAULT_LOG_STATS
-        : DEFAULT_LOG_STATS
+      if (!result.success || !result.data)
+        throw new Error(result.message || 'Failed to load logs')
+      return result.data
     },
-    staleTime: 10_000,
+    staleTime: 30_000,
+    retry: false,
     refetchOnWindowFocus: false,
   })
 
-  if (!props.enabled || isPending) {
+  if (isPending) {
     return (
       <div className='grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-5'>
         {Array.from({ length: 5 }).map((_, index) => (
@@ -116,29 +157,31 @@ export function CommonLogsStats(props: CommonLogsStatsProps) {
     )
   }
 
+  function renderQuota(): ReactNode {
+    if (isError) return t('Unavailable')
+    if (!sensitiveVisible) return '••••'
+    return (
+      <span className='inline-flex flex-wrap items-baseline gap-2'>
+        {(stats?.pre_discount_quota ?? 0) > (stats?.quota ?? 0) && (
+          <span className='text-muted-foreground text-sm font-normal line-through'>
+            {formatLogQuota(stats?.pre_discount_quota ?? 0)}
+          </span>
+        )}
+        <span>{formatLogQuota(stats?.quota ?? 0)}</span>
+      </span>
+    )
+  }
+
   return (
     <div className='grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-5'>
       <StatCard
         label={t('Request Count')}
-        value={props.totalCount}
+        value={countValue}
         icon={ReceiptText}
       />
       <StatCard
         label={t('Total Usage')}
-        value={
-          sensitiveVisible ? (
-            <span className='inline-flex flex-wrap items-baseline gap-2'>
-              {(stats?.pre_discount_quota || 0) > (stats?.quota || 0) && (
-                <span className='text-muted-foreground text-sm font-normal line-through'>
-                  {formatLogQuota(stats?.pre_discount_quota || 0)}
-                </span>
-              )}
-              <span>{formatLogQuota(stats?.quota || 0)}</span>
-            </span>
-          ) : (
-            '••••'
-          )
-        }
+        value={renderQuota()}
         icon={Waypoints}
       />
       <StatCard
@@ -148,14 +191,14 @@ export function CommonLogsStats(props: CommonLogsStatsProps) {
       />
       <StatCard
         label={t('RPM')}
-        value={stats?.rpm || 0}
+        value={isError ? '—' : (stats?.rpm ?? 0)}
         helper={t('Requests per minute')}
         inlineHelper
         icon={Gauge}
       />
       <StatCard
         label={t('TPM')}
-        value={formatTokenCount(stats?.tpm || 0)}
+        value={isError ? '—' : formatTokenCount(stats?.tpm ?? 0)}
         helper={t('Tokens per minute')}
         inlineHelper
         icon={Activity}

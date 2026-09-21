@@ -544,6 +544,7 @@ func mapTaskStatusToSimple(status model.TaskStatus) string {
 
 func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 	return &dto.TaskDto{
+		Client: task.Client, CodingGroup: task.CodingGroup,
 		ID:         task.ID,
 		CreatedAt:  task.CreatedAt,
 		UpdatedAt:  task.UpdatedAt,

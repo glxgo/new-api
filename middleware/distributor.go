@@ -31,11 +31,23 @@ type ModelRequest struct {
 
 func Distribute() func(c *gin.Context) {
 	return func(c *gin.Context) {
+		snapshot := common.CaptureClientSnapshot(c)
+		if !c.GetBool("client_observed") {
+			if err := model.ObserveClient(c.Request.Context(), snapshot); err != nil {
+				common.SysError("client observation failed: " + err.Error())
+			}
+			c.Set("client_observed", true)
+		}
 		var channel *model.Channel
 		channelId, ok := common.GetContextKey(c, constant.ContextKeyTokenSpecificChannelId)
 		modelRequest, shouldSelectChannel, err := getModelRequest(c)
 		if err != nil {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
+			return
+		}
+		if accessErr := service.CheckRequestClientAccess(c); accessErr != nil {
+			service.RecordClientAccessDenied(c, modelRequest.Model, accessErr)
+			abortWithOpenAiMessage(c, accessErr.StatusCode, accessErr.Error(), "client_not_allowed")
 			return
 		}
 		if ok {
@@ -115,6 +127,9 @@ func Distribute() func(c *gin.Context) {
 							userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 							autoGroups := service.GetUserAutoGroup(userGroup)
 							for _, g := range autoGroups {
+								if _, accessErr := model.CheckClientGroupAccess(c.Request.Context(), snapshot, g); accessErr != nil {
+									continue
+								}
 								if model.IsChannelEnabledForGroupModel(g, modelRequest.Model, preferred.Id) {
 									selectGroup = g
 									common.SetContextKey(c, constant.ContextKeyAutoGroup, g)
@@ -145,6 +160,12 @@ func Distribute() func(c *gin.Context) {
 						RelayFormat: model.PathToRelayFormat(c.Request.URL.Path),
 					})
 					if err != nil {
+						var clientErr *types.NewAPIError
+						if errors.As(err, &clientErr) && clientErr.GetErrorCode() == "client_not_allowed" {
+							service.RecordClientAccessDenied(c, modelRequest.Model, clientErr)
+							abortWithOpenAiMessage(c, clientErr.StatusCode, clientErr.Error(), "client_not_allowed")
+							return
+						}
 						if c.GetBool("token_route_configured") {
 							service.OpenTokenRouteCircuit(c)
 						}
@@ -170,6 +191,11 @@ func Distribute() func(c *gin.Context) {
 					}
 				}
 			}
+		}
+		if accessErr := service.CheckRequestClientAccess(c); accessErr != nil {
+			model.RecordErrorLog(c, c.GetInt("id"), 0, modelRequest.Model, c.GetString("token_name"), accessErr.Error(), c.GetInt("token_id"), 0, false, common.GetContextKeyString(c, constant.ContextKeyUsingGroup), map[string]interface{}{"client_access_denied": true})
+			abortWithOpenAiMessage(c, accessErr.StatusCode, accessErr.Error(), "client_not_allowed")
+			return
 		}
 		common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
 		SetupContextForSelectedChannel(c, channel, modelRequest.Model)

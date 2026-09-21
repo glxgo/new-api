@@ -17,6 +17,9 @@ import (
 var hotBuckets sync.Map
 var channelHotBuckets sync.Map
 
+// Prevent a query from observing a bucket between its drain and DB commit.
+var channelMetricsMu sync.RWMutex
+
 // seriesSchema is a stable client cache/schema marker. Do not change it when
 // hiding fields or making response-only privacy hardening changes.
 const seriesSchema = "dbcd0a3c01b55203"
@@ -88,10 +91,12 @@ func Record(sample Sample) {
 	actual.(*atomicBucket).add(sample)
 	recordRedis(key, sample)
 	if sample.ChannelId > 0 {
+		channelMetricsMu.RLock()
+		defer channelMetricsMu.RUnlock()
 		channelKey := channelBucketKey{
 			model:     sample.Model,
 			channelId: sample.ChannelId,
-			bucketTs:  key.bucketTs,
+			bucketTs:  time.Now().Unix() / 60 * 60,
 		}
 		channelActual, _ := channelHotBuckets.LoadOrStore(channelKey, &atomicBucket{})
 		channelActual.(*atomicBucket).add(sample)
@@ -203,11 +208,15 @@ func fixedStatusBucketWindow(startTs, endTs int64) (first, last, bucketSeconds i
 		startTs, endTs = endTs, startTs
 	}
 	bucketSeconds = (endTs - startTs + 47) / 48
-	if bucketSeconds < perf_metrics_setting.ModelStatusBucketSeconds {
-		bucketSeconds = perf_metrics_setting.ModelStatusBucketSeconds
+	minimumSeconds := perf_metrics_setting.ModelStatusBucketSeconds
+	if endTs-startTs <= 3600 {
+		minimumSeconds = 5 * 60
+	}
+	if bucketSeconds < minimumSeconds {
+		bucketSeconds = minimumSeconds
 	}
 	last = endTs - endTs%bucketSeconds
-	count = 48
+	count = min(48, max(1, int((endTs-startTs+bucketSeconds-1)/bucketSeconds)))
 	first = last - int64(count-1)*bucketSeconds
 	return first, last, bucketSeconds, count
 }
@@ -378,6 +387,8 @@ func QueryGroupSummaryAll(hours int, groups []string) (GroupSummaryAllResult, er
 // channels. This means traffic submitted through one group can keep another
 // group's status current when both groups share the same channel.
 func QueryGroupSummaryByChannels(hours int, scopes []GroupChannelScope) (GroupSummaryAllResult, error) {
+	channelMetricsMu.RLock()
+	defer channelMetricsMu.RUnlock()
 	if hours <= 0 {
 		hours = 24
 	}
@@ -386,11 +397,25 @@ func QueryGroupSummaryByChannels(hours int, scopes []GroupChannelScope) (GroupSu
 	}
 	endTs := time.Now().Unix()
 	startTs := endTs - int64(hours)*3600
+	queryStart := startTs
+	if hours == 1 {
+		queryStart, _, _, _ = fixedStatusBucketWindow(startTs, endTs)
+	}
 	channelIds := channelIdsFromScopes(scopes)
 
-	rows, err := model.GetChannelPerfMetrics(startTs, endTs, channelIds)
+	rows, err := model.GetChannelPerfMetrics(queryStart, endTs, channelIds)
 	if err != nil {
 		return GroupSummaryAllResult{}, err
+	}
+	if hours == 1 {
+		// Coarse historical buckets cannot be split into real five-minute samples.
+		fineRows := rows[:0]
+		for _, row := range rows {
+			if row.BucketSeconds > 0 && row.BucketSeconds <= 300 && row.BucketTs%300+row.BucketSeconds <= 300 {
+				fineRows = append(fineRows, row)
+			}
+		}
+		rows = fineRows
 	}
 	groups := make([]string, 0, len(scopes))
 	for _, scope := range scopes {
@@ -398,9 +423,12 @@ func QueryGroupSummaryByChannels(hours int, scopes []GroupChannelScope) (GroupSu
 			groups = append(groups, scope.Group)
 		}
 	}
-	legacyRows, err := model.GetPerfMetricsGroupBuckets(startTs, endTs, groups)
-	if err != nil {
-		return GroupSummaryAllResult{}, err
+	var legacyRows []model.PerfMetricGroupBucket
+	if hours != 1 {
+		legacyRows, err = model.GetPerfMetricsGroupBuckets(startTs, endTs, groups)
+		if err != nil {
+			return GroupSummaryAllResult{}, err
+		}
 	}
 
 	hot := make(map[channelBucketKey]counters)
@@ -410,7 +438,7 @@ func QueryGroupSummaryByChannels(hours int, scopes []GroupChannelScope) (GroupSu
 	}
 	channelHotBuckets.Range(func(key, value any) bool {
 		k := key.(channelBucketKey)
-		if k.bucketTs < startTs || k.bucketTs > endTs {
+		if k.bucketTs < queryStart || k.bucketTs > endTs {
 			return true
 		}
 		if _, ok := allowedChannels[k.channelId]; !ok {

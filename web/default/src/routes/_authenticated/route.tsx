@@ -18,11 +18,11 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useAuthStore } from '@/stores/auth-store'
-import { getSelf } from '@/lib/api'
+import { getValidatedSelf } from '@/lib/auth-query'
 import { AuthenticatedLayout } from '@/components/layout'
 
 export const Route = createFileRoute('/_authenticated')({
-  beforeLoad: async ({ location }) => {
+  beforeLoad: async ({ location, context, cause }) => {
     const { auth } = useAuthStore.getState()
 
     // 如果本地没有用户信息，直接跳转登录页
@@ -33,13 +33,14 @@ export const Route = createFileRoute('/_authenticated')({
       })
     }
 
-    // 每次进入已认证应用都从当前 token/session 拉取一次权威用户资料。
-    // 不能依赖 sessionStorage 的“已验证”标记，否则管理员后来授予的
-    // 企业/教育身份在刷新页面后仍会显示旧的普通欢迎语。
-    const res = await getSelf().catch(() => null)
-    if (res?.success && res.data) {
-      auth.setUser(res.data)
-    } else {
+    // 首次进入/重新登录强制验证；同一应用内翻页和筛选短暂复用，
+    // 避免每次查询都先等待一次身份接口。缓存不持久化到浏览器存储。
+    const res = await getValidatedSelf(
+      context.queryClient,
+      auth.user.id,
+      cause === 'enter'
+    ).catch(() => null)
+    if (!res?.success || !res.data || !useAuthStore.getState().auth.user) {
       // 验证失败或 API 调用失败，清除本地缓存并跳转登录页
       auth.reset()
       throw redirect({

@@ -60,3 +60,18 @@ func TestLocalUserRPMAcquireIsAtomic(t *testing.T) {
 	}
 	require.Equal(t, limit, accepted)
 }
+
+func TestUnlimitedUserRPMStillCountsAndExpires(t *testing.T) {
+	withLocalUserRPMLimiter(t)
+	for i := 1; i <= 3; i++ {
+		allowed, count := AcquireUserRPM(71, 0)
+		require.True(t, allowed)
+		require.Equal(t, i, count)
+	}
+	require.Equal(t, 3, GetUserRPM(71))
+	require.Zero(t, getLocalUserRPMCount(71, time.Now().Add(time.Minute)))
+	allowed, count := AcquireUserRPMByKey(VirtualMembershipRPMKey(71, 9), 0)
+	require.True(t, allowed)
+	require.Equal(t, 1, count)
+	require.Zero(t, GetUserRPM(71))
+}

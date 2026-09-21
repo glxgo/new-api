@@ -79,7 +79,7 @@ func (s *BillingSession) Settle(actualQuota int) error {
 			return settleErr
 		}
 		s.fundingSettled = true
-	} else if delta != 0 && !s.fundingSettled {
+	} else if !s.fundingSettled {
 		if err := s.funding.Settle(delta); err != nil {
 			return err
 		}
@@ -725,7 +725,18 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 
 	switch pref {
 	case "subscription_only":
-		return trySubscription()
+		// 套餐指定分组与用户已绑定订阅的分组已按上面的硬边界处理，走到这里
+		// 说明当前是普通分组。仅用订阅只应约束订阅分组：若用户持有不受分组
+		// 限制的通用订阅，仍按"仅用订阅"执行；否则普通分组按余额计费，
+		// 避免全局偏好让有余额的用户在普通分组完全无法调用。
+		unrestrictedSubscription, unrestrictedErr := model.HasActiveUnrestrictedUserSubscription(relayInfo.UserId)
+		if unrestrictedErr != nil {
+			return nil, types.NewError(unrestrictedErr, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
+		}
+		if unrestrictedSubscription {
+			return trySubscription()
+		}
+		return tryWallet(false)
 	case "wallet_only":
 		return tryWallet(false)
 	case "wallet_first":

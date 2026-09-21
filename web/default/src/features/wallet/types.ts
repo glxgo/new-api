@@ -127,6 +127,7 @@ export interface WaffoPayMethod {
  * Topup configuration information
  */
 export interface TopupInfo {
+  recharge_discount?: RechargeDiscountProgress
   /** Whether online topup is enabled */
   enable_online_topup: boolean
   /** Whether Stripe topup is enabled */
@@ -278,6 +279,7 @@ export interface UserWalletData {
   /** Cumulative commission/dividends earned (agent/admin/root, ever-increasing) */
   dividend_total?: number
   /** Recharge-based API capacity and progress */
+  recharge_discount?: RechargeDiscountProgress
   recharge_capacity?: RechargeCapacityProgress
   security_strike_count?: number
   security_suspended_until?: number
@@ -355,4 +357,17 @@ export interface FinancialConsumeDaily {
  */
 export interface CompleteOrderRequest {
   trade_no: string
+}
+
+export interface RechargeDiscountTier {
+  minimum_cents: number
+  rate: number
+}
+export interface RechargeDiscountProgress {
+  total_cents: number
+  current_tier: RechargeDiscountTier
+  next_tier?: RechargeDiscountTier
+  remaining_cents: number
+  progress: number
+  tiers: RechargeDiscountTier[]
 }

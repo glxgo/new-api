@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { GripVertical, KeyRound, ListOrdered } from 'lucide-react'
 import { Reorder } from 'motion/react'
 import { toast } from 'sonner'
+import { formatBeijingDate } from '@/lib/format'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -199,9 +200,7 @@ export function SubscriptionConsumptionOrderDialog({
                 <div className='truncate text-sm font-medium'>{item.title}</div>
                 <div className='text-muted-foreground mt-0.5 flex items-center gap-2 text-xs'>
                   <span>#{item.id}</span>
-                  <span>
-                    到期 {new Date(item.endTime * 1000).toLocaleDateString()}
-                  </span>
+                  <span>到期 {formatBeijingDate(item.endTime)}</span>
                 </div>
               </div>
             </Reorder.Item>

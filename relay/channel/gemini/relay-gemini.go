@@ -1347,6 +1347,10 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	responseText := strings.Builder{}
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
+		if apiErr := helper.ParseStreamError(data); apiErr != nil {
+			sr.Stop(apiErr)
+			return
+		}
 		var geminiResponse dto.GeminiChatResponse
 		if err := common.UnmarshalJsonStr(data, &geminiResponse); err != nil {
 			sr.Stop(fmt.Errorf("unmarshal: %w", err))
@@ -1379,6 +1383,9 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 			sr.Stop(fmt.Errorf("gemini callback stopped"))
 		}
 	})
+	if streamErr := helper.StreamFailure(c, info, false); streamErr != nil {
+		return nil, streamErr
+	}
 
 	if imageCount != 0 {
 		if usage.CompletionTokens == 0 {
@@ -1498,7 +1505,7 @@ func GeminiChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *
 	if handleErr != nil {
 		common.SysLog("send final response failed: " + handleErr.Error())
 	}
-	return usage, nil
+	return usage, helper.StreamFailure(c, info, false)
 }
 
 func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {

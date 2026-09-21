@@ -3,6 +3,7 @@ package controller
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -21,14 +22,14 @@ const (
 type requestWithdrawReq struct {
 	Type          int    `json:"type"`           // 1 本金 2 分红
 	Amount        int    `json:"amount"`         // 提现金额(quota 单位)
-	AlipayName    string `json:"alipay_name"`    // 本金提现必填
-	AlipayAccount string `json:"alipay_account"` // 本金提现必填
-	WechatQrcode  string `json:"wechat_qrcode"`  // base64, 备用
+	AlipayName    string `json:"alipay_name"`    // 本金/代理佣金提现必填
+	AlipayAccount string `json:"alipay_account"` // 本金/代理佣金提现必填
+	WechatQrcode  string `json:"wechat_qrcode"`  // base64, 本金/代理佣金提现备用
 }
 
 // RequestWithdraw 用户提现申请(本金/分红统一入口)。
 // 本金(Type=1): 普通用户, 必填支付宝姓名/账户(+微信码备用), 校验充值冻结期(7 天内成功充值不可提)。
-// 分红/佣金(Type=2): 代理/管理员/超管, 不填收款信息(超管线下联系打款)。申请后冻结余额, 进超管审核队列。
+// 分红/佣金(Type=2): 代理必填收款信息；管理员/超管仍由线下联系打款。申请后冻结余额, 进超管审核队列。
 func RequestWithdraw(c *gin.Context) {
 	var req requestWithdrawReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -61,14 +62,17 @@ func RequestWithdraw(c *gin.Context) {
 		return
 	}
 	w.ActualAmount = req.Amount - w.Fee
-
-	if req.Type == model.WithdrawTypePrincipal {
-		// 普通用户本金提现, 必填收款信息
-		if req.AlipayName == "" || req.AlipayAccount == "" {
-			common.ApiErrorMsg(c, "本金提现必填支付宝姓名和账户")
+	if withdrawPaymentInfoRequired(req.Type, role) {
+		if strings.TrimSpace(req.AlipayName) == "" || strings.TrimSpace(req.AlipayAccount) == "" {
+			common.ApiErrorMsg(c, "提现必填支付宝姓名和账户")
 			return
 		}
-		w.AlipayName, w.AlipayAccount, w.WechatQrcode = req.AlipayName, req.AlipayAccount, req.WechatQrcode
+		w.AlipayName = strings.TrimSpace(req.AlipayName)
+		w.AlipayAccount = strings.TrimSpace(req.AlipayAccount)
+		w.WechatQrcode = req.WechatQrcode
+	}
+
+	if req.Type == model.WithdrawTypePrincipal {
 		// 充值冻结期校验: 7 天内成功充值的额度不可提
 		available, err := getPrincipalWithdrawable(userId, user.Quota)
 		if err != nil {
@@ -84,7 +88,7 @@ func RequestWithdraw(c *gin.Context) {
 			return
 		}
 	} else if req.Type == model.WithdrawTypeDividend {
-		// 分红/佣金提现(代理/管理员/超管), 不填收款信息
+		// 分红/佣金提现(代理/管理员/超管)。代理的收款信息已在上方校验并保存。
 		if !common.CanWithdrawDividend(role) {
 			common.ApiErrorMsg(c, "仅代理、管理员或超管可提现佣金/分红")
 			return
@@ -109,7 +113,7 @@ func RequestWithdraw(c *gin.Context) {
 		return
 	}
 
-	go notifyWithdrawRequest(username, req.Type, req.Amount, w.ActualAmount, user.Email)
+	go notifyWithdrawRequest(username, req.Type, req.Amount, w.ActualAmount)
 	logger.LogInfo(c.Request.Context(), fmt.Sprintf("user %d request withdraw type=%d amount=%d fee=%d actual=%d",
 		userId, req.Type, req.Amount, w.Fee, w.ActualAmount))
 	common.ApiSuccess(c, w)
@@ -165,9 +169,15 @@ func reviewWithdraw(c *gin.Context, status int) {
 	}
 	handlerId := c.GetInt("id")
 	handlerName := c.GetString("username")
-	// 原子更新状态(WHERE Pending 防并发重复审核)
-	if err := model.FinishWithdraw(w.Id, status, handlerId, handlerName, req.Remark); err != nil {
+	// 原子更新状态(WHERE Pending 防并发重复审核)。只有真正从 pending
+	// 抢占到终态的请求才能继续处理冻结资金。
+	updated, err := model.FinishWithdraw(w.Id, status, handlerId, handlerName, req.Remark)
+	if err != nil {
 		common.ApiError(c, err)
+		return
+	}
+	if !updated {
+		common.ApiErrorMsg(c, "该提现申请已处理")
 		return
 	}
 	// 资金处理: 通过=清冻结(钱已出系统), 拒绝=退回可用余额
@@ -223,7 +233,16 @@ func GetAllWithdraws(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"data": ws, "total": total})
 }
 
-func notifyWithdrawRequest(username string, wtype, amount, actual int, userEmail string) {
+func withdrawPaymentInfoRequired(wtype, role int) bool {
+	return wtype == model.WithdrawTypePrincipal ||
+		(wtype == model.WithdrawTypeDividend && role == common.RoleAgentUser)
+}
+
+func withdrawNotificationRecipients() string {
+	return withdrawNotifyEmail
+}
+
+func notifyWithdrawRequest(username string, wtype, amount, actual int) {
 	typeStr := "本金"
 	if wtype == model.WithdrawTypeDividend {
 		typeStr = "分红"
@@ -231,11 +250,7 @@ func notifyWithdrawRequest(username string, wtype, amount, actual int, userEmail
 	subject := fmt.Sprintf("[%s] 新提现申请 - %s %s", common.SystemName, typeStr, username)
 	content := fmt.Sprintf("<p>用户 <b>%s</b> 申请提现%s, 金额 %s, 扣除手续费后实际到账 %s, 请及时审核。</p>",
 		username, typeStr, logger.FormatQuota(amount), logger.FormatQuota(actual))
-	to := withdrawNotifyEmail
-	if userEmail != "" {
-		to = withdrawNotifyEmail + ";" + userEmail
-	}
-	if err := common.SendEmail(subject, to, content); err != nil {
+	if err := common.SendEmail(subject, withdrawNotificationRecipients(), content); err != nil {
 		common.SysError("send withdraw notify email failed: " + err.Error())
 	}
 }

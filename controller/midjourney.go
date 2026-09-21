@@ -266,6 +266,7 @@ func GetAllMidjourney(c *gin.Context) {
 
 	// 解析其他查询参数
 	queryParams := model.TaskQueryParams{
+		ClientFamily:   c.Query("client_family"),
 		ChannelID:      c.Query("channel_id"),
 		MjID:           c.Query("mj_id"),
 		StartTimestamp: c.Query("start_timestamp"),
@@ -292,6 +293,7 @@ func GetUserMidjourney(c *gin.Context) {
 	userId := c.GetInt("id")
 
 	queryParams := model.TaskQueryParams{
+		ClientFamily:   c.Query("client_family"),
 		MjID:           c.Query("mj_id"),
 		StartTimestamp: c.Query("start_timestamp"),
 		EndTimestamp:   c.Query("end_timestamp"),

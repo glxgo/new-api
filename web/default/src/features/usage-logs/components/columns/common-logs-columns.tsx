@@ -52,11 +52,13 @@ import {
 import { resolveFirstTokenMs } from '../../lib/timing'
 import {
   isDisplayableLogType,
+  formatCapacitySnapshot,
   isTimingLogType,
   getLogTypeConfig,
   isPerCallBilling,
 } from '../../lib/utils'
 import type { LogOtherData } from '../../types'
+import { ClientTimeCell } from '../client-time-cell'
 import { DetailsDialog } from '../dialogs/details-dialog'
 import { ModelBadge } from '../model-badge'
 import { useUsageLogsContext } from '../usage-logs-provider'
@@ -362,18 +364,20 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         const config = getLogTypeConfig(log.type)
 
         return (
-          <div className='flex min-w-0 flex-col gap-0.5'>
-            <span className='truncate font-mono text-xs tabular-nums'>
-              {formatTimestampToDate(timestamp)}
-            </span>
-            <StatusBadge
-              label={t(config.label)}
-              variant={config.color as StatusBadgeProps['variant']}
-              size='sm'
-              copyable={false}
-              className='!text-xs [&_span]:!text-xs'
-            />
-          </div>
+          <ClientTimeCell
+            time={formatTimestampToDate(timestamp)}
+            status={
+              <StatusBadge
+                label={t(config.label)}
+                variant={config.color as StatusBadgeProps['variant']}
+                size='sm'
+                copyable={false}
+                className='!text-xs [&_span]:!text-xs'
+              />
+            }
+            client={parseLogOther(log.other)?.client}
+            coding={parseLogOther(log.other)?.coding_group}
+          />
         )
       },
       filterFn: (row, _id, value) => {
@@ -382,7 +386,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         return value.includes(String(row.original.type))
       },
       enableHiding: false,
-      size: 180,
+      size: 260,
     },
   ]
 
@@ -554,10 +558,13 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
     header: '负载快照',
     cell: ({ row }) => {
       const log = row.original
-      const hasSnapshot =
-        log.user_concurrency_limit > 0 || log.user_rpm_limit > 0
+      const concurrency = formatCapacitySnapshot(
+        log.user_concurrency,
+        log.user_concurrency_limit
+      )
+      const rpm = formatCapacitySnapshot(log.user_rpm, log.user_rpm_limit)
 
-      if (!hasSnapshot) {
+      if (!concurrency && !rpm) {
         return <span className='text-muted-foreground/50 text-xs'>—</span>
       }
 
@@ -569,15 +576,11 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             >
               <div className='flex items-center justify-between gap-2 font-mono text-[11px] tabular-nums'>
                 <span className='text-muted-foreground'>并发</span>
-                <span className='font-medium'>
-                  {log.user_concurrency}/{log.user_concurrency_limit}
-                </span>
+                <span className='font-medium'>{concurrency ?? '—'}</span>
               </div>
               <div className='flex items-center justify-between gap-2 font-mono text-[11px] tabular-nums'>
                 <span className='text-muted-foreground'>RPM</span>
-                <span className='font-medium'>
-                  {log.user_rpm}/{log.user_rpm_limit}
-                </span>
+                <span className='font-medium'>{rpm ?? '—'}</span>
               </div>
             </TooltipTrigger>
             <TooltipContent side='top'>

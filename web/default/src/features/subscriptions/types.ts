@@ -127,7 +127,14 @@ export const userSubscriptionSchema = z.object({
   amount_cap_used: z.number().optional(),
   allowed_group: z.string().optional(),
   next_reset_time: z.number().optional(),
+  quota_reset_period: z.string().optional(),
+  is_final_reset_cycle: z.boolean().optional(),
   lucky_card_disabled: z.boolean().optional(),
+  spend_limit_period: z.enum(['hour', 'day', '']).optional(),
+  spend_limit_quota: z.number().optional(),
+  spend_limit_used: z.number().optional(),
+  spend_limit_window_start: z.number().optional(),
+  spend_limit_window_end: z.number().optional(),
 })
 
 export type UserSubscription = z.infer<typeof userSubscriptionSchema>
@@ -213,6 +220,11 @@ export interface BatchSubscriptionBindingPayload {
   subscription_allow_wallet: boolean
   subscription_wallet_limit: number
   keep_planned_token_ids?: number[]
+}
+
+export interface SubscriptionSpendLimitPayload {
+  period: 'hour' | 'day' | ''
+  quota: number
 }
 
 export interface SubscriptionPayResponse {

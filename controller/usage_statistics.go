@@ -57,7 +57,7 @@ func GetUsageStatisticsAdmin(c *gin.Context) {
 }
 
 func getUsageStatistics(c *gin.Context, userID int) {
-	periodName := c.DefaultQuery("range", "7d")
+	periodName := c.DefaultQuery("range", "24h")
 	period, ok := usageStatisticsPeriods[periodName]
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -68,8 +68,13 @@ func getUsageStatistics(c *gin.Context, userID int) {
 	}
 
 	endTime := common.GetTimestamp()
+	// Explicit dashboard snapshots quantize both the actual interval and its
+	// cache identity. Legacy callers retain exact-second query semantics.
+	if c.Query("snapshot") == "true" {
+		endTime -= endTime % 30
+	}
 	startTime := endTime - int64(period.duration/time.Second)
-	stats, err := model.GetUserUsageStatistics(userID, startTime, endTime, period.bucketSeconds)
+	stats, err := model.GetUserUsageStatisticsWithContext(c.Request.Context(), userID, startTime, endTime, period.bucketSeconds)
 	if err != nil {
 		common.ApiError(c, err)
 		return

@@ -61,3 +61,22 @@ func TestCaptureEffectiveReasoningEffortNilSafe(t *testing.T) {
 		t.Fatalf("ReasoningEffort = %q, want empty for nil payload", present.ReasoningEffort)
 	}
 }
+
+func TestCaptureEffectiveReasoningEffortClaude(t *testing.T) {
+	for _, tc := range []struct{ name, payload, want string }{
+		{"adaptive high", `{"model":"claude-opus-4-6","thinking":{"type":"adaptive"},"output_config":{"effort":"high"}}`, "high"},
+		{"max", `{"output_config":{"effort":"max"}}`, "max"},
+		{"normalize", `{"output_config":{"effort":" LOW "}}`, "low"},
+		{"explicit overrides model suffix", `{"model":"claude-opus-4-6-high","output_config":{"effort":"medium"}}`, "medium"},
+		{"budget is not a named effort", `{"model":"claude-sonnet-4-5","thinking":{"type":"enabled","budget_tokens":8192}}`, ""},
+		{"no effort does not invent default", `{"model":"claude-opus-4-6","thinking":{"type":"adaptive"}}`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			info := &RelayInfo{ReasoningEffort: "stale"}
+			info.CaptureEffectiveReasoningEffort([]byte(tc.payload))
+			if info.ReasoningEffort != tc.want {
+				t.Fatalf("got %q, want %q", info.ReasoningEffort, tc.want)
+			}
+		})
+	}
+}

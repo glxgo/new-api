@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useEffect, useRef } from 'react'
-import { type QueryClient } from '@tanstack/react-query'
+import { type QueryClient, useQueryClient } from '@tanstack/react-query'
 import {
   createRootRouteWithContext,
   Outlet,
@@ -28,7 +28,7 @@ import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { useAuthStore, type AuthUser } from '@/stores/auth-store'
-import { getSelf } from '@/lib/api'
+import { getValidatedSelf } from '@/lib/auth-query'
 import { ThemeCustomizationProvider } from '@/context/theme-customization-provider'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { Toaster } from '@/components/ui/sonner'
@@ -42,22 +42,20 @@ import { getSetupStatus } from '@/features/setup/api'
 
 function WelcomeToastOnEntry() {
   const { t } = useTranslation()
-  const cachedUser = useAuthStore((state) => state.auth.user)
-  const setUser = useAuthStore((state) => state.auth.setUser)
+  const userId = useAuthStore((state) => state.auth.user?.id)
+  const queryClient = useQueryClient()
   const welcomeShownRef = useRef(false)
 
   useEffect(() => {
-    if (!cachedUser || welcomeShownRef.current) return
+    if (!userId || welcomeShownRef.current) return
 
     welcomeShownRef.current = true
     let cancelled = false
     void (async () => {
-      const self = await getSelf().catch(() => null)
+      const self = await getValidatedSelf(queryClient, userId).catch(() => null)
       if (cancelled || !self?.success || !self.data) return
 
       const user = self.data as AuthUser
-      setUser(user)
-
       if (normalizeIdentityType(user.identity_type) === 'none') {
         toast.success(t('Welcome back!'))
         return
@@ -71,7 +69,7 @@ function WelcomeToastOnEntry() {
     return () => {
       cancelled = true
     }
-  }, [cachedUser, setUser, t])
+  }, [userId, queryClient, t])
 
   return null
 }

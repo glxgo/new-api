@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
 import { type Table as TanstackTable } from '@tanstack/react-table'
@@ -33,6 +33,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { useAuthStore } from '@/stores/auth-store'
 import { copyToClipboard } from '@/lib/copy-to-clipboard'
 import { formatQuota, formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -64,7 +65,7 @@ import {
 } from '@/features/api-ingress/api'
 import { useChatPresets } from '@/features/chat/hooks/use-chat-presets'
 import { resolveTutorialApiBaseUrl } from '@/features/tutorial/content'
-import { getApiKeys, searchApiKeys } from '../api'
+import { getApiKeys, searchApiKeys, getApiKeyUsageStats } from '../api'
 import {
   API_KEY_STATUS,
   API_KEY_STATUS_OPTIONS,
@@ -73,6 +74,7 @@ import {
 } from '../constants'
 import { type ApiKey } from '../types'
 import { ApiKeySubscriptionCombobox } from './api-key-subscription-combobox'
+import { ApiKeyUsageValue } from './api-key-usage-value'
 import {
   ApiKeyCell,
   ApiKeyGroupCell,
@@ -419,13 +421,16 @@ function ApiKeysMobileList({
               <div>
                 <span className='text-muted-foreground block'>今日消耗</span>
                 <span className='font-mono font-medium tabular-nums'>
-                  {formatQuota(apiKey.today_used_quota)}
+                  <ApiKeyUsageValue apiKey={apiKey} field='today_used_quota' />
                 </span>
               </div>
               <div className='text-right'>
                 <span className='text-muted-foreground block'>累计消耗</span>
                 <span className='font-mono font-medium tabular-nums'>
-                  {formatQuota(apiKey.lifetime_used_quota)}
+                  <ApiKeyUsageValue
+                    apiKey={apiKey}
+                    field='lifetime_used_quota'
+                  />
                 </span>
               </div>
             </div>
@@ -693,12 +698,13 @@ function ApiKeysDesktopWorkspace({
             <div>
               <div className='flex items-baseline gap-2'>
                 <p className='font-mono text-2xl font-semibold tracking-tight tabular-nums'>
-                  {formatQuota(apiKey.today_used_quota)}
+                  <ApiKeyUsageValue apiKey={apiKey} field='today_used_quota' />
                 </p>
                 <span className='text-muted-foreground text-xs'>今日消耗</span>
               </div>
               <p className='text-muted-foreground mt-1 text-[10px] tabular-nums'>
-                累计消耗 {formatQuota(apiKey.lifetime_used_quota)}
+                累计消耗{' '}
+                <ApiKeyUsageValue apiKey={apiKey} field='lifetime_used_quota' />
               </p>
             </div>
             <div className='text-right'>
@@ -778,6 +784,7 @@ function ApiKeysDesktopWorkspace({
 }
 
 export function ApiKeysTable() {
+  const userId = useAuthStore((state) => state.auth.user?.id)
   const { t } = useTranslation()
   const { refreshTrigger } = useApiKeys()
   const { serverAddress } = useChatPresets()
@@ -818,24 +825,31 @@ export function ApiKeysTable() {
   const { data, isLoading, isFetching } = useQuery({
     queryKey: [
       'keys',
+      userId,
       pagination.pageIndex + 1,
       pagination.pageSize,
       globalFilter,
       tokenFilter,
       refreshTrigger,
     ],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const result = shouldSearch
-        ? await searchApiKeys({
-            keyword: globalFilter,
-            token: tokenFilter,
-            p: pagination.pageIndex + 1,
-            size: pagination.pageSize,
-          })
-        : await getApiKeys({
-            p: pagination.pageIndex + 1,
-            size: pagination.pageSize,
-          })
+        ? await searchApiKeys(
+            {
+              keyword: globalFilter,
+              token: tokenFilter,
+              p: pagination.pageIndex + 1,
+              size: pagination.pageSize,
+            },
+            signal
+          )
+        : await getApiKeys(
+            {
+              p: pagination.pageIndex + 1,
+              size: pagination.pageSize,
+            },
+            signal
+          )
 
       if (!result.success) {
         toast.error(
@@ -854,10 +868,34 @@ export function ApiKeysTable() {
         total: result.data?.total || 0,
       }
     },
+    staleTime: 30_000,
+    retry: false,
+    refetchOnWindowFocus: false,
     placeholderData: (previousData) => previousData,
   })
 
-  const apiKeys = data?.items || []
+  const usageIds = useMemo(
+    () => (data?.items ?? []).map((item) => item.id).sort((a, b) => a - b),
+    [data?.items]
+  )
+  const usage = useQuery({
+    queryKey: ['key-usage', userId, usageIds, refreshTrigger],
+    queryFn: ({ signal }) => getApiKeyUsageStats(usageIds, signal),
+    enabled: usageIds.length > 0 && !isFetching,
+    staleTime: 30_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+  })
+  const apiKeys = useMemo(() => {
+    const stats = new Map(usage.data?.items.map((item) => [item.id, item]))
+    return (data?.items ?? []).map((item): ApiKey => {
+      const value = stats.get(item.id)
+      let usageState: ApiKey['usage_state'] = 'loading'
+      if (value) usageState = value.stale ? 'stale' : 'ready'
+      else if (usage.isError) usageState = 'error'
+      return { ...item, ...value, usage_state: usageState }
+    })
+  }, [data?.items, usage.data, usage.isError])
 
   const { table } = useDataTable({
     data: apiKeys,

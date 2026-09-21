@@ -26,6 +26,7 @@ func GetAllTask(c *gin.Context) {
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
 	// 解析其他查询参数
 	queryParams := model.SyncTaskQueryParams{
+		ClientFamily:   c.Query("client_family"),
 		Platform:       constant.TaskPlatform(c.Query("platform")),
 		TaskID:         c.Query("task_id"),
 		Status:         c.Query("status"),
@@ -51,6 +52,7 @@ func GetUserTask(c *gin.Context) {
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
 
 	queryParams := model.SyncTaskQueryParams{
+		ClientFamily:   c.Query("client_family"),
 		Platform:       constant.TaskPlatform(c.Query("platform")),
 		TaskID:         c.Query("task_id"),
 		Status:         c.Query("status"),

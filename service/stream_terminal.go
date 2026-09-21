@@ -106,16 +106,19 @@ func buildResponsesStreamTerminalEvent(c *gin.Context, info *relaycommon.RelayIn
 		}
 		softErrorCount = info.StreamStatus.TotalErrorCount()
 		responseCompleted = info.StreamStatus.EndReason == relaycommon.StreamEndReasonDone
-		clientGone = info.StreamStatus.EndReason == relaycommon.StreamEndReasonClientGone
+		clientGone = info.StreamStatus.EndReason == relaycommon.StreamEndReasonClientGone || info.StreamStatus.EndReason == relaycommon.StreamEndReasonWriteFail || info.StreamStatus.EndReason == relaycommon.StreamEndReasonPingFail
 	}
 	upstreamTerminal := relaycommon.UpstreamTerminal{}
 	if info.StreamStatus != nil {
 		upstreamTerminal = info.StreamStatus.UpstreamTerminalSnapshot()
 	}
+	if apiErr != nil && (apiErr.GetErrorCode() == "client_write_error" || apiErr.GetErrorCode() == "client_canceled") {
+		clientGone = true
+	}
 	// net/http cancels the request context when a successfully completed
 	// handler returns as well. Treat it as client_gone only while the stream is
 	// still incomplete; response.completed is authoritative for Responses.
-	if !responseCompleted && c.Request.Context().Err() != nil {
+	if !responseCompleted && upstreamTerminal.EventType == "" && c.Request.Context().Err() != nil {
 		clientGone = true
 	}
 	if apiErr != nil {

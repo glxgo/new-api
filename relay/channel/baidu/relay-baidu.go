@@ -120,7 +120,11 @@ func baiduStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 		var baiduResponse BaiduChatStreamResponse
 		if err := common.Unmarshal([]byte(data), &baiduResponse); err != nil {
 			common.SysLog("error unmarshalling stream response: " + err.Error())
-			sr.Error(err)
+			sr.Stop(err)
+			return
+		}
+		if baiduResponse.ErrorMsg != "" {
+			sr.Stop(types.NewErrorWithStatusCode(fmt.Errorf("%s", baiduResponse.ErrorMsg), types.ErrorCodeUpstreamResponseFailed, http.StatusBadGateway))
 			return
 		}
 		if baiduResponse.Usage.TotalTokens != 0 {
@@ -131,10 +135,13 @@ func baiduStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 		response := streamResponseBaidu2OpenAI(&baiduResponse)
 		if err := helper.ObjectData(c, response); err != nil {
 			common.SysLog("error sending stream response: " + err.Error())
-			sr.Error(err)
+			sr.Stop(err)
 		}
 	})
 	service.CloseResponseBodyGracefully(resp)
+	if streamErr := helper.StreamFailure(c, info, false); streamErr != nil {
+		return streamErr, nil
+	}
 	return nil, usage
 }
 

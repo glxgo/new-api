@@ -75,9 +75,14 @@ export type CodexCredentialRefreshResponse = {
  * Get paginated list of channels
  */
 export async function getChannels(
-  params: GetChannelsParams = {}
+  params: GetChannelsParams = {},
+  signal?: AbortSignal
 ): Promise<GetChannelsResponse> {
-  const res = await api.get('/api/channel', { params })
+  const res = await api.get('/api/channel', {
+    params,
+    signal,
+    disableDuplicate: Boolean(signal),
+  })
   return res.data
 }
 
@@ -85,9 +90,14 @@ export async function getChannels(
  * Search channels with filters
  */
 export async function searchChannels(
-  params: SearchChannelsParams
+  params: SearchChannelsParams,
+  signal?: AbortSignal
 ): Promise<SearchChannelsResponse> {
-  const res = await api.get('/api/channel/search', { params })
+  const res = await api.get('/api/channel/search', {
+    params,
+    signal,
+    disableDuplicate: Boolean(signal),
+  })
   return res.data
 }
 

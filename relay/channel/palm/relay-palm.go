@@ -51,54 +51,33 @@ func streamResponsePaLM2OpenAI(palmResponse *PaLMChatResponse) *dto.ChatCompleti
 }
 
 func palmStreamHandler(c *gin.Context, resp *http.Response) (*types.NewAPIError, string) {
-	responseText := ""
-	responseId := helper.GetResponseID(c)
-	createdTime := common.GetTimestamp()
-	dataChan := make(chan string)
-	stopChan := make(chan bool)
-	go func() {
-		responseBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			common.SysLog("error reading stream response: " + err.Error())
-			stopChan <- true
-			return
-		}
-		service.CloseResponseBodyGracefully(resp)
-		var palmResponse PaLMChatResponse
-		err = json.Unmarshal(responseBody, &palmResponse)
-		if err != nil {
-			common.SysLog("error unmarshalling stream response: " + err.Error())
-			stopChan <- true
-			return
-		}
-		fullTextResponse := streamResponsePaLM2OpenAI(&palmResponse)
-		fullTextResponse.Id = responseId
-		fullTextResponse.Created = createdTime
-		if len(palmResponse.Candidates) > 0 {
-			responseText = palmResponse.Candidates[0].Content
-		}
-		jsonResponse, err := json.Marshal(fullTextResponse)
-		if err != nil {
-			common.SysLog("error marshalling stream response: " + err.Error())
-			stopChan <- true
-			return
-		}
-		dataChan <- string(jsonResponse)
-		stopChan <- true
-	}()
-	helper.SetEventStreamHeaders(c)
-	c.Stream(func(w io.Writer) bool {
-		select {
-		case data := <-dataChan:
-			c.Render(-1, common.CustomEvent{Data: "data: " + data})
-			return true
-		case <-stopChan:
-			c.Render(-1, common.CustomEvent{Data: "data: [DONE]"})
-			return false
-		}
-	})
-	service.CloseResponseBodyGracefully(resp)
-	return nil, responseText
+	defer service.CloseResponseBodyGracefully(resp)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return types.NewErrorWithStatusCode(err, types.ErrorCodeReadResponseBodyFailed, http.StatusBadGateway), ""
+	}
+	var upstream PaLMChatResponse
+	if err = common.Unmarshal(body, &upstream); err != nil {
+		return types.NewErrorWithStatusCode(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway), ""
+	}
+	if upstream.Error.Code != 0 {
+		return types.WithOpenAIError(types.OpenAIError{Code: upstream.Error.Code, Message: upstream.Error.Message}, http.StatusBadGateway), ""
+	}
+	response := streamResponsePaLM2OpenAI(&upstream)
+	response.Id = helper.GetResponseID(c)
+	response.Created = common.GetTimestamp()
+	if err = helper.ObjectData(c, response); err != nil {
+		return types.NewErrorWithStatusCode(err, "client_write_error", 499, types.ErrOptionWithSkipRetry()), ""
+	}
+	helper.Done(c)
+	if err = helper.StreamWriteError(c); err != nil {
+		return types.NewErrorWithStatusCode(err, "client_write_error", 499, types.ErrOptionWithSkipRetry()), ""
+	}
+	text := ""
+	if len(upstream.Candidates) > 0 {
+		text = upstream.Candidates[0].Content
+	}
+	return nil, text
 }
 
 func palmHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {

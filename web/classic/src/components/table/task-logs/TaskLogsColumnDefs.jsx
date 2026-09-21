@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
+import ClientTimeCell from '../usage-logs/ClientTimeCell';
 import { Progress, Tag, Tooltip, Typography } from '@douyinfe/semi-ui';
 import {
   Music,
@@ -248,7 +249,14 @@ export const getTaskLogsColumns = ({
       title: t('提交时间'),
       dataIndex: 'submit_time',
       render: (text, record, index) => {
-        return <div>{text ? renderTimestamp(text) : '-'}</div>;
+        return (
+          <ClientTimeCell
+            time={text ? renderTimestamp(text) : '-'}
+            status={renderStatus(record.status, t)}
+            client={record.client}
+            coding={record.coding_group}
+          />
+        );
       },
     },
     {
@@ -301,15 +309,10 @@ export const getTaskLogsColumns = ({
         const displayText = String(record.username || userId || '?');
         return (
           <Space>
-            <Avatar
-              size='extra-small'
-              color={stringToColor(displayText)}
-            >
+            <Avatar size='extra-small' color={stringToColor(displayText)}>
               {displayText.slice(0, 1)}
             </Avatar>
-            <Typography.Text>
-              {displayText}
-            </Typography.Text>
+            <Typography.Text>{displayText}</Typography.Text>
           </Space>
         );
       },
@@ -416,7 +419,8 @@ export const getTaskLogsColumns = ({
           record.action === TASK_ACTION_REMIX_GENERATE;
         const isSuccess = record.status === 'SUCCESS';
         const resultUrl = record.result_url;
-        const hasResultUrl = typeof resultUrl === 'string' && /^https?:\/\//.test(resultUrl);
+        const hasResultUrl =
+          typeof resultUrl === 'string' && /^https?:\/\//.test(resultUrl);
         if (isSuccess && isVideoTask && hasResultUrl) {
           return (
             <a

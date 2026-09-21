@@ -26,7 +26,6 @@ import {
 
 const account = (code: string) => ({
   code,
-  plan_type: 'pro',
   available: true,
   enabled: true,
   windows: [],
