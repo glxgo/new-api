@@ -617,3 +617,9 @@
 - 未改变外部测试来源、真实图像、标准答案 21、原始检测答案、分组/渠道映射、精选规则、后台开关或作品不可用状态；本轮只改变用户端呈现。
 - 通过 Default TypeScript、定向 ESLint、Default/Classic production build、两端定向 Prettier 与 `git diff --check`。环境没有 Bun，改用项目现有 `node_modules/.bin` 中已安装的同版本工具执行，未安装依赖或修改锁文件。
 - 浏览器本地预览已确认 Default/Classic 页面和详情抽屉可用，生产尚未挂载、切流、提交或推送。
+
+### 2026-09-23 — 开发进度提交已推送，生产蓝绿等待 SSH 恢复
+
+- 当前分支 `codex/iq-capability-v6` 已提交为 `ba026c4a5`（智商测试与鹈鹕存档接入、双前端、管理端、迁移/预览/验收工具及本轮 UI 优化），并成功推送到 `origin/codex/iq-capability-v6`；远程 `main` 未修改，未创建或合并 PR。
+- 已核对用户入口为 Default `/intelligence-test`（通用侧栏中位于使用日志与模型状态之间），Classic `/console/intelligence-test`；管理入口为 Default 系统设置 → 运维 → 智商测试，Classic 运维设置中的智商测试卡片。
+- 生产蓝绿尚未执行。只读 SSH 到历史 `site-builder` 别名落到 `site-builder:22` 后被对端关闭，历史 `stellaisle-image`（50.118.185.139:41862）也被对端关闭；未上传、未迁移、未重启、未切流。恢复有效 SSH 后仍须重新核对正式3000、候选端口、Compose、Nginx、备份与最新生产基线，再按蓝绿流程发布。
