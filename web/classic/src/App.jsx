@@ -51,6 +51,7 @@ import PersonalSetting from './components/settings/PersonalSetting';
 import VirtualMembership from './pages/VirtualMembership';
 import Setup from './pages/Setup';
 import SetupCheck from './components/layout/SetupCheck';
+import IntelligenceTest from './pages/PelicanArchive';
 
 const Home = lazy(() => import('./pages/Home'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -264,6 +265,10 @@ function App() {
               <DynamicOAuth2Callback />
             </Suspense>
           }
+        />
+        <Route
+          path='/console/intelligence-test'
+          element={<PrivateRoute><IntelligenceTest /></PrivateRoute>}
         />
         <Route
           path='/console/setting'

@@ -46,6 +46,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
 import { ROLE } from '@/lib/roles'
 import { type NavItem, type SidebarData } from '@/components/layout/types'
+import { usePelicanOverview } from '@/features/pelican-archive/api'
 
 /**
  * Root navigation groups for the application sidebar.
@@ -56,6 +57,7 @@ import { type NavItem, type SidebarData } from '@/components/layout/types'
 export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
   const { auth } = useAuthStore()
+  const capability = usePelicanOverview()
   const isAdmin = (auth.user?.role ?? 0) >= ROLE.ADMIN
   const isAgent = (auth.user?.role ?? 0) === ROLE.AGENT
   const isRoot = (auth.user?.role ?? 0) >= ROLE.SUPER_ADMIN
@@ -212,6 +214,7 @@ export function useSidebarData(): SidebarData {
             url: '/usage-logs/common',
             icon: FileText,
           },
+          ...(capability.data?.visible ? [{ title: t('Intelligence Test'), url: '/intelligence-test', icon: FlaskConical } satisfies NavItem] : []),
           {
             title: t('Model Status'),
             url: '/model-status',

@@ -466,6 +466,20 @@ func getTaskOriginModelName(c *gin.Context) string {
 }
 
 func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, modelName string) *types.NewAPIError {
+	if channel == nil {
+		return types.NewError(errors.New(i18n.T(c, i18n.MsgDistributorChannelNil)), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+	}
+	key, index, apiError := channel.GetNextEnabledKey()
+	if apiError != nil {
+		return apiError
+	}
+	return SetupContextForSelectedChannelKey(c, channel, modelName, key, index)
+}
+
+// SetupContextForSelectedChannelKey is internal-only. The caller must select
+// and validate a credential from this channel; no HTTP route accepts a key or
+// slot from the client. Synthetic suites keep the same slot across questions.
+func SetupContextForSelectedChannelKey(c *gin.Context, channel *model.Channel, modelName, key string, index int) *types.NewAPIError {
 	c.Set("original_model", modelName) // for retry
 	if channel == nil {
 		return types.NewError(errors.New(i18n.T(c, i18n.MsgDistributorChannelNil)), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
@@ -496,10 +510,6 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	c.Set("channel_rpm_limit", channel.RPMLimit)
 	c.Set("channel_cost_ratio_ppm", channel.CostRatioPPM)
 
-	key, index, newAPIError := channel.GetNextEnabledKey()
-	if newAPIError != nil {
-		return newAPIError
-	}
 	if channel.ChannelInfo.IsMultiKey {
 		common.SetContextKey(c, constant.ContextKeyChannelIsMultiKey, true)
 		common.SetContextKey(c, constant.ContextKeyChannelMultiKeyIndex, index)

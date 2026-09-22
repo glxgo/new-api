@@ -1,0 +1,642 @@
+.pelican-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.pelican-page-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 2px 0;
+}
+.pelican-page-heading .semi-typography {
+  margin: 0;
+}
+.pelican-hero-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--semi-color-border);
+  border-radius: 16px;
+  background: linear-gradient(
+    135deg,
+    var(--semi-color-bg-2),
+    var(--semi-color-bg-1)
+  );
+  box-shadow: 0 8px 28px rgb(0 0 0 / 5%);
+}
+.pelican-hero-card::after {
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: inherit;
+  content: '';
+  pointer-events: none;
+}
+.pelican-hero-rule {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    var(--semi-color-primary),
+    var(--semi-color-primary-light-default) 34%,
+    transparent 78%
+  );
+  opacity: 0.9;
+}
+.pelican-hero-glow {
+  position: absolute;
+  top: -96px;
+  right: -32px;
+  width: 260px;
+  height: 260px;
+  border-radius: 50%;
+  background: var(--semi-color-primary-light-default);
+  opacity: 0.45;
+  filter: blur(42px);
+  pointer-events: none;
+}
+.pelican-hero-content {
+  position: relative;
+  padding: 22px;
+}
+.pelican-eyebrow-row,
+.pelican-hero-footer,
+.pelican-gallery-heading,
+.pelican-group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.pelican-eyebrow-row {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.pelican-eyebrow,
+.pelican-group-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--semi-color-primary-light-default);
+  border-radius: 999px;
+  padding: 4px 9px;
+  color: var(--semi-color-primary);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.pelican-eyebrow-verified {
+  position: relative;
+  padding-left: 20px;
+}
+.pelican-eyebrow-verified::before {
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentcolor;
+  box-shadow: 0 0 0 3px rgb(0 0 0 / 5%);
+  content: '';
+  transform: translateY(-50%);
+}
+.pelican-hero-title {
+  margin: 0 0 7px !important;
+  letter-spacing: -0.02em;
+}
+.pelican-hero-title-wrap {
+  position: relative;
+  padding-left: 12px;
+}
+.pelican-hero-title-wrap::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--semi-color-primary);
+  content: '';
+}
+.pelican-hero-intro {
+  display: block;
+  max-width: 760px;
+  line-height: 1.75;
+}
+.pelican-hero-footer {
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--semi-color-border);
+}
+.pelican-meta-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pelican-meta-chip {
+  display: flex;
+  min-width: 150px;
+  flex-direction: column;
+  gap: 1px;
+  border: 1px solid var(--semi-color-border);
+  border-radius: 9px;
+  padding: 8px 10px;
+  background: var(--semi-color-bg-1);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 3%);
+}
+.pelican-meta-chip span,
+.pelican-model-field > span {
+  color: var(--semi-color-text-2);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.pelican-meta-chip strong {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.pelican-model-field {
+  display: flex;
+  min-width: 190px;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--semi-color-border);
+  border-radius: 12px;
+  padding: 8px 10px 10px;
+  background: var(--semi-color-bg-1);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 4%);
+}
+.pelican-group-card {
+  overflow: hidden;
+  border: 1px solid var(--semi-color-border);
+  border-radius: 16px;
+  box-shadow: 0 4px 18px rgb(0 0 0 / 3%);
+  transition:
+    transform 300ms cubic-bezier(0.32, 0.72, 0, 1),
+    box-shadow 300ms cubic-bezier(0.32, 0.72, 0, 1),
+    border-color 300ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.pelican-group-card:hover {
+  border-color: var(--semi-color-text-2);
+  box-shadow: 0 9px 26px rgb(0 0 0 / 6%);
+  transform: translateY(-2px);
+}
+.pelican-group-heading {
+  align-items: flex-start;
+  padding: 18px 20px 12px;
+  border-bottom: 1px solid var(--semi-color-border);
+}
+.pelican-group-name {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.pelican-group-name .semi-typography {
+  margin: 0;
+}
+.pelican-group-eyebrow {
+  align-self: flex-start;
+  border: 0;
+  padding: 0;
+  color: var(--semi-color-text-2);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+.pelican-group-model {
+  overflow: hidden;
+  max-width: 100%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pelican-ratio-tag {
+  flex-shrink: 0;
+  border-color: var(--semi-color-primary-light-default);
+  color: var(--semi-color-primary);
+}
+.pelican-group-description {
+  margin: 0;
+  padding: 12px 20px 0;
+  color: var(--semi-color-text-2);
+  line-height: 1.7;
+}
+.pelican-gallery-heading {
+  align-items: baseline;
+  padding: 0 20px;
+}
+.pelican-gallery-heading p {
+  margin: 0;
+  font-weight: 600;
+}
+.pelican-gallery-heading span {
+  border: 1px solid var(--semi-color-border);
+  border-radius: 999px;
+  padding: 3px 9px;
+  color: var(--semi-color-text-2);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.pelican-method-card {
+  overflow: hidden;
+  position: relative;
+  border: 1px solid var(--semi-color-border);
+  border-radius: 16px;
+  background: linear-gradient(
+    135deg,
+    var(--semi-color-bg-2),
+    var(--semi-color-bg-1)
+  );
+  box-shadow: 0 5px 22px rgb(0 0 0 / 4%);
+}
+.pelican-method-card::after {
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: inherit;
+  content: '';
+  pointer-events: none;
+}
+.pelican-method-header {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--semi-color-border);
+}
+.pelican-method-header .semi-typography {
+  margin: 0;
+}
+.pelican-method-header .pelican-eyebrow-row {
+  margin-bottom: 10px;
+}
+.pelican-method-intro {
+  display: block;
+  max-width: 740px;
+  margin-top: 6px !important;
+  line-height: 1.7;
+}
+.pelican-method-grid {
+  padding-top: 16px;
+  padding-bottom: 20px;
+}
+.pelican-method-item {
+  position: relative;
+  display: flex;
+  min-height: 208px;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--semi-color-border);
+  border-radius: 12px;
+  padding: 16px;
+  background: var(--semi-color-bg-1);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 3%);
+  transition:
+    transform 300ms cubic-bezier(0.32, 0.72, 0, 1),
+    box-shadow 300ms cubic-bezier(0.32, 0.72, 0, 1),
+    border-color 300ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.pelican-method-item::before {
+  position: absolute;
+  top: 16px;
+  bottom: 16px;
+  left: 0;
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    var(--semi-color-primary),
+    transparent 42%
+  );
+  opacity: 0;
+  content: '';
+  transition: opacity 300ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.pelican-method-item::after {
+  position: absolute;
+  top: -36px;
+  right: -30px;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: var(--semi-color-primary-light-default);
+  opacity: 0.3;
+  filter: blur(24px);
+  content: '';
+  pointer-events: none;
+}
+.pelican-method-item:hover {
+  background: var(--semi-color-bg-2);
+  border-color: var(--semi-color-text-2);
+  box-shadow: 0 8px 20px rgb(0 0 0 / 6%);
+  transform: translateY(-2px);
+}
+.pelican-method-item:hover::before {
+  opacity: 1;
+}
+.pelican-method-item-top {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.pelican-method-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--semi-color-primary-light-default);
+  border-radius: 8px;
+  background: var(--semi-color-primary-light-default);
+  color: var(--semi-color-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+.pelican-method-label {
+  color: var(--semi-color-text-2);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.pelican-method-item h4 {
+  position: relative;
+  z-index: 1;
+  margin: 16px 0 6px;
+  font-size: 14px;
+  letter-spacing: -0.005em;
+}
+.pelican-method-item p {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  color: var(--semi-color-text-2);
+  line-height: 1.7;
+}
+.pelican-method-item .semi-button {
+  position: relative;
+  z-index: 1;
+  align-self: flex-start;
+  margin-top: auto;
+  padding: 12px 0 0;
+}
+.pelican-mapping-row {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--semi-color-border);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+.pelican-mapping-report {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--semi-color-border);
+  border-radius: 6px;
+  background: var(--semi-color-fill-0);
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pelican-grid {
+  display: grid;
+  align-items: start;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  padding: 0 20px;
+}
+.pelican-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+.pelican-artwork {
+  width: 100%;
+  aspect-ratio: 3/2;
+  max-height: 65dvh;
+  object-fit: contain;
+}
+.pelican-work {
+  min-width: 0;
+  padding: 4px;
+  border: 1px solid var(--semi-color-border);
+  border-radius: 12px;
+  background: var(--semi-color-bg-1);
+  color: var(--semi-color-text-0);
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+}
+.pelican-work .pelican-artwork {
+  display: block;
+  height: auto;
+  aspect-ratio: auto;
+  max-height: none;
+}
+.pelican-work:hover {
+  background: var(--semi-color-fill-0);
+  border-color: var(--semi-color-text-2);
+  box-shadow: 0 8px 20px rgb(0 0 0 / 7%);
+  transform: translateY(-2px);
+  transition:
+    transform 300ms cubic-bezier(0.32, 0.72, 0, 1),
+    box-shadow 300ms cubic-bezier(0.32, 0.72, 0, 1),
+    border-color 300ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.pelican-artwork-empty {
+  display: flex;
+  width: 100%;
+  min-height: 128px;
+  aspect-ratio: 3 / 2;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+  text-align: center;
+  background: var(--semi-color-fill-0);
+  color: var(--semi-color-text-2);
+}
+.pelican-artwork-empty .semi-empty-image {
+  width: 28px;
+  height: 28px;
+  margin: 0 auto 12px;
+  color: var(--semi-color-text-2);
+}
+.pelican-artwork-empty .semi-empty-description {
+  margin: 0;
+  color: var(--semi-color-text-2);
+  font-size: 12px;
+  text-align: center;
+}
+.pelican-work:focus-visible,
+.pelican-history button:focus-visible {
+  outline: 2px solid var(--semi-color-primary);
+  outline-offset: 2px;
+}
+.pelican-history {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+}
+.pelican-history-shell {
+  margin: 0 20px;
+  padding: 8px 10px 10px;
+  border: 1px solid var(--semi-color-border);
+  border-radius: 12px;
+  background: var(--semi-color-fill-0);
+}
+.pelican-history button {
+  width: 24px;
+  height: 36px;
+  flex-shrink: 0;
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  cursor: pointer;
+}
+.pelican-history span {
+  display: block;
+  height: 20px;
+  border-radius: 4px;
+  background: var(--semi-color-fill-2);
+}
+.pelican-history-note {
+  margin: 8px 20px 0;
+  color: var(--semi-color-text-2);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.pelican-history span[data-grade='correct'] {
+  background: var(--semi-color-success);
+}
+.pelican-history span[data-grade='wrong'] {
+  background: var(--semi-color-warning);
+}
+.pelican-question,
+.pelican-source {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.pelican-source {
+  max-height: 60dvh;
+  overflow: auto;
+  font-size: 12px;
+}
+.pelican-evidence-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+.pelican-artwork-viewport {
+  max-height: 65dvh;
+  overflow: auto;
+  border: 1px solid var(--semi-color-border);
+  border-radius: 8px;
+  background: var(--semi-color-fill-0);
+}
+.pelican-artwork-viewport:focus-visible {
+  outline: 2px solid var(--semi-color-primary);
+  outline-offset: 2px;
+}
+.pelican-artwork-zoom {
+  width: 100%;
+}
+.pelican-artwork-zoom[data-zoom='150'] {
+  width: 150%;
+}
+.pelican-artwork-zoom[data-zoom='200'] {
+  width: 200%;
+}
+.pelican-artwork-zoom .pelican-artwork {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: none;
+  aspect-ratio: auto;
+}
+.pelican-answer-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+.pelican-answer-grid > div,
+.pelican-question {
+  padding: 16px;
+  border: 1px solid var(--semi-color-border);
+  border-radius: 8px;
+  background: var(--semi-color-fill-0);
+}
+.pelican-answer-grid dt,
+.pelican-record-grid dt,
+.pelican-evidence-note {
+  color: var(--semi-color-text-2);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.pelican-answer-grid dd {
+  margin: 8px 0 0;
+  font-size: 24px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.pelican-record-grid > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--semi-color-border);
+}
+.pelican-record-grid dd {
+  margin: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 767px) {
+  .pelican-hero-content {
+    padding: 18px 16px;
+  }
+  .pelican-group-heading {
+    padding: 16px 16px 11px;
+  }
+  .pelican-group-description {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+  .pelican-gallery-heading,
+  .pelican-grid {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+  .pelican-history-shell {
+    margin-right: 16px;
+    margin-left: 16px;
+  }
+  .pelican-history-note {
+    margin-right: 16px;
+    margin-left: 16px;
+  }
+  .pelican-method-header {
+    padding: 18px 16px 14px;
+  }
+  .pelican-method-grid {
+    padding-top: 14px;
+    padding-bottom: 16px;
+  }
+  .pelican-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

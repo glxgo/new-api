@@ -106,6 +106,10 @@ export function SidebarModulesSection({
         title: t('Usage logs'),
         description: t('Detailed request logs for investigations.'),
       },
+      intelligence_test: {
+        title: t('Intelligence Test'),
+        description: t('Task performance, supported by original evidence.'),
+      },
       midjourney: {
         title: t('Drawing logs'),
         description: t('History of Midjourney-style image tasks.'),

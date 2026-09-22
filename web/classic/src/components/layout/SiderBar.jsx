@@ -27,6 +27,7 @@ import { useSidebar } from '../../hooks/common/useSidebar';
 import { useMinimumLoadingTime } from '../../hooks/common/useMinimumLoadingTime';
 import { isAdmin, isRoot, showError } from '../../helpers';
 import SkeletonWrapper from './components/SkeletonWrapper';
+import { useIntelligenceOverview } from '../../pages/PelicanArchive';
 
 import { Nav, Divider, Button } from '@douyinfe/semi-ui';
 
@@ -41,6 +42,7 @@ const routerMap = {
   subscription: '/console/subscription',
   virtualMembership: '/console/virtual-membership',
   log: '/console/log',
+  intelligence_test: '/console/intelligence-test',
   midjourney: '/console/midjourney',
   setting: '/console/setting',
   about: '/about',
@@ -55,6 +57,7 @@ const routerMap = {
 
 const SiderBar = ({ onNavigate = () => {} }) => {
   const { t } = useTranslation();
+  const capability = useIntelligenceOverview();
   const [collapsed, toggleCollapsed] = useSidebarCollapsed();
   const {
     isModuleVisible,
@@ -110,6 +113,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
     ];
 
     // 根据配置过滤项目
+    if (capability.data?.visible) items.splice(3, 0, { text: '智商测试', itemKey: 'intelligence_test', to: '/intelligence-test' });
     const filteredItems = items.filter((item) => {
       const configVisible = isModuleVisible('console', item.itemKey);
       return configVisible;
@@ -122,6 +126,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
     localStorage.getItem('enable_task'),
     t,
     isModuleVisible,
+    capability.data?.visible,
   ]);
 
   const financeItems = useMemo(() => {

@@ -1,0 +1,12 @@
+# Merge into the audited formal OR candidate compose; no ports/image/node role overrides.
+# Never run this fragment alone. Apply separately to both deployment projects.
+services:
+  new-api:
+    environment:
+      PELICAN_SOURCE_ID: bench-primary
+      PELICAN_ARCHIVE_FILE: /run/pelican-archive/archive.json
+    volumes:
+      - type: bind
+        source: /var/lib/pelican-archive
+        target: /run/pelican-archive
+        read_only: true

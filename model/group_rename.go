@@ -49,6 +49,14 @@ func UpdateGroupRatioWithRenames(value string, renames map[string]string) error 
 	affectedKeys := make(map[string]struct{})
 	err = DB.Transaction(func(tx *gorm.DB) error {
 		for oldName, newName := range normalized {
+			// Preserve test identity only for an explicit business rename. Merely
+			// editing a public alias never enters this path.
+			if tx.Migrator().HasTable(&CapabilityGroupPresentation{}) {
+				if err := tx.Model(&CapabilityGroupPresentation{}).Where("routing_key = ?", oldName).
+					Updates(map[string]interface{}{"routing_key": newName, "previous_key": oldName}).Error; err != nil {
+					return err
+				}
+			}
 			var conflictCount int64
 			if tx.Migrator().HasTable(&TokenRouteStep{}) {
 				if err := tx.Table("token_route_steps AS old_step").

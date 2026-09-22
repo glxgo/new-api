@@ -1,0 +1,42 @@
+# Deployment candidate only. Validate sandbox/user namespaces on a dedicated
+# Linux build host before use; never build this image on the production server.
+services:
+  renderer:
+    image: ${CAPABILITY_RENDERER_IMAGE:?Set a verified image digest}
+    pull_policy: never
+    user: '65532:65532'
+    init: true
+    network_mode: none
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    cpus: 1.0
+    mem_limit: 768m
+    memswap_limit: 768m
+    pids_limit: 128
+    shm_size: 64m
+    ulimits:
+      core: 0
+      nofile:
+        soft: 1024
+        hard: 1024
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=256m,uid=65532,gid=65532,mode=0700
+    environment:
+      CAPABILITY_RENDERER_ISOLATED: 'true'
+      RENDERER_SOCKET: /run/capability/renderer.sock
+    volumes:
+      - type: bind
+        source: ${CAPABILITY_RENDERER_SOCKET_DIR:?Set an isolated socket-only directory}
+        target: /run/capability
+        bind:
+          create_host_path: false
+    stop_grace_period: 10s
+    restart: 'no'
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: '2'

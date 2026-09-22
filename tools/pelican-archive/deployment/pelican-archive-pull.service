@@ -1,0 +1,26 @@
+[Unit]
+Description=Read-only Pelican archive transport
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=pelican-sync
+Group=pelican-sync
+StateDirectory=pelican-archive
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/pelican-archive
+Environment=PATH=/usr/bin:/bin
+ExecStart=/usr/bin/python3 -I /usr/local/lib/pelican-archive/pull.py --ssh-config /etc/pelican-archive/ssh_config --host pelican-source --source-id bench-primary --output /var/lib/pelican-archive/archive.json
+TimeoutStartSec=45
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/pelican-archive
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=yes
+RestrictSUIDSGID=yes
+MemoryMax=256M
+TasksMax=16

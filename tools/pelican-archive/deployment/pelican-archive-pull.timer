@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh saved Pelican archive once per minute
+
+[Timer]
+OnBootSec=1min
+OnUnitInactiveSec=1min
+AccuracySec=5s
+Unit=pelican-archive-pull.service
+
+[Install]
+WantedBy=timers.target

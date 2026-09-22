@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 export const OPERATIONS_SECTION_IDS = [
   'behavior',
   'monitoring',
+  'capability-testing',
   'email',
   'worker',
   'logs',
@@ -33,6 +34,7 @@ export const OPERATIONS_DEFAULT_SECTION: OperationsSectionId = 'behavior'
 export const OPERATIONS_SECTION_TITLES = {
   behavior: 'System Behavior',
   monitoring: 'Monitoring & Alerts',
+  'capability-testing': 'Intelligence Test',
   email: 'SMTP Email',
   worker: 'Worker Proxy',
   logs: 'Log Maintenance',

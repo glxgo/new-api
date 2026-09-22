@@ -1,0 +1,9 @@
+*
+!Dockerfile
+!package.json
+!bun.lock
+!server.mjs
+!render.mjs
+!animation.mjs
+!animation-child.mjs
+!isolation.mjs

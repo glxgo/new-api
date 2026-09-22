@@ -1,0 +1,13 @@
+{
+  "name": "juxing-capability-renderer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test *.test.mjs"
+  },
+  "dependencies": {
+    "@resvg/resvg-js": "2.4.1",
+    "playwright": "1.61.1"
+  }
+}

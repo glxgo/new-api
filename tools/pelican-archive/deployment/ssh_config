@@ -1,0 +1,14 @@
+Host pelican-source
+    HostName 192.227.176.124
+    Port 11916
+    User pelican-export
+    IdentityFile /etc/pelican-archive/id_ed25519
+    UserKnownHostsFile /etc/pelican-archive/known_hosts
+    IdentitiesOnly yes
+    BatchMode yes
+    StrictHostKeyChecking yes
+    RequestTTY no
+    ClearAllForwardings yes
+    ConnectTimeout 10
+    ServerAliveInterval 5
+    ServerAliveCountMax 3

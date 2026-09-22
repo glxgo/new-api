@@ -61,6 +61,7 @@ import { Route as AuthenticatedLuckyWheelAdminIndexRouteImport } from './routes/
 import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authenticated/keys/index'
 import { Route as AuthenticatedInvoicesIndexRouteImport } from './routes/_authenticated/invoices/index'
 import { Route as AuthenticatedInvoiceReviewIndexRouteImport } from './routes/_authenticated/invoice-review/index'
+import { Route as AuthenticatedIntelligenceTestIndexRouteImport } from './routes/_authenticated/intelligence-test/index'
 import { Route as AuthenticatedDividendIndexRouteImport } from './routes/_authenticated/dividend/index'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
 import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authenticated/channels/index'
@@ -368,6 +369,12 @@ const AuthenticatedInvoiceReviewIndexRoute =
     path: '/invoice-review/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedIntelligenceTestIndexRoute =
+  AuthenticatedIntelligenceTestIndexRouteImport.update({
+    id: '/intelligence-test/',
+    path: '/intelligence-test/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedDividendIndexRoute =
   AuthenticatedDividendIndexRouteImport.update({
     id: '/dividend/',
@@ -562,6 +569,7 @@ export interface FileRoutesByFullPath {
   '/channels/': typeof AuthenticatedChannelsIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/dividend/': typeof AuthenticatedDividendIndexRoute
+  '/intelligence-test/': typeof AuthenticatedIntelligenceTestIndexRoute
   '/invoice-review/': typeof AuthenticatedInvoiceReviewIndexRoute
   '/invoices/': typeof AuthenticatedInvoicesIndexRoute
   '/keys/': typeof AuthenticatedKeysIndexRoute
@@ -639,6 +647,7 @@ export interface FileRoutesByTo {
   '/channels': typeof AuthenticatedChannelsIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/dividend': typeof AuthenticatedDividendIndexRoute
+  '/intelligence-test': typeof AuthenticatedIntelligenceTestIndexRoute
   '/invoice-review': typeof AuthenticatedInvoiceReviewIndexRoute
   '/invoices': typeof AuthenticatedInvoicesIndexRoute
   '/keys': typeof AuthenticatedKeysIndexRoute
@@ -720,6 +729,7 @@ export interface FileRoutesById {
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/dividend/': typeof AuthenticatedDividendIndexRoute
+  '/_authenticated/intelligence-test/': typeof AuthenticatedIntelligenceTestIndexRoute
   '/_authenticated/invoice-review/': typeof AuthenticatedInvoiceReviewIndexRoute
   '/_authenticated/invoices/': typeof AuthenticatedInvoicesIndexRoute
   '/_authenticated/keys/': typeof AuthenticatedKeysIndexRoute
@@ -800,6 +810,7 @@ export interface FileRouteTypes {
     | '/channels/'
     | '/dashboard/'
     | '/dividend/'
+    | '/intelligence-test/'
     | '/invoice-review/'
     | '/invoices/'
     | '/keys/'
@@ -877,6 +888,7 @@ export interface FileRouteTypes {
     | '/channels'
     | '/dashboard'
     | '/dividend'
+    | '/intelligence-test'
     | '/invoice-review'
     | '/invoices'
     | '/keys'
@@ -957,6 +969,7 @@ export interface FileRouteTypes {
     | '/_authenticated/channels/'
     | '/_authenticated/dashboard/'
     | '/_authenticated/dividend/'
+    | '/_authenticated/intelligence-test/'
     | '/_authenticated/invoice-review/'
     | '/_authenticated/invoices/'
     | '/_authenticated/keys/'
@@ -1386,6 +1399,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedInvoiceReviewIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/intelligence-test/': {
+      id: '/_authenticated/intelligence-test/'
+      path: '/intelligence-test'
+      fullPath: '/intelligence-test/'
+      preLoaderRoute: typeof AuthenticatedIntelligenceTestIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/dividend/': {
       id: '/_authenticated/dividend/'
       path: '/dividend'
@@ -1668,6 +1688,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedDividendIndexRoute: typeof AuthenticatedDividendIndexRoute
+  AuthenticatedIntelligenceTestIndexRoute: typeof AuthenticatedIntelligenceTestIndexRoute
   AuthenticatedInvoiceReviewIndexRoute: typeof AuthenticatedInvoiceReviewIndexRoute
   AuthenticatedInvoicesIndexRoute: typeof AuthenticatedInvoicesIndexRoute
   AuthenticatedKeysIndexRoute: typeof AuthenticatedKeysIndexRoute
@@ -1707,6 +1728,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedChannelsIndexRoute: AuthenticatedChannelsIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedDividendIndexRoute: AuthenticatedDividendIndexRoute,
+  AuthenticatedIntelligenceTestIndexRoute:
+    AuthenticatedIntelligenceTestIndexRoute,
   AuthenticatedInvoiceReviewIndexRoute: AuthenticatedInvoiceReviewIndexRoute,
   AuthenticatedInvoicesIndexRoute: AuthenticatedInvoicesIndexRoute,
   AuthenticatedKeysIndexRoute: AuthenticatedKeysIndexRoute,

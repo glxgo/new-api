@@ -1,0 +1,3 @@
+# Install root:root 0440 as /etc/sudoers.d/pelican-export; validate with visudo -cf.
+# Empty argument string means no arguments; no shell/python/docker permission.
+pelican-export ALL=(root) NOPASSWD: /usr/local/sbin/pelican-export ""

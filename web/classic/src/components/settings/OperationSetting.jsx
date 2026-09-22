@@ -25,6 +25,7 @@ import SettingsSidebarModulesAdmin from '../../pages/Setting/Operation/SettingsS
 import SettingsSensitiveWords from '../../pages/Setting/Operation/SettingsSensitiveWords';
 import SettingsLog from '../../pages/Setting/Operation/SettingsLog';
 import SettingsMonitoring from '../../pages/Setting/Operation/SettingsMonitoring';
+import IntelligenceSettings from '../../pages/PelicanArchive/settings';
 import SettingsCreditLimit from '../../pages/Setting/Operation/SettingsCreditLimit';
 import SettingsCheckin from '../../pages/Setting/Operation/SettingsCheckin';
 import SettingsAccessPolicy from '../../pages/Setting/Operation/SettingsAccessPolicy';
@@ -147,6 +148,7 @@ const OperationSetting = () => {
         {/* 监控设置 */}
         <Card style={{ marginTop: '10px' }}>
           <SettingsMonitoring options={inputs} refresh={onRefresh} />
+          <IntelligenceSettings />
         </Card>
         {/* 额度设置 */}
         <Card style={{ marginTop: '10px' }}>

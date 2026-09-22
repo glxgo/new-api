@@ -1,0 +1,14 @@
+{
+  "source_id": "bench-primary",
+  "confirmed_at": "2026-09-23",
+  "bindings": [
+    {"provider_id":"88e40140-ec88-4759-909d-40c47d901446","model":"gpt-6-astra","channel_id":83,"evidence":"configuration_match"},
+    {"provider_id":"937a51e1-798f-4b64-9599-7eab1c2a8165","model":"gpt-6-astra","channel_id":71,"evidence":"configuration_match"},
+    {"provider_id":"23145ca1-8c63-4692-8beb-f3e94f026ebe","model":"gpt-6-astra","channel_id":81,"evidence":"configuration_match"},
+    {"provider_id":"7a618f1e-ed63-4c51-8050-b67f76531270","model":"gpt-6-astra","channel_id":80,"evidence":"configuration_match"},
+    {"provider_id":"2ecaa53a-b160-4579-93c6-ddbd1f7a9afd","model":"gpt-6-astra","channel_id":48,"evidence":"configuration_match"},
+    {"provider_id":"6641d9b5-1fdf-4989-899b-6be265301ef6","model":"gpt-6-astra","channel_id":90,"evidence":"configuration_match"},
+    {"provider_id":"49761d67-bff2-4f72-a781-b9c57923edc3","model":"gpt-6-astra","channel_id":9,"evidence":"key_model_match_and_owner_endpoint_confirmation"},
+    {"provider_id":"00eb73b4-e539-43b2-b3bd-863990b80332","model":"gpt-6-astra","channel_id":36,"evidence":"key_model_match_and_owner_endpoint_confirmation"}
+  ]
+}

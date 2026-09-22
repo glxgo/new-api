@@ -31,6 +31,7 @@ import {
 } from './section-meta'
 import { TopNavOrderSection } from './top-nav-order-section'
 import { TutorialSection } from './tutorial-section'
+import { PelicanArchiveAdmin } from '@/features/pelican-archive/admin'
 
 const OPERATIONS_SECTIONS = [
   {
@@ -76,6 +77,11 @@ const OPERATIONS_SECTIONS = [
         }}
       />
     ),
+  },
+  {
+    id: 'capability-testing',
+    titleKey: 'Intelligence Test',
+    build: () => <PelicanArchiveAdmin />,
   },
   {
     id: 'email',
