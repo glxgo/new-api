@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"github.com/QuantumNous/new-api/common"
 	"net/http"
 
 	"github.com/QuantumNous/new-api/model"
@@ -16,7 +17,7 @@ func GetMissingModels(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
-			"message": err.Error(),
+			"message": common.SanitizePublicError(err.Error()),
 		})
 		return
 	}

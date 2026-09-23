@@ -24,7 +24,7 @@ import (
 func videoProxyError(c *gin.Context, status int, errType, message string) {
 	c.JSON(status, gin.H{
 		"error": gin.H{
-			"message": message,
+			"message": common.SanitizePublicError(message),
 			"type":    errType,
 		},
 	})
@@ -161,12 +161,22 @@ func VideoProxy(c *gin.Context) {
 		return
 	}
 
+	if service.HasMediaDiagnostic(resp) {
+		videoProxyError(c, http.StatusBadGateway, "server_error", "Failed to fetch video content")
+		return
+	}
 	for key, values := range resp.Header {
+		if !service.ShouldCopyUpstreamHeader(c, key, values) {
+			continue
+		}
 		for _, value := range values {
 			c.Writer.Header().Add(key, value)
 		}
 	}
 
+	if resp.ContentLength >= 0 {
+		c.Header("Content-Length", fmt.Sprint(resp.ContentLength))
+	}
 	c.Writer.Header().Set("Cache-Control", "public, max-age=86400")
 	c.Writer.WriteHeader(resp.StatusCode)
 	if _, err = io.Copy(c.Writer, resp.Body); err != nil {

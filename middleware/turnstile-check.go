@@ -41,7 +41,7 @@ func TurnstileCheck() gin.HandlerFunc {
 				common.SysLog(err.Error())
 				c.JSON(http.StatusOK, gin.H{
 					"success": false,
-					"message": err.Error(),
+					"message": common.SanitizePublicError(err.Error()),
 				})
 				c.Abort()
 				return
@@ -53,7 +53,7 @@ func TurnstileCheck() gin.HandlerFunc {
 				common.SysLog(err.Error())
 				c.JSON(http.StatusOK, gin.H{
 					"success": false,
-					"message": err.Error(),
+					"message": common.SanitizePublicError(err.Error()),
 				})
 				c.Abort()
 				return

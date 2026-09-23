@@ -266,7 +266,7 @@ func ApplyMainlandWhitelist(c *gin.Context) {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			status = http.StatusNotFound
 		}
-		c.JSON(status, gin.H{"success": false, "message": err.Error()})
+		c.JSON(status, gin.H{"success": false, "message": common.SanitizePublicError(err.Error())})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -297,19 +297,19 @@ func ApplyMainlandWhitelistFromSession(c *gin.Context) {
 			err = fmt.Errorf("用户名不存在或未配置企业/教育身份")
 		}
 		if strings.HasPrefix(c.GetHeader("Accept"), "text/html") {
-			c.Data(http.StatusBadRequest, "text/html; charset=utf-8", []byte(mainlandWhitelistResultPage(err.Error(), req.ReturnTo)))
+			c.Data(http.StatusBadRequest, "text/html; charset=utf-8", []byte(mainlandWhitelistResultPage(common.SanitizePublicError(err.Error()), req.ReturnTo)))
 			return
 		}
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": common.SanitizePublicError(err.Error())})
 		return
 	}
 	row, err := addCurrentIPWhitelistForUser(c, user.Id, req)
 	if err != nil {
 		if strings.HasPrefix(c.GetHeader("Accept"), "text/html") {
-			c.Data(http.StatusBadRequest, "text/html; charset=utf-8", []byte(mainlandWhitelistResultPage(err.Error(), req.ReturnTo)))
+			c.Data(http.StatusBadRequest, "text/html; charset=utf-8", []byte(mainlandWhitelistResultPage(common.SanitizePublicError(err.Error()), req.ReturnTo)))
 			return
 		}
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": common.SanitizePublicError(err.Error())})
 		return
 	}
 	if strings.HasPrefix(c.GetHeader("Accept"), "text/html") {

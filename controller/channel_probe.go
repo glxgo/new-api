@@ -120,7 +120,7 @@ func probeErrorMessage(result testResult) string {
 }
 
 func sanitizeProbeError(message string) string {
-	message = strings.Join(strings.Fields(message), " ")
+	message = strings.Join(strings.Fields(common.SanitizePublicError(message)), " ")
 	for _, pattern := range probeSecretPatterns {
 		message = pattern.ReplaceAllString(message, "[REDACTED]")
 	}
@@ -174,7 +174,7 @@ func executeChannelProbe(channel *model.Channel, testUserID int) (*model.Channel
 		record.ErrorCategory = classifyChannelProbeError(result)
 		record.ErrorMessage = sanitizeProbeError(probeErrorMessage(result))
 		if result.newAPIError != nil {
-			record.ErrorCode = string(result.newAPIError.GetErrorCode())
+			record.ErrorCode = common.SanitizePublicError(string(result.newAPIError.GetErrorCode()))
 		}
 	}
 
@@ -288,9 +288,9 @@ func GetChannelProbeStatus(c *gin.Context) {
 			item.LastTtftMs = state.LastTtftMs
 			item.HasTtft = state.HasTtft
 			item.LastHttpStatus = state.LastHttpStatus
-			item.LastErrorCode = state.LastErrorCode
+			item.LastErrorCode = common.SanitizePublicError(state.LastErrorCode)
 			item.LastErrorCategory = state.LastErrorCategory
-			item.LastErrorMessage = state.LastErrorMessage
+			item.LastErrorMessage = sanitizeProbeError(state.LastErrorMessage)
 			item.ConsecutiveFailures = state.ConsecutiveFailures
 			item.ConsecutiveSuccesses = state.ConsecutiveSuccesses
 		}
@@ -325,7 +325,7 @@ func ProbeChannelNow(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": state})
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": publicProbeState(state)})
 }
 
 type groupProbeAccumulator struct {
@@ -447,7 +447,7 @@ func buildGroupProbeSummaries(hours int, visibleGroups []string) (map[string]*pe
 			if state.LastFailureTs == state.LastProbeTs && state.LastFailureTs > acc.latestErrorTs {
 				acc.latestErrorTs = state.LastFailureTs
 				acc.summary.LastErrorCategory = state.LastErrorCategory
-				acc.summary.LastErrorCode = state.LastErrorCode
+				acc.summary.LastErrorCode = common.SanitizePublicError(state.LastErrorCode)
 			}
 			switch state.Status {
 			case model.ChannelProbeStatusHealthy:
@@ -593,4 +593,14 @@ func filterStatusGroupsByCanarySelection(
 	}
 	sort.Strings(filtered)
 	return filtered
+}
+
+func publicProbeState(state *model.ChannelProbeState) *model.ChannelProbeState {
+	if state == nil {
+		return nil
+	}
+	result := *state
+	result.LastErrorCode = common.SanitizePublicError(result.LastErrorCode)
+	result.LastErrorMessage = sanitizeProbeError(result.LastErrorMessage)
+	return &result
 }

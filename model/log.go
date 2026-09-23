@@ -103,6 +103,9 @@ const (
 func formatUserLogs(logs []*Log, startIdx int) {
 	for i := range logs {
 		logs[i].ChannelName = ""
+		if logs[i].Type == LogTypeError {
+			logs[i].Content = common.SanitizePublicError(logs[i].Content)
+		}
 		var otherMap map[string]interface{}
 		otherMap, _ = common.StrToMap(logs[i].Other)
 		if otherMap != nil {
@@ -114,6 +117,9 @@ func formatUserLogs(logs []*Log, startIdx int) {
 			delete(otherMap, "stream_status")
 		}
 		logs[i].Other = common.MapToJsonStr(otherMap)
+		if logs[i].Type == LogTypeError {
+			logs[i].Other = string(common.SanitizeErrorValueJSON([]byte(logs[i].Other)))
+		}
 		logs[i].Id = startIdx + i + 1
 	}
 }

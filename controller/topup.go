@@ -222,7 +222,7 @@ func RequestEpay(c *gin.Context) {
 	if strings.TrimSpace(req.CouponCode) != "" {
 		quote, quoteErr := model.QuoteTopUpCoupon(id, req.CouponCode, originalPayMoney)
 		if quoteErr != nil {
-			c.JSON(http.StatusOK, gin.H{"message": "error", "data": quoteErr.Error()})
+			c.JSON(http.StatusOK, gin.H{"message": "error", "data": common.SanitizePublicError(quoteErr.Error())})
 			return
 		}
 		if quote == nil {
@@ -310,7 +310,7 @@ func RequestEpay(c *gin.Context) {
 	err = model.CreateTopUpWithCoupon(topUp, req.CouponCode, originalPayMoney)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("易支付 创建充值订单失败 user_id=%d trade_no=%s payment_method=%s amount=%d error=%q", id, tradeNo, req.PaymentMethod, req.Amount, err.Error()))
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": err.Error()})
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": common.SanitizePublicError(err.Error())})
 		return
 	}
 	logger.LogInfo(c.Request.Context(), fmt.Sprintf("易支付 充值订单创建成功 user_id=%d trade_no=%s payment_method=%s amount=%d base_money=%.2f fee=%.2f money=%.2f uri=%q params=%q", id, tradeNo, req.PaymentMethod, req.Amount, basePayMoney, paymentFee, gatewayPayMoney, uri, common.GetJsonString(params)))
@@ -469,7 +469,7 @@ func RequestAmount(c *gin.Context) {
 	if strings.TrimSpace(req.CouponCode) != "" {
 		quote, quoteErr := model.QuoteTopUpCoupon(id, req.CouponCode, payMoney)
 		if quoteErr != nil {
-			c.JSON(http.StatusOK, gin.H{"message": "error", "data": quoteErr.Error()})
+			c.JSON(http.StatusOK, gin.H{"message": "error", "data": common.SanitizePublicError(quoteErr.Error())})
 			return
 		}
 		if quote == nil {

@@ -43,7 +43,7 @@ func UploadImage(c *gin.Context) {
 	filename := uuid.New().String() + ext
 	dst := filepath.Join(uploadDir, filename)
 	if err := c.SaveUploadedFile(file, dst); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "保存失败: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "保存失败: " + common.SanitizePublicError(err.Error())})
 		return
 	}
 	common.SysLog(fmt.Sprintf("image uploaded: %s (%d bytes) by user %d", filename, file.Size, c.GetInt("id")))

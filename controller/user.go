@@ -169,7 +169,7 @@ func Logout(c *gin.Context) {
 	err := session.Save()
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"message": err.Error(),
+			"message": common.SanitizePublicError(err.Error()),
 			"success": false,
 		})
 		return
@@ -467,7 +467,7 @@ func GetAffCode(c *gin.Context) {
 		if err := user.Update(false); err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": err.Error(),
+				"message": common.SanitizePublicError(err.Error()),
 			})
 			return
 		}
@@ -1132,7 +1132,7 @@ func ManageUser(c *gin.Context) {
 		if err := user.Delete(); err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": err.Error(),
+				"message": common.SanitizePublicError(err.Error()),
 			})
 			return
 		}

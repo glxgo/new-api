@@ -151,7 +151,14 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (apiErr 
 				destination = targetConn
 			}
 			_ = destination.SetWriteDeadline(time.Now().Add(30 * time.Second))
-			if err := destination.WriteMessage(f.kind, f.data); err != nil {
+			data := f.data
+			if !f.fromClient {
+				// Realtime model events are forwarded byte-for-byte on the internal
+				// leg, but error events must not disclose the upstream endpoint to
+				// the public websocket client.
+				data = common.SanitizeErrorJSON(data)
+			}
+			if err := destination.WriteMessage(f.kind, data); err != nil {
 				if !f.fromClient {
 					return failure(err, "client_write_error", 499), sumUsage
 				}

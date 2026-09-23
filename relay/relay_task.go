@@ -302,7 +302,7 @@ func RelayTaskFetch(c *gin.Context, relayMode int) (taskResp *dto.TaskError) {
 	}
 
 	c.Writer.Header().Set("Content-Type", "application/json")
-	_, err := io.Copy(c.Writer, bytes.NewBuffer(respBody))
+	_, err := io.Copy(c.Writer, bytes.NewBuffer(common.SanitizeErrorJSON(respBody)))
 	if err != nil {
 		taskResp = service.TaskErrorWrapper(err, "copy_response_body_failed", http.StatusInternalServerError)
 		return
@@ -543,6 +543,14 @@ func mapTaskStatusToSimple(status model.TaskStatus) string {
 }
 
 func TaskModel2Dto(task *model.Task) *dto.TaskDto {
+	failReason := task.FailReason
+	data := common.SanitizeErrorJSON(task.Data)
+	if task.Status != model.TaskStatusSuccess {
+		failReason = common.SanitizePublicError(failReason)
+	}
+	if task.Status == model.TaskStatusFailure && len(data) > 0 {
+		data = common.SanitizeErrorValueJSON(data)
+	}
 	return &dto.TaskDto{
 		Client: task.Client, CodingGroup: task.CodingGroup,
 		ID:         task.ID,
@@ -556,7 +564,7 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 		Quota:      task.Quota,
 		Action:     task.Action,
 		Status:     string(task.Status),
-		FailReason: task.FailReason,
+		FailReason: failReason,
 		ResultURL:  task.GetResultURL(),
 		SubmitTime: task.SubmitTime,
 		StartTime:  task.StartTime,
@@ -564,6 +572,6 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 		Progress:   task.Progress,
 		Properties: task.Properties,
 		Username:   task.Username,
-		Data:       task.Data,
+		Data:       data,
 	}
 }

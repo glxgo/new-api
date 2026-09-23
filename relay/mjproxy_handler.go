@@ -53,7 +53,7 @@ func RelayMidjourneyImage(c *gin.Context) {
 	fetchSetting := system_setting.GetFetchSetting()
 	if err := common.ValidateURLWithFetchSetting(midjourneyTask.ImageUrl, fetchSetting.EnableSSRFProtection, fetchSetting.AllowPrivateIp, fetchSetting.DomainFilterMode, fetchSetting.IpFilterMode, fetchSetting.DomainList, fetchSetting.IpList, fetchSetting.AllowedPorts, fetchSetting.ApplyIPFilterForDomain); err != nil {
 		c.JSON(http.StatusForbidden, gin.H{
-			"error": fmt.Sprintf("request blocked: %v", err),
+			"error": common.SanitizePublicError(fmt.Sprintf("request blocked: %v", err)),
 		})
 		return
 	}
@@ -68,8 +68,12 @@ func RelayMidjourneyImage(c *gin.Context) {
 	if resp.StatusCode != http.StatusOK {
 		responseBody, _ := io.ReadAll(resp.Body)
 		c.JSON(resp.StatusCode, gin.H{
-			"error": string(responseBody),
+			"error": common.SanitizePublicError(string(responseBody)),
 		})
+		return
+	}
+	if service.HasMediaDiagnostic(resp) {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "http_get_image_failed"})
 		return
 	}
 	// 从Content-Type头获取MIME类型
@@ -152,9 +156,12 @@ func coverMidjourneyTaskDto(c *gin.Context, originTask *model.Midjourney) (midjo
 		midjourneyTask.VideoUrl = originTask.VideoUrl
 	}
 	midjourneyTask.Status = originTask.Status
-	midjourneyTask.FailReason = originTask.FailReason
+	midjourneyTask.FailReason = common.SanitizePublicError(originTask.FailReason)
 	midjourneyTask.Action = originTask.Action
 	midjourneyTask.Description = originTask.Description
+	if originTask.Status == "FAILURE" {
+		midjourneyTask.Description = common.SanitizePublicError(originTask.Description)
+	}
 	midjourneyTask.Prompt = originTask.Prompt
 	if originTask.Buttons != "" {
 		var buttons []dto.ActionButton
@@ -281,7 +288,15 @@ func RelaySwapFace(c *gin.Context, info *relaycommon.RelayInfo) *dto.MidjourneyR
 		return service.MidjourneyErrorWrapper(constant.MjRequestError, "insert_midjourney_task_failed")
 	}
 	c.Writer.WriteHeader(mjResp.StatusCode)
-	respBody, err := json.Marshal(midjResponse)
+	safeResponse := *midjResponse
+	if safeResponse.Code != 1 && safeResponse.Code != 21 && safeResponse.Code != 22 {
+		safeResponse.Description = common.SanitizePublicError(safeResponse.Description)
+		safeResponse.Result = common.SanitizePublicError(safeResponse.Result)
+		if data, marshalErr := common.Marshal(safeResponse.Properties); marshalErr == nil {
+			safeResponse.Properties = json.RawMessage(common.SanitizeErrorValueJSON(data))
+		}
+	}
+	respBody, err := common.Marshal(safeResponse)
 	if err != nil {
 		return service.MidjourneyErrorWrapper(constant.MjRequestError, "unmarshal_response_body_failed")
 	}
@@ -317,7 +332,15 @@ func RelayMidjourneyTaskImageSeed(c *gin.Context) *dto.MidjourneyResponse {
 	}
 	midjResponse := &midjResponseWithStatus.Response
 	c.Writer.WriteHeader(midjResponseWithStatus.StatusCode)
-	respBody, err := json.Marshal(midjResponse)
+	safeResponse := *midjResponse
+	if safeResponse.Code != 1 && safeResponse.Code != 21 && safeResponse.Code != 22 {
+		safeResponse.Description = common.SanitizePublicError(safeResponse.Description)
+		safeResponse.Result = common.SanitizePublicError(safeResponse.Result)
+		if data, marshalErr := common.Marshal(safeResponse.Properties); marshalErr == nil {
+			safeResponse.Properties = json.RawMessage(common.SanitizeErrorValueJSON(data))
+		}
+	}
+	respBody, err := common.Marshal(safeResponse)
 	if err != nil {
 		return service.MidjourneyErrorWrapper(constant.MjRequestError, "unmarshal_response_body_failed")
 	}

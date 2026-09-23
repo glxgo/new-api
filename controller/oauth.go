@@ -83,7 +83,7 @@ func HandleOAuth(c *gin.Context) {
 		errorDescription := c.Query("error_description")
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
-			"message": errorDescription,
+			"message": common.SanitizePublicError(errorDescription),
 		})
 		return
 	}

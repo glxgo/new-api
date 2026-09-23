@@ -110,6 +110,9 @@ func writeSSE(c *gin.Context, event, data string) error {
 	if err := StreamWriteError(c); err != nil {
 		return err
 	}
+	// Sanitize only error envelopes. Successful model output, including image
+	// and media URLs, is preserved by SanitizeErrorJSON.
+	data = string(common.SanitizeErrorJSON([]byte(data)))
 	data = strings.ReplaceAll(strings.ReplaceAll(data, "\r\n", "\n"), "\r", "\n")
 	frame := "data: " + strings.ReplaceAll(data, "\n", "\ndata: ") + "\n\n"
 	if event != "" {
@@ -175,7 +178,7 @@ func WssObject(c *gin.Context, ws *websocket.Conn, object interface{}) error {
 		return errors.New("websocket connection is nil")
 	}
 	//common.LogInfo(c, fmt.Sprintf("sending message: %s", jsonData))
-	return ws.WriteMessage(1, jsonData)
+	return ws.WriteMessage(1, common.SanitizeErrorJSON(jsonData))
 }
 
 func WssError(c *gin.Context, ws *websocket.Conn, openaiError types.OpenAIError) {

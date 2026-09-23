@@ -65,7 +65,7 @@ func WeChatAuth(c *gin.Context) {
 	wechatId, err := getWeChatIdByCode(code)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"message": err.Error(),
+			"message": common.SanitizePublicError(err.Error()),
 			"success": false,
 		})
 		return
@@ -78,7 +78,7 @@ func WeChatAuth(c *gin.Context) {
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": err.Error(),
+				"message": common.SanitizePublicError(err.Error()),
 			})
 			return
 		}
@@ -99,7 +99,7 @@ func WeChatAuth(c *gin.Context) {
 			if err := user.Insert(0); err != nil {
 				c.JSON(http.StatusOK, gin.H{
 					"success": false,
-					"message": err.Error(),
+					"message": common.SanitizePublicError(err.Error()),
 				})
 				return
 			}
@@ -146,7 +146,7 @@ func WeChatBind(c *gin.Context) {
 	wechatId, err := getWeChatIdByCode(code)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"message": err.Error(),
+			"message": common.SanitizePublicError(err.Error()),
 			"success": false,
 		})
 		return

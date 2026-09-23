@@ -20,7 +20,7 @@ import (
 func MidjourneyErrorWrapper(code int, desc string) *dto.MidjourneyResponse {
 	return &dto.MidjourneyResponse{
 		Code:        code,
-		Description: desc,
+		Description: common.SanitizePublicError(desc),
 	}
 }
 
@@ -68,7 +68,7 @@ func ClaudeErrorWrapper(err error, code string, statusCode int) *dto.ClaudeError
 		}
 	}
 	claudeError := types.ClaudeError{
-		Message: text,
+		Message: common.SanitizePublicError(text),
 		Type:    "new_api_error",
 	}
 	return &dto.ClaudeErrorWithStatusCode{
@@ -225,13 +225,11 @@ func TaskErrorWrapper(err error, code string, statusCode int) *dto.TaskError {
 	lowerText := strings.ToLower(text)
 	if strings.Contains(lowerText, "post") || strings.Contains(lowerText, "dial") || strings.Contains(lowerText, "http") {
 		common.SysLog(fmt.Sprintf("error: %s", text))
-		//text = "请求上游地址失败"
-		text = common.MaskSensitiveInfo(text)
 	}
 	//避免暴露内部错误
 	taskError := &dto.TaskError{
 		Code:       code,
-		Message:    text,
+		Message:    common.SanitizePublicError(text),
 		StatusCode: statusCode,
 		Error:      err,
 	}
@@ -246,7 +244,7 @@ func TaskErrorFromAPIError(apiErr *types.NewAPIError) *dto.TaskError {
 	}
 	return &dto.TaskError{
 		Code:       string(apiErr.GetErrorCode()),
-		Message:    apiErr.Err.Error(),
+		Message:    apiErr.MaskSensitiveError(),
 		StatusCode: apiErr.StatusCode,
 		Error:      apiErr.Err,
 	}

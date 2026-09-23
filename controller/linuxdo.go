@@ -163,7 +163,7 @@ func LinuxdoOAuth(c *gin.Context) {
 		errorDescription := c.Query("error_description")
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
-			"message": errorDescription,
+			"message": common.SanitizePublicError(errorDescription),
 		})
 		return
 	}
@@ -208,7 +208,7 @@ func LinuxdoOAuth(c *gin.Context) {
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": err.Error(),
+				"message": common.SanitizePublicError(err.Error()),
 			})
 			return
 		}
@@ -236,7 +236,7 @@ func LinuxdoOAuth(c *gin.Context) {
 				if err := user.Insert(inviterId); err != nil {
 					c.JSON(http.StatusOK, gin.H{
 						"success": false,
-						"message": err.Error(),
+						"message": common.SanitizePublicError(err.Error()),
 					})
 					return
 				}

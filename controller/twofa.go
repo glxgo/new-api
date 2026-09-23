@@ -172,7 +172,7 @@ func Enable2FA(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
-			"message": err.Error(),
+			"message": common.SanitizePublicError(err.Error()),
 		})
 		return
 	}
@@ -243,7 +243,7 @@ func Disable2FA(c *gin.Context) {
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": err.Error(),
+				"message": common.SanitizePublicError(err.Error()),
 			})
 			return
 		}
@@ -340,7 +340,7 @@ func RegenerateBackupCodes(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
-			"message": err.Error(),
+			"message": common.SanitizePublicError(err.Error()),
 		})
 		return
 	}
@@ -349,7 +349,7 @@ func RegenerateBackupCodes(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
-			"message": err.Error(),
+			"message": common.SanitizePublicError(err.Error()),
 		})
 		return
 	}
@@ -463,7 +463,7 @@ func Verify2FALogin(c *gin.Context) {
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": err.Error(),
+				"message": common.SanitizePublicError(err.Error()),
 			})
 			return
 		}

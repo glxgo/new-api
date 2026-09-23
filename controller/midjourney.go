@@ -301,6 +301,12 @@ func GetUserMidjourney(c *gin.Context) {
 
 	items := model.GetAllUserTask(userId, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), queryParams)
 	total := model.CountAllUserTask(userId, queryParams)
+	for _, item := range items {
+		item.FailReason = common.SanitizePublicError(item.FailReason)
+		if item.Status == "FAILURE" {
+			item.Description = common.SanitizePublicError(item.Description)
+		}
+	}
 
 	if setting.MjForwardUrlEnabled {
 		for i, midjourney := range items {

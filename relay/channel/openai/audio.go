@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -69,8 +70,21 @@ func OpenaiTTSHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 			return usage
 		}
 
-		// 写入响应到客户端
-		if err = helper.WriteStreamBytes(c, bodyBytes); err != nil {
+		// Compatible providers may return a JSON/HTML gateway error with HTTP 200
+		// on a binary media endpoint. Sanitize that diagnostic before it reaches
+		// the client while preserving successful audio bytes byte-for-byte.
+		publicBody := common.SanitizeErrorJSON(bodyBytes)
+		if service.IsMediaDiagnostic(resp.Header.Get("Content-Type"), bodyBytes[:min(len(bodyBytes), 512)]) {
+			publicBody = common.SanitizeHTTPErrorBody(bodyBytes)
+			c.Writer.Header().Set("Content-Type", "application/json")
+		}
+		if !bytes.Equal(publicBody, bodyBytes) {
+			c.Writer.Header().Del("Content-Encoding")
+			c.Writer.Header().Set("Content-Length", strconv.Itoa(len(publicBody)))
+		}
+		c.Writer.WriteHeaderNow()
+		_, err = c.Writer.Write(publicBody)
+		if err != nil {
 			logger.LogError(c, fmt.Sprintf("failed to write TTS response: %v", err))
 			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonWriteFail, err)
 			return usage

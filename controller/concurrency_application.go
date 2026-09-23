@@ -31,7 +31,7 @@ func CreateConcurrencyApplication(c *gin.Context) {
 	}
 	application, err := model.CreateConcurrencyApplication(c.GetInt("id"), req.RequestedLimit, req.Reason, req.Contact)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": common.SanitizePublicError(err.Error())})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": application})
@@ -91,7 +91,7 @@ func ReviewConcurrencyApplication(c *gin.Context) {
 	}
 	application, err := model.ReviewConcurrencyApplication(id, c.GetInt("id"), req.Approve, req.ApprovedLimit, req.AdminNote)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": common.SanitizePublicError(err.Error())})
 		return
 	}
 	recordManageAuditFor(c, application.UserId, "concurrency_application.review", map[string]interface{}{

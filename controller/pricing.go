@@ -61,11 +61,11 @@ func GetPricing(c *gin.Context) {
 	}
 
 	c.JSON(200, gin.H{
-		"success":            true,
-		"data":               pricing,
-		"vendors":            model.GetVendors(),
-		"group_ratio":        groupRatio,
-		"usable_group":       usableGroup,
+		"success":              true,
+		"data":                 pricing,
+		"vendors":              model.GetVendors(),
+		"group_ratio":          groupRatio,
+		"usable_group":         usableGroup,
 		"supported_endpoint":   model.GetSupportedEndpointMap(),
 		"auto_groups":          service.GetUserAutoGroup(group),
 		"model_pricing_source": ratio_setting.GetPublicModelPricingSourceMap(),
@@ -79,7 +79,7 @@ func ResetModelRatio(c *gin.Context) {
 	if err != nil {
 		c.JSON(200, gin.H{
 			"success": false,
-			"message": err.Error(),
+			"message": common.SanitizePublicError(err.Error()),
 		})
 		return
 	}
@@ -87,7 +87,7 @@ func ResetModelRatio(c *gin.Context) {
 	if err != nil {
 		c.JSON(200, gin.H{
 			"success": false,
-			"message": err.Error(),
+			"message": common.SanitizePublicError(err.Error()),
 		})
 		return
 	}

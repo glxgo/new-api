@@ -106,7 +106,7 @@ func PostSetup(c *gin.Context) {
 		if err != nil {
 			c.JSON(200, gin.H{
 				"success": false,
-				"message": "系统错误: " + err.Error(),
+				"message": common.SanitizePublicError("系统错误: " + err.Error()),
 			})
 			return
 		}
@@ -123,7 +123,7 @@ func PostSetup(c *gin.Context) {
 		if err != nil {
 			c.JSON(200, gin.H{
 				"success": false,
-				"message": "创建管理员账号失败: " + err.Error(),
+				"message": common.SanitizePublicError("创建管理员账号失败: " + err.Error()),
 			})
 			return
 		}
@@ -138,7 +138,7 @@ func PostSetup(c *gin.Context) {
 	if err != nil {
 		c.JSON(200, gin.H{
 			"success": false,
-			"message": "保存自用模式设置失败: " + err.Error(),
+			"message": common.SanitizePublicError("保存自用模式设置失败: " + err.Error()),
 		})
 		return
 	}
@@ -147,7 +147,7 @@ func PostSetup(c *gin.Context) {
 	if err != nil {
 		c.JSON(200, gin.H{
 			"success": false,
-			"message": "保存演示站点模式设置失败: " + err.Error(),
+			"message": common.SanitizePublicError("保存演示站点模式设置失败: " + err.Error()),
 		})
 		return
 	}
@@ -163,7 +163,7 @@ func PostSetup(c *gin.Context) {
 	if err != nil {
 		c.JSON(200, gin.H{
 			"success": false,
-			"message": "系统初始化失败: " + err.Error(),
+			"message": common.SanitizePublicError("系统初始化失败: " + err.Error()),
 		})
 		return
 	}

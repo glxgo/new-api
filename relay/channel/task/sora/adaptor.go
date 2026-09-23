@@ -256,6 +256,10 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 	// 使用公开 task_xxxx ID 返回给客户端
 	dResp.ID = info.PublicTaskID
 	dResp.TaskID = info.PublicTaskID
+	if dResp.Error != nil {
+		dResp.Error.Message = common.SanitizePublicError(dResp.Error.Message)
+		dResp.Error.Code = common.SanitizePublicError(dResp.Error.Code)
+	}
 	c.JSON(http.StatusOK, dResp)
 	return upstreamID, responseBody, nil
 }

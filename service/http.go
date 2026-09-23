@@ -38,7 +38,19 @@ func ShouldCopyUpstreamHeader(c *gin.Context, k string, v []string) bool {
 		}
 		return false
 	}
-	return true
+	// Only protocol and quota headers are public. Provider diagnostics, routing,
+	// cookies and redirects may disclose the origin even on HTTP 200 responses.
+	for _, value := range v {
+		if common.SanitizePublicError(value) != value {
+			return false
+		}
+	}
+	key := strings.ToLower(k)
+	return key == "content-type" || key == "content-disposition" || key == "content-range" || key == "accept-ranges" || key == "content-encoding" ||
+		key == "cache-control" || key == "etag" || key == "expires" || key == "last-modified" || key == "openai-version" ||
+		key == "retry-after" || key == "request-id" || key == "x-request-id" ||
+		key == "openai-processing-ms" || strings.HasPrefix(key, "x-ratelimit-") ||
+		strings.HasPrefix(key, "anthropic-ratelimit-")
 }
 
 func IOCopyBytesGracefully(c *gin.Context, src *http.Response, data []byte) {
@@ -46,6 +58,12 @@ func IOCopyBytesGracefully(c *gin.Context, src *http.Response, data []byte) {
 		return
 	}
 
+	originalData := data
+	if src != nil && src.StatusCode >= http.StatusBadRequest {
+		data = common.SanitizeHTTPErrorBody(data)
+	} else {
+		data = common.SanitizeErrorJSON(data)
+	}
 	body := io.NopCloser(bytes.NewBuffer(data))
 
 	// We shouldn't set the header before we parse the response body, because the parse part may fail.
@@ -54,10 +72,17 @@ func IOCopyBytesGracefully(c *gin.Context, src *http.Response, data []byte) {
 	// For example, Postman will report error, and we cannot check the response at all.
 	if src != nil {
 		for k, v := range src.Header {
-			if !ShouldCopyUpstreamHeader(c, k, v) {
+			if !ShouldCopyUpstreamHeader(c, k, v) || len(v) == 0 {
 				continue
 			}
 			c.Writer.Header().Set(k, v[0])
+		}
+		if !bytes.Equal(originalData, data) {
+			c.Writer.Header().Del("Content-Encoding")
+		}
+		if src.StatusCode >= http.StatusBadRequest {
+			c.Writer.Header().Set("Content-Type", "application/json")
+			c.Writer.Header().Del("Content-Encoding")
 		}
 	}
 

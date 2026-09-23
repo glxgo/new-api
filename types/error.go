@@ -160,13 +160,10 @@ func (e *NewAPIError) MaskSensitiveError() string {
 		return ""
 	}
 	if e.Err == nil {
-		return string(e.errorCode)
+		return common.SanitizePublicError(string(e.errorCode))
 	}
 	errStr := e.Err.Error()
-	if e.errorCode == ErrorCodeCountTokenFailed {
-		return errStr
-	}
-	return common.MaskSensitiveInfo(errStr)
+	return common.SanitizePublicError(errStr)
 }
 
 func (e *NewAPIError) MaskSensitiveErrorWithStatusCode() string {
@@ -211,14 +208,28 @@ func (e *NewAPIError) ToOpenAIError() OpenAIError {
 			Code:    e.errorCode,
 		}
 	}
-	if e.errorCode != ErrorCodeCountTokenFailed {
-		result.Message = common.MaskSensitiveInfo(result.Message)
-	}
+	result.Message = common.SanitizePublicError(result.Message)
 	if (e.errorType == ErrorTypeOpenAIError || e.errorType == ErrorTypeClaudeError) && TranslateUpstreamError != nil && result.Message != "" {
 		result.Message = TranslateUpstreamError(result.Message)
 	}
 	if result.Message == "" {
 		result.Message = string(e.errorType)
+	}
+	result.Message = common.SanitizePublicError(result.Message)
+	result.Type = common.SanitizePublicError(result.Type)
+	result.Param = common.SanitizePublicError(result.Param)
+	switch code := result.Code.(type) {
+	case string:
+		result.Code = common.SanitizePublicError(code)
+	case ErrorCode:
+		result.Code = ErrorCode(common.SanitizePublicError(string(code)))
+	default:
+		if encoded, err := common.Marshal(code); err == nil && len(encoded) > 0 && (encoded[0] == '{' || encoded[0] == '[') {
+			result.Code = json.RawMessage(common.SanitizeErrorValueJSON(encoded))
+		}
+	}
+	if len(result.Metadata) > 0 {
+		result.Metadata = common.SanitizeErrorValueJSON(result.Metadata)
 	}
 	return result
 }
@@ -243,15 +254,15 @@ func (e *NewAPIError) ToClaudeError() ClaudeError {
 			Type:    string(e.errorType),
 		}
 	}
-	if e.errorCode != ErrorCodeCountTokenFailed {
-		result.Message = common.MaskSensitiveInfo(result.Message)
-	}
+	result.Message = common.SanitizePublicError(result.Message)
 	if (e.errorType == ErrorTypeOpenAIError || e.errorType == ErrorTypeClaudeError) && TranslateUpstreamError != nil && result.Message != "" {
 		result.Message = TranslateUpstreamError(result.Message)
 	}
 	if result.Message == "" {
 		result.Message = string(e.errorType)
 	}
+	result.Message = common.SanitizePublicError(result.Message)
+	result.Type = common.SanitizePublicError(result.Type)
 	return result
 }
 

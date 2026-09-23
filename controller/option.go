@@ -259,7 +259,7 @@ func UpdateOption(c *gin.Context) {
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": err.Error(),
+				"message": common.SanitizePublicError(err.Error()),
 			})
 			return
 		}
@@ -268,20 +268,20 @@ func UpdateOption(c *gin.Context) {
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": err.Error(),
+				"message": common.SanitizePublicError(err.Error()),
 			})
 			return
 		}
 	case "GroupOrder":
 		err = setting.ValidateGroupOrder(option.Value.(string))
 		if err != nil {
-			c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": common.SanitizePublicError(err.Error())})
 			return
 		}
 	case "GroupIconTypes":
 		err = setting.ValidateGroupIconTypes(option.Value.(string))
 		if err != nil {
-			c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": common.SanitizePublicError(err.Error())})
 			return
 		}
 	case "ImageRatio":
@@ -289,7 +289,7 @@ func UpdateOption(c *gin.Context) {
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": "图片倍率设置失败: " + err.Error(),
+				"message": common.SanitizePublicError("图片倍率设置失败: " + err.Error()),
 			})
 			return
 		}
@@ -298,7 +298,7 @@ func UpdateOption(c *gin.Context) {
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": "音频倍率设置失败: " + err.Error(),
+				"message": common.SanitizePublicError("音频倍率设置失败: " + err.Error()),
 			})
 			return
 		}
@@ -307,7 +307,7 @@ func UpdateOption(c *gin.Context) {
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": "音频补全倍率设置失败: " + err.Error(),
+				"message": common.SanitizePublicError("音频补全倍率设置失败: " + err.Error()),
 			})
 			return
 		}
@@ -316,7 +316,7 @@ func UpdateOption(c *gin.Context) {
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": "缓存创建倍率设置失败: " + err.Error(),
+				"message": common.SanitizePublicError("缓存创建倍率设置失败: " + err.Error()),
 			})
 			return
 		}
@@ -325,7 +325,7 @@ func UpdateOption(c *gin.Context) {
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": err.Error(),
+				"message": common.SanitizePublicError(err.Error()),
 			})
 			return
 		}
@@ -334,7 +334,7 @@ func UpdateOption(c *gin.Context) {
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": err.Error(),
+				"message": common.SanitizePublicError(err.Error()),
 			})
 			return
 		}
@@ -343,7 +343,7 @@ func UpdateOption(c *gin.Context) {
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": err.Error(),
+				"message": common.SanitizePublicError(err.Error()),
 			})
 			return
 		}
@@ -352,7 +352,7 @@ func UpdateOption(c *gin.Context) {
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": err.Error(),
+				"message": common.SanitizePublicError(err.Error()),
 			})
 			return
 		}
@@ -361,7 +361,7 @@ func UpdateOption(c *gin.Context) {
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": err.Error(),
+				"message": common.SanitizePublicError(err.Error()),
 			})
 			return
 		}
@@ -370,7 +370,7 @@ func UpdateOption(c *gin.Context) {
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": err.Error(),
+				"message": common.SanitizePublicError(err.Error()),
 			})
 			return
 		}
@@ -379,7 +379,7 @@ func UpdateOption(c *gin.Context) {
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": err.Error(),
+				"message": common.SanitizePublicError(err.Error()),
 			})
 			return
 		}

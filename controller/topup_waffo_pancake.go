@@ -200,7 +200,7 @@ func CreateWaffoPancakePair(c *gin.Context) {
 				return result.StoreID
 			}(), err.Error(),
 		))
-		data := gin.H{"error": err.Error()}
+		data := gin.H{"error": common.SanitizePublicError(err.Error())}
 		if orphan {
 			data["store_id"] = result.StoreID
 			data["store_name"] = result.StoreName

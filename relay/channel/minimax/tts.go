@@ -1,10 +1,12 @@
 package minimax
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/QuantumNous/new-api/common"
 	"io"
 	"net/http"
 	"strings"
@@ -193,6 +195,16 @@ func handleChatCompletionResponse(c *gin.Context, resp *http.Response, info *rel
 		}
 	}
 
+	originalBody := body
+	if resp.StatusCode >= http.StatusBadRequest {
+		body = common.SanitizeHTTPErrorBody(body)
+		c.Header("Content-Encoding", "")
+	} else {
+		body = common.SanitizeErrorJSON(body)
+	}
+	if !bytes.Equal(originalBody, body) {
+		c.Header("Content-Encoding", "")
+	}
 	c.Data(resp.StatusCode, "application/json", body)
 	return nil, nil
 }

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -725,7 +726,7 @@ func RelayMidjourney(c *gin.Context) {
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"description": fmt.Sprintf("failed to generate relay info: %s", err.Error()),
+			"description": common.SanitizePublicError(fmt.Sprintf("failed to generate relay info: %s", err.Error())),
 			"type":        "upstream_error",
 			"code":        4,
 		})
@@ -746,7 +747,7 @@ func RelayMidjourney(c *gin.Context) {
 		}
 		channel, channelLease, channelErr := getChannelWithCapacity(c, relayInfo, retryParam)
 		if channelErr != nil {
-			c.JSON(channelErr.StatusCode, gin.H{"description": channelErr.Error(), "type": "upstream_error", "code": 30})
+			c.JSON(channelErr.StatusCode, gin.H{"description": channelErr.MaskSensitiveError(), "type": "upstream_error", "code": 30})
 			return
 		}
 		addUsedChannel(c, channel.Id)
@@ -771,7 +772,7 @@ func RelayMidjourney(c *gin.Context) {
 			statusCode = http.StatusTooManyRequests
 		}
 		c.JSON(statusCode, gin.H{
-			"description": fmt.Sprintf("%s %s", mjErr.Description, mjErr.Result),
+			"description": common.SanitizePublicError(fmt.Sprintf("%s %s", mjErr.Description, mjErr.Result)),
 			"type":        "upstream_error",
 			"code":        mjErr.Code,
 		})
@@ -794,7 +795,7 @@ func RelayNotImplemented(c *gin.Context) {
 
 func RelayNotFound(c *gin.Context) {
 	err := types.OpenAIError{
-		Message: fmt.Sprintf("Invalid URL (%s %s)", c.Request.Method, c.Request.URL.Path),
+		Message: common.SanitizePublicError(fmt.Sprintf("Invalid URL (%s %s)", c.Request.Method, c.Request.URL.Path)),
 		Type:    "invalid_request_error",
 		Param:   "",
 		Code:    "",
@@ -809,7 +810,7 @@ func RelayTaskFetch(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, &dto.TaskError{
 			Code:       "gen_relay_info_failed",
-			Message:    err.Error(),
+			Message:    common.SanitizePublicError(err.Error()),
 			StatusCode: http.StatusInternalServerError,
 		})
 		return
@@ -824,7 +825,7 @@ func RelayTask(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, &dto.TaskError{
 			Code:       "gen_relay_info_failed",
-			Message:    err.Error(),
+			Message:    common.SanitizePublicError(err.Error()),
 			StatusCode: http.StatusInternalServerError,
 		})
 		return
@@ -980,7 +981,13 @@ func respondTaskError(c *gin.Context, taskErr *dto.TaskError) {
 	if taskErr.StatusCode == http.StatusTooManyRequests {
 		taskErr.Message = "当前分组上游负载已饱和，请稍后再试"
 	}
-	c.JSON(taskErr.StatusCode, taskErr)
+	safeError := *taskErr
+	safeError.Message = common.SanitizePublicError(safeError.Message)
+	safeError.Code = common.SanitizePublicError(safeError.Code)
+	if data, err := common.Marshal(safeError.Data); err == nil {
+		safeError.Data = json.RawMessage(common.SanitizeErrorValueJSON(data))
+	}
+	c.JSON(taskErr.StatusCode, &safeError)
 }
 
 func shouldRetryTaskRelay(c *gin.Context, channelId int, taskErr *dto.TaskError, retryTimes int) bool {

@@ -45,7 +45,7 @@ func TelegramBind(c *gin.Context) {
 	user := model.User{Id: id.(int)}
 	if err := user.FillUserById(); err != nil {
 		c.JSON(200, gin.H{
-			"message": err.Error(),
+			"message": common.SanitizePublicError(err.Error()),
 			"success": false,
 		})
 		return
@@ -60,7 +60,7 @@ func TelegramBind(c *gin.Context) {
 	user.TelegramId = telegramId
 	if err := user.Update(false); err != nil {
 		c.JSON(200, gin.H{
-			"message": err.Error(),
+			"message": common.SanitizePublicError(err.Error()),
 			"success": false,
 		})
 		return
@@ -90,7 +90,7 @@ func TelegramLogin(c *gin.Context) {
 	user := model.User{TelegramId: telegramId}
 	if err := user.FillUserByTelegramId(); err != nil {
 		c.JSON(200, gin.H{
-			"message": err.Error(),
+			"message": common.SanitizePublicError(err.Error()),
 			"success": false,
 		})
 		return

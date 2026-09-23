@@ -139,7 +139,10 @@ func (t *Task) GetResultURL() string {
 	if t.PrivateData.ResultURL != "" {
 		return t.PrivateData.ResultURL
 	}
-	return t.FailReason
+	if t.Status == TaskStatusSuccess {
+		return t.FailReason
+	}
+	return ""
 }
 
 // GenerateTaskID 生成对外暴露的 task_xxxx 格式 ID

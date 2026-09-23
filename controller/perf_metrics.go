@@ -29,7 +29,7 @@ func GetPerfMetricsSummary(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"message": err.Error(),
+			"message": common.SanitizePublicError(err.Error()),
 		})
 		return
 	}
@@ -53,7 +53,7 @@ func GetPerfMetricsGroupSummary(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"message": err.Error(),
+			"message": common.SanitizePublicError(err.Error()),
 		})
 		return
 	}
@@ -61,7 +61,7 @@ func GetPerfMetricsGroupSummary(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"message": err.Error(),
+			"message": common.SanitizePublicError(err.Error()),
 		})
 		return
 	}
@@ -70,7 +70,7 @@ func GetPerfMetricsGroupSummary(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"message": err.Error(),
+			"message": common.SanitizePublicError(err.Error()),
 		})
 		return
 	}
@@ -220,7 +220,7 @@ func GetPerfMetrics(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"message": err.Error(),
+			"message": common.SanitizePublicError(err.Error()),
 		})
 		return
 	}
