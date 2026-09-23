@@ -623,3 +623,11 @@
 - 当前分支 `codex/iq-capability-v6` 已提交为 `ba026c4a5`（智商测试与鹈鹕存档接入、双前端、管理端、迁移/预览/验收工具及本轮 UI 优化），并成功推送到 `origin/codex/iq-capability-v6`；远程 `main` 未修改，未创建或合并 PR。
 - 已核对用户入口为 Default `/intelligence-test`（通用侧栏中位于使用日志与模型状态之间），Classic `/console/intelligence-test`；管理入口为 Default 系统设置 → 运维 → 智商测试，Classic 运维设置中的智商测试卡片。
 - 生产蓝绿尚未执行。只读 SSH 到历史 `site-builder` 别名落到 `site-builder:22` 后被对端关闭，历史 `stellaisle-image`（50.118.185.139:41862）也被对端关闭；未上传、未迁移、未重启、未切流。恢复有效 SSH 后仍须重新核对正式3000、候选端口、Compose、Nginx、备份与最新生产基线，再按蓝绿流程发布。
+
+### 2026-09-23 — 智商测试 V6 错误脱敏修复与蓝绿上线完成
+
+- 安全修复提交 `f009a47913aed7b00282b1a7e32ee8f8ba2f8bb3` 已推送到 `origin/codex/iq-capability-v6`；修复公开错误、SSE/WebSocket、任务/媒体响应及日志/响应头中的上游 URL、域名、IP、端口等诊断泄露，并保留内部日志诊断。远程 `main` 仍为 `247b243014f`，没有强推或直接改写 main；当前工作树另有4个仅格式化/测试文件的未提交修改，未进入本次制品。
+- 本地制品已验证并上传：应用 `new-api-20260923-iq-pelican-ui-error-safe-linux-amd64` SHA-256 `2fa430b460a2da99bcc2473dddc8563ad194449128c920fa5c91958fe1a3b3e7`；迁移和初始化工具分别为 `33e1cb29a17015f98475ede8fbb775fc8ccc7f2ba3aebddd65c9137bc714d5ac`、`77c23747586f57c74c9cbbefecf3adfc40e384b19595afb4e38a603f79b60fff`。本地 Go 构建、定向安全测试和 `git diff --check` 通过；4个无关基线测试失败未归因于本修复。
+- 正式发布版本为 `20260923-iq-pelican-ui-error-safe`。按既有流程完成备份 → 3010 `NODE_TYPE=slave` 候选 → 候选健康与前端/API/鉴权验收 → Nginx 切 3010 → 3000 连接自然排空 → 正式 3000 仅应用容器重建 → 健康验收 → Nginx 回切 3000 → 候选优雅停止。MySQL/Redis 未重建，生产未编译；正式 Compose 已持久化新二进制和 `/var/lib/pelican-archive` 只读挂载，`PELICAN_SOURCE_ID=bench-primary`。
+- 最终正式状态：`new-api` healthy、restart=0、OOM=false，仅监听 `127.0.0.1:3000`；`token.stellaisle.com`、`direct-token.stellaisle.com`、`api.stellaisle.com` 的 `/api/status` 和 `/intelligence-test` 各5/5通过，新版本一致；3010无监听。未授权 Pelican 接口保持401且响应未含上游地址模式。
+- 生产数据库存档保持 `pelican_targets=8`、`pelican_records=240`、`capability_group_presentations=23`；首次上线状态仍 `visible=0`、`sync_enabled=0`，不会向用户公开或启动同步。回滚前配置和制品位于 `/opt/newapi/backups/release-20260923-iq-pelican-ui-error-safe-20260923T002801Z-before` 及后续切流备份目录，旧二进制未删除。
