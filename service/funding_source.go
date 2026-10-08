@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"time"
 
 	"github.com/QuantumNous/new-api/model"
@@ -93,17 +94,23 @@ func (w *WalletFunding) Settle(delta int) error {
 	}
 	// delta < 0: 退还多预扣的部分。按本次会话净消费的 gift:principal 比例退,
 	// 保证退款拆分与消费日志 PaidGift/PaidPrincipal 口径一致。
-	refund := -delta
-	net := w.consumedGift + w.consumedPrincipal
-	if net <= 0 {
-		// 没有可退记录(如 trusted 旁路且未补扣): 容错退本金。
-		if err := model.IncreaseUserQuota(w.userId, refund, false); err != nil {
-			return err
-		}
+	if delta == -int(^uint(0)>>1)-1 {
+		return errors.New("refund delta overflows integer range")
+	}
+	refund64 := -int64(delta)
+	net64 := int64(w.consumedGift) + int64(w.consumedPrincipal)
+	if refund64 > net64 {
+		refund64 = net64
+	}
+	if refund64 <= 0 {
 		return nil
 	}
+	refund := int(refund64)
+	if net64 <= 0 {
+		return errors.New("refund has no consumed balance")
+	}
 	// refundGift 向下取整, 余数给 principal, 且不超过已扣赠金(防 consumedGift 成负)。
-	refundGift := refund * w.consumedGift / net
+	refundGift := int(int64(refund) * int64(w.consumedGift) / net64)
 	if refundGift > w.consumedGift {
 		refundGift = w.consumedGift
 	}

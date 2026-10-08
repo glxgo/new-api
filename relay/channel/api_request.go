@@ -494,6 +494,9 @@ func DoRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	return doRequest(c, req, info)
 }
 func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
+	if err := service.BeginKiroUpstream(c, info, req); err != nil {
+		return nil, err
+	}
 	if accessErr := service.CheckRequestClientAccess(c); accessErr != nil {
 		return nil, accessErr
 	}

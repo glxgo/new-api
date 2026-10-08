@@ -1,3 +1,4 @@
+import { choosePasskeyDomain } from '../../services/passkeyDomainPicker';
 /*
 Copyright (C) 2025 QuantumNous
 
@@ -135,12 +136,12 @@ const LoginForm = () => {
     (status.custom_oauth_providers || []).length > 0;
   const hasOAuthLoginOptions = Boolean(
     status.github_oauth ||
-      status.discord_oauth ||
-      status.oidc_enabled ||
-      status.wechat_login ||
-      status.linuxdo_oauth ||
-      status.telegram_oauth ||
-      hasCustomOAuthProviders,
+    status.discord_oauth ||
+    status.oidc_enabled ||
+    status.wechat_login ||
+    status.linuxdo_oauth ||
+    status.telegram_oauth ||
+    hasCustomOAuthProviders,
   );
 
   useEffect(() => {
@@ -427,7 +428,13 @@ const LoginForm = () => {
 
     setPasskeyLoading(true);
     try {
-      const beginRes = await API.post('/api/user/passkey/login/begin');
+      let beginRes = await API.post('/api/user/passkey/login/begin');
+      if (beginRes.data.success && beginRes.data.data.rp_ids?.length > 1) {
+        const domain = await choosePasskeyDomain(beginRes.data.data.rp_ids);
+        beginRes = await API.post('/api/user/passkey/login/begin', {
+          rp_id: domain,
+        });
+      }
       const { success, message, data } = beginRes.data;
       if (!success) {
         showError(message || '无法发起 Passkey 登录');
@@ -958,8 +965,7 @@ const LoginForm = () => {
         style={{ top: '50%', left: '-120px' }}
       />
       <div className='w-full max-w-sm mt-[60px]'>
-        {showEmailLogin ||
-        !hasOAuthLoginOptions
+        {showEmailLogin || !hasOAuthLoginOptions
           ? renderEmailLoginForm()
           : renderOAuthOptions()}
         {renderWeChatLoginModal()}

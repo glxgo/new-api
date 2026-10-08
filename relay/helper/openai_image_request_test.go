@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -20,6 +21,7 @@ import (
 // stays replayable for the upstream request.
 func TestGetAndValidOpenAIImageRequestMultipartStream(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	require.NoError(t, i18n.Init())
 
 	newContext := func(t *testing.T, streamValue string, withImage bool) (*gin.Context, string) {
 		var body bytes.Buffer
@@ -66,6 +68,6 @@ func TestGetAndValidOpenAIImageRequestMultipartStream(t *testing.T) {
 
 		_, err := GetAndValidOpenAIImageRequest(c, relayconstant.RelayModeImagesEdits)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid stream value")
+		require.Contains(t, err.Error(), "Invalid stream value")
 	})
 }

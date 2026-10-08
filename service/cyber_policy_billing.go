@@ -17,6 +17,9 @@ import (
 // available, the input token estimate and frozen pricing snapshot are used.
 // A pre-upstream local filter never reaches this function.
 func SettleCyberPolicyOrder(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) error {
+	if relayInfo != nil && relayInfo.Kiro.Charge() {
+		return nil
+	}
 	if ctx == nil || relayInfo == nil || relayInfo.PriceData.FreeModel {
 		return nil
 	}

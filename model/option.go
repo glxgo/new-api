@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"github.com/QuantumNous/new-api/pkg/kiro"
 	"strconv"
 	"strings"
 	"time"
@@ -32,6 +33,9 @@ func AllOption() ([]*Option, error) {
 func InitOptionMap() {
 	common.OptionMapRWMutex.Lock()
 	common.OptionMap = make(map[string]string)
+
+	common.OptionMap[kiro.OptionKey] = kiro.DefaultConfig
+	_ = kiro.Configure(kiro.DefaultConfig)
 
 	// 添加原有的系统配置
 	common.OptionMap["FileUploadPermission"] = strconv.Itoa(common.FileUploadPermission)
@@ -254,6 +258,13 @@ func SyncOptions(frequency int) {
 }
 
 func UpdateOption(key string, value string) error {
+	if IsPasskeyDomainOption(key) {
+		_, err := UpdatePasskeyDomainOptions(map[string]string{key: value}, false, "")
+		return err
+	}
+	if key == kiro.OptionKey {
+		return UpdateOptionsBulk(map[string]string{key: value})
+	}
 	normalizedValue, err := normalizeOptionValue(key, value)
 	if err != nil {
 		return err
@@ -281,6 +292,12 @@ func UpdateOption(key string, value string) error {
 // is touched — safe for callers that must commit a set of related options
 // atomically (e.g. payment gateway binding).
 func UpdateOptionsBulk(values map[string]string) error {
+	for key := range values {
+		if IsPasskeyDomainOption(key) {
+			_, err := UpdatePasskeyDomainOptions(values, false, "")
+			return err
+		}
+	}
 	if len(values) == 0 {
 		return nil
 	}
@@ -317,6 +334,10 @@ func UpdateOptionsBulk(values map[string]string) error {
 }
 
 func normalizeOptionValue(key string, value string) (string, error) {
+	if key == kiro.OptionKey {
+		_, err := kiro.ParseConfig(value)
+		return value, err
+	}
 	switch key {
 	case "GroupOrder":
 		return setting.NormalizeGroupOrderJSONString(value)
@@ -399,6 +420,9 @@ func updateOptionMap(key string, value string) (err error) {
 		common.OptionMap = make(map[string]string)
 	}
 	common.OptionMap[key] = value
+	if key == kiro.OptionKey {
+		return kiro.Configure(value)
+	}
 	if _, ok := commission_setting.Values()[key]; ok {
 		if err := commission_setting.Apply(key, value); err != nil {
 			return err

@@ -29,15 +29,17 @@ func resetAccessPolicyForTest() {
 	policy.GeoIPUnknownPolicy = access_setting.GeoIPUnknownPolicyAllow
 }
 
-func newMainlandTestRouter(lookup countryLookupFunc) *gin.Engine {
+func newMainlandTestRouter(t *testing.T, lookup countryLookupFunc) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(sessions.Sessions("session", cookie.NewStore([]byte("mainland-test-secret"))))
-	// Test-only role injection models the role written by authHelper after a
-	// successful login, without requiring a database-backed login flow.
+	// Test-only session issuance uses the same database validation as a real login.
 	r.Use(func(c *gin.Context) {
 		if c.GetHeader("X-Test-Role") == "admin" {
+			nonce := dashboardFixture(t, common.RoleAdminUser)
 			sessions.Default(c).Set("role", common.RoleAdminUser)
+			sessions.Default(c).Set("id", 1)
+			sessions.Default(c).Set("security_session_id", nonce)
 		}
 		c.Next()
 	})
@@ -91,7 +93,7 @@ func TestMainlandWebAccessBlock(t *testing.T) {
 
 	t.Run("switch off allows all", func(t *testing.T) {
 		resetAccessPolicyForTest()
-		r := newMainlandTestRouter(lookup)
+		r := newMainlandTestRouter(t, lookup)
 		if w := requestMainland(r, "/"); w.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", w.Code)
 		}
@@ -101,7 +103,7 @@ func TestMainlandWebAccessBlock(t *testing.T) {
 		resetAccessPolicyForTest()
 		resetGeoBlockCountersForTest()
 		access_setting.GetAccessPolicy().BlockMainlandWebAccess = true
-		r := newMainlandTestRouter(lookup)
+		r := newMainlandTestRouter(t, lookup)
 		w := requestMainland(r, "/console?tab=1")
 		if w.Code != http.StatusUnavailableForLegalReasons {
 			t.Fatalf("expected 451, got %d", w.Code)
@@ -141,7 +143,7 @@ func TestMainlandWebAccessBlock(t *testing.T) {
 	t.Run("non-CN page allowed", func(t *testing.T) {
 		resetAccessPolicyForTest()
 		access_setting.GetAccessPolicy().BlockMainlandWebAccess = true
-		r := newMainlandTestRouter(func(ip net.IP) (string, bool) { return "US", true })
+		r := newMainlandTestRouter(t, func(ip net.IP) (string, bool) { return "US", true })
 		if w := requestMainland(r, "/"); w.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", w.Code)
 		}
@@ -150,7 +152,7 @@ func TestMainlandWebAccessBlock(t *testing.T) {
 	t.Run("HK not blocked", func(t *testing.T) {
 		resetAccessPolicyForTest()
 		access_setting.GetAccessPolicy().BlockMainlandWebAccess = true
-		r := newMainlandTestRouter(func(ip net.IP) (string, bool) { return "HK", true })
+		r := newMainlandTestRouter(t, func(ip net.IP) (string, bool) { return "HK", true })
 		if w := requestMainland(r, "/"); w.Code != http.StatusOK {
 			t.Fatalf("expected 200 for HK, got %d", w.Code)
 		}
@@ -160,7 +162,7 @@ func TestMainlandWebAccessBlock(t *testing.T) {
 		resetAccessPolicyForTest()
 		resetGeoBlockCountersForTest()
 		access_setting.GetAccessPolicy().BlockMainlandWebAccess = true
-		r := newMainlandTestRouter(func(ip net.IP) (string, bool) { return "", false })
+		r := newMainlandTestRouter(t, func(ip net.IP) (string, bool) { return "", false })
 		if w := requestMainland(r, "/"); w.Code != http.StatusOK {
 			t.Fatalf("expected 200 for unknown IP, got %d", w.Code)
 		}
@@ -172,7 +174,7 @@ func TestMainlandWebAccessBlock(t *testing.T) {
 	t.Run("admin page requires an admin session", func(t *testing.T) {
 		resetAccessPolicyForTest()
 		access_setting.GetAccessPolicy().BlockMainlandWebAccess = true
-		r := newMainlandTestRouter(lookup)
+		r := newMainlandTestRouter(t, lookup)
 		if w := requestMainland(r, "/system-settings"); w.Code != http.StatusUnavailableForLegalReasons {
 			t.Fatalf("expected 451 for unauthenticated admin page, got %d", w.Code)
 		}
@@ -185,7 +187,7 @@ func TestMainlandWebAccessBlock(t *testing.T) {
 	t.Run("user console is not an admin exemption", func(t *testing.T) {
 		resetAccessPolicyForTest()
 		access_setting.GetAccessPolicy().BlockMainlandWebAccess = true
-		r := newMainlandTestRouter(lookup)
+		r := newMainlandTestRouter(t, lookup)
 		if w := requestMainland(r, "/console"); w.Code != http.StatusUnavailableForLegalReasons {
 			t.Fatalf("expected 451 for user console, got %d", w.Code)
 		}
@@ -194,7 +196,7 @@ func TestMainlandWebAccessBlock(t *testing.T) {
 	t.Run("static asset exempt", func(t *testing.T) {
 		resetAccessPolicyForTest()
 		access_setting.GetAccessPolicy().BlockMainlandWebAccess = true
-		r := newMainlandTestRouter(lookup)
+		r := newMainlandTestRouter(t, lookup)
 		if w := requestMainland(r, "/assets/app.js"); w.Code != http.StatusOK {
 			t.Fatalf("expected 200 for static asset, got %d", w.Code)
 		}
@@ -203,7 +205,7 @@ func TestMainlandWebAccessBlock(t *testing.T) {
 	t.Run("api path exempt", func(t *testing.T) {
 		resetAccessPolicyForTest()
 		access_setting.GetAccessPolicy().BlockMainlandWebAccess = true
-		r := newMainlandTestRouter(lookup)
+		r := newMainlandTestRouter(t, lookup)
 		if w := requestMainland(r, "/api/test"); w.Code != http.StatusOK {
 			t.Fatalf("expected 200 for api path, got %d", w.Code)
 		}
@@ -213,7 +215,7 @@ func TestMainlandWebAccessBlock(t *testing.T) {
 		resetAccessPolicyForTest()
 		access_setting.GetAccessPolicy().BlockMainlandWebAccess = true
 		access_setting.GetAccessPolicy().GeoIPUnknownPolicy = access_setting.GeoIPUnknownPolicyDeny
-		r := newMainlandTestRouter(func(ip net.IP) (string, bool) { return "", false })
+		r := newMainlandTestRouter(t, func(ip net.IP) (string, bool) { return "", false })
 		if w := requestMainland(r, "/"); w.Code != http.StatusUnavailableForLegalReasons {
 			t.Fatalf("expected 451 for deny policy, got %d", w.Code)
 		}
@@ -223,7 +225,7 @@ func TestMainlandWebAccessBlock(t *testing.T) {
 		resetAccessPolicyForTest()
 		access_setting.GetAccessPolicy().BlockMainlandWebAccess = true
 		access_setting.GetAccessPolicy().IncludeHkMoTW = true
-		r := newMainlandTestRouter(lookup)
+		r := newMainlandTestRouter(t, lookup)
 		if w := requestMainland(r, "/"); w.Code != http.StatusOK {
 			t.Fatalf("expected 200 when hk/mo/tw included, got %d", w.Code)
 		}
@@ -233,7 +235,7 @@ func TestMainlandWebAccessBlock(t *testing.T) {
 		resetAccessPolicyForTest()
 		setTrustedProxiesForTest("")
 		access_setting.GetAccessPolicy().BlockMainlandWebAccess = true
-		r := newMainlandTestRouter(lookup)
+		r := newMainlandTestRouter(t, lookup)
 		w := requestMainlandWithHeaders(r, "/", "203.0.113.10:12345", map[string]string{
 			"X-Forwarded-For": "198.51.100.7",
 		})
@@ -255,7 +257,7 @@ func TestMainlandWebAccessBlock(t *testing.T) {
 			}
 			return "US", true
 		}
-		r := newMainlandTestRouter(proxyLookup)
+		r := newMainlandTestRouter(t, proxyLookup)
 		w := requestMainlandWithHeaders(r, "/", "127.0.0.1:12345", map[string]string{
 			"X-Forwarded-For": "198.51.100.7",
 		})

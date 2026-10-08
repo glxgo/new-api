@@ -26,6 +26,7 @@ declare module 'axios' {
     skipBusinessError?: boolean
     skipErrorHandler?: boolean
     disableDuplicate?: boolean
+    securityProofRetried?: boolean
   }
 }
 
@@ -96,7 +97,41 @@ api.interceptors.response.use(
     }
     return response
   },
-  (error) => {
+  async (error) => {
+    const info = error?.response?.data?.verification
+    if (
+      error?.response?.status === 403 &&
+      info?.challenge &&
+      !error.config.securityProofRetried
+    ) {
+      const { requestSecurityProof, verifyChallenge } =
+        await import('@/features/auth/secure-verification/proof-prompt')
+      let code = ''
+      if (
+        /\/api\/user\/2fa\/(disable|backup_codes)$/.test(
+          error.config.url ?? ''
+        ) &&
+        info.methods.includes('2fa')
+      ) {
+        try {
+          const payload =
+            typeof error.config.data === 'string'
+              ? JSON.parse(error.config.data)
+              : error.config.data
+          code = typeof payload?.code === 'string' ? payload.code : ''
+        } catch {
+          /* Request validation handles invalid JSON. */
+        }
+      }
+      const token = code
+        ? await verifyChallenge(info, '2fa', code)
+        : await requestSecurityProof(info)
+      return api.request({
+        ...error.config,
+        securityProofRetried: true,
+        headers: { ...error.config.headers, 'X-Security-Proof': token },
+      })
+    }
     const skip = error?.config?.skipErrorHandler
     const status = error?.response?.status
 

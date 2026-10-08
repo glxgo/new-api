@@ -1359,6 +1359,17 @@ type EstimatorProps = {
 
 function CostEstimator({ effectiveExpr }: EstimatorProps) {
   const { t } = useTranslation()
+  const [usage, setUsage] = useState<Record<string, number>>({})
+  const usageKeys = useMemo(
+    () => [
+      ...new Set(
+        [...effectiveExpr.matchAll(/\bu\(\s*["']([^"']+)["']\s*\)/g)].map(
+          (match) => match[1]
+        )
+      ),
+    ],
+    [effectiveExpr]
+  )
   const [promptTokens, setPromptTokens] = useState(0)
   const [completionTokens, setCompletionTokens] = useState(0)
   const [extras, setExtras] = useState<ExtraTokenValues>({
@@ -1378,8 +1389,14 @@ function CostEstimator({ effectiveExpr }: EstimatorProps) {
 
   const result = useMemo(
     () =>
-      evalExprLocally(effectiveExpr, promptTokens, completionTokens, extras),
-    [effectiveExpr, promptTokens, completionTokens, extras]
+      evalExprLocally(
+        effectiveExpr,
+        promptTokens,
+        completionTokens,
+        extras,
+        usage
+      ),
+    [effectiveExpr, promptTokens, completionTokens, extras, usage]
   )
 
   return (
@@ -1410,6 +1427,29 @@ function CostEstimator({ effectiveExpr }: EstimatorProps) {
           />
         </div>
       </div>
+      {usageKeys.length > 0 && (
+        <div className='space-y-2'>
+          <p className='text-muted-foreground text-xs'>
+            {t(
+              'Enter usage facts for this preview. Per-image USD prices must be multiplied by 1000000 in v1 expressions.'
+            )}
+          </p>
+          <div className='grid grid-cols-2 gap-3'>
+            {usageKeys.map((key) => (
+              <div key={key} className='space-y-1'>
+                <Label className='text-xs'>{key}</Label>
+                <DraftNumberInput
+                  min={0}
+                  value={usage[key] ?? 0}
+                  onValueChange={(value) =>
+                    setUsage((previous) => ({ ...previous, [key]: value }))
+                  }
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {usesExtras && (
         <div className='grid grid-cols-2 gap-3'>
           {BILLING_EXTRA_VARS.map((variable) => {
@@ -1638,9 +1678,13 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
   onRequestRuleExprChange,
 }: TieredPricingEditorProps) {
   const { t } = useTranslation()
-  const [editorMode, setEditorMode] = useState<EditorMode>('visual')
-  const [visualConfig, setVisualConfig] = useState<VisualConfig | null>(() =>
-    tryParseVisualConfig(currentExpr)
+  const [editorMode, setEditorMode] = useState<EditorMode>(() =>
+    currentExpr && !tryParseVisualConfig(currentExpr) ? 'raw' : 'visual'
+  )
+  const [visualConfig, setVisualConfig] = useState<VisualConfig | null>(
+    () =>
+      tryParseVisualConfig(currentExpr) ??
+      (currentExpr ? null : createDefaultVisualConfig())
   )
   const [rawExpr, setRawExpr] = useState(() =>
     combineBillingExpr(currentExpr || '', currentRequestRuleExpr || '')
@@ -1726,11 +1770,15 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
         const { billingExpr, requestRuleExpr: ruleStr } =
           splitBillingExprAndRequestRules(rawExpr)
         const parsed = tryParseVisualConfig(billingExpr)
-        if (parsed) {
-          setVisualConfig(parsed)
-        } else {
-          setVisualConfig(createDefaultVisualConfig())
+        if (!parsed) {
+          toast.warning(
+            t(
+              'This expression is too complex for the visual editor. Please switch to expression mode to edit.'
+            )
+          )
+          return
         }
+        setVisualConfig(parsed)
         const parsedGroups = tryParseRequestRuleExpr(ruleStr)
         setRequestRuleGroups(parsedGroups || [])
         onRequestRuleExprChange(ruleStr)
@@ -1741,7 +1789,7 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
       }
       setEditorMode(next)
     },
-    [rawExpr, visualConfig, requestRuleGroups, onRequestRuleExprChange]
+    [rawExpr, visualConfig, requestRuleGroups, onRequestRuleExprChange, t]
   )
 
   const applyPreset = useCallback(

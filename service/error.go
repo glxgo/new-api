@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/pkg/kiro"
 	"github.com/QuantumNous/new-api/types"
 )
 
@@ -91,6 +92,10 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 		return
 	}
 	CloseResponseBodyGracefully(resp)
+	if state, ok := ctx.Value(kiro.ContextKey).(*kiro.State); ok {
+		responseBody = state.Observe(responseBody, false)
+		state.Fail("upstream_http_error")
+	}
 	var errResponse dto.GeneralErrorResponse
 	responseBodyText := string(responseBody)
 	responseBodyPreview := common.LocalLogPreview(responseBodyText)

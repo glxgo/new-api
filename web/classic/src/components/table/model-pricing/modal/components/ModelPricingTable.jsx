@@ -20,7 +20,10 @@ For commercial licensing, please contact support@quantumnous.com
 import React from 'react';
 import { Avatar, Typography, Table, Tag } from '@douyinfe/semi-ui';
 import { IconCoinMoneyStroked } from '@douyinfe/semi-icons';
-import { calculateModelPrice, getModelPriceItems } from '../../../../../helpers';
+import {
+  calculateModelPrice,
+  getModelPriceItems,
+} from '../../../../../helpers';
 
 const { Text } = Typography;
 
@@ -64,14 +67,15 @@ const ModelPricingTable = ({
 
       // 获取分组倍率
       const groupRatioValue =
-        groupRatio && groupRatio[group] ? groupRatio[group] : 1;
+        priceData.usedGroupRatio ?? groupRatio?.[group] ?? 1;
 
       return {
         key: group,
         group: group,
         ratio: groupRatioValue,
-        billingType:
-          modelData?.billing_mode === 'tiered_expr'
+        billingType: priceData.isCreditBased
+          ? t('按积分计费')
+          : modelData?.billing_mode === 'tiered_expr'
             ? t('动态计费')
             : modelData?.quota_type === 0
               ? t('按量计费')
@@ -119,6 +123,7 @@ const ModelPricingTable = ({
         if (text === t('按量计费')) color = 'violet';
         else if (text === t('按次计费')) color = 'teal';
         else if (text === t('动态计费')) color = 'amber';
+        else if (text === t('按积分计费')) color = 'teal';
         return (
           <Tag color={color} size='small' shape='circle'>
             {text || '-'}

@@ -11,10 +11,11 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/openrouter"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/reasonmap"
+	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
 )
 
-func ClaudeToOpenAIRequest(claudeRequest dto.ClaudeRequest, info *relaycommon.RelayInfo) (*dto.GeneralOpenAIRequest, error) {
+func ClaudeToOpenAIRequest(c *gin.Context, claudeRequest dto.ClaudeRequest, info *relaycommon.RelayInfo) (*dto.GeneralOpenAIRequest, error) {
 	openAIRequest := dto.GeneralOpenAIRequest{
 		Model:       claudeRequest.Model,
 		Temperature: claudeRequest.Temperature,
@@ -33,6 +34,17 @@ func ClaudeToOpenAIRequest(claudeRequest dto.ClaudeRequest, info *relaycommon.Re
 	}
 
 	isOpenRouter := info.ChannelType == constant.ChannelTypeOpenRouter
+	if effort := claudeRequest.GetEfforts(); effort != "" && !isOpenRouter {
+		openAIRequest.ReasoningEffort = effort
+		info.ReasoningEffort = effort
+	}
+	// Opus 5.5 defaults to medium. Preserve an explicit strength or disabled mode.
+	if strings.HasPrefix(strings.ReplaceAll(info.OriginModelName, ".", "-"), "claude-opus-5-5") &&
+		claudeRequest.GetEfforts() == "" && (claudeRequest.Thinking == nil ||
+		(claudeRequest.Thinking.Type != "disabled" && claudeRequest.Thinking.GetBudgetTokens() == 0)) {
+		openAIRequest.ReasoningEffort = "medium"
+		info.ReasoningEffort = "medium"
+	}
 
 	if isOpenRouter {
 		if effort := claudeRequest.GetEfforts(); effort != "" {
@@ -190,9 +202,12 @@ func ClaudeToOpenAIRequest(claudeRequest dto.ClaudeRequest, info *relaycommon.Re
 					if mediaMsg.IsStringContent() {
 						oaiToolMessage.SetStringContent(mediaMsg.GetStringContent())
 					} else {
-						mediaContents := mediaMsg.ParseMediaContent()
-						encodeJson, _ := common.Marshal(mediaContents)
-						oaiToolMessage.SetStringContent(string(encodeJson))
+						text, media, err := claudeToolResultToChat(c, mediaMsg.ParseMediaContent())
+						if err != nil {
+							return nil, err
+						}
+						oaiToolMessage.SetStringContent(text)
+						mediaMessages = append(mediaMessages, media...)
 					}
 					openAIMessages = append(openAIMessages, oaiToolMessage)
 				}
@@ -233,6 +248,7 @@ func buildClaudeUsageFromOpenAIUsage(oaiUsage *dto.Usage) *dto.ClaudeUsage {
 		oaiUsage.ClaudeCacheCreation1hTokens,
 	)
 	usage := &dto.ClaudeUsage{
+		KiroMetering:             oaiUsage.KiroMetering,
 		InputTokens:              oaiUsage.PromptTokens,
 		OutputTokens:             oaiUsage.CompletionTokens,
 		CacheCreationInputTokens: oaiUsage.PromptTokensDetails.CachedCreationTokens,

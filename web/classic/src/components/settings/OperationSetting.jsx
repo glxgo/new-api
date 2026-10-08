@@ -30,6 +30,7 @@ import SettingsCreditLimit from '../../pages/Setting/Operation/SettingsCreditLim
 import SettingsCheckin from '../../pages/Setting/Operation/SettingsCheckin';
 import SettingsAccessPolicy from '../../pages/Setting/Operation/SettingsAccessPolicy';
 import SettingsCommission from '../../pages/Setting/Operation/SettingsCommission';
+import SettingsKiroCreditBilling from '../../pages/Setting/Operation/SettingsKiroCreditBilling';
 import { API, showError, toBoolean } from '../../helpers';
 
 const OperationSetting = () => {
@@ -84,6 +85,8 @@ const OperationSetting = () => {
 
     /* 令牌设置 */
     'token_setting.max_user_tokens': 1000,
+    KiroCreditBilling: '{"mode":"off"}',
+    GroupRatio: '{}',
   });
 
   let [loading, setLoading] = useState(false);
@@ -165,6 +168,10 @@ const OperationSetting = () => {
         {/* 分润比例设置 */}
         <Card style={{ marginTop: '10px' }}>
           <SettingsCommission />
+        </Card>
+        {/* Kiro credit billing */}
+        <Card style={{ marginTop: '10px' }}>
+          <SettingsKiroCreditBilling options={inputs} refresh={onRefresh} />
         </Card>
       </Spin>
     </>

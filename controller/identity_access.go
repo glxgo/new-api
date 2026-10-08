@@ -14,7 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/gin-contrib/sessions"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -199,21 +199,12 @@ func AutoWhitelistFromBrowserSession(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "data": gin.H{"status": "not_eligible"}})
 		return
 	}
-	session := sessions.Default(c)
-	if session.Get("username") == nil || session.Get("id") == nil {
+	user, err := service.DashboardUser(c)
+	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "data": gin.H{"status": "not_eligible"}})
 		return
 	}
-	status, statusOK := sessionInt(session.Get("status"))
-	if !statusOK || status != common.UserStatusEnabled {
-		c.JSON(http.StatusForbidden, gin.H{"success": false, "data": gin.H{"status": "not_eligible"}})
-		return
-	}
-	userID, ok := sessionInt(session.Get("id"))
-	if !ok || userID <= 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "data": gin.H{"status": "not_eligible"}})
-		return
-	}
+	userID := user.Id
 	c.Set("id", userID)
 	whitelistStatus, err := applyMainlandWhitelistFromBrowserSession(c, userID)
 	if err != nil {

@@ -28,6 +28,11 @@ import {
   getDynamicPricingSummary,
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
+import {
+  formatKiroCreditPrice,
+  getDefaultPricingGroup,
+  getKiroCreditPrice,
+} from '../lib/kiro-price'
 import { isTokenBasedModel } from '../lib/model-helpers'
 import {
   formatPrice,
@@ -84,6 +89,9 @@ export function usePricingColumns(
     model: PricingModel,
     field: 'input' | 'output' | 'cache'
   ): string | null => {
+    const creditPrice = getKiroCreditPrice(model, getDefaultPricingGroup(model))
+    if (creditPrice)
+      return field === 'output' ? formatKiroCreditPrice(creditPrice) : null
     const dynamicSummary = getDynamicPricingSummary(model, {
       tokenUnit,
       showRechargePrice,
@@ -230,6 +238,10 @@ export function usePricingColumns(
         <DataTableColumnHeader column={column} title={t('Output')} />
       ),
       cell: ({ row }) => {
+        const creditPrice = getKiroCreditPrice(
+          row.original,
+          getDefaultPricingGroup(row.original)
+        )
         const isRequest =
           !isTokenBasedModel(row.original) &&
           !getDynamicPricingSummary(row.original, {
@@ -239,11 +251,20 @@ export function usePricingColumns(
             usdExchangeRate,
             groupRatioMultiplier: getDynamicDisplayGroupRatio(row.original),
           })
+        let unitLabel = isRequest ? t('request') : tokenUnitLabel
+        if (creditPrice) unitLabel = t('credit')
         return (
-          <PriceCell
-            value={fieldPrice(row.original, 'output')}
-            label={isRequest ? t('request') : tokenUnitLabel}
-          />
+          <div>
+            {creditPrice ? (
+              <div className='text-muted-foreground text-xs'>
+                {t('Kiro Credit Price')}
+              </div>
+            ) : null}
+            <PriceCell
+              value={fieldPrice(row.original, 'output')}
+              label={unitLabel}
+            />
+          </div>
         )
       },
       size: 110,

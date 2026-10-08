@@ -51,6 +51,13 @@ export function useUpdateOption() {
       if (data.success) {
         // Always refresh system-options
         queryClient.invalidateQueries({ queryKey: ['system-options'] })
+        if (
+          variables.key === 'KiroCreditBilling' ||
+          variables.key === 'GroupRatio' ||
+          variables.key === 'GroupGroupRatio'
+        ) {
+          queryClient.invalidateQueries({ queryKey: ['pricing'] })
+        }
 
         // If updating frontend-display-related config, also refresh status
         if (STATUS_RELATED_KEYS.includes(variables.key)) {

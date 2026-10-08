@@ -216,6 +216,18 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	relayInfo.SetEstimatePromptTokens(tokens)
 
+	if helper.IsSeedreamImage(c, relayInfo) {
+		relayInfo.InitChannelMeta(c)
+		if err := helper.ModelMappedHelper(c, relayInfo, nil); err != nil {
+			newAPIError = types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			return
+		}
+		if _, err := helper.PrepareSeedreamImage(c, relayInfo); err != nil {
+			newAPIError = types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+			return
+		}
+	}
+
 	priceData, err := helper.ModelPriceHelper(c, relayInfo, tokens, meta)
 	if err != nil {
 		newAPIError = types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithStatusCode(http.StatusBadRequest))
@@ -240,7 +252,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			if relayInfo.Billing != nil {
 				relayInfo.Billing.Refund(c)
 			}
-			if newAPIError.GetErrorCode() != "client_not_allowed" {
+			if newAPIError.GetErrorCode() != "client_not_allowed" && !relayInfo.Kiro.Charge() {
 				service.ChargeViolationFeeIfNeeded(c, relayInfo, newAPIError)
 			}
 		}
@@ -317,6 +329,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			}
 		}()
 
+		service.FinishKiroAttempt(c, relayInfo, newAPIError != nil)
 		if newAPIError == nil {
 			relayInfo.LastError = nil
 			return

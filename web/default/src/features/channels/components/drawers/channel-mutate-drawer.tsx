@@ -2956,6 +2956,27 @@ export function ChannelMutateDrawer({
                           />
 
                           <div className='divide-border space-y-0 divide-y border-y'>
+                            {currentType === 1 && (
+                              <FormField
+                                control={form.control}
+                                name='responses_to_chat'
+                                render={({ field }) => (
+                                  <FormItem className='flex items-center justify-between px-4 py-3'>
+                                    <FormLabel>
+                                      {t(
+                                        'Convert Responses to Chat Completions'
+                                      )}
+                                    </FormLabel>
+                                    <FormControl>
+                                      <Switch
+                                        checked={field.value}
+                                        onCheckedChange={field.onChange}
+                                      />
+                                    </FormControl>
+                                  </FormItem>
+                                )}
+                              />
+                            )}
                             <FormField
                               control={form.control}
                               name='allow_service_tier'

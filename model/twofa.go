@@ -12,16 +12,17 @@ import (
 
 // TwoFA 用户2FA设置表
 type TwoFA struct {
-	Id             int            `json:"id" gorm:"primaryKey"`
-	UserId         int            `json:"user_id" gorm:"unique;not null;index"`
-	Secret         string         `json:"-" gorm:"type:varchar(255);not null"` // TOTP密钥，不返回给前端
-	IsEnabled      bool           `json:"is_enabled"`
-	FailedAttempts int            `json:"failed_attempts" gorm:"default:0"`
-	LockedUntil    *time.Time     `json:"locked_until,omitempty"`
-	LastUsedAt     *time.Time     `json:"last_used_at,omitempty"`
-	CreatedAt      time.Time      `json:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at"`
-	DeletedAt      gorm.DeletedAt `json:"-" gorm:"index"`
+	LastVerifiedStep int64          `json:"-" gorm:"not null;default:0"`
+	Id               int            `json:"id" gorm:"primaryKey"`
+	UserId           int            `json:"user_id" gorm:"unique;not null;index"`
+	Secret           string         `json:"-" gorm:"type:varchar(255);not null"` // TOTP密钥，不返回给前端
+	IsEnabled        bool           `json:"is_enabled"`
+	FailedAttempts   int            `json:"failed_attempts" gorm:"default:0"`
+	LockedUntil      *time.Time     `json:"locked_until,omitempty"`
+	LastUsedAt       *time.Time     `json:"last_used_at,omitempty"`
+	CreatedAt        time.Time      `json:"created_at"`
+	UpdatedAt        time.Time      `json:"updated_at"`
+	DeletedAt        gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 // TwoFABackupCode 备用码使用记录表
@@ -90,7 +91,7 @@ func (t *TwoFA) Update() error {
 	if t.Id == 0 {
 		return errors.New("2FA记录ID不能为空")
 	}
-	return DB.Save(t).Error
+	return DB.Model(&TwoFA{}).Where("id = ?", t.Id).Omit("last_verified_step").Select("*").Updates(t).Error
 }
 
 // Delete 删除2FA设置
@@ -106,29 +107,32 @@ func (t *TwoFA) Delete() error {
 			return err
 		}
 
-		// 硬删除2FA记录
-		return tx.Unscoped().Delete(t).Error
+		if err := tx.Unscoped().Delete(t).Error; err != nil {
+			return err
+		}
+		return RevokeUserAuthentication(tx, t.UserId)
 	})
 }
 
 // ResetFailedAttempts 重置失败尝试次数
 func (t *TwoFA) ResetFailedAttempts() error {
-	t.FailedAttempts = 0
-	t.LockedUntil = nil
-	return t.Update()
+	return DB.Model(&TwoFA{}).Where("id = ?", t.Id).Updates(map[string]any{"failed_attempts": 0, "locked_until": nil}).Error
 }
 
-// IncrementFailedAttempts 增加失败尝试次数
 func (t *TwoFA) IncrementFailedAttempts() error {
-	t.FailedAttempts++
-
-	// 检查是否需要锁定
-	if t.FailedAttempts >= common.MaxFailAttempts {
-		lockUntil := time.Now().Add(time.Duration(common.LockoutDuration) * time.Second)
-		t.LockedUntil = &lockUntil
-	}
-
-	return t.Update()
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var current TwoFA
+		if err := tx.Model(&TwoFA{}).Where("id = ?", t.Id).UpdateColumn("failed_attempts", gorm.Expr("failed_attempts + 1")).Error; err != nil {
+			return err
+		}
+		if err := tx.First(&current, t.Id).Error; err != nil {
+			return err
+		}
+		if current.FailedAttempts >= common.MaxFailAttempts {
+			return tx.Model(&current).Update("locked_until", time.Now().Add(time.Duration(common.LockoutDuration)*time.Second)).Error
+		}
+		return nil
+	})
 }
 
 // IsLocked 检查账户是否被锁定
@@ -186,16 +190,8 @@ func ValidateBackupCode(userId int, code string) (bool, error) {
 	// 验证备用码
 	for _, bc := range backupCodes {
 		if common.ValidatePasswordAndHash(normalizedCode, bc.CodeHash) {
-			// 标记为已使用
-			now := time.Now()
-			bc.IsUsed = true
-			bc.UsedAt = &now
-
-			if err := DB.Save(&bc).Error; err != nil {
-				return false, err
-			}
-
-			return true, nil
+			result := DB.Model(&TwoFABackupCode{}).Where("id = ? AND is_used = ?", bc.Id, false).Updates(map[string]any{"is_used": true, "used_at": time.Now()})
+			return result.RowsAffected == 1, result.Error
 		}
 	}
 
@@ -225,10 +221,20 @@ func DisableTwoFA(userId int) error {
 
 // EnableTwoFA 启用2FA
 func (t *TwoFA) Enable() error {
-	t.IsEnabled = true
-	t.FailedAttempts = 0
-	t.LockedUntil = nil
-	return t.Update()
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var user User
+		if err := LockAuthenticationUser(tx, t.UserId, &user); err != nil {
+			return err
+		}
+		result := tx.Model(&TwoFA{}).Where("id = ? AND secret = ? AND is_enabled = ?", t.Id, t.Secret, false).Updates(map[string]any{"is_enabled": true, "failed_attempts": 0, "locked_until": nil})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrSecurityProof
+		}
+		return RevokeUserAuthentication(tx, t.UserId)
+	})
 }
 
 // ValidateTOTPAndUpdateUsage 验证TOTP并更新使用记录
@@ -239,7 +245,8 @@ func (t *TwoFA) ValidateTOTPAndUpdateUsage(code string) (bool, error) {
 	}
 
 	// 验证TOTP码
-	if !common.ValidateTOTPCode(t.Secret, code) {
+	step, valid := common.TOTPTimeStep(t.Secret, code, time.Now())
+	if !valid {
 		// 增加失败次数
 		if err := t.IncrementFailedAttempts(); err != nil {
 			common.SysLog("更新2FA失败次数失败: " + err.Error())
@@ -247,17 +254,10 @@ func (t *TwoFA) ValidateTOTPAndUpdateUsage(code string) (bool, error) {
 		return false, nil
 	}
 
-	// 验证成功，重置失败次数并更新最后使用时间
-	now := time.Now()
-	t.FailedAttempts = 0
-	t.LockedUntil = nil
-	t.LastUsedAt = &now
-
-	if err := t.Update(); err != nil {
-		common.SysLog("更新2FA使用记录失败: " + err.Error())
-	}
-
-	return true, nil
+	result := DB.Model(&TwoFA{}).Where("id = ? AND is_enabled = ? AND last_verified_step < ?", t.Id, true, step).
+		Where("locked_until IS NULL OR locked_until <= ?", time.Now()).
+		Updates(map[string]any{"last_verified_step": step, "last_used_at": time.Now(), "failed_attempts": 0, "locked_until": nil})
+	return result.RowsAffected == 1, result.Error
 }
 
 // ValidateBackupCodeAndUpdateUsage 验证备用码并更新使用记录
@@ -281,17 +281,8 @@ func (t *TwoFA) ValidateBackupCodeAndUpdateUsage(code string) (bool, error) {
 		return false, nil
 	}
 
-	// 验证成功，重置失败次数并更新最后使用时间
-	now := time.Now()
-	t.FailedAttempts = 0
-	t.LockedUntil = nil
-	t.LastUsedAt = &now
-
-	if err := t.Update(); err != nil {
-		common.SysLog("更新2FA使用记录失败: " + err.Error())
-	}
-
-	return true, nil
+	result := DB.Model(&TwoFA{}).Where("id = ? AND is_enabled = ?", t.Id, true).Updates(map[string]any{"failed_attempts": 0, "locked_until": nil, "last_used_at": time.Now()})
+	return result.RowsAffected == 1, result.Error
 }
 
 // GetTwoFAStats 获取2FA统计信息（管理员使用）

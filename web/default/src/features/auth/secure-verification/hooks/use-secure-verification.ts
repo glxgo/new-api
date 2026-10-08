@@ -82,43 +82,17 @@ export function useSecureVerification(
       apiCall: () => Promise<unknown>,
       config: StartVerificationOptions = {}
     ) => {
-      const { preferredMethod, title, description } = config
-      const availableMethods = await fetchVerificationMethods()
-
-      if (!availableMethods.has2FA && !availableMethods.hasPasskey) {
-        toast.error(
-          i18next.t(
-            'Please enable Two-factor Authentication or Passkey before proceeding'
-          )
-        )
-        onError?.(
-          new Error(
-            'No verification methods available. Enable 2FA or Passkey to continue.'
-          )
-        )
-        return false
+      try {
+        const result = await apiCall()
+        onSuccess?.(result, config.preferredMethod ?? '2fa')
+        if (successMessage) toast.success(successMessage)
+        return true
+      } catch (error) {
+        onError?.(error)
+        throw error
       }
-
-      let defaultMethod: VerificationMethod | null = preferredMethod ?? null
-      if (!defaultMethod) {
-        if (availableMethods.hasPasskey && availableMethods.passkeySupported) {
-          defaultMethod = 'passkey'
-        } else if (availableMethods.has2FA) {
-          defaultMethod = '2fa'
-        }
-      }
-
-      setState((prev) => ({
-        ...prev,
-        apiCall,
-        method: defaultMethod,
-        title,
-        description,
-      }))
-      setOpen(true)
-      return true
     },
-    [fetchVerificationMethods, onError]
+    [onSuccess, onError, successMessage]
   )
 
   const executeVerification = useCallback(

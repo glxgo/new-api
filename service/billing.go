@@ -35,6 +35,9 @@ func PreparePriorityBillingForOutbound(relayInfo *relaycommon.RelayInfo, jsonDat
 	if relayInfo == nil {
 		return nil
 	}
+	if relayInfo.Kiro.Charge() {
+		return nil
+	}
 	relayInfo.CaptureEffectiveReasoningEffort(jsonData)
 	relayInfo.CaptureEffectiveServiceTier(jsonData)
 	targetQuota := relayInfo.ApplyPrioritySurcharge(relayInfo.PriceData.QuotaToPreConsume)
@@ -120,6 +123,9 @@ func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuo
 // marked estimate based on the request and received output deltas. Requests
 // that failed before semantic progress are left to the normal refund path.
 func SettleResponsesStreamFailureUsage(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage) bool {
+	if relayInfo != nil && relayInfo.Kiro.Charge() {
+		return false
+	}
 	if relayInfo == nil || usage == nil || !relayInfo.IsStream ||
 		!relayInfo.ResponsesFailureUsageEligible || !ValidUsage(usage) {
 		return false

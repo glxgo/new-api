@@ -726,6 +726,7 @@ export const ModelPricingEditorPanel = forwardRef<
                   <TabsContent value='tiered_expr' className='pt-0'>
                     <FieldGroup className='gap-5'>
                       <TieredPricingEditor
+                        key={watchedValues.name}
                         modelName={watchedValues.name}
                         billingExpr={billingExpr}
                         requestRuleExpr={requestRuleExpr}

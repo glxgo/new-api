@@ -146,7 +146,7 @@ func RecordLog(userId int, logType int, content string) {
 		Type:      logType,
 		Content:   content,
 	}
-	err := LOG_DB.Create(log).Error
+	err := createConsumeLog(log)
 	if err != nil {
 		common.SysLog("failed to record log: " + err.Error())
 	}

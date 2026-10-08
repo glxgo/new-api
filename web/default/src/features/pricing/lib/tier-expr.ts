@@ -272,7 +272,8 @@ export function evalExprLocally(
   exprStr: string,
   promptTokens: number,
   completionTokens: number,
-  extraTokenValues: ExtraTokenValues
+  extraTokenValues: ExtraTokenValues,
+  usage: Record<string, number> = {}
 ): EvalResult {
   try {
     if (!exprStr || !exprStr.trim()) {
@@ -293,6 +294,7 @@ export function evalExprLocally(
       c: completionTokens,
       len,
       tier: tierFn,
+      u: (key: string) => usage[key] ?? 0,
       max: Math.max,
       min: Math.min,
       abs: Math.abs,
@@ -304,7 +306,7 @@ export function evalExprLocally(
     }
     const fn = new Function(
       ...Object.keys(env),
-      `"use strict"; return (${exprStr});`
+      `"use strict"; return (${exprStr.trim().replace(/^v1:/, '')});`
     )
     const cost = Number(fn(...Object.values(env))) || 0
     return { cost, matchedTier, error: null }

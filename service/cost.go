@@ -1,6 +1,7 @@
 package service
 
 import (
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
@@ -31,7 +32,7 @@ func CalcCostFromSaleQuota(saleQuota int, saleGroupRatio float64, group string) 
 	}
 	dBase := decimal.NewFromInt(int64(saleQuota)).Div(decimal.NewFromFloat(saleGroupRatio))
 	dCostRatio := decimal.NewFromFloat(ratio_setting.GetGroupCostRatio(group))
-	return int(dBase.Mul(dCostRatio).Round(0).IntPart())
+	return common.QuotaFromDecimal(dBase.Mul(dCostRatio))
 }
 
 // CalcCostFromChannelRatio applies the final successful channel's fixed-point
@@ -41,11 +42,9 @@ func CalcCostFromChannelRatio(saleQuota int, ratioPPM *int64) int {
 	if saleQuota <= 0 || ratioPPM == nil || *ratioPPM <= 0 {
 		return 0
 	}
-	return int(decimal.NewFromInt(int64(saleQuota)).
+	return common.QuotaFromDecimal(decimal.NewFromInt(int64(saleQuota)).
 		Mul(decimal.NewFromInt(*ratioPPM)).
-		Div(decimal.NewFromInt(model.ChannelCostRatioScale)).
-		Round(0).
-		IntPart())
+		Div(decimal.NewFromInt(model.ChannelCostRatioScale)))
 }
 
 // SplitPayment 按业务规则③「消费优先扣赠金、不足扣本金」拆分本次消费额度。

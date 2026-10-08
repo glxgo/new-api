@@ -36,7 +36,7 @@ func TestChannelMetricsWindow(t *testing.T) {
 
 func TestChannelMetricsAdminPaginationAndPrivacy(t *testing.T) {
 	db := setupTokenControllerTestDB(t)
-	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.ChannelPerfMetric{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.DashboardSession{}, &model.Channel{}, &model.ChannelPerfMetric{}))
 	for i := 1; i <= 25; i++ {
 		require.NoError(t, db.Create(&model.Channel{Id: i, Name: fmt.Sprintf("channel-%d", i), Key: "NEVER_RETURN_THIS_KEY", Models: "test"}).Error)
 	}
@@ -54,6 +54,12 @@ func TestChannelMetricsAdminPaginationAndPrivacy(t *testing.T) {
 				value = common.RoleAdminUser
 			}
 			s.Set("role", value)
+			user := model.User{Id: 1, Username: "test-admin", Role: value, Status: common.UserStatusEnabled}
+			require.NoError(t, db.Where("id = ?", 1).Assign(user).FirstOrCreate(&user).Error)
+			nonce, err := model.SecurityToken()
+			require.NoError(t, err)
+			require.NoError(t, model.CreateDashboardSession(&user, nonce))
+			s.Set("security_session_id", nonce)
 		}
 		c.Next()
 	})

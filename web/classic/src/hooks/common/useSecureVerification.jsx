@@ -84,40 +84,17 @@ export const useSecureVerification = ({
   // 开始验证流程
   const startVerification = useCallback(
     async (apiCall, options = {}) => {
-      const { preferredMethod, title, description } = options;
-
-      // 检查验证方式
-      const methods = await checkVerificationMethods();
-
-      if (!methods.has2FA && !methods.hasPasskey) {
-        const errorMessage = t('您需要先启用两步验证或 Passkey 才能执行此操作');
-        showError(errorMessage);
-        onError?.(new Error(errorMessage));
-        return false;
+      try {
+        const result = await apiCall();
+        onSuccess?.(result, options.preferredMethod || '2fa');
+        if (successMessage) showSuccess(successMessage);
+        return true;
+      } catch (error) {
+        onError?.(error);
+        throw error;
       }
-
-      // 设置默认验证方式
-      let defaultMethod = preferredMethod;
-      if (!defaultMethod) {
-        if (methods.hasPasskey && methods.passkeySupported) {
-          defaultMethod = 'passkey';
-        } else if (methods.has2FA) {
-          defaultMethod = '2fa';
-        }
-      }
-
-      setVerificationState((prev) => ({
-        ...prev,
-        method: defaultMethod,
-        apiCall,
-        title,
-        description,
-      }));
-      setIsModalVisible(true);
-
-      return true;
     },
-    [checkVerificationMethods, onError, t],
+    [onSuccess, onError, successMessage],
   );
 
   // 执行验证

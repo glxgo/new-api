@@ -10,9 +10,9 @@ import (
 // UserOAuthBinding stores the binding relationship between users and custom OAuth providers
 type UserOAuthBinding struct {
 	Id             int       `json:"id" gorm:"primaryKey"`
-	UserId         int       `json:"user_id" gorm:"not null;uniqueIndex:ux_user_provider"`                                        // User ID - one binding per user per provider
-	ProviderId     int       `json:"provider_id" gorm:"not null;uniqueIndex:ux_user_provider;uniqueIndex:ux_provider_userid"`     // Custom OAuth provider ID
-	ProviderUserId string    `json:"provider_user_id" gorm:"type:varchar(256);not null;uniqueIndex:ux_provider_userid"`           // User ID from OAuth provider - one OAuth account per provider
+	UserId         int       `json:"user_id" gorm:"not null;uniqueIndex:ux_user_provider"`                                    // User ID - one binding per user per provider
+	ProviderId     int       `json:"provider_id" gorm:"not null;uniqueIndex:ux_user_provider;uniqueIndex:ux_provider_userid"` // Custom OAuth provider ID
+	ProviderUserId string    `json:"provider_user_id" gorm:"type:varchar(256);not null;uniqueIndex:ux_provider_userid"`       // User ID from OAuth provider - one OAuth account per provider
 	CreatedAt      time.Time `json:"created_at"`
 }
 
@@ -106,32 +106,41 @@ func CreateUserOAuthBindingWithTx(tx *gorm.DB, binding *UserOAuthBinding) error 
 
 // UpdateUserOAuthBinding updates an existing OAuth binding (e.g., rebind to different OAuth account)
 func UpdateUserOAuthBinding(userId, providerId int, newProviderUserId string) error {
-	// Check if the new provider user ID is already taken by another user
-	var existingBinding UserOAuthBinding
-	err := DB.Where("provider_id = ? AND provider_user_id = ?", providerId, newProviderUserId).First(&existingBinding).Error
-	if err == nil && existingBinding.UserId != userId {
-		return errors.New("this OAuth account is already bound to another user")
+	if userId <= 0 || providerId <= 0 || newProviderUserId == "" {
+		return ErrSecurityProof
 	}
-
-	// Check if user already has a binding for this provider
-	var binding UserOAuthBinding
-	err = DB.Where("user_id = ? AND provider_id = ?", userId, providerId).First(&binding).Error
-	if err != nil {
-		// No existing binding, create new one
-		return CreateUserOAuthBinding(&UserOAuthBinding{
-			UserId:         userId,
-			ProviderId:     providerId,
-			ProviderUserId: newProviderUserId,
-		})
-	}
-
-	// Update existing binding
-	return DB.Model(&binding).Update("provider_user_id", newProviderUserId).Error
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var user User
+		if err := LockAuthenticationUser(tx, userId, &user); err != nil {
+			return err
+		}
+		var binding UserOAuthBinding
+		err := tx.Where("user_id = ? AND provider_id = ?", userId, providerId).First(&binding).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			err = tx.Create(&UserOAuthBinding{UserId: userId, ProviderId: providerId, ProviderUserId: newProviderUserId, CreatedAt: time.Now()}).Error
+		} else if err == nil {
+			err = tx.Model(&binding).Update("provider_user_id", newProviderUserId).Error
+		}
+		if err != nil {
+			return err
+		}
+		return RevokeUserAuthentication(tx, userId)
+	})
 }
 
-// DeleteUserOAuthBinding deletes an OAuth binding
+// DeleteUserOAuthBinding is the privileged recovery path; self-service removal
+// checks remaining login methods in the service transaction.
 func DeleteUserOAuthBinding(userId, providerId int) error {
-	return DB.Where("user_id = ? AND provider_id = ?", userId, providerId).Delete(&UserOAuthBinding{}).Error
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var user User
+		if err := LockAuthenticationUser(tx, userId, &user); err != nil {
+			return err
+		}
+		if err := tx.Where("user_id = ? AND provider_id = ?", userId, providerId).Delete(&UserOAuthBinding{}).Error; err != nil {
+			return err
+		}
+		return RevokeUserAuthentication(tx, userId)
+	})
 }
 
 // DeleteUserOAuthBindingsByUserId deletes all OAuth bindings for a user

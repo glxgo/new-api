@@ -14,8 +14,8 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/access_setting"
-	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"github.com/oschwald/maxminddb-golang"
 )
@@ -167,16 +167,8 @@ func hasAdminSession(c *gin.Context) bool {
 			return true
 		}
 	}
-	value, exists := c.Get(sessions.DefaultKey)
-	if !exists {
-		return false
-	}
-	session, ok := value.(sessions.Session)
-	if !ok || session == nil {
-		return false
-	}
-	role, ok := sessionRoleInt(session.Get("role"))
-	return ok && role >= common.RoleAdminUser
+	user, err := service.DashboardUser(c)
+	return err == nil && user.Role >= common.RoleAdminUser
 }
 
 func sessionRoleInt(value interface{}) (int, bool) {

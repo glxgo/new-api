@@ -29,7 +29,7 @@ func TestMainlandWhitelistRunsBeforeGeoIPBlock(t *testing.T) {
 	t.Cleanup(func() { *access_setting.GetAccessPolicy() = oldPolicy })
 	access_setting.GetAccessPolicy().BlockMainlandWebAccess = true
 	access_setting.GetAccessPolicy().GeoIPUnknownPolicy = access_setting.GeoIPUnknownPolicyDeny
-	r := newMainlandTestRouter(func(ip net.IP) (string, bool) {
+	r := newMainlandTestRouter(t, func(ip net.IP) (string, bool) {
 		if ip.String() == "203.0.113.10" {
 			return "CN", true
 		}

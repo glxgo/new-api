@@ -75,7 +75,7 @@ func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayIn
 		return req, nil
 	}
 
-	oaiReq, err := service.ClaudeToOpenAIRequest(*req, info)
+	oaiReq, err := service.ClaudeToOpenAIRequest(c, *req, info)
 	if err != nil {
 		return nil, err
 	}

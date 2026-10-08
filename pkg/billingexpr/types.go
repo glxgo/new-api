@@ -8,6 +8,8 @@ import (
 type RequestInput struct {
 	Headers map[string]string
 	Body    []byte
+	// Usage is populated by trusted host adapters, never by client JSON.
+	Usage map[string]float64
 }
 
 // TokenParams holds all token dimensions passed into an Expr evaluation.

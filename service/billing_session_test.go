@@ -38,3 +38,14 @@ func TestBillingSessionSettlesVirtualMembershipAtZeroDelta(t *testing.T) {
 	require.NoError(t, session.Settle(100))
 	require.Equal(t, 1, funding.calls, "settlement must remain idempotent")
 }
+
+func TestBillingSessionRejectsNegativeFinalChargeWithoutRefund(t *testing.T) {
+	funding := &settleCallFundingStub{}
+	session := &BillingSession{relayInfo: &relaycommon.RelayInfo{IsPlayground: true}, funding: funding, preConsumedQuota: 100}
+	require.Error(t, session.Settle(-1))
+	require.Zero(t, funding.calls)
+	require.NoError(t, session.Settle(40))
+	require.Equal(t, []int{-60}, funding.deltas)
+	require.NoError(t, session.Settle(40))
+	require.Equal(t, 1, funding.calls)
+}

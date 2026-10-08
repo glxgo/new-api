@@ -36,7 +36,6 @@ export let API = axios.create({
   },
 });
 
-
 function redirectToOAuthUrl(url, options = {}) {
   const { openInNewTab = false } = options;
   const targetUrl = typeof url === 'string' ? url : url.toString();
@@ -49,8 +48,47 @@ function redirectToOAuthUrl(url, options = {}) {
   window.location.assign(targetUrl);
 }
 
-
 function patchAPIInstance(instance) {
+  instance.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+      const info = error?.response?.data?.verification;
+      if (
+        error?.response?.status === 403 &&
+        info?.challenge &&
+        !error.config.securityProofRetried
+      ) {
+        const { requestSecurityProof, verifyChallenge } =
+          await import('../services/securityProofPrompt');
+        let code = '';
+        if (
+          /\/api\/user\/2fa\/(disable|backup_codes)$/.test(
+            error.config.url ?? '',
+          ) &&
+          info.methods.includes('2fa')
+        ) {
+          try {
+            const payload =
+              typeof error.config.data === 'string'
+                ? JSON.parse(error.config.data)
+                : error.config.data;
+            code = typeof payload?.code === 'string' ? payload.code : '';
+          } catch {
+            /* Request validation handles invalid JSON. */
+          }
+        }
+        const token = code
+          ? await verifyChallenge(info, '2fa', code)
+          : await requestSecurityProof(info);
+        return instance.request({
+          ...error.config,
+          securityProofRetried: true,
+          headers: { ...error.config.headers, 'X-Security-Proof': token },
+        });
+      }
+      return Promise.reject(error);
+    },
+  );
   const originalGet = instance.get.bind(instance);
   const inFlightGetRequests = new Map();
 
@@ -240,13 +278,13 @@ export const processGroupsData = (data, userGroup) => {
 
 // 原来components中的utils.js
 
-export async function getOAuthState() {
+export async function getOAuthState(provider) {
   let path = '/api/oauth/state';
   let affCode = localStorage.getItem('aff');
   if (affCode && affCode.length > 0) {
     path += `?aff=${affCode}`;
   }
-  const res = await API.get(path);
+  const res = await API.get(path, { params: { provider } });
   const { success, message, data } = res.data;
   if (success) {
     return data;
@@ -256,7 +294,7 @@ export async function getOAuthState() {
   }
 }
 
-async function prepareOAuthState(options = {}) {
+async function prepareOAuthState(provider, options = {}) {
   const { shouldLogout = false } = options;
   if (shouldLogout) {
     try {
@@ -265,11 +303,11 @@ async function prepareOAuthState(options = {}) {
     localStorage.removeItem('user');
     updateAPI();
   }
-  return await getOAuthState();
+  return await getOAuthState(provider);
 }
 
 export async function onDiscordOAuthClicked(client_id, options = {}) {
-  const state = await prepareOAuthState(options);
+  const state = await prepareOAuthState('discord', options);
   if (!state) return;
   const redirect_uri = `${window.location.origin}/oauth/discord`;
   const response_type = 'code';
@@ -285,7 +323,7 @@ export async function onOIDCClicked(
   openInNewTab = false,
   options = {},
 ) {
-  const state = await prepareOAuthState(options);
+  const state = await prepareOAuthState('oidc', options);
   if (!state) return;
   const url = new URL(auth_url);
   url.searchParams.set('client_id', client_id);
@@ -297,7 +335,7 @@ export async function onOIDCClicked(
 }
 
 export async function onGitHubOAuthClicked(github_client_id, options = {}) {
-  const state = await prepareOAuthState(options);
+  const state = await prepareOAuthState('github', options);
   if (!state) return;
   redirectToOAuthUrl(
     `https://github.com/login/oauth/authorize?client_id=${github_client_id}&state=${state}&scope=user:email`,
@@ -308,7 +346,7 @@ export async function onLinuxDOOAuthClicked(
   linuxdo_client_id,
   options = { shouldLogout: false },
 ) {
-  const state = await prepareOAuthState(options);
+  const state = await prepareOAuthState('linuxdo', options);
   if (!state) return;
   redirectToOAuthUrl(
     `https://connect.linux.do/oauth2/authorize?response_type=code&client_id=${linuxdo_client_id}&state=${state}`,
@@ -326,7 +364,7 @@ export async function onLinuxDOOAuthClicked(
  * @param {boolean} options.shouldLogout - Whether to logout first
  */
 export async function onCustomOAuthClicked(provider, options = {}) {
-  const state = await prepareOAuthState(options);
+  const state = await prepareOAuthState(provider.slug, options);
   if (!state) return;
 
   try {

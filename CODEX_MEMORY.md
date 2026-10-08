@@ -631,3 +631,54 @@
 - 正式发布版本为 `20260923-iq-pelican-ui-error-safe`。按既有流程完成备份 → 3010 `NODE_TYPE=slave` 候选 → 候选健康与前端/API/鉴权验收 → Nginx 切 3010 → 3000 连接自然排空 → 正式 3000 仅应用容器重建 → 健康验收 → Nginx 回切 3000 → 候选优雅停止。MySQL/Redis 未重建，生产未编译；正式 Compose 已持久化新二进制和 `/var/lib/pelican-archive` 只读挂载，`PELICAN_SOURCE_ID=bench-primary`。
 - 最终正式状态：`new-api` healthy、restart=0、OOM=false，仅监听 `127.0.0.1:3000`；`token.stellaisle.com`、`direct-token.stellaisle.com`、`api.stellaisle.com` 的 `/api/status` 和 `/intelligence-test` 各5/5通过，新版本一致；3010无监听。未授权 Pelican 接口保持401且响应未含上游地址模式。
 - 生产数据库存档保持 `pelican_targets=8`、`pelican_records=240`、`capability_group_presentations=23`；首次上线状态仍 `visible=0`、`sync_enabled=0`，不会向用户公开或启动同步。回滚前配置和制品位于 `/opt/newapi/backups/release-20260923-iq-pelican-ui-error-safe-20260923T002801Z-before` 及后续切流备份目录，旧二进制未删除。
+
+### 2026-10-07 — Kiro credit 本地改动迁移到 IQ/Pelican 分支（未提交、未上线）
+
+- 基于 `d1d207f` 的 `codex/iq-capability-v6` 工作树已迁入主工作树中未提交的 Kiro credit 改动；本地分支名为 `codex/iq-capability-v6`，工作树位于 `outputs/new-api/work/new-api-iq-capability-v6`。主 `main` 工作树保留原有 dirty 状态，没有被覆盖。
+- 迁移内容包括严格 receipt 解析与关联校验、trusted channel、shadow/charge、价格冻结、reserve/settle/refund、metering 幂等、三协议透传、断流/失败处理、nullable 成本账本和定向 Kiro 测试；分支已有的 IQ/Pelican 源码与公共错误脱敏逻辑均保留。
+- 使用项目自带 Go 工具链执行 `go test -vet=off ./pkg/kiro ./model ./service ./relay/... ./controller -run '^TestKiro' -count=1`，编译及 Kiro 测试通过；随后 `./pkg/kiro ./relay/helper ./relay/common ./service ./controller` 宽回归暴露既有 i18n 初始化、priority billing、model-list/SQLite 测试环境失败，未据此宣称全仓行为回归通过。`go test -vet=off ./... -run '^$'` 的所有 Go 子包均可编译，根包仅因缺少前端 `web/classic/dist` embed 产物失败。未修改、编译、测试、部署或重启 VPS。
+
+### 2026-10-07 — 上游安全更新静态对照（未移植）
+
+- 已核对 QuantumNous 上游发布 `v1.0.0-rc.41`（标签 `2035a82a`，9 月 30 日）与 main `78bd5b1cbf`（10 月 7 日）。结果保存于本任务 `outputs/upstream-security-review-2026-10-07.md`；本轮仅新增报告及此交接记录，没有修改业务源码、连接 VPS、提交或部署。
+- 本地仍有 CVE-2026-71479 对应的数量上界/额度安全转换缺口，以及 CVE-2026-64865 对应的设置整对象更新/Redis 余额全量覆盖旧路径。属于源码证据，不是线上复现；本地双池数据库扣减保护对利用条件的影响尚待隔离回归。后续应先处理这两类计费风险，并保留 Kiro、赠金/本金、订阅及虚拟会员语义。
+- 本地缺少上游新面板访问令牌 scope、会话与具体操作绑定的一次性验证、完整账户安全迁移。上游旧面板令牌有升级后 30 天过渡期；迁移需要认证数据库、双前端及 IQ/Pelican 定制路由权限适配，不能单独挑最后几个提交。
+- 标准 role 校验、AccessToken 的 JSON 隐藏、本地管理审计和上游错误脱敏已存在，不应误报为全部缺失。`feefe09f27` 除 TLS 配置 Clone 外还补 Waffo Pancake 回调 StoreID 归属校验，该提交已在 main、未在 rc.41。Marketplace 缓存补丁解决哈希误报，并非完整性校验绕过。
+
+### 2026-10-07 — 上游安全与功能适配完成（本地未提交、未上线）
+
+- 用户确认安全和功能均同步，唯一明确排除面板访问令牌限权。目标仍为 `codex/iq-capability-v6`、HEAD `d1d207fc`；保留原 staged Kiro、IQ/Pelican、赠金/本金、订阅、访问分析、错误脱敏和 Default/Classic。未连接或修改 VPS，未提交、推送或部署。
+- 对照冻结上游 `78bd5b1cbf7bffc462a515a6c6e27567ace7a4d8`，已适配安全额度转换、图片数量边界、负结算/超额退款防护、资料/设置不回写旧余额和 Redis 缓存失效；TLS 独立配置、Waffo Pancake StoreID 归属检查。
+- 新增数据库一次性 SecurityProof/SecurityCeremony/DashboardSession 和用户 AuthVersion；验证绑定会话、动作、请求方法/路径/query/body，OAuth/Passkey state 一次性消费、TOTP 防重放、并发解绑保留最后登录方式、Argon2id 写入兼容 bcrypt、账户删除重新校验会话、敏感审计。两端已接二次验证及 Passkey 多 RP ID 管理。每分钟 master-only 有界清理过期安全记录。
+- 旧单一 AccessToken 保留，无 scopes、多令牌、过期或 30 天退休机制；旧令牌生成增加二次验证。升级前 Cookie 需重新登录，密码/绑定/MFA 等安全变更撤销全部 Cookie 会话。新增三张安全表及 AuthVersion/RPID/LastVerifiedStep 字段，部署时需先准备迁移；MySQL/PostgreSQL 现场迁移未验收。Argon2id 写入后的回滚版本必须具备双格式读取能力，可用 ACCOUNT_PASSWORD_HASH_ALGORITHM=bcrypt 分阶段升级。
+- 冻结 moejs v0.1.0-alpha.5 和上游豆包脚本，接入现有 Seedream 图片与 Seedance 视频链路；支持按模型能力校验、分档实际用量、组图预扣/结算和 b64_json。计费新增 u()，维持本地 v1 单位，不覆盖站点价格；两端表达式试算及复杂公式保留已适配。
+- 冻结 RelayKit 到相同上游提交，适配 Responses→Chat/Claude/Gemini 自定义工具与媒体、安全媒体解析、SSE payload 与终态、Claude Safeguards/逐消息 output_config、Opus 5.5 medium 缺省 effort、GPT-6 参数名及 Gemini 流式累计用量覆盖。两端保存渠道保留未知/WS 字段，并补刷新、文本、root 入口、排序、翻译等修复。
+- 适配边界：本分支没有通用插件注册中心/Marketplace/usage-profile 定价页面，本次未移入这些独立模块；Marketplace 缓存补丁无本地落点。没有新增真实 Responses WebSocket 服务端，也没有给 Default 新增完整 zhTW 语言包。定价由现有表达式编辑器配置，例价不代表官方价格。
+- 验证通过：全仓 Go 编译（含双 dist embed）、认证/协议/资金/Kiro/IQ/Pelican 定向回归、billingexpr/jsplugin/seedream/dto/豆包视频/火山图片全包测试、认证及运行时定向 race；最终账户删除改动再次通过 model 安全 race。Default typecheck、双前端生产构建、定价预览、go mod tidy、格式检查和 git diff --check 通过。Default 涉及文件 ESLint 有 7 个经 HEAD 对照确认的原有错误、9 个 warning（含 2 个新 Fast Refresh warning），不能称 lint 全绿或全仓行为测试全绿。
+- 交付说明位于任务 `outputs/upstream-sync-2026-10-07.md`；最终日志位于任务 `work/security-sync/`。未进行真实 OAuth/硬件 Passkey/三数据库/收费模型调用验收；后续部署须单独完成迁移与真实环境验收。
+
+### 2026-10-08 — Kiro Credit 专门设置页与正式发布完成
+
+- 用户要求 Kiro 使用专门页面。Default 入口为 `/system-settings/operations/kiro-credit-billing`，Classic 入口为 `/console/setting?tab=operation`；支持 Off、Shadow、Charge、价格/成本、额度换算、预扣 credit、服务分组、可信渠道和渠道成本覆盖。
+- Off 保存时保留已有价格、分组和渠道覆盖；Shadow 只旁路记录，Charge 才结算匹配且可信的 Kiro 回执。页面加入严格输入校验、重复渠道 ID 拦截、Charge 风险提示和 GroupRatio 缺失提示。面板访问令牌限权仍按用户要求排除。
+- 本地 Default/Classic 构建、Default 类型检查、Linux/amd64 构建和 Playwright 验收通过；Default/Classic 桌面与手机均覆盖保存、重置、非法值、重复 ID、模式提示及 Off 保留配置。Default 手机横向溢出只来自既有全局页头/toaster，表单自身无溢出。
+- 用户授权后仅上传构建制品/源码快照到 VPS，未在 VPS 编译或修改源码。正式版本 `20261008-kiro-settings` 已蓝绿切换至 3000，三域名一致；候选排空退役完成，3010 已关闭。应用 SHA-256 `76856887100091be3b859492ed7cd28f228deaf6b3553680d2b08b41ea2e83a6`。
+- 完整备份 `/opt/newapi/backups/kiro-ui-20261007T180351Z-before`，发布目录 `/opt/newapi/releases/20261008-kiro-settings`；MySQL/Redis 容器未变化，无数据库迁移。最终正式健康、restart=0、OOM=false，未登录鉴权、页面资源、Compose/Nginx、源码快照和关键错误审计均通过，生产 `KiroCreditBilling` 仍为 `mode: off`。
+
+### 2026-10-08 — 上游适配正式发布完成
+
+- 用户已明确授权 VPS 更新。本地重新构建双前端、Linux/amd64 应用及显式迁移工具；生产只上传校验后的制品并执行迁移/部署，没有在 VPS 编译或编辑业务源码。源码仍为本地 dirty 工作树，未提交、未推送。
+- 正式版本 `20261008-upstream-security-features` 已运行于 3000，三个公网域名返回新版本，canonical Compose 已持久化；MySQL/Redis 容器未重建。旧实例已排空；候选也已在连接为零且完整统计落盘窗口结束后停止，3010 无监听。
+- 应用 SHA-256 `a9a9ac62f97b2ddffb6ddcb8db1311ad56d11eb782c790b61f3533f9629aa6ed`。MySQL 迁移五张安全/Kiro 表及三列，用户/Pelican 迁移前后计数一致。完整数据库、旧二进制、Compose/Nginx 和回滚镜像均保留，环境详情见 `../CODEX_MEMORY.md`。
+- 旧面板令牌读取正式用户与 Pelican 管理接口成功，限权仍排除。生产暂以 `ACCOUNT_PASSWORD_HASH_ALGORITHM=bcrypt` 写入，保留旧版本回滚条件；升级前 Cookie 需重新登录。
+- 正式健康、站点 Host 下页面/资源/未登录鉴权、公网六个构建资源哈希和桌面/手机 Playwright 登录页验收通过。真实 OAuth/硬件 Passkey/收费模型调用未执行；运行流量中仍有上游请求失败等业务错误，不代表全部调用成功。
+- 最终正式 healthy、restart=0、OOM=false；候选停止后再次验证三域名和构建资源哈希成功。发布源码快照和清单远端哈希已核对；本地 2758 个清单文件仅交接文档在发布后变化。部署记录为任务 `outputs/new-api-deployment-2026-10-08.md`。
+
+### 2026-10-08 — Kiro 价格展示正式发布与清理完成
+
+- 用户反馈 Kiro 售价已改但模型广场仍显示旧 token 价。根因是报价 API/双前端未接 Kiro credit；已本地修复公开分组售价、卡片/表格/详情和设置后刷新。只有 Charge 分组显示积分价，其他分组保留 token 价，不重复汇率/充值倍率换算，不公开采购成本和渠道信息。
+- 本地 Kiro 定向 Go 测试、Default 类型检查、双前端/amd64 构建、格式检查和双前端桌面/手机 Playwright 通过。正式 VPS 3000 已运行 20261008-kiro-pricing，三域名新版本和公开 0.16 积分价、7 个资源哈希、真实线上 Default 桌面/手机分组切换及详情验收通过。
+- 正式 healthy、restart=0、OOM=false；MySQL/Redis 未变化，无迁移。Charge/售价0.16/500000 quota per CNY/预扣0.17积分/分组和可信渠道保持用户配置；旧面板令牌仍可读取。
+- 完整备份 /opt/newapi/backups/kiro-pricing-20261008T004433Z-before；发布 /opt/newapi/releases/20261008-kiro-pricing；二进制 SHA-256 8ca836de43fcc3ad9231d2afbfa139d62d14b05ab96279e31cb7db3db04c2763。未提交/推送，未在 VPS 编译/测试/修改业务源码。
+- 候选连接自然归零且完整统计/导出窗口结束后已停止，3010 已关闭。清理后的 final-audit、三域名版本与积分报价、7 个资源哈希、Default 桌面/手机在线分组切换和详情复验通过；正式 healthy、restart=0、OOM=false，旧镜像及备份保留。业务流量仍有上游/HTTP2/订阅不足错误，不代表全模型调用成功。
+- 最终说明与线上截图：任务 outputs/kiro-settings-2026-10-08.md、outputs/kiro-pricing-live-2026-10-08.png。本地源码与发布快照仅 CODEX_MEMORY.md 在发布后补写而变化；其余 2765 个文件仍与构建快照一致。

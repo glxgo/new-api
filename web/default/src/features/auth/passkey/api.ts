@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
+import { choosePasskeyDomain } from './rp-picker'
 import type { ApiResponse, PasskeyOptionsPayload, PasskeyStatus } from './types'
 
 export async function getPasskeyStatus(): Promise<ApiResponse<PasskeyStatus>> {
@@ -51,9 +52,16 @@ export async function deletePasskey(): Promise<ApiResponse> {
 export async function beginPasskeyLogin(): Promise<
   ApiResponse<PasskeyOptionsPayload>
 > {
-  const res = await api.post<ApiResponse<PasskeyOptionsPayload>>(
+  let res = await api.post<ApiResponse<PasskeyOptionsPayload>>(
     '/api/user/passkey/login/begin'
   )
+  if (res.data.success && (res.data.data?.rp_ids?.length ?? 0) > 1) {
+    const domain = await choosePasskeyDomain(res.data.data?.rp_ids)
+    res = await api.post<ApiResponse<PasskeyOptionsPayload>>(
+      '/api/user/passkey/login/begin',
+      { rp_id: domain }
+    )
+  }
   return res.data
 }
 

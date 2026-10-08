@@ -140,15 +140,15 @@ export function useSidebarData(): SidebarData {
       url: '/topup-coupons',
       icon: Ticket,
     },
-    {
-      title: t('System Settings'),
-      url: '/system-settings/site',
-      activeUrls: ['/system-settings'],
-      icon: Settings,
-    },
   ]
   if (isRoot) {
     adminItems.push(
+      {
+        title: t('System Settings'),
+        url: '/system-settings/site',
+        activeUrls: ['/system-settings'],
+        icon: Settings,
+      },
       {
         title: t('Withdrawal Review'),
         url: '/withdraw-review',
@@ -214,7 +214,15 @@ export function useSidebarData(): SidebarData {
             url: '/usage-logs/common',
             icon: FileText,
           },
-          ...(capability.data?.visible ? [{ title: t('Intelligence Test'), url: '/intelligence-test', icon: FlaskConical } satisfies NavItem] : []),
+          ...(capability.data?.visible
+            ? [
+                {
+                  title: t('Intelligence Test'),
+                  url: '/intelligence-test',
+                  icon: FlaskConical,
+                } satisfies NavItem,
+              ]
+            : []),
           {
             title: t('Model Status'),
             url: '/model-status',

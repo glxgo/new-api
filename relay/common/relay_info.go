@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/QuantumNous/new-api/pkg/kiro"
 	"io"
 	"strconv"
 	"strings"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/shopspring/decimal"
 	"github.com/tidwall/gjson"
 )
 
@@ -91,6 +93,8 @@ type TokenCountMeta struct {
 }
 
 type RelayInfo struct {
+	Kiro                            *kiro.State
+	KiroFinalized                   bool
 	ClientSnapshot                  *common.ClientSnapshot
 	ClientCodingGroup               bool
 	TokenId                         int
@@ -607,10 +611,14 @@ func (info *RelayInfo) ApplyIngressMultiplier(quota int) int {
 	if ppm <= 0 || ppm == 1_000_000 {
 		return quota
 	}
+	value := decimal.NewFromInt(int64(quota)).Mul(decimal.NewFromInt(ppm)).Div(decimal.NewFromInt(1_000_000))
 	if quota < 0 {
-		return -int((int64(-quota)*ppm + 999_999) / 1_000_000)
+		value = value.Floor()
+	} else {
+		value = value.Ceil()
 	}
-	return int((int64(quota)*ppm + 999_999) / 1_000_000)
+	result, _ := value.Float64()
+	return common.QuotaFromFloat(result)
 }
 
 // RestoreIngressMultiplier returns the pre-discount sale quota for channel
@@ -623,10 +631,14 @@ func (info *RelayInfo) RestoreIngressMultiplier(quota int) int {
 	if ppm <= 0 || ppm == 1_000_000 {
 		return quota
 	}
+	value := decimal.NewFromInt(int64(quota)).Mul(decimal.NewFromInt(1_000_000)).Div(decimal.NewFromInt(ppm))
 	if quota < 0 {
-		return -int((int64(-quota)*1_000_000 + ppm - 1) / ppm)
+		value = value.Floor()
+	} else {
+		value = value.Ceil()
 	}
-	return int((int64(quota)*1_000_000 + ppm - 1) / ppm)
+	result, _ := value.Float64()
+	return common.QuotaFromFloat(result)
 }
 
 func cloneRequestHeaders(c *gin.Context) map[string]string {
@@ -739,6 +751,9 @@ func (info *RelayInfo) CaptureEffectiveReasoningEffort(jsonData []byte) {
 		effort, _ = reasoning.ParseOpenAIReasoningEffortFromModelSuffix(
 			strings.TrimSpace(gjson.GetBytes(jsonData, "model").String()),
 		)
+	}
+	if effort == "" && strings.HasPrefix(gjson.GetBytes(jsonData, "model").String(), "claude-opus-5-5") && gjson.GetBytes(jsonData, "thinking.type").String() != "disabled" {
+		effort = "medium"
 	}
 	info.ReasoningEffort = strings.ToLower(effort)
 }

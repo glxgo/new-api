@@ -66,6 +66,10 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		return types.NewError(err, types.ErrorCodeChannelModelMappedError, types.ErrOptionWithSkipRetry())
 	}
 
+	if target := responsesConversionTarget(info); target != "" {
+		return responsesViaConversion(c, info, request, target)
+	}
+
 	adaptor := GetAdaptor(info.ApiType)
 	if adaptor == nil {
 		return types.NewError(fmt.Errorf(i18n.T(c, i18n.MsgRelayInvalidApiType, map[string]any{"Type": info.ApiType})), types.ErrorCodeInvalidApiType, types.ErrOptionWithSkipRetry())

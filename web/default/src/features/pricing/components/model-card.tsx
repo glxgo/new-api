@@ -24,6 +24,11 @@ import { cn } from '@/lib/utils'
 import { StatusBadge } from '@/components/status-badge'
 import { DEFAULT_TOKEN_UNIT } from '../constants'
 import { getDynamicPricingSummary } from '../lib/dynamic-price'
+import {
+  formatKiroCreditPrice,
+  getDefaultPricingGroup,
+  getKiroCreditPrice,
+} from '../lib/kiro-price'
 import { isTokenBasedModel } from '../lib/model-helpers'
 import {
   formatFixedPrice,
@@ -111,12 +116,17 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
     () => (props.model.enable_groups?.length ? props.model.enable_groups : []),
     [props.model.enable_groups]
   )
-  const [selectedGroup, setSelectedGroup] = useState(groups[0] ?? '')
+  const [selectedGroup, setSelectedGroup] = useState(() =>
+    getDefaultPricingGroup(props.model)
+  )
   const currentGroup = groups.includes(selectedGroup)
     ? selectedGroup
-    : (groups[0] ?? '')
-  const currentRatio = currentGroup ? (groupRatios[currentGroup] ?? 1) : 1
+    : getDefaultPricingGroup(props.model)
+  const creditPrice = getKiroCreditPrice(props.model, currentGroup)
+  let currentRatio = currentGroup ? (groupRatios[currentGroup] ?? 1) : 1
+  if (creditPrice) currentRatio = Number(creditPrice.group_ratio)
   const isDynamicPricing =
+    !creditPrice &&
     props.model.billing_mode === 'tiered_expr' &&
     Boolean(props.model.billing_expr)
   const dynamicSummary = isDynamicPricing
@@ -155,7 +165,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
           usdExchangeRate
         )
 
-  const priceItems: PriceItem[] = isTokenBased
+  const legacyPriceItems: PriceItem[] = isTokenBased
     ? [
         {
           label: t('Input'),
@@ -255,6 +265,18 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
         },
       ]
 
+  const priceItems: PriceItem[] = creditPrice
+    ? [
+        {
+          label: t('Kiro Credit Price'),
+          value: formatKiroCreditPrice(creditPrice),
+          unit: t('credit'),
+        },
+      ]
+    : legacyPriceItems
+  let billingLabel = isTokenBased ? t('Token-based') : t('Per Request')
+  if (creditPrice) billingLabel = t('Credit-based')
+
   return (
     <div
       className={cn(
@@ -282,7 +304,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
           </h3>
           <div className='mt-1.5 flex flex-wrap items-center gap-1.5'>
             <span className='border-success/30 bg-success/10 text-success inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-bold'>
-              {isTokenBased ? t('Token-based') : t('Per Request')}
+              {billingLabel}
             </span>
             <span className='border-info/30 bg-info/10 text-info inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-bold'>
               倍率 {formatRatio(currentRatio)}
@@ -330,7 +352,10 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
         <span className='mr-1'>{t('Channel Price')}</span>
         {groups.length > 0 ? (
           groups.map((group) => {
-            const ratio = groupRatios[group] ?? 1
+            const quote = getKiroCreditPrice(props.model, group)
+            const ratio = quote
+              ? Number(quote.group_ratio)
+              : (groupRatios[group] ?? 1)
             const active = group === currentGroup
             return (
               <button

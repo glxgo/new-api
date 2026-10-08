@@ -67,12 +67,27 @@ func Login(c *gin.Context) {
 	}
 
 	// 检查是否启用2FA
-	if model.IsTwoFAEnabled(user.Id) {
+	twoFA, err := model.GetTwoFAByUserId(user.Id)
+	if err != nil {
+		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
+		return
+	}
+	if twoFA != nil && twoFA.IsEnabled {
 		// 设置pending session，等待2FA验证
 		session := sessions.Default(c)
-		session.Set("pending_username", user.Username)
-		session.Set("pending_user_id", user.Id)
-		err := session.Save()
+		payload, err := common.Marshal(map[string]any{"user_id": user.Id, "password_hash": common.GenerateHMAC(user.Password), "auth_version": user.AuthVersion})
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		token, err := model.SaveSecurityCeremony(string(payload))
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		session.Clear()
+		session.Set("pending_login", token)
+		err = session.Save()
 		if err != nil {
 			common.ApiErrorI18n(c, i18n.MsgUserSessionSaveFailed)
 			return
@@ -130,18 +145,42 @@ func recordLoginAudit(user *model.User, c *gin.Context) {
 
 // setup session & cookies and then return user info
 func setupLogin(user *model.User, c *gin.Context) {
-	model.UpdateUserLastLoginAt(user.Id)
 	session := sessions.Default(c)
+	if previous, ok := session.Get(service.SecuritySessionKey).(string); ok {
+		if err := model.RevokeDashboardSession(previous); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
+	session.Clear()
+	nonce, err := model.SecurityToken()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	current, err := model.GetUserById(user.Id, true)
+	if err != nil || current.Status != common.UserStatusEnabled || current.Password != user.Password || current.AuthVersion != user.AuthVersion {
+		common.ApiErrorMsg(c, "Authentication failed")
+		return
+	}
+	if err := model.CreateDashboardSession(current, nonce); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	user = current
+	session.Set(service.SecuritySessionKey, nonce)
 	session.Set("id", user.Id)
 	session.Set("username", user.Username)
 	session.Set("role", user.Role)
 	session.Set("status", user.Status)
 	session.Set("group", user.Group)
-	err := session.Save()
+	err = session.Save()
 	if err != nil {
+		_ = model.RevokeDashboardSession(nonce)
 		common.ApiErrorI18n(c, i18n.MsgUserSessionSaveFailed)
 		return
 	}
+	model.UpdateUserLastLoginAt(user.Id)
 	recordLoginAudit(user, c)
 	identityType, identityErr := model.GetUserIdentityType(user.Id)
 	if identityErr != nil {
@@ -165,6 +204,12 @@ func setupLogin(user *model.User, c *gin.Context) {
 
 func Logout(c *gin.Context) {
 	session := sessions.Default(c)
+	if nonce, ok := session.Get(service.SecuritySessionKey).(string); ok {
+		if err := model.RevokeDashboardSession(nonce); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
 	session.Clear()
 	err := session.Save()
 	if err != nil {
@@ -407,17 +452,16 @@ func GenerateAccessToken(c *gin.Context) {
 		common.SysLog("failed to generate key: " + err.Error())
 		return
 	}
-	user.SetAccessToken(key)
-
-	if model.DB.Where("access_token = ?", user.AccessToken).First(user).RowsAffected != 0 {
+	if model.DB.Where("access_token = ?", key).First(&model.User{}).RowsAffected != 0 {
 		common.ApiErrorI18n(c, i18n.MsgUuidDuplicate)
 		return
 	}
-
-	if err := user.Update(false); err != nil {
+	if err := model.DB.Model(&model.User{}).Where("id = ?", id).Update("access_token", key).Error; err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	user.SetAccessToken(key)
+	recordUserSecurityAudit(c, id, "user.access_token_generate", nil)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -789,6 +833,9 @@ func UpdateUser(c *gin.Context) {
 		updatedUser.Password = "" // rollback to what it should be
 	}
 	updatePassword := updatedUser.Password != ""
+	if (updatePassword || updatedUser.Role != originUser.Role || updatedUser.Status != originUser.Status) && !service.RequireSecurityProof(c, "admin.user.update") {
+		return
+	}
 	if err := updatedUser.Edit(updatePassword, model.UserCapacityLimitUpdate{
 		ConcurrencyLimit:         request.ConcurrencyLimit,
 		ConcurrencyLimitOverride: request.ConcurrencyLimitOverride,
@@ -875,9 +922,7 @@ func UpdateSelf(c *gin.Context) {
 			currentSetting.SidebarModules = sidebarModulesStr
 		}
 
-		// 保存更新后的设置
-		user.SetSetting(currentSetting)
-		if err := user.Update(false); err != nil {
+		if err := model.UpdateUserSetting(userId, currentSetting); err != nil {
 			common.ApiErrorI18n(c, i18n.MsgUpdateFailed)
 			return
 		}
@@ -903,9 +948,7 @@ func UpdateSelf(c *gin.Context) {
 			currentSetting.Language = langStr
 		}
 
-		// 保存更新后的设置
-		user.SetSetting(currentSetting)
-		if err := user.Update(false); err != nil {
+		if err := model.UpdateUserSetting(userId, currentSetting); err != nil {
 			common.ApiErrorI18n(c, i18n.MsgUpdateFailed)
 			return
 		}
@@ -945,6 +988,9 @@ func UpdateSelf(c *gin.Context) {
 		user.Password = "" // rollback to what it should be
 		cleanUser.Password = ""
 	}
+	if user.Password != "" && !service.RequireSecurityProof(c, "account.password") {
+		return
+	}
 	updatePassword, err := checkUpdatePassword(user.OriginalPassword, user.Password, cleanUser.Id)
 	if err != nil {
 		common.ApiError(c, err)
@@ -953,6 +999,9 @@ func UpdateSelf(c *gin.Context) {
 	if err := cleanUser.Update(updatePassword); err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	if updatePassword {
+		recordUserSecurityAudit(c, cleanUser.Id, "user.password_update", nil)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -963,6 +1012,12 @@ func UpdateSelf(c *gin.Context) {
 }
 
 func checkUpdatePassword(originalPassword string, newPassword string, userId int) (updatePassword bool, err error) {
+	if newPassword == "" {
+		return false, nil
+	}
+	if err = common.ValidateNewAccountPassword(newPassword); err != nil {
+		return false, err
+	}
 	var currentUser *model.User
 	currentUser, err = model.GetUserById(userId, true)
 	if err != nil {
@@ -977,6 +1032,9 @@ func checkUpdatePassword(originalPassword string, newPassword string, userId int
 	}
 	if newPassword == "" {
 		return
+	}
+	if common.ValidatePasswordAndHash(newPassword, currentUser.Password) {
+		return false, common.ErrAccountPasswordSame
 	}
 	updatePassword = true
 	return
@@ -1016,18 +1074,36 @@ func DeleteUser(c *gin.Context) {
 
 func DeleteSelf(c *gin.Context) {
 	id := c.GetInt("id")
-	user, _ := model.GetUserById(id, false)
+	user, err := model.GetUserById(id, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 
 	if user.Role == common.RoleRootUser {
 		common.ApiErrorI18n(c, i18n.MsgUserCannotDeleteRootUser)
 		return
 	}
 
-	err := model.DeleteUserById(id)
+	session := sessions.Default(c)
+	if c.GetBool("use_access_token") {
+		err = model.DeleteUserById(id)
+	} else {
+		nonce, _ := session.Get(service.SecuritySessionKey).(string)
+		err = model.DeleteAccountWithSession(id, nonce)
+	}
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	_ = model.InvalidateSecurityProofs(id)
+	_ = model.InvalidateUserTokensCache(id)
+	session.Clear()
+	if err := session.Save(); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recordUserSecurityAudit(c, id, "user.delete_self", nil)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -1057,6 +1133,9 @@ func CreateUser(c *gin.Context) {
 	}
 	if user.Role >= myRole {
 		common.ApiErrorI18n(c, i18n.MsgUserCannotCreateHigherLevel)
+		return
+	}
+	if user.Role >= common.RoleAdminUser && !service.RequireSecurityProof(c, "admin.user.create") {
 		return
 	}
 	// Even for admin users, we cannot fully trust them!
@@ -1114,6 +1193,12 @@ func ManageUser(c *gin.Context) {
 	if !canManageTargetRole(myRole, user.Role) {
 		common.ApiErrorI18n(c, i18n.MsgUserNoPermissionHigherLevel)
 		return
+	}
+	switch req.Action {
+	case "disable", "enable", "delete", "promote", "demote", "set_agent", "remove_agent", "reset_security", "enable_security_whitelist", "disable_security_whitelist":
+		if !service.RequireSecurityProof(c, "admin.user.manage") {
+			return
+		}
 	}
 	switch req.Action {
 	case "disable":
@@ -1312,14 +1397,13 @@ func EmailBind(c *gin.Context) {
 	}
 	email := req.Email
 	code := req.Code
-	if !common.VerifyCodeWithKey(email, code, common.EmailVerificationPurpose) {
+	if !common.ConsumeVerificationCode(email, code, common.EmailVerificationPurpose) {
 		common.ApiErrorI18n(c, i18n.MsgUserVerificationCodeError)
 		return
 	}
-	session := sessions.Default(c)
-	id := session.Get("id")
+	id := c.GetInt("id")
 	user := model.User{
-		Id: id.(int),
+		Id: id,
 	}
 	err := user.FillUserById()
 	if err != nil {
@@ -1327,12 +1411,13 @@ func EmailBind(c *gin.Context) {
 		return
 	}
 	user.Email = email
-	// no need to check if this email already taken, because we have used verification code to check it
+	// The model rechecks identity uniqueness in the binding transaction.
 	err = user.Update(false)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	recordUserSecurityAudit(c, id, "user.email_bind", nil)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -1568,8 +1653,7 @@ func UpdateUserSetting(c *gin.Context) {
 	}
 
 	// 更新用户设置
-	user.SetSetting(settings)
-	if err := user.Update(false); err != nil {
+	if err := model.UpdateUserSetting(user.Id, settings); err != nil {
 		common.ApiErrorI18n(c, i18n.MsgUpdateFailed)
 		return
 	}
