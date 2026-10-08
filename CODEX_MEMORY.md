@@ -682,3 +682,12 @@
 - 完整备份 /opt/newapi/backups/kiro-pricing-20261008T004433Z-before；发布 /opt/newapi/releases/20261008-kiro-pricing；二进制 SHA-256 8ca836de43fcc3ad9231d2afbfa139d62d14b05ab96279e31cb7db3db04c2763。未提交/推送，未在 VPS 编译/测试/修改业务源码。
 - 候选连接自然归零且完整统计/导出窗口结束后已停止，3010 已关闭。清理后的 final-audit、三域名版本与积分报价、7 个资源哈希、Default 桌面/手机在线分组切换和详情复验通过；正式 healthy、restart=0、OOM=false，旧镜像及备份保留。业务流量仍有上游/HTTP2/订阅不足错误，不代表全模型调用成功。
 - 最终说明与线上截图：任务 outputs/kiro-settings-2026-10-08.md、outputs/kiro-pricing-live-2026-10-08.png。本地源码与发布快照仅 CODEX_MEMORY.md 在发布后补写而变化；其余 2765 个文件仍与构建快照一致。
+
+### 2026-10-08 — 已上线源码通过 GitHub PR 交付（待合并）
+
+- 用户授权把代码提交到 glxgo/new-api，随后明确采用 PR。已把已上线的上游安全/功能同步、Kiro 计费、专门设置页和积分报价完整提交为 `7b86935ca15a32d047019c2a7ec54414e5345f41`（236 个文件）；本地仍为 `codex/iq-capability-v6`。
+- 提交前对照正式 `20261008-kiro-pricing` 的 2766 文件源码清单：只有 CODEX_MEMORY.md 在发布后补写，业务源码逐项一致，无缺失或新增；git diff --check 通过，复用既有验证记录，没有再次部署或测试生产。
+- 直接推送 origin 被 GitHub 403 拒绝，当前账号没有 glxgo/new-api 写入权限。用户指定改用 PR 后，复用可写 fork `StingGrey/new-api-plus`，代码已推到 `codex/upstream-security-kiro-20261008`。
+- PR https://github.com/glxgo/new-api/pull/2 已创建并附加到当前任务；base 为 `glxgo/new-api:codex/iq-capability-v6`，head 为 `StingGrey/new-api-plus:codex/upstream-security-kiro-20261008`。已核对 OPEN、非 draft、MERGEABLE；目前尚未合并。
+- glxgo 目标分支仍为 `d1d207fc9d5a31bbe98708a4634181502428d325`；未强推、未改 main、未覆盖主工作树的未提交内容。PR 使用仓库模板并注明 AI 辅助贡献，人工确认项未冒充已获维护者确认。
+- 面板访问令牌限权仍排除，生产配置及版本不变。此前“未提交/未推送”记录保留为历史状态，当前源码已在 fork 并等待 PR 合并。
