@@ -178,6 +178,10 @@ func finishAdminAudit(c *gin.Context, writer *auditResponseWriter) {
 	if len(routeParams) > 0 {
 		auditInfo["params"] = routeParams
 	}
+	if c.GetBool("operation_proof_consumed") {
+		auditInfo["verification_method"] = c.GetString("operation_proof_method")
+		auditInfo["verified_action"] = c.GetString("operation_proof_action")
+	}
 
 	gopool.Go(func() {
 		model.RecordOperationAuditLog(operatorId, content, ip, action, opParams, adminInfo, auditInfo)

@@ -227,6 +227,18 @@ func StreamScannerHandlerWithOptions(c *gin.Context, resp *http.Response, info *
 		sr := newStreamResult(info.StreamStatus)
 		for chunk := range dataChan {
 			data := chunk.data
+			if info.Kiro != nil {
+				data = string(info.Kiro.Observe([]byte(data), true, chunk.event))
+			}
+			if info.Kiro.Charge() {
+				result := info.Kiro.Result()
+				if result.Complete || result.Error != "" {
+					if err := info.KiroCompletionError(); err != nil {
+						sr.Stop(err)
+						return
+					}
+				}
+			}
 			if data == "[DONE]" {
 				isResponses := info.RelayMode == relayconstant.RelayModeResponses ||
 					info.RelayMode == relayconstant.RelayModeResponsesCompact

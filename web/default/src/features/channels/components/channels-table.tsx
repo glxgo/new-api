@@ -25,9 +25,11 @@ import {
   type Row,
 } from '@tanstack/react-table'
 import { useMediaQuery } from '@/hooks'
+import { RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
   DISABLED_ROW_DESKTOP,
@@ -166,7 +168,7 @@ export function ChannelsTable() {
   )
 
   // Fetch channels data
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     ...channelListQueryOptions({
       keyword: globalFilter,
       model: modelFilter,
@@ -297,6 +299,18 @@ export function ChannelsTable() {
       skeletonKeyPrefix='channel-skeleton'
       applyHeaderSize
       toolbarProps={{
+        preActions: (
+          <Button
+            variant='ghost'
+            size='icon'
+            aria-label={t('Refresh')}
+            aria-busy={isFetching}
+            disabled={isFetching}
+            onClick={() => void refetch()}
+          >
+            <RefreshCw className={isFetching ? 'animate-spin' : ''} />
+          </Button>
+        ),
         searchPlaceholder: t('Filter by name, ID, or key...'),
         searchDebounceMs: 500,
         onReset: () => {

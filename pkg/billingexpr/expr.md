@@ -85,6 +85,7 @@ Powered by [expr-lang/expr](https://github.com/expr-lang/expr). Expressions are 
 | `tier` | `tier(name, value) → float64` | Records which pricing tier matched; must wrap the cost expression |
 | `param` | `param(path) → any` | Reads a JSON path from the request body (uses gjson) |
 | `header` | `header(key) → string` | Reads a request header value |
+| `u` | `u(key) → float64` | Reads a validated adapter usage fact; an absent key is zero |
 | `has` | `has(source, substr) → bool` | Substring check |
 | `hour` | `hour(tz) → int` | Current hour in timezone (0-23) |
 | `minute` | `minute(tz) → int` | Current minute (0-59) |
@@ -114,6 +115,32 @@ tier("base", p * 2 + c * 8 + img * 2.5)
 # Multimodal with audio
 tier("base", p * 0.43 + c * 3.06 + img * 0.78 + ai * 3.81 + ao * 15.11)
 ```
+
+### Seedream image facts
+
+Volcengine's built-in Doubao plugin runs on the pinned moejs runtime. It validates
+the mapped model's image capabilities before reservation, estimates the maximum
+output count, and replaces those estimates with validated completion facts.
+Clients cannot set `u()` values through request JSON.
+
+Supported facts are `images_up_to_1_5k`, `images_above_1_5k`, `input_images`, and
+`layer_decomposition` (0 or 1). The tier boundary is 2,610,000 pixels per output;
+group generation and layers are priced per successful image. Missing sizes retain
+the conservative estimated tier. Invalid upstream usage retains the reservation
+facts instead of refunding an otherwise delivered result. Existing fact names
+remain accepted when a model's capability profile narrows.
+
+The v1 conversion remains `rawCost / 1000000 * QuotaPerUnit`. Therefore prices in
+USD **per image** need the explicit 1000000 multiplier, unlike per-million-token
+coefficients. For example, illustrative prices of $0.01/$0.02 per image are:
+
+```
+tier("seedream", (u("images_up_to_1_5k") * 0.01 + u("images_above_1_5k") * 0.02) * 1000000)
+```
+
+These are examples, not provider prices. Configure each model's current contract
+prices in the raw expression editor. Both frontends expose numeric usage fields
+for the local estimator; profile changes never rewrite a saved expression.
 
 ### Request Rules (appended after `|||`)
 

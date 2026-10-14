@@ -53,6 +53,7 @@ var compileEnvPrototypeV1 = map[string]interface{}{
 	"tier":    func(string, float64) float64 { return 0 },
 	"header":  func(string) string { return "" },
 	"param":   func(string) interface{} { return nil },
+	"u":       func(string) float64 { return 0 },
 	"has":     func(interface{}, string) bool { return false },
 	"hour":    func(string) int { return 0 },
 	"minute":  func(string) int { return 0 },

@@ -53,6 +53,7 @@ import {
   isDynamicPricingModel,
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
+import { getKiroCreditPrice } from '../lib/kiro-price'
 import { getAvailableGroups, isTokenBasedModel } from '../lib/model-helpers'
 import { inferModelMetadata } from '../lib/model-metadata'
 import { formatFixedPrice, formatGroupPrice } from '../lib/price'
@@ -64,6 +65,7 @@ import type {
   TokenUnit,
 } from '../types'
 import { DynamicPricingBreakdown } from './dynamic-pricing-breakdown'
+import { KiroCreditGroupPrices } from './kiro-credit-group-prices'
 import { ModalityIcons } from './model-details-modalities'
 import { ModelDetailsProviderInfo } from './model-details-provider-info'
 import { ModelDetailsQuickStats } from './model-details-quick-stats'
@@ -275,6 +277,14 @@ function ModelHeader(props: { model: PricingModel }) {
   const modelIcon = modelIconKey ? getLobeIcon(modelIconKey, 20) : null
   const description = model.description || model.vendor_description || null
   const tags = parseTags(model.tags)
+  const hasCreditPrices = model.enable_groups.some((group) =>
+    getKiroCreditPrice(model, group)
+  )
+  let billingLabel =
+    model.quota_type === QUOTA_TYPE_VALUES.TOKEN
+      ? t('Token-based')
+      : t('Per Request')
+  if (hasCreditPrices) billingLabel = t('Pricing varies by group')
   const isSpecialExpression =
     model.billing_mode === 'tiered_expr' &&
     Boolean(model.billing_expr) &&
@@ -301,11 +311,7 @@ function ModelHeader(props: { model: PricingModel }) {
           <span className='text-muted-foreground'>{model.vendor_name}</span>
         )}
         <span className='text-muted-foreground/30'>·</span>
-        <span className='text-muted-foreground/70'>
-          {model.quota_type === QUOTA_TYPE_VALUES.TOKEN
-            ? t('Token-based')
-            : t('Per Request')}
-        </span>
+        <span className='text-muted-foreground/70'>{billingLabel}</span>
         {model.billing_mode === 'tiered_expr' && model.billing_expr && (
           <>
             <span className='text-muted-foreground/30'>·</span>
@@ -342,7 +348,25 @@ function ModelHeader(props: { model: PricingModel }) {
 // Base price card (used in the Overview tab)
 // ----------------------------------------------------------------------------
 
-function PriceSection(props: {
+function PriceSection(props: Parameters<typeof LegacyPriceSection>[0]) {
+  const { t } = useTranslation()
+  if (
+    props.model.enable_groups.some((group) =>
+      getKiroCreditPrice(props.model, group)
+    )
+  ) {
+    return (
+      <p className='text-muted-foreground text-sm'>
+        {t(
+          'This model uses different billing units by group. See the group prices below.'
+        )}
+      </p>
+    )
+  }
+  return <LegacyPriceSection {...props} />
+}
+
+function LegacyPriceSection(props: {
   model: PricingModel
   priceRate: number
   usdExchangeRate: number
@@ -625,7 +649,30 @@ function getDynamicFormattedPricesByTier(
 // Group pricing table
 // ----------------------------------------------------------------------------
 
-function GroupPricingSection(props: {
+function GroupPricingSection(
+  props: Parameters<typeof LegacyGroupPricingSection>[0]
+) {
+  const creditGroups = props.model.enable_groups.filter((group) =>
+    getKiroCreditPrice(props.model, group)
+  )
+  if (!creditGroups.length) return <LegacyGroupPricingSection {...props} />
+  const legacyGroups = props.model.enable_groups.filter(
+    (group) => !getKiroCreditPrice(props.model, group)
+  )
+  return (
+    <div className='space-y-5'>
+      <KiroCreditGroupPrices model={props.model} />
+      {legacyGroups.length > 0 ? (
+        <LegacyGroupPricingSection
+          {...props}
+          model={{ ...props.model, enable_groups: legacyGroups }}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+function LegacyGroupPricingSection(props: {
   model: PricingModel
   groupRatio: Record<string, number>
   usableGroup: Record<string, { desc: string; ratio: number }>
@@ -785,7 +832,7 @@ function GroupPricingSection(props: {
             )
           })}
           <p className='text-muted-foreground/40 mt-1.5 text-[10px]'>
-            {t('Prices shown per')} {tokenUnitLabel} tokens
+            {t('Prices shown per {{unit}} tokens', { unit: tokenUnitLabel })}
           </p>
         </div>
       </section>
@@ -876,7 +923,7 @@ function GroupPricingSection(props: {
       <div className='-mx-4 sm:mx-0'>
         {isTokenBased && (
           <p className='text-muted-foreground/40 mt-1.5 px-4 text-[10px] sm:px-0'>
-            {t('Prices shown per')} {tokenUnitLabel} tokens
+            {t('Prices shown per {{unit}} tokens', { unit: tokenUnitLabel })}
           </p>
         )}
       </div>
@@ -955,9 +1002,12 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
               tokenUnit={props.tokenUnit}
               showRechargePrice={showRechargePrice}
             />
-            {isDynamic && (
-              <DynamicPricingBreakdown billingExpr={props.model.billing_expr} />
-            )}
+            {isDynamic &&
+              !Object.keys(props.model.kiro_credit_prices ?? {}).length && (
+                <DynamicPricingBreakdown
+                  billingExpr={props.model.billing_expr}
+                />
+              )}
             <GroupPricingSection
               model={props.model}
               groupRatio={props.groupRatio}

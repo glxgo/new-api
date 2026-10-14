@@ -1,6 +1,7 @@
 package helper
 
 import (
+	"maps"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -63,6 +64,7 @@ func readIncomingBillingExprBody(c *gin.Context) ([]byte, error) {
 
 func cloneRequestInput(src billingexpr.RequestInput) billingexpr.RequestInput {
 	input := billingexpr.RequestInput{
+		Usage:   maps.Clone(src.Usage),
 		Headers: cloneStringMap(src.Headers),
 	}
 	if len(src.Body) > 0 {

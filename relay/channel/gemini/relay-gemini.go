@@ -1343,6 +1343,7 @@ func handleFinalStream(c *gin.Context, info *relaycommon.RelayInfo, resp *dto.Ch
 
 func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response, callback func(data string, geminiResponse *dto.GeminiChatResponse) bool) (*dto.Usage, *types.NewAPIError) {
 	var usage = &dto.Usage{}
+	var cumulative *dto.GeminiUsageMetadata
 	var imageCount int
 	responseText := strings.Builder{}
 
@@ -1374,9 +1375,9 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		}
 
 		// 更新使用量统计
-		if geminiResponse.UsageMetadata.TotalTokenCount != 0 {
-			mappedUsage := buildUsageFromGeminiMetadata(geminiResponse.UsageMetadata, info.GetEstimatePromptTokens())
-			*usage = mappedUsage
+		cumulative = dto.MergeGeminiUsageMetadataNonZero(cumulative, &geminiResponse.UsageMetadata)
+		if cumulative.TotalTokenCount != 0 {
+			*usage = buildUsageFromGeminiMetadata(*cumulative, info.GetEstimatePromptTokens())
 		}
 
 		if !callback(data, &geminiResponse) {

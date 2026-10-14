@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/pelicanarchive"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-contrib/sessions"
@@ -49,7 +50,7 @@ func TestPelicanHTTPVisibilityPermissionsAndEvidence(t *testing.T) {
 		_ = sql.Close()
 	})
 	require.NoError(t, model.MigratePelicanSchema(db))
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Channel{}, &model.Ability{}, &model.UserSubscription{}, &model.UserVirtualMembership{}))
+	require.NoError(t, db.AutoMigrate(&model.DashboardSession{}, &model.SecurityProof{}, &model.SecurityCeremony{}, &model.SubscriptionPlan{}, &model.User{}, &model.Channel{}, &model.Ability{}, &model.UserSubscription{}, &model.UserVirtualMembership{}))
 	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"public":1.5,"private":2}`))
 	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"public":"Public"}`))
 	require.NoError(t, db.Create(&model.User{Id: 71, Username: "fixture", Group: "public", Status: common.UserStatusEnabled}).Error)
@@ -91,6 +92,13 @@ func TestPelicanHTTPVisibilityPermissionsAndEvidence(t *testing.T) {
 		s.Set("username", "fixture")
 		s.Set("id", 71)
 		s.Set("role", role)
+		require.NoError(t, db.Model(&model.User{}).Where("id = ?", 71).Update("role", role).Error)
+		user, err := model.GetUserById(71, true)
+		require.NoError(t, err)
+		nonce, err := model.SecurityToken()
+		require.NoError(t, err)
+		require.NoError(t, model.CreateDashboardSession(user, nonce))
+		s.Set(service.SecuritySessionKey, nonce)
 		s.Set("status", common.UserStatusEnabled)
 		s.Set("group", "public")
 		require.NoError(t, s.Save())

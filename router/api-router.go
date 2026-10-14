@@ -3,6 +3,7 @@ package router
 import (
 	"github.com/QuantumNous/new-api/controller"
 	"github.com/QuantumNous/new-api/middleware"
+	"github.com/QuantumNous/new-api/service"
 
 	// Import oauth package to register providers via init()
 	_ "github.com/QuantumNous/new-api/oauth"
@@ -70,12 +71,12 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.POST("/user/reset", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.ResetPassword)
 		// OAuth routes - specific routes must come before :provider wildcard
 		apiRouter.GET("/oauth/state", middleware.CriticalRateLimit(), controller.GenerateOAuthCode)
-		apiRouter.POST("/oauth/email/bind", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.EmailBind)
+		apiRouter.POST("/oauth/email/bind", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, middleware.UserAuth(), service.SecurityProofRequired("account.bind.email"), controller.EmailBind)
 		// Non-standard OAuth (WeChat, Telegram) - keep original routes
 		apiRouter.GET("/oauth/wechat", middleware.CriticalRateLimit(), controller.WeChatAuth)
-		apiRouter.POST("/oauth/wechat/bind", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.WeChatBind)
+		apiRouter.POST("/oauth/wechat/bind", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, middleware.UserAuth(), service.SecurityProofRequired("account.bind.wechat"), controller.WeChatBind)
 		apiRouter.GET("/oauth/telegram/login", middleware.CriticalRateLimit(), controller.TelegramLogin)
-		apiRouter.GET("/oauth/telegram/bind", middleware.CriticalRateLimit(), controller.TelegramBind)
+		apiRouter.GET("/oauth/telegram/bind", middleware.CriticalRateLimit(), middleware.UserAuth(), service.SecurityProofRequired("account.bind.telegram"), controller.TelegramBind)
 		// Standard OAuth providers (GitHub, Discord, OIDC, LinuxDO) - unified route
 		apiRouter.GET("/oauth/:provider", middleware.CriticalRateLimit(), controller.HandleOAuth)
 		apiRouter.GET("/ratio_config", middleware.CriticalRateLimit(), controller.GetRatioConfig)
@@ -87,6 +88,8 @@ func SetApiRouter(router *gin.Engine) {
 		// in Pancake's matching webhook slot; handler enforces env match.
 		apiRouter.POST("/waffo-pancake/webhook/:env", anonymousRequestBodyLimit, controller.WaffoPancakeWebhook)
 
+		apiRouter.GET("/verify/oauth/begin", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.BeginOAuthProof)
+		apiRouter.GET("/verify/oauth/status", middleware.UserAuth(), controller.OAuthProofStatus)
 		// Universal secure verification routes
 		apiRouter.POST("/verify", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.UniversalVerify)
 
@@ -114,9 +117,9 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.GET("/cache-rate", controller.GetUserCacheRate)
 				selfRoute.GET("/concurrency-applications", controller.GetSelfConcurrencyApplications)
 				selfRoute.POST("/concurrency-applications", middleware.CriticalRateLimit(), controller.CreateConcurrencyApplication)
-				selfRoute.PUT("/self", controller.UpdateSelf)
-				selfRoute.DELETE("/self", controller.DeleteSelf)
-				selfRoute.GET("/token", controller.GenerateAccessToken)
+				selfRoute.PUT("/self", service.CaptureSecurityRequest(), controller.UpdateSelf)
+				selfRoute.DELETE("/self", service.SecurityProofRequired("account.delete"), controller.DeleteSelf)
+				selfRoute.GET("/token", service.SecurityProofRequired("access_token.manage"), controller.GenerateAccessToken)
 				selfRoute.GET("/passkey", controller.PasskeyStatus)
 				selfRoute.POST("/passkey/register/begin", controller.PasskeyRegisterBegin)
 				selfRoute.POST("/passkey/register/finish", controller.PasskeyRegisterFinish)
@@ -144,10 +147,10 @@ func SetApiRouter(router *gin.Engine) {
 
 				// 2FA routes
 				selfRoute.GET("/2fa/status", controller.Get2FAStatus)
-				selfRoute.POST("/2fa/setup", controller.Setup2FA)
+				selfRoute.POST("/2fa/setup", service.SecurityProofRequired("twofa.setup"), controller.Setup2FA)
 				selfRoute.POST("/2fa/enable", controller.Enable2FA)
-				selfRoute.POST("/2fa/disable", controller.Disable2FA)
-				selfRoute.POST("/2fa/backup_codes", controller.RegenerateBackupCodes)
+				selfRoute.POST("/2fa/disable", service.SecurityProofRequired("twofa.disable"), controller.Disable2FA)
+				selfRoute.POST("/2fa/backup_codes", service.SecurityProofRequired("twofa.backup_codes"), controller.RegenerateBackupCodes)
 
 				// Check-in routes
 				selfRoute.GET("/checkin", controller.GetCheckinStatus)
@@ -155,7 +158,7 @@ func SetApiRouter(router *gin.Engine) {
 
 				// Custom OAuth bindings
 				selfRoute.GET("/oauth/bindings", controller.GetUserOAuthBindings)
-				selfRoute.DELETE("/oauth/bindings/:provider_id", controller.UnbindCustomOAuth)
+				selfRoute.DELETE("/oauth/bindings/:provider_id", service.SecurityProofRequired("account.unbind"), controller.UnbindCustomOAuth)
 
 				// Withdraw (rebate/dividend system): user apply + list own
 				selfRoute.POST("/withdraw", middleware.CriticalRateLimit(), controller.RequestWithdraw)
@@ -174,21 +177,21 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.POST("/topup/complete", controller.AdminCompleteTopUp)
 				adminRoute.GET("/search", controller.SearchUsers)
 				adminRoute.GET("/:id/oauth/bindings", controller.GetUserOAuthBindingsByAdmin)
-				adminRoute.DELETE("/:id/oauth/bindings/:provider_id", controller.UnbindCustomOAuthByAdmin)
-				adminRoute.DELETE("/:id/bindings/:binding_type", controller.AdminClearUserBinding)
+				adminRoute.DELETE("/:id/oauth/bindings/:provider_id", service.SecurityProofRequired("admin.binding.clear"), controller.UnbindCustomOAuthByAdmin)
+				adminRoute.DELETE("/:id/bindings/:binding_type", service.SecurityProofRequired("admin.binding.clear"), controller.AdminClearUserBinding)
 				adminRoute.PUT("/:id/identity", controller.UpdateUserIdentity)
 				adminRoute.GET("/:id", controller.GetUser)
-				adminRoute.POST("/", controller.CreateUser)
-				adminRoute.POST("/manage", controller.ManageUser)
-				adminRoute.PUT("/", controller.UpdateUser)
-				adminRoute.DELETE("/:id", controller.DeleteUser)
-				adminRoute.DELETE("/:id/reset_passkey", controller.AdminResetPasskey)
+				adminRoute.POST("/", service.CaptureSecurityRequest(), controller.CreateUser)
+				adminRoute.POST("/manage", service.CaptureSecurityRequest(), controller.ManageUser)
+				adminRoute.PUT("/", service.CaptureSecurityRequest(), controller.UpdateUser)
+				adminRoute.DELETE("/:id", service.SecurityProofRequired("admin.user.delete"), controller.DeleteUser)
+				adminRoute.DELETE("/:id/reset_passkey", service.SecurityProofRequired("admin.passkey.reset"), controller.AdminResetPasskey)
 				adminRoute.GET("/admin/concurrency-applications", controller.GetConcurrencyApplications)
 				adminRoute.POST("/admin/concurrency-applications/:id/review", controller.ReviewConcurrencyApplication)
 
 				// Admin 2FA routes
 				adminRoute.GET("/2fa/stats", controller.Admin2FAStats)
-				adminRoute.DELETE("/:id/2fa", controller.AdminDisable2FA)
+				adminRoute.DELETE("/:id/2fa", service.SecurityProofRequired("admin.twofa.disable"), controller.AdminDisable2FA)
 			}
 		}
 
@@ -350,6 +353,7 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			optionRoute.GET("/", controller.GetOptions)
 			optionRoute.PUT("/", controller.UpdateOption)
+			optionRoute.POST("/passkey/domains", controller.UpdatePasskeyDomains)
 			optionRoute.POST("/upload", controller.UploadImage) // 图片上传(教程配图), RootAuth
 			optionRoute.POST("/payment_compliance", controller.ConfirmPaymentCompliance)
 			optionRoute.GET("/channel_affinity_cache", controller.GetChannelAffinityCacheStats)
@@ -445,7 +449,7 @@ func SetApiRouter(router *gin.Engine) {
 			channelRoute.GET("/metrics", controller.GetChannelMetrics)
 			channelRoute.POST("/probe/:id", controller.ProbeChannelNow)
 			channelRoute.GET("/:id", controller.GetChannel)
-			channelRoute.POST("/:id/key", middleware.RootAuth(), middleware.CriticalRateLimit(), middleware.DisableCache(), middleware.SecureVerificationRequired(), controller.GetChannelKey)
+			channelRoute.POST("/:id/key", middleware.RootAuth(), middleware.CriticalRateLimit(), middleware.DisableCache(), service.SecurityProofRequired("channel.key.read"), controller.GetChannelKey)
 			channelRoute.GET("/test", controller.TestAllChannels)
 			channelRoute.GET("/test/:id", controller.TestChannel)
 			channelRoute.GET("/update_balance", controller.UpdateAllChannelsBalance)

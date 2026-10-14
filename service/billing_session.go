@@ -49,6 +49,10 @@ type reserveSplit struct {
 // 资金来源和令牌额度分两步提交：若资金来源已提交但令牌调整失败，
 // 会标记 fundingSettled 防止 Refund 对已提交的资金来源执行退款。
 func (s *BillingSession) Settle(actualQuota int) error {
+	// Final charges cannot be refunds; only the reservation difference can be.
+	if actualQuota < 0 {
+		return errors.New("final quota must not be negative")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.settled {
@@ -65,10 +69,15 @@ func (s *BillingSession) Settle(actualQuota int) error {
 			ratioPPM = s.relayInfo.ChannelCostRatioPPM
 			channelId = s.relayInfo.ChannelId
 		}
+		baseQuota := s.relayInfo.RestoreIngressMultiplier(actualQuota)
+		if s.relayInfo.Kiro.Charge() {
+			ratioPPM = nil
+			baseQuota = actualQuota
+		}
 		settleErr := model.SettleSubscriptionPreConsume(
 			s.relayInfo.RequestId,
 			int64(delta),
-			int64(s.relayInfo.RestoreIngressMultiplier(actualQuota)),
+			int64(baseQuota),
 			channelId,
 			ratioPPM,
 			s.relayInfo.ForcePreConsume &&
@@ -518,7 +527,7 @@ func (s *BillingSession) syncRelayInfo() {
 // NewBillingSession 根据用户计费偏好创建 BillingSession，处理 subscription_first / wallet_first 的回退。
 func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preConsumedQuota int) (*BillingSession, *types.NewAPIError) {
 	if relayInfo == nil {
-		return nil, types.NewError(fmt.Errorf(i18n.T(c, i18n.MsgBillingRelayInfoNil)), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
+		return nil, types.NewError(errors.New(i18n.T(c, i18n.MsgBillingRelayInfoNil)), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
 	}
 
 	pref := common.NormalizeBillingPreference(relayInfo.UserSetting.BillingPreference)

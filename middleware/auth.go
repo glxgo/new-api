@@ -41,6 +41,17 @@ func authHelper(c *gin.Context, minRole int) {
 	id := session.Get("id")
 	status := session.Get("status")
 	useAccessToken := false
+	if username != nil {
+		userID, _ := id.(int)
+		nonce, _ := session.Get(service.SecuritySessionKey).(string)
+		user, err := model.ValidateDashboardSession(userID, nonce)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"success": false, "message": common.TranslateMessage(c, i18n.MsgAuthNotLoggedIn)})
+			return
+		}
+		username, role, status = user.Username, user.Role, user.Status
+		session.Set("group", user.Group)
+	}
 	if username == nil {
 		// Check access token
 		accessToken := c.Request.Header.Get("Authorization")
@@ -83,6 +94,7 @@ func authHelper(c *gin.Context, minRole int) {
 			role = user.Role
 			id = user.Id
 			status = user.Status
+			session.Set("group", user.Group)
 			useAccessToken = true
 		} else {
 			c.JSON(http.StatusOK, gin.H{
@@ -169,10 +181,8 @@ func authHelper(c *gin.Context, minRole int) {
 
 func TryUserAuth() func(c *gin.Context) {
 	return func(c *gin.Context) {
-		session := sessions.Default(c)
-		id := session.Get("id")
-		if id != nil {
-			c.Set("id", id)
+		if user, err := service.DashboardUser(c); err == nil {
+			c.Set("id", user.Id)
 		}
 		c.Next()
 	}
@@ -205,13 +215,10 @@ func WssAuth(c *gin.Context) {
 func TokenOrUserAuth() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		// Try session auth first (dashboard users)
-		session := sessions.Default(c)
-		if id := session.Get("id"); id != nil {
-			if status, ok := session.Get("status").(int); ok && status == common.UserStatusEnabled {
-				c.Set("id", id)
-				c.Next()
-				return
-			}
+		if user, err := service.DashboardUser(c); err == nil {
+			c.Set("id", user.Id)
+			c.Next()
+			return
 		}
 		// Fall back to token auth (API clients)
 		TokenAuth()(c)

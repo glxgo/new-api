@@ -22,13 +22,19 @@ func providerParams(name string) map[string]any {
 // GenerateOAuthCode generates a state code for OAuth CSRF protection
 func GenerateOAuthCode(c *gin.Context) {
 	session := sessions.Default(c)
-	state := common.GetRandomString(12)
+	state, err := issueOAuthState(c)
+	if err != nil {
+		if !c.IsAborted() {
+			common.ApiError(c, err)
+		}
+		return
+	}
 	affCode := c.Query("aff")
 	if affCode != "" {
 		session.Set("aff", affCode)
 	}
 	session.Set("oauth_state", state)
-	err := session.Save()
+	err = session.Save()
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -54,20 +60,22 @@ func HandleOAuth(c *gin.Context) {
 
 	session := sessions.Default(c)
 
-	// 1. Validate state (CSRF protection)
-	state := c.Query("state")
-	if state == "" || session.Get("oauth_state") == nil || state != session.Get("oauth_state").(string) {
-		c.JSON(http.StatusForbidden, gin.H{
-			"success": false,
-			"message": i18n.T(c, i18n.MsgOAuthStateInvalid),
-		})
+	flow, err := consumeOAuthState(c)
+	if err != nil {
+		common.ApiError(c, err)
 		return
 	}
-
-	// 2. Check if user is already logged in (bind flow)
-	username := session.Get("username")
-	if username != nil {
+	if flow.Challenge != "" {
+		finishOAuthProof(c, provider, flow)
+		return
+	}
+	if flow.UserID != 0 {
+		c.Set("id", flow.UserID)
 		handleOAuthBind(c, provider)
+		return
+	}
+	if session.Get("id") != nil {
+		common.ApiErrorMsg(c, "OAuth session changed; please start again")
 		return
 	}
 
@@ -163,9 +171,7 @@ func handleOAuthBind(c *gin.Context, provider oauth.Provider) {
 	}
 
 	// Get current user from session
-	session := sessions.Default(c)
-	id := session.Get("id")
-	user := model.User{Id: id.(int)}
+	user := model.User{Id: c.GetInt("id")}
 	err = user.FillUserById()
 	if err != nil {
 		common.ApiError(c, err)
@@ -190,6 +196,7 @@ func handleOAuthBind(c *gin.Context, provider oauth.Provider) {
 		}
 	}
 
+	recordUserSecurityAudit(c, user.Id, "user.oauth_bind", map[string]interface{}{"provider": c.Param("provider")})
 	common.ApiSuccessI18n(c, i18n.MsgOAuthBindSuccess, gin.H{
 		"action": "bind",
 	})

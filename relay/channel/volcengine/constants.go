@@ -1,6 +1,11 @@
 package volcengine
 
 var ModelList = []string{
+	"doubao-seedream-5-0-flash-260915",
+	"doubao-seedream-5-0-pro-260628",
+	"doubao-seedream-5-0-lite-260128",
+	"doubao-seedream-5-0-260128",
+	"doubao-seedream-4-5-251128",
 	"Doubao-pro-128k",
 	"Doubao-pro-32k",
 	"Doubao-pro-4k",
@@ -11,6 +16,11 @@ var ModelList = []string{
 	"doubao-seedream-4-0-250828",
 	"seedream-4-0-250828",
 	"doubao-seedance-1-0-pro-250528",
+	"doubao-seedance-1-5-pro-251215",
+	"doubao-seedance-2-0-260128",
+	"doubao-seedance-2-0-fast-260128",
+	"doubao-seedance-2-0-mini-260615",
+	"doubao-seedance-2-5-260628",
 	"seedance-1-0-pro-250528",
 	"doubao-seed-1-6-thinking-250715",
 	"seed-1-6-thinking-250715",

@@ -51,6 +51,10 @@ func OaiResponsesToChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		return nil, types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError)
 	}
 
+	body = info.ObserveKiroPayload(body, false)
+	if err := info.KiroCompletionError(); err != nil {
+		return nil, err
+	}
 	if err := common.Unmarshal(body, &responsesResp); err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
@@ -582,6 +586,9 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		default:
 		}
 	})
+	if kiroErr := info.KiroCompletionError(); kiroErr != nil {
+		streamErr = kiroErr
+	}
 	if helper.StreamWriteError(c) != nil {
 		streamErr = helper.StreamFailure(c, info, true)
 	}

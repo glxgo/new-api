@@ -45,6 +45,11 @@ func StreamFailure(c *gin.Context, info *relaycommon.RelayInfo, requireDone bool
 	if err := StreamWriteError(c); err != nil {
 		return types.NewErrorWithStatusCode(err, "client_write_error", 499, types.ErrOptionWithSkipRetry())
 	}
+	// A finish_reason is insufficient for credit billing: the real upstream
+	// terminal and a validated receipt must both have arrived.
+	if err := info.KiroCompletionError(); err != nil {
+		return err
+	}
 	if info == nil || info.StreamStatus == nil {
 		return nil
 	}

@@ -57,7 +57,7 @@ func calculateAudioQuota(info QuotaInfo) int {
 		groupRatio := decimal.NewFromFloat(info.GroupRatio)
 
 		quota := modelPrice.Mul(quotaPerUnit).Mul(groupRatio)
-		return int(quota.IntPart())
+		return common.QuotaFromDecimal(quota.Truncate(0))
 	}
 
 	completionRatio := decimal.NewFromFloat(ratio_setting.GetCompletionRatio(info.ModelName))
@@ -86,7 +86,7 @@ func calculateAudioQuota(info QuotaInfo) int {
 		quota = decimal.NewFromInt(1)
 	}
 
-	return int(quota.Round(0).IntPart())
+	return common.QuotaFromDecimal(quota)
 }
 
 func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.RealtimeUsage) error {
@@ -140,11 +140,11 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	quota = relayInfo.ApplyIngressMultiplier(quota)
 
 	if userQuota < quota {
-		return fmt.Errorf(i18n.T(ctx, i18n.MsgQuotaUserNotEnough, map[string]any{"Have": logger.FormatQuota(userQuota), "Need": logger.FormatQuota(quota)}))
+		return errors.New(i18n.T(ctx, i18n.MsgQuotaUserNotEnough, map[string]any{"Have": logger.FormatQuota(userQuota), "Need": logger.FormatQuota(quota)}))
 	}
 
 	if !token.UnlimitedQuota && token.RemainQuota < quota {
-		return fmt.Errorf(i18n.T(ctx, i18n.MsgQuotaTokenNotEnough, map[string]any{"Have": logger.FormatQuota(token.RemainQuota), "Need": logger.FormatQuota(quota)}))
+		return errors.New(i18n.T(ctx, i18n.MsgQuotaTokenNotEnough, map[string]any{"Have": logger.FormatQuota(token.RemainQuota), "Need": logger.FormatQuota(quota)}))
 	}
 
 	err = PostConsumeQuota(relayInfo, quota, 0, false)
@@ -304,6 +304,9 @@ func CalcOpenRouterCacheCreateTokens(usage dto.Usage, priceData types.PriceData)
 }
 
 func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, extraContent string) {
+	if PostKiroConsume(ctx, relayInfo, usage) {
+		return
+	}
 
 	var tieredUsedVars map[string]bool
 	if snap := relayInfo.TieredBillingSnapshot; snap != nil {
@@ -439,7 +442,7 @@ func PreConsumeTokenQuota(relayInfo *relaycommon.RelayInfo, quota int) error {
 		return err
 	}
 	if !relayInfo.TokenUnlimited && token.RemainQuota < quota {
-		return fmt.Errorf(i18n.Translate(i18n.GetUserLang(relayInfo.UserId), i18n.MsgQuotaTokenNotEnough, map[string]any{"Have": logger.FormatQuota(token.RemainQuota), "Need": logger.FormatQuota(quota)}))
+		return errors.New(i18n.Translate(i18n.GetUserLang(relayInfo.UserId), i18n.MsgQuotaTokenNotEnough, map[string]any{"Have": logger.FormatQuota(token.RemainQuota), "Need": logger.FormatQuota(quota)}))
 	}
 	err = model.DecreaseTokenQuota(relayInfo.TokenId, relayInfo.TokenKey, quota)
 	if err != nil {

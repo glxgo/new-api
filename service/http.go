@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"fmt"
+	"github.com/QuantumNous/new-api/pkg/kiro"
 	"io"
 	"net/http"
 	"strings"
@@ -59,6 +60,11 @@ func IOCopyBytesGracefully(c *gin.Context, src *http.Response, data []byte) {
 	}
 
 	originalData := data
+	if value, ok := c.Get(kiro.ContextKey); ok {
+		if state, ok := value.(*kiro.State); ok {
+			data = state.ForwardPayload(data, false)
+		}
+	}
 	if src != nil && src.StatusCode >= http.StatusBadRequest {
 		data = common.SanitizeHTTPErrorBody(data)
 	} else {

@@ -31,6 +31,7 @@ export interface PasskeyStatus {
 }
 
 export interface PasskeyOptionsPayload {
+  rp_ids?: string[]
   options?: unknown
   publicKey?: unknown
   response?: unknown

@@ -179,6 +179,7 @@ export const channelFormSchema = z
     key_mode: z.enum(['append', 'replace']).optional(), // For editing multi-key channels
     // Channel extra settings (stored in setting JSON, not sent directly)
     force_format: z.boolean().optional(),
+    responses_to_chat: z.boolean().optional(),
     thinking_to_content: z.boolean().optional(),
     proxy: z.string().optional(),
     pass_through_body_enabled: z.boolean().optional(),
@@ -301,6 +302,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   key_mode: 'append',
   // Channel extra settings
   force_format: false,
+  responses_to_chat: false,
   thinking_to_content: false,
   proxy: '',
   pass_through_body_enabled: false,
@@ -340,6 +342,7 @@ export function transformChannelToFormDefaults(
   let extraSettings: Pick<
     ChannelFormValues,
     | 'force_format'
+    | 'responses_to_chat'
     | 'thinking_to_content'
     | 'proxy'
     | 'pass_through_body_enabled'
@@ -349,6 +352,7 @@ export function transformChannelToFormDefaults(
     | 'http2_connection_shards'
   > = {
     force_format: false,
+    responses_to_chat: false,
     thinking_to_content: false,
     proxy: '',
     pass_through_body_enabled: false,
@@ -363,6 +367,7 @@ export function transformChannelToFormDefaults(
       const parsed = JSON.parse(channel.setting)
       extraSettings = {
         force_format: parsed.force_format || false,
+        responses_to_chat: parsed.responses_to_chat || false,
         thinking_to_content: parsed.thinking_to_content || false,
         proxy: parsed.proxy || '',
         pass_through_body_enabled: parsed.pass_through_body_enabled || false,
@@ -478,7 +483,15 @@ export function transformChannelToFormDefaults(
  * Build the setting JSON string from form extra settings
  */
 function buildSettingJSON(formData: ChannelFormValues): string {
+  let previous: Record<string, unknown> = {}
+  try {
+    previous = JSON.parse(formData.setting || '{}')
+  } catch {
+    /* Invalid legacy setting is replaced. */
+  }
   const settingObj = {
+    ...previous,
+    responses_to_chat: formData.responses_to_chat || false,
     force_format: formData.force_format || false,
     thinking_to_content: formData.thinking_to_content || false,
     proxy: formData.proxy || '',

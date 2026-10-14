@@ -27,6 +27,14 @@ export type PricingVendor = {
   description?: string
 }
 
+export type KiroCreditPrice = {
+  unit: 'kiro_credit'
+  currency: 'CNY'
+  price_per_credit: string
+  group_ratio: string
+  effective_price_per_credit: string
+}
+
 export type PricingModel = {
   id: number
   model_name: string
@@ -56,6 +64,7 @@ export type PricingModel = {
   billing_expr?: string
   /** Pricing version returned by backend, useful for cache busting */
   pricing_version?: string
+  kiro_credit_prices?: Record<string, KiroCreditPrice>
   /**
    * Optional model metadata fields. These are not yet returned by the backend
    * and are populated client-side from {@link inferModelMetadata}.

@@ -53,6 +53,7 @@ func GetPricing(c *gin.Context) {
 
 	usableGroup = service.GetUserUsableGroups(group)
 	pricing = filterPricingByUsableGroups(pricing, usableGroup)
+	pricing = withKiroCreditPricing(pricing, usableGroup, groupRatio, group)
 	// check groupRatio contains usableGroup
 	for group := range ratio_setting.GetGroupRatioCopy() {
 		if _, ok := usableGroup[group]; !ok {
@@ -60,6 +61,7 @@ func GetPricing(c *gin.Context) {
 		}
 	}
 
+	c.Header("Cache-Control", "private, no-store")
 	c.JSON(200, gin.H{
 		"success":              true,
 		"data":                 pricing,

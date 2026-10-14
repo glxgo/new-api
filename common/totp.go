@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
@@ -43,6 +44,17 @@ func ValidateTOTPCode(secret, code string) bool {
 
 	// 验证验证码
 	return totp.Validate(cleanCode, secret)
+}
+
+func TOTPTimeStep(secret, code string, now time.Time) (int64, bool) {
+	step := now.Unix() / 30
+	for _, candidate := range []int64{step, step - 1, step + 1} {
+		expected, err := totp.GenerateCode(secret, time.Unix(candidate*30, 0))
+		if err == nil && expected == code {
+			return candidate, true
+		}
+	}
+	return 0, false
 }
 
 // GenerateBackupCodes 生成备用恢复码

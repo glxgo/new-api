@@ -84,6 +84,7 @@ const SystemSetting = () => {
     'passkey.enabled': '',
     'passkey.rp_display_name': '',
     'passkey.rp_id': '',
+    'passkey.legacy_rp_ids': '',
     'passkey.origins': [],
     'passkey.allow_insecure_origin': '',
     'passkey.user_verification': 'preferred',
@@ -198,6 +199,7 @@ const SystemSetting = () => {
             break;
           case 'passkey.rp_display_name':
           case 'passkey.rp_id':
+          case 'passkey.legacy_rp_ids':
           case 'passkey.attachment_preference':
             // 确保字符串字段不为null/undefined
             item.value = item.value || '';
@@ -675,7 +677,49 @@ const SystemSetting = () => {
       value: formValues['passkey.origins'] || inputs['passkey.origins'] || '',
     });
 
-    await updateOptions(options);
+    const domains = Object.fromEntries(
+      ['rp_id', 'legacy_rp_ids', 'origins'].map((key) => [
+        key,
+        formValues['passkey.' + key] ?? inputs['passkey.' + key] ?? '',
+      ]),
+    );
+    const preview = await API.post('/api/option/passkey/domains', {
+      ...domains,
+      preview: true,
+    });
+    if (!preview.data.success) {
+      showError(preview.data.message);
+      return;
+    }
+    const change = preview.data.data;
+    if (
+      change.confirmation_required &&
+      !window.confirm(
+        t(
+          '移除这些域名将影响 {{known}} 个 Passkey 和 {{unknown}} 个域名未知的凭据，是否继续？',
+          {
+            known: change.affected_credentials,
+            unknown: change.unknown_credentials,
+          },
+        ),
+      )
+    )
+      return;
+    const saved = await API.post('/api/option/passkey/domains', {
+      ...domains,
+      removal_confirmation: change.removal_confirmation,
+    });
+    if (!saved.data.success) {
+      showError(saved.data.message);
+      return;
+    }
+    await updateOptions(
+      options.filter(
+        (option) => !['passkey.rp_id', 'passkey.origins'].includes(option.key),
+      ),
+    );
+    for (const key of ['rp_id', 'legacy_rp_ids', 'origins'])
+      formApiRef.current?.setValue('passkey.' + key, saved.data.data[key]);
   };
 
   const handleCheckboxChange = async (optionKey, event) => {
@@ -1145,6 +1189,13 @@ const SystemSetting = () => {
                       />
                     </Col>
                   </Row>
+                  <Form.TextArea
+                    field="['passkey.legacy_rp_ids']"
+                    label={t('其他受信任的 Passkey 域名')}
+                    extraText={t(
+                      '多个域名用逗号分隔。旧 Passkey 仍在使用时，请保留对应域名。',
+                    )}
+                  />
                   <Row
                     gutter={{ xs: 8, sm: 16, md: 24, lg: 24, xl: 24, xxl: 24 }}
                     style={{ marginTop: 16 }}

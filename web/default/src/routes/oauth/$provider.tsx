@@ -169,10 +169,14 @@ function OAuthCallback() {
         }
         const res = await api.get(`/api/oauth/${provider}`, config)
         if (res?.data?.success) {
+          if (res.data?.data?.action === 'verify') {
+            window.close()
+            return
+          }
           const { message } = res.data
           const loginUser = (res.data?.data ?? null) as AuthUser | null
           // Check if this is a bind operation
-          if (message === 'bind') {
+          if (message === 'bind' || res.data?.data?.action === 'bind') {
             toast.success(i18next.t('Binding successful!'))
             notifyBindingResult('success')
             if (isBindingFlow) {

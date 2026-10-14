@@ -23,9 +23,10 @@ const UserNameMaxLength = 20
 // User if you add sensitive fields, don't forget to clean them in setupLogin function.
 // Otherwise, the sensitive information will be saved on local storage in plain text!
 type User struct {
+	AuthVersion              int            `json:"-" gorm:"not null;default:0"`
 	Id                       int            `json:"id"`
 	Username                 string         `json:"username" gorm:"unique;index" validate:"max=20"`
-	Password                 string         `json:"password" gorm:"not null;" validate:"min=8,max=20"`
+	Password                 string         `json:"password" gorm:"not null;" validate:"min=8,max=128"`
 	OriginalPassword         string         `json:"original_password" gorm:"-:all"` // this field is only for Password change verification, don't save it to database!
 	DisplayName              string         `json:"display_name" gorm:"index" validate:"max=20"`
 	Role                     int            `json:"role" gorm:"type:int;default:1"`   // admin, common
@@ -150,7 +151,7 @@ func (user *User) SetAccessToken(token string) {
 func (user *User) GetSetting() dto.UserSetting {
 	setting := dto.UserSetting{}
 	if user.Setting != "" {
-		err := json.Unmarshal([]byte(user.Setting), &setting)
+		err := common.Unmarshal([]byte(user.Setting), &setting)
 		if err != nil {
 			common.SysLog("failed to unmarshal setting: " + err.Error())
 		}
@@ -159,12 +160,30 @@ func (user *User) GetSetting() dto.UserSetting {
 }
 
 func (user *User) SetSetting(setting dto.UserSetting) {
-	settingBytes, err := json.Marshal(setting)
+	settingBytes, err := common.Marshal(setting)
 	if err != nil {
 		common.SysLog("failed to marshal setting: " + err.Error())
 		return
 	}
 	user.Setting = string(settingBytes)
+}
+
+// UpdateUserSetting updates only the serialized preference column. Settings
+// are frequently changed from a stale user object, so routing this through the
+// full User.Update path could overwrite balances or security fields.
+func UpdateUserSetting(userId int, setting dto.UserSetting) error {
+	if userId <= 0 {
+		return errors.New("id 为空！")
+	}
+	settingBytes, err := common.Marshal(setting)
+	if err != nil {
+		return err
+	}
+	settingValue := string(settingBytes)
+	if err := DB.Model(&User{}).Where("id = ?", userId).Update("setting", settingValue).Error; err != nil {
+		return err
+	}
+	return updateUserSettingCache(userId, settingValue)
 }
 
 // 根据用户角色生成默认的边栏配置
@@ -511,7 +530,7 @@ func (user *User) TransferAffQuotaToQuota(quota int) error {
 func (user *User) Insert(inviterId int) error {
 	var err error
 	if user.Password != "" {
-		user.Password, err = common.Password2Hash(user.Password)
+		user.Password, err = common.HashAccountPassword(user.Password)
 		if err != nil {
 			return err
 		}
@@ -529,9 +548,13 @@ func (user *User) Insert(inviterId int) error {
 	}
 
 	user.AffAdminId = calcAffAdminId(inviterId)
-	result := DB.Create(user)
-	if result.Error != nil {
-		return result.Error
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := validateAccountBindings(tx, user); err != nil {
+			return err
+		}
+		return tx.Create(user).Error
+	}); err != nil {
+		return err
 	}
 
 	// 用户创建成功后，根据角色初始化边栏配置
@@ -572,7 +595,7 @@ func (user *User) Insert(inviterId int) error {
 func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
 	var err error
 	if user.Password != "" {
-		user.Password, err = common.Password2Hash(user.Password)
+		user.Password, err = common.HashAccountPassword(user.Password)
 		if err != nil {
 			return err
 		}
@@ -588,6 +611,9 @@ func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
 	}
 
 	user.AffAdminId = calcAffAdminId(inviterId)
+	if err := validateAccountBindings(tx, user); err != nil {
+		return err
+	}
 	result := tx.Create(user)
 	if result.Error != nil {
 		return result.Error
@@ -648,19 +674,58 @@ func calcAffAdminId(inviterId int) int {
 func (user *User) Update(updatePassword bool) error {
 	var err error
 	if updatePassword {
-		user.Password, err = common.Password2Hash(user.Password)
+		user.Password, err = common.HashAccountPassword(user.Password)
 		if err != nil {
 			return err
 		}
 	}
 	newUser := *user
-	DB.First(&user, user.Id)
-	if err = DB.Model(user).Updates(newUser).Error; err != nil {
-		return err
-	}
+	returnErr := DB.Transaction(func(tx *gorm.DB) error {
+		var current User
+		if err := lockForUpdate(tx).First(&current, user.Id).Error; err != nil {
+			return err
+		}
+		// Never copy accounting, counters, or management credentials from a stale
+		// request object. Those fields have dedicated atomic/privileged update paths.
+		originalStatus, originalRole := current.Status, current.Role
+		omit := []string{
+			"auth_version",
+			"access_token",
+			"quota",
+			"used_quota",
+			"gift_quota",
+			"used_gift_quota",
+			"dividend_balance",
+			"dividend_total",
+			"frozen_quota",
+			"frozen_dividend",
+			"request_count",
+			"aff_count",
+			"aff_quota",
+			"aff_history",
+		}
+		if !updatePassword {
+			omit = append(omit, "password")
+		}
+		bindingChanged := (newUser.Email != "" && newUser.Email != current.Email) || (newUser.GitHubId != "" && newUser.GitHubId != current.GitHubId) || (newUser.DiscordId != "" && newUser.DiscordId != current.DiscordId) || (newUser.OidcId != "" && newUser.OidcId != current.OidcId) || (newUser.WeChatId != "" && newUser.WeChatId != current.WeChatId) || (newUser.TelegramId != "" && newUser.TelegramId != current.TelegramId) || (newUser.LinuxDOId != "" && newUser.LinuxDOId != current.LinuxDOId)
+		if err := validateAccountBindings(tx, &newUser, &current); err != nil {
+			return err
+		}
+		if err := tx.Model(&current).Omit(omit...).Updates(newUser).Error; err != nil {
+			return err
+		}
 
-	// Update cache
-	return updateUserCache(*user)
+		if updatePassword || bindingChanged || (newUser.Status != 0 && newUser.Status != originalStatus) || (newUser.Role != 0 && newUser.Role != originalRole) {
+			if err := RevokeUserAuthentication(tx, user.Id); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if returnErr != nil {
+		return returnErr
+	}
+	return invalidateUserCache(user.Id)
 }
 
 type UserCapacityLimitUpdate struct {
@@ -673,7 +738,7 @@ type UserCapacityLimitUpdate struct {
 func (user *User) Edit(updatePassword bool, capacity UserCapacityLimitUpdate) error {
 	var err error
 	if updatePassword {
-		user.Password, err = common.Password2Hash(user.Password)
+		user.Password, err = common.HashAccountPassword(user.Password)
 		if err != nil {
 			return err
 		}
@@ -720,11 +785,17 @@ func (user *User) Edit(updatePassword bool, capacity UserCapacityLimitUpdate) er
 		updates["password"] = newUser.Password
 	}
 
-	DB.First(&user, user.Id)
-	if err = DB.Model(user).Updates(updates).Error; err != nil {
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&User{}).Where("id = ?", user.Id).Updates(updates).Error; err != nil {
+			return err
+		}
+		if updatePassword {
+			return RevokeUserAuthentication(tx, user.Id)
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
-
 	// Deleting the cache is safer than reusing the pre-update object and makes
 	// the next request load both capacity override flags atomically.
 	return invalidateUserCache(user.Id)
@@ -750,7 +821,16 @@ func (user *User) ClearBinding(bindingType string) error {
 		return errors.New("invalid binding type")
 	}
 
-	if err := DB.Model(&User{}).Where("id = ?", user.Id).Update(column, "").Error; err != nil {
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		var current User
+		if err := LockAuthenticationUser(tx, user.Id, &current); err != nil {
+			return err
+		}
+		if err := tx.Model(&current).Update(column, "").Error; err != nil {
+			return err
+		}
+		return RevokeUserAuthentication(tx, user.Id)
+	}); err != nil {
 		return err
 	}
 
@@ -765,7 +845,15 @@ func (user *User) Delete() error {
 	if user.Id == 0 {
 		return errors.New("id 为空！")
 	}
-	if err := DB.Delete(user).Error; err != nil {
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := RevokeUserAuthentication(tx, user.Id); err != nil {
+			return err
+		}
+		if err := tx.Model(user).Update("access_token", nil).Error; err != nil {
+			return err
+		}
+		return tx.Delete(user).Error
+	}); err != nil {
 		return err
 	}
 
@@ -787,6 +875,7 @@ func (user *User) HardDelete() error {
 			}
 		}
 		for _, authenticationData := range []any{
+			&DashboardSession{}, &SecurityProof{},
 			&TwoFABackupCode{},
 			&TwoFA{},
 			&PasskeyCredential{},
@@ -939,11 +1028,20 @@ func ResetUserPasswordByEmail(email string, password string) error {
 	if email == "" || password == "" {
 		return errors.New("邮箱地址或密码为空！")
 	}
-	hashedPassword, err := common.Password2Hash(password)
+	hashedPassword, err := common.HashAccountPassword(password)
 	if err != nil {
 		return err
 	}
-	err = DB.Model(&User{}).Where("email = ?", email).Update("password", hashedPassword).Error
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		var user User
+		if err := lockForUpdate(tx).Where("email = ?", email).First(&user).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&user).Update("password", hashedPassword).Error; err != nil {
+			return err
+		}
+		return RevokeUserAuthentication(tx, user.Id)
+	})
 	return err
 }
 
@@ -1008,16 +1106,6 @@ func ValidateAccessToken(token string) (*User, error) {
 
 // GetUserQuota gets quota from Redis first, falls back to DB if needed
 func GetUserQuota(id int, fromDB bool) (quota int, err error) {
-	defer func() {
-		// Update Redis cache asynchronously on successful DB read
-		if shouldUpdateRedis(fromDB, err) {
-			gopool.Go(func() {
-				if err := updateUserQuotaCache(id, quota); err != nil {
-					common.SysLog("failed to update user quota cache: " + err.Error())
-				}
-			})
-		}
-	}()
 	if !fromDB && common.RedisEnabled {
 		quota, err := getUserQuotaCache(id)
 		if err == nil {
@@ -1036,15 +1124,6 @@ func GetUserQuota(id int, fromDB bool) (quota int, err error) {
 
 // GetUserGiftQuota 读赠金池余额, Redis 优先, miss 回 DB 并异步回写。镜像 GetUserQuota。
 func GetUserGiftQuota(id int, fromDB bool) (quota int, err error) {
-	defer func() {
-		if shouldUpdateRedis(fromDB, err) {
-			gopool.Go(func() {
-				if err := updateUserGiftQuotaCache(id, quota); err != nil {
-					common.SysLog("failed to update user gift quota cache: " + err.Error())
-				}
-			})
-		}
-	}()
 	if !fromDB && common.RedisEnabled {
 		quota, err := getUserGiftQuotaCache(id)
 		if err == nil {

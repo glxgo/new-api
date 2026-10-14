@@ -120,8 +120,9 @@ type ClaudeMessageSource struct {
 }
 
 type ClaudeMessage struct {
-	Role    string `json:"role"`
-	Content any    `json:"content"`
+	OutputConfig json.RawMessage `json:"output_config,omitempty"`
+	Role         string          `json:"role"`
+	Content      any             `json:"content"`
 }
 
 func (c *ClaudeMessage) IsStringContent() bool {
@@ -204,6 +205,7 @@ type ClaudeToolChoice struct {
 }
 
 type ClaudeRequest struct {
+	Safeguards   json.RawMessage `json:"safeguards,omitempty"`
 	Model        string          `json:"model"`
 	Prompt       string          `json:"prompt,omitempty"`
 	System       any             `json:"system,omitempty"`
@@ -555,6 +557,7 @@ func (c *ClaudeResponse) GetClaudeError() *types.ClaudeError {
 }
 
 type ClaudeUsage struct {
+	KiroMetering             json.RawMessage           `json:"kiro_metering,omitempty"`
 	InputTokens              int                       `json:"input_tokens"`
 	CacheCreationInputTokens int                       `json:"cache_creation_input_tokens"`
 	CacheReadInputTokens     int                       `json:"cache_read_input_tokens"`

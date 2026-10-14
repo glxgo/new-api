@@ -136,16 +136,9 @@ func (a *TaskAdaptor) BuildRequestHeader(_ *gin.Context, req *http.Request, _ *r
 
 // EstimateBilling 检测请求 metadata 中是否包含视频输入，返回视频折扣 OtherRatio。
 func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
-	req, err := relaycommon.GetTaskRequest(c)
-	if err != nil {
-		return nil
-	}
-	if hasVideoInMetadata(req.Metadata) {
-		if ratio, ok := GetVideoInputRatio(info.OriginModelName); ok {
-			return map[string]float64{"video_input": ratio}
-		}
-	}
-	return nil
+	value, _ := c.Get("doubao_plugin_ratios")
+	ratios, _ := value.(map[string]float64)
+	return ratios
 }
 
 // hasVideoInMetadata 直接检查 metadata 的 content 数组是否包含 video_url 条目，
@@ -179,21 +172,7 @@ func hasVideoInMetadata(metadata map[string]interface{}) bool {
 
 // BuildRequestBody converts request into Doubao specific format.
 func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayInfo) (io.Reader, error) {
-	req, err := relaycommon.GetTaskRequest(c)
-	if err != nil {
-		return nil, err
-	}
-
-	body, err := a.convertToRequestPayload(&req)
-	if err != nil {
-		return nil, errors.Wrap(err, "convert request payload failed")
-	}
-	if info.IsModelMapped {
-		body.Model = info.UpstreamModelName
-	} else {
-		info.UpstreamModelName = body.Model
-	}
-	data, err := common.Marshal(body)
+	data, err := a.pluginRequest(c, info)
 	if err != nil {
 		return nil, err
 	}
@@ -310,41 +289,7 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 }
 
 func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, error) {
-	resTask := responseTask{}
-	if err := common.Unmarshal(respBody, &resTask); err != nil {
-		return nil, errors.Wrap(err, "unmarshal task result failed")
-	}
-
-	taskResult := relaycommon.TaskInfo{
-		Code: 0,
-	}
-
-	// Map Doubao status to internal status
-	switch resTask.Status {
-	case "pending", "queued":
-		taskResult.Status = model.TaskStatusQueued
-		taskResult.Progress = "10%"
-	case "processing", "running":
-		taskResult.Status = model.TaskStatusInProgress
-		taskResult.Progress = "50%"
-	case "succeeded":
-		taskResult.Status = model.TaskStatusSuccess
-		taskResult.Progress = "100%"
-		taskResult.Url = resTask.Content.VideoURL
-		// 解析 usage 信息用于按倍率计费
-		taskResult.CompletionTokens = resTask.Usage.CompletionTokens
-		taskResult.TotalTokens = resTask.Usage.TotalTokens
-	case "failed":
-		taskResult.Status = model.TaskStatusFailure
-		taskResult.Progress = "100%"
-		taskResult.Reason = resTask.Error.Message
-	default:
-		// Unknown status, treat as processing
-		taskResult.Status = model.TaskStatusInProgress
-		taskResult.Progress = "30%"
-	}
-
-	return &taskResult, nil
+	return parsePluginTaskResult(respBody)
 }
 
 func (a *TaskAdaptor) ConvertToOpenAIVideo(originTask *model.Task) ([]byte, error) {

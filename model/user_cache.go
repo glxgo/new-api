@@ -9,8 +9,6 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 
 	"github.com/gin-gonic/gin"
-
-	"github.com/bytedance/gopkg/util/gopool"
 )
 
 // UserBase struct remains the same as it represents the cached data structure
@@ -95,12 +93,12 @@ func InvalidateUserCache(userId int) error {
 	return invalidateUserCache(userId)
 }
 
-// updateUserCache updates all user cache fields using hash
-func updateUserCache(user User) error {
+// populateUserCache writes a complete snapshot after a cache miss. It is the
+// only path allowed to write balances from a database snapshot.
+func populateUserCache(user User) error {
 	if !common.RedisEnabled {
 		return nil
 	}
-
 	return common.RedisHSetObj(
 		getUserCacheKey(user.Id),
 		user.ToBaseUser(),
@@ -108,21 +106,15 @@ func updateUserCache(user User) error {
 	)
 }
 
+// updateUserCache invalidates the snapshot instead of writing a possibly stale
+// full user row. Quota and GiftQuota are changed through atomic delta paths and
+// must never be overwritten by a concurrent profile update.
+func updateUserCache(user User) error {
+	return invalidateUserCache(user.Id)
+}
+
 // GetUserCache gets complete user cache from hash
 func GetUserCache(userId int) (userCache *UserBase, err error) {
-	var user *User
-	var fromDB bool
-	defer func() {
-		// Update Redis cache asynchronously on successful DB read
-		if shouldUpdateRedis(fromDB, err) && user != nil {
-			gopool.Go(func() {
-				if err := updateUserCache(*user); err != nil {
-					common.SysLog("failed to update user status cache: " + err.Error())
-				}
-			})
-		}
-	}()
-
 	// Try getting from Redis first
 	userCache, err = cacheGetUserBase(userId)
 	if err == nil {
@@ -130,10 +122,13 @@ func GetUserCache(userId int) (userCache *UserBase, err error) {
 	}
 
 	// If Redis fails, get from DB
-	fromDB = true
-	user, err = GetUserById(userId, false)
+	user, err := GetUserById(userId, false)
 	if err != nil {
 		return nil, err // Return nil and error if DB lookup fails
+	}
+	if err := populateUserCache(*user); err != nil {
+		// Redis is an optimization; a transient cache failure must not fail auth.
+		common.SysLog("failed to populate user cache: " + err.Error())
 	}
 
 	// Create cache object from user data
@@ -264,36 +259,20 @@ func getUserSettingCache(userId int) (dto.UserSetting, error) {
 
 // New functions for individual field updates
 func updateUserStatusCache(userId int, status bool) error {
-	if !common.RedisEnabled {
-		return nil
-	}
-	statusInt := common.UserStatusEnabled
-	if !status {
-		statusInt = common.UserStatusDisabled
-	}
-	return common.RedisHSetField(getUserCacheKey(userId), "Status", fmt.Sprintf("%d", statusInt))
+	return invalidateUserCache(userId)
 }
 
 func updateUserQuotaCache(userId int, quota int) error {
-	if !common.RedisEnabled {
-		return nil
-	}
-	return common.RedisHSetField(getUserCacheKey(userId), "Quota", fmt.Sprintf("%d", quota))
+	return invalidateUserCache(userId)
 }
 
 // updateUserGiftQuotaCache 单 field 回写赠金余额(仅 GetUserGiftQuota 读 miss 后异步调用)。
 func updateUserGiftQuotaCache(userId int, quota int) error {
-	if !common.RedisEnabled {
-		return nil
-	}
-	return common.RedisHSetField(getUserCacheKey(userId), "GiftQuota", fmt.Sprintf("%d", quota))
+	return invalidateUserCache(userId)
 }
 
 func updateUserGroupCache(userId int, group string) error {
-	if !common.RedisEnabled {
-		return nil
-	}
-	return common.RedisHSetField(getUserCacheKey(userId), "Group", group)
+	return invalidateUserCache(userId)
 }
 
 func UpdateUserGroupCache(userId int, group string) error {
@@ -301,17 +280,11 @@ func UpdateUserGroupCache(userId int, group string) error {
 }
 
 func updateUserNameCache(userId int, username string) error {
-	if !common.RedisEnabled {
-		return nil
-	}
-	return common.RedisHSetField(getUserCacheKey(userId), "Username", username)
+	return invalidateUserCache(userId)
 }
 
 func updateUserSettingCache(userId int, setting string) error {
-	if !common.RedisEnabled {
-		return nil
-	}
-	return common.RedisHSetField(getUserCacheKey(userId), "Setting", setting)
+	return invalidateUserCache(userId)
 }
 
 // GetUserLanguage returns the user's language preference from cache

@@ -37,6 +37,7 @@ func withHeaderNavModules(t *testing.T, raw string) {
 func performHeaderNavRequest(t *testing.T, handler gin.HandlerFunc, authenticated bool) *httptest.ResponseRecorder {
 	t.Helper()
 
+	nonce := dashboardFixture(t, common.RoleCommonUser)
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.Use(sessions.Sessions("session", cookie.NewStore([]byte("header-nav-test"))))
@@ -45,6 +46,7 @@ func performHeaderNavRequest(t *testing.T, handler gin.HandlerFunc, authenticate
 		session.Set("username", "tester")
 		session.Set("role", common.RoleCommonUser)
 		session.Set("id", 1)
+		session.Set("security_session_id", nonce)
 		session.Set("status", common.UserStatusEnabled)
 		session.Set("group", "default")
 		if err := session.Save(); err != nil {

@@ -2,6 +2,7 @@ package helper
 
 import (
 	"fmt"
+	"github.com/QuantumNous/new-api/pkg/kiro"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -76,6 +77,27 @@ func applyIngressQuota(c *gin.Context, info *relaycommon.RelayInfo, quota int) i
 
 func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (types.PriceData, error) {
 	groupRatioInfo := HandleGroupRatio(c, info) // 先解析 auto → UsingGroup, 得到 GroupRatio(唯一分组售价倍率)
+	if info.Kiro == nil {
+		ratio := groupRatioInfo.GroupRatio
+		if groupRatioInfo.HasSpecialRatio {
+			ratio = groupRatioInfo.GroupSpecialRatio
+		}
+		snapshot, err := kiro.Freeze(info.UsingGroup, ratio)
+		if err != nil {
+			return types.PriceData{}, err
+		}
+		info.Kiro = kiro.NewState(snapshot)
+		c.Set(kiro.ContextKey, info.Kiro)
+	}
+	if info.Kiro.Charge() {
+		path := c.Request.URL.Path
+		if path != "/v1/chat/completions" && path != "/v1/messages" && path != "/v1/responses" {
+			return types.PriceData{}, fmt.Errorf("Kiro credit billing supports Messages, Chat Completions and Responses only")
+		}
+		info.ForcePreConsume = true
+		info.PriceData = types.PriceData{QuotaToPreConsume: info.Kiro.Snapshot.ReserveQuota, GroupRatioInfo: groupRatioInfo}
+		return info.PriceData, nil
+	}
 	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
 
 	// Check if this model uses tiered_expr billing
@@ -84,6 +106,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	}
 
 	var preConsumedQuota int
+	var quotaErr error
 	var modelRatio float64
 	var completionRatio float64
 	var cacheRatio float64
@@ -121,12 +144,16 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		audioRatio = ratio_setting.GetAudioRatio(info.OriginModelName)
 		audioCompletionRatio = ratio_setting.GetAudioCompletionRatio(info.OriginModelName)
 		ratio := modelRatio * groupRatioInfo.GroupRatio
-		preConsumedQuota = int(float64(preConsumedTokens) * ratio)
+		preConsumedQuota, quotaErr = common.QuotaFromFloatStrict(float64(preConsumedTokens) * ratio)
 	} else {
 		if meta.ImagePriceRatio != 0 {
 			modelPrice = modelPrice * meta.ImagePriceRatio
 		}
-		preConsumedQuota = int(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
+		preConsumedQuota, quotaErr = common.QuotaFromFloatStrict(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio * SeedreamReservationCount(info))
+	}
+
+	if quotaErr != nil {
+		return types.PriceData{}, quotaErr
 	}
 
 	// check if free model pre-consume is disabled
@@ -203,10 +230,11 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 	}
 
 	var quota int
+	var quotaErr error
 	freeModel := false
 
 	if usePrice {
-		quota = int(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
+		quota, quotaErr = common.QuotaFromFloatStrict(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
 		if !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume {
 			if groupRatioInfo.GroupRatio == 0 || modelPrice == 0 {
 				quota = 0
@@ -215,7 +243,7 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 		}
 	} else {
 		// 按量计费：以模型倍率的一半作为预扣额度
-		quota = int(modelRatio / 2 * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
+		quota, quotaErr = common.QuotaFromFloatStrict(modelRatio / 2 * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
 		modelPrice = -1
 		if !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume {
 			if groupRatioInfo.GroupRatio == 0 || modelRatio == 0 {
@@ -225,6 +253,9 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 		}
 	}
 
+	if quotaErr != nil {
+		return types.PriceData{}, quotaErr
+	}
 	priceData := types.PriceData{
 		FreeModel:            freeModel,
 		ModelPrice:           modelPrice,
@@ -279,7 +310,10 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptT
 
 	// Expression coefficients are $/1M tokens prices; convert to quota the same way per-call billing does.
 	quotaBeforeGroup := rawCost / 1_000_000 * common.QuotaPerUnit
-	preConsumedQuota := billingexpr.QuotaRound(quotaBeforeGroup * groupRatioInfo.GroupRatio)
+	preConsumedQuota, quotaErr := common.QuotaRoundStrict(quotaBeforeGroup * groupRatioInfo.GroupRatio)
+	if quotaErr != nil {
+		return types.PriceData{}, quotaErr
+	}
 
 	freeModel := false
 	if !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume {

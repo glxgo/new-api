@@ -172,6 +172,15 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		return nil, service.TaskErrorWrapperLocal(err, "model_mapping_failed", http.StatusBadRequest)
 	}
 
+	// Validate the mapped provider request before price calculation or reservation.
+	if validator, ok := adaptor.(interface {
+		ValidateEffectiveRequest(*gin.Context, *relaycommon.RelayInfo) *dto.TaskError
+	}); ok {
+		if taskErr := validator.ValidateEffectiveRequest(c, info); taskErr != nil {
+			return nil, taskErr
+		}
+	}
+
 	// 3. 预生成公开 task ID（仅首次）
 	if info.PublicTaskID == "" {
 		info.PublicTaskID = model.GenerateTaskID()
@@ -196,10 +205,14 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 
 	// 6. 将 OtherRatios 应用到基础额度
 	if !common.StringsContains(constant.TaskPricePatches, modelName) {
+		quotaWithRatios := float64(info.PriceData.Quota)
 		for _, ra := range info.PriceData.OtherRatios {
-			if ra != 1.0 {
-				info.PriceData.Quota = int(float64(info.PriceData.Quota) * ra)
-			}
+			quotaWithRatios *= ra
+		}
+		var quotaErr error
+		info.PriceData.Quota, quotaErr = common.QuotaFromFloatStrict(quotaWithRatios)
+		if quotaErr != nil {
+			return nil, service.TaskErrorWrapper(quotaErr, "invalid_quota", http.StatusBadRequest)
 		}
 	}
 	info.PriceData.Quota = info.ApplyIngressMultiplier(info.PriceData.Quota)
@@ -263,12 +276,11 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 // 公式: baseQuota × ∏(ratio) — 其中 baseQuota 是不含 OtherRatios 的基础额度。
 func recalcQuotaFromRatios(info *relaycommon.RelayInfo, ratios map[string]float64) int {
 	// 从 PriceData 获取不含 OtherRatios 的基础价格
-	baseQuota := info.PriceData.Quota
-	baseQuota = info.RestoreIngressMultiplier(baseQuota)
+	baseQuota := float64(info.RestoreIngressMultiplier(info.PriceData.Quota))
 	// 先除掉原有的 OtherRatios 恢复基础额度
 	for _, ra := range info.PriceData.OtherRatios {
 		if ra != 1.0 && ra > 0 {
-			baseQuota = int(float64(baseQuota) / ra)
+			baseQuota /= ra
 		}
 	}
 	// 应用新的 ratios
@@ -278,7 +290,7 @@ func recalcQuotaFromRatios(info *relaycommon.RelayInfo, ratios map[string]float6
 			result *= ra
 		}
 	}
-	return info.ApplyIngressMultiplier(int(result))
+	return info.ApplyIngressMultiplier(common.QuotaFromFloat(result))
 }
 
 var fetchRespBuilders = map[int]func(c *gin.Context) (respBody []byte, taskResp *dto.TaskError){

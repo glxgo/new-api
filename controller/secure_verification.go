@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 )
@@ -26,8 +27,10 @@ const (
 )
 
 type UniversalVerifyRequest struct {
-	Method string `json:"method"` // "2fa" 或 "passkey"
-	Code   string `json:"code,omitempty"`
+	Method    string `json:"method"` // "2fa" 或 "passkey"
+	Code      string `json:"code,omitempty"`
+	Password  string `json:"password,omitempty"`
+	Challenge string `json:"challenge"`
 }
 
 type VerificationStatusResponse struct {
@@ -52,10 +55,29 @@ func UniversalVerify(c *gin.Context) {
 		common.ApiError(c, fmt.Errorf("参数错误: %v", err))
 		return
 	}
+	sessionHash, err := service.SecuritySessionHash(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	proof, err := model.GetSecurityProof(req.Challenge, userId, sessionHash)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	methods, err := service.AvailableSecurityMethods(userId, proof.Action)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if !service.SecurityMethodAllowed(methods, req.Method) {
+		common.ApiErrorMsg(c, "Verification method is not available")
+		return
+	}
 
 	// 获取用户信息
 	user := &model.User{Id: userId}
-	if err := user.FillUserById(); err != nil {
+	if err := model.DB.First(user, userId).Error; err != nil {
 		common.ApiError(c, fmt.Errorf("获取用户信息失败: %v", err))
 		return
 	}
@@ -72,7 +94,7 @@ func UniversalVerify(c *gin.Context) {
 	passkey, passkeyErr := model.GetPasskeyByUserID(userId)
 	hasPasskey := passkeyErr == nil && passkey != nil
 
-	if !has2FA && !hasPasskey {
+	if !has2FA && !hasPasskey && req.Method != "password" && req.Method != "oauth" {
 		common.ApiError(c, fmt.Errorf("用户未启用2FA或Passkey"))
 		return
 	}
@@ -80,9 +102,14 @@ func UniversalVerify(c *gin.Context) {
 	// 根据验证方式进行验证
 	var verified bool
 	var verifyMethod string
-	var err error
 
 	switch req.Method {
+	case "oauth":
+		verified = proof.Verified && proof.Method == "oauth"
+		verifyMethod = "OAuth"
+	case "password":
+		verified = req.Password != "" && common.ValidatePasswordAndHash(req.Password, user.Password)
+		verifyMethod = "Password"
 	case "2fa":
 		if !has2FA {
 			common.ApiError(c, fmt.Errorf("用户未启用2FA"))
@@ -100,12 +127,7 @@ func UniversalVerify(c *gin.Context) {
 			common.ApiError(c, fmt.Errorf("用户未启用Passkey"))
 			return
 		}
-		// Passkey branch only trusts the short-lived marker written by PasskeyVerifyFinish.
-		verified, err = consumePasskeyReady(c)
-		if err != nil {
-			common.ApiError(c, fmt.Errorf("Passkey 验证状态异常: %v", err))
-			return
-		}
+		verified = proof.Verified && proof.Method == "passkey"
 		if !verified {
 			common.ApiError(c, fmt.Errorf("请先完成 Passkey 验证"))
 			return
@@ -122,8 +144,9 @@ func UniversalVerify(c *gin.Context) {
 		return
 	}
 
-	// 验证成功，在 session 中记录时间戳
-	now, err := setSecureVerificationSession(c, req.Method)
+	if req.Method != "passkey" && req.Method != "oauth" {
+		err = model.VerifySecurityProof(req.Challenge, userId, sessionHash, req.Method)
+	}
 	if err != nil {
 		common.ApiError(c, fmt.Errorf("保存验证状态失败: %v", err))
 		return
@@ -136,8 +159,9 @@ func UniversalVerify(c *gin.Context) {
 		"success": true,
 		"message": "验证成功",
 		"data": gin.H{
-			"verified":   true,
-			"expires_at": now + SecureVerificationTimeout,
+			"verified":    true,
+			"expires_at":  proof.ExpiresAt,
+			"proof_token": req.Challenge,
 		},
 	})
 }

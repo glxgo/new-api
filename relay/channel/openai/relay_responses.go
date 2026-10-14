@@ -31,6 +31,10 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	if err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError)
 	}
+	responseBody = info.ObserveKiroPayload(responseBody, false)
+	if err := info.KiroCompletionError(); err != nil {
+		return nil, err
+	}
 	err = common.Unmarshal(responseBody, &responsesResponse)
 	if err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
@@ -51,6 +55,7 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	// compute usage
 	usage := dto.Usage{}
 	if responsesResponse.Usage != nil {
+		usage.KiroMetering = responsesResponse.Usage.KiroMetering
 		usage.PromptTokens = responsesResponse.Usage.InputTokens
 		usage.CompletionTokens = responsesResponse.Usage.OutputTokens
 		usage.TotalTokens = responsesResponse.Usage.TotalTokens
@@ -102,6 +107,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		if response == nil || response.Usage == nil {
 			return
 		}
+		usage.KiroMetering = response.Usage.KiroMetering
 		if response.Usage.InputTokens != 0 {
 			usage.PromptTokens = response.Usage.InputTokens
 			usage.InputTokens = response.Usage.InputTokens
@@ -363,6 +369,9 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			}
 		}
 	})
+	if kiroErr := info.KiroCompletionError(); kiroErr != nil {
+		streamErr = kiroErr
+	}
 	if helper.StreamWriteError(c) != nil {
 		streamErr = helper.StreamFailure(c, info, true)
 	}

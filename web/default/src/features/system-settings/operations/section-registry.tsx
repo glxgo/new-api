@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { PelicanArchiveAdmin } from '@/features/pelican-archive/admin'
 import { SystemBehaviorSection } from '../general/system-behavior-section'
 import { EmailSettingsSection } from '../integrations/email-settings-section'
 import { MonitoringSettingsSection } from '../integrations/monitoring-settings-section'
@@ -25,13 +26,13 @@ import { PerformanceSection } from '../maintenance/performance-section'
 import { UpdateCheckerSection } from '../maintenance/update-checker-section'
 import type { OperationsSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { KiroCreditBillingSection } from './kiro-credit-billing-section'
 import {
   OPERATIONS_DEFAULT_SECTION,
   type OperationsSectionId,
 } from './section-meta'
 import { TopNavOrderSection } from './top-nav-order-section'
 import { TutorialSection } from './tutorial-section'
-import { PelicanArchiveAdmin } from '@/features/pelican-archive/admin'
 
 const OPERATIONS_SECTIONS = [
   {
@@ -186,6 +187,18 @@ const OPERATIONS_SECTIONS = [
     build: (settings: OperationsSettings) => (
       <TopNavOrderSection
         defaultValues={{ topNavOrder: settings.TopNavOrder ?? '' }}
+      />
+    ),
+  },
+  {
+    id: 'kiro-credit-billing',
+    titleKey: 'Kiro Credit Billing',
+    build: (settings: OperationsSettings) => (
+      <KiroCreditBillingSection
+        defaultValues={{
+          KiroCreditBilling: settings.KiroCreditBilling,
+          GroupRatio: settings.GroupRatio,
+        }}
       />
     ),
   },

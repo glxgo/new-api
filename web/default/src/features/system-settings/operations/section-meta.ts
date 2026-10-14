@@ -27,6 +27,7 @@ export const OPERATIONS_SECTION_IDS = [
   'update-checker',
   'tutorial',
   'top-nav-order',
+  'kiro-credit-billing',
 ] as const
 
 export type OperationsSectionId = (typeof OPERATIONS_SECTION_IDS)[number]
@@ -42,4 +43,5 @@ export const OPERATIONS_SECTION_TITLES = {
   'update-checker': 'System maintenance',
   tutorial: 'Usage Tutorial',
   'top-nav-order': 'Top Navigation Order',
+  'kiro-credit-billing': 'Kiro Credit Billing',
 } satisfies Record<OperationsSectionId, string>

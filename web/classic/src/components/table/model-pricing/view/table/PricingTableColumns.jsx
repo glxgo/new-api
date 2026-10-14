@@ -160,6 +160,8 @@ export const getPricingTableColumns = ({
     title: t('计费类型'),
     dataIndex: 'quota_type',
     render: (text, record, index) => {
+      if (getPriceData(record).isCreditBased)
+        return <Tag color='teal'>{t('按积分计费')}</Tag>;
       return renderQuotaType(parseInt(text), t);
     },
     sorter: (a, b) => a.quota_type - b.quota_type,
@@ -214,11 +216,16 @@ export const getPricingTableColumns = ({
       return (
         <div className='space-y-1'>
           <div className='text-gray-700'>
-            {t('模型倍率')}：{record.quota_type === 0 ? text : t('无')}
+            {t('模型倍率')}：
+            {!priceData.isCreditBased && record.quota_type === 0
+              ? text
+              : t('无')}
           </div>
           <div className='text-gray-700'>
             {t('补全倍率')}：
-            {record.quota_type === 0 ? completionRatio : t('无')}
+            {!priceData.isCreditBased && record.quota_type === 0
+              ? completionRatio
+              : t('无')}
           </div>
           <div className='text-gray-700'>
             {t('分组倍率')}：{priceData?.usedGroupRatio ?? '-'}

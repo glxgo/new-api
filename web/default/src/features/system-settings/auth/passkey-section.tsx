@@ -22,6 +22,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { api } from '@/lib/api'
 import {
   Form,
   FormControl,
@@ -64,6 +65,7 @@ const passkeySchema = z.object({
     enabled: z.boolean(),
     rp_display_name: z.string(),
     rp_id: z.string(),
+    legacy_rp_ids: z.string(),
     origins: z.string(),
     allow_insecure_origin: z.boolean(),
     user_verification: z.enum(['required', 'preferred', 'discouraged']),
@@ -78,6 +80,7 @@ type FlatPasskeyDefaults = {
   'passkey.enabled': boolean
   'passkey.rp_display_name': string
   'passkey.rp_id': string
+  'passkey.legacy_rp_ids': string
   'passkey.origins': string
   'passkey.allow_insecure_origin': boolean
   'passkey.user_verification': 'required' | 'preferred' | 'discouraged'
@@ -99,6 +102,7 @@ const buildFormDefaults = (
     enabled: defaults['passkey.enabled'],
     rp_display_name: defaults['passkey.rp_display_name'] ?? '',
     rp_id: defaults['passkey.rp_id'] ?? '',
+    legacy_rp_ids: defaults['passkey.legacy_rp_ids'] ?? '',
     origins: (defaults['passkey.origins'] ?? '')
       .split(',')
       .map((origin) => origin.trim())
@@ -118,6 +122,7 @@ const normalizeFormValues = (
   'passkey.enabled': values.passkey.enabled,
   'passkey.rp_display_name': values.passkey.rp_display_name,
   'passkey.rp_id': values.passkey.rp_id,
+  'passkey.legacy_rp_ids': values.passkey.legacy_rp_ids,
   'passkey.origins': values.passkey.origins
     .split('\n')
     .map((origin) => origin.trim())
@@ -172,7 +177,44 @@ export function PasskeySection(props: PasskeySectionProps) {
       return
     }
 
-    for (const key of changedKeys) {
+    const domainKeys = [
+      'passkey.rp_id',
+      'passkey.legacy_rp_ids',
+      'passkey.origins',
+    ]
+    if (changedKeys.some((key) => domainKeys.includes(key))) {
+      const domains = {
+        rp_id: normalized['passkey.rp_id'],
+        legacy_rp_ids: normalized['passkey.legacy_rp_ids'],
+        origins: normalized['passkey.origins'],
+      }
+      const preview = await api.post('/api/option/passkey/domains', {
+        ...domains,
+        preview: true,
+      })
+      const change = preview.data.data
+      if (
+        change.confirmation_required &&
+        !window.confirm(
+          t(
+            'Removing these domains affects {{known}} Passkeys and {{unknown}} credentials with an unknown domain. Continue?',
+            {
+              known: change.affected_credentials,
+              unknown: change.unknown_credentials,
+            }
+          )
+        )
+      )
+        return
+      const saved = await api.post('/api/option/passkey/domains', {
+        ...domains,
+        removal_confirmation: change.removal_confirmation,
+      })
+      normalized['passkey.rp_id'] = saved.data.data.rp_id
+      normalized['passkey.legacy_rp_ids'] = saved.data.data.legacy_rp_ids
+      normalized['passkey.origins'] = saved.data.data.origins
+    }
+    for (const key of changedKeys.filter((key) => !domainKeys.includes(key))) {
       await updateOption.mutateAsync({
         key,
         value: normalized[key],
@@ -190,7 +232,7 @@ export function PasskeySection(props: PasskeySectionProps) {
         <SettingsForm onSubmit={form.handleSubmit(onSubmit)}>
           <SettingsPageFormActions
             onSave={form.handleSubmit(onSubmit)}
-            isSaving={updateOption.isPending}
+            isSaving={updateOption.isPending || form.formState.isSubmitting}
           />
           <FormField
             control={form.control}
@@ -267,6 +309,24 @@ export function PasskeySection(props: PasskeySectionProps) {
             )}
           />
 
+          <FormField
+            control={form.control}
+            name='passkey.legacy_rp_ids'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Additional trusted Passkey domains')}</FormLabel>
+                <FormControl>
+                  <Textarea {...field} />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'Separate domains with commas. Keep old domains while their Passkeys are still in use.'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           <FormField
             control={form.control}
             name='passkey.user_verification'

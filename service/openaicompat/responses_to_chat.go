@@ -16,6 +16,7 @@ func ResponsesResponseToChatCompletionsResponse(resp *dto.OpenAIResponsesRespons
 
 	usage := &dto.Usage{}
 	if resp.Usage != nil {
+		usage.KiroMetering = resp.Usage.KiroMetering
 		if resp.Usage.InputTokens != 0 {
 			usage.PromptTokens = resp.Usage.InputTokens
 			usage.InputTokens = resp.Usage.InputTokens

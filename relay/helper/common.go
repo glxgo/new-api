@@ -3,6 +3,7 @@ package helper
 import (
 	"errors"
 	"fmt"
+	"github.com/QuantumNous/new-api/pkg/kiro"
 	"io"
 	"net/http"
 	"strings"
@@ -109,6 +110,11 @@ func writeSSE(c *gin.Context, event, data string) error {
 	}
 	if err := StreamWriteError(c); err != nil {
 		return err
+	}
+	if value, ok := c.Get(kiro.ContextKey); ok {
+		if state, ok := value.(*kiro.State); ok {
+			data = string(state.ForwardPayload([]byte(data), true))
+		}
 	}
 	// Sanitize only error envelopes. Successful model output, including image
 	// and media URLs, is preserved by SanitizeErrorJSON.

@@ -112,6 +112,7 @@ export type AuthSettings = {
   'passkey.enabled': boolean
   'passkey.rp_display_name': string
   'passkey.rp_id': string
+  'passkey.legacy_rp_ids': string
   'passkey.origins': string
   'passkey.allow_insecure_origin': boolean
   'passkey.user_verification': 'required' | 'preferred' | 'discouraged'
@@ -330,6 +331,8 @@ export type OperationsSettings = {
   'tutorial_setting.content': string
   // 顶部导航排序(JSON 数组 of navKey, 超管后台可配)
   TopNavOrder: string
+  KiroCreditBilling: string
+  GroupRatio: string
 }
 
 export type SecuritySettings = {
