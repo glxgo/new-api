@@ -4,13 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"net/http"
-	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/oauth"
-	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 )
@@ -153,71 +150,4 @@ func SecurityRequestHash(c *gin.Context) (string, error) {
 	hash := common.GenerateHMAC(c.Request.Method + "\n" + c.Request.URL.EscapedPath() + "\n" + c.Request.URL.Query().Encode() + "\n" + string(body))
 	c.Set("security_request_hash", hash)
 	return hash, nil
-}
-
-// Capture the original body before controllers decode it, so conditional
-// step-up checks bind the payload as well as the route and target.
-func CaptureSecurityRequest() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if _, err := SecurityRequestHash(c); err != nil {
-			common.ApiError(c, err)
-			c.Abort()
-			return
-		}
-		c.Next()
-	}
-}
-
-func RequireSecurityProof(c *gin.Context, action string) bool {
-	if c.GetString("operation_proof_action") == action {
-		return true
-	}
-	sessionHash, err := SecuritySessionHash(c)
-	if err != nil {
-		common.ApiError(c, err)
-		return false
-	}
-	contextHash, err := SecurityRequestHash(c)
-	if err != nil {
-		common.ApiError(c, err)
-		return false
-	}
-	methods, err := AvailableSecurityMethods(c.GetInt("id"), action)
-	if err != nil {
-		common.ApiError(c, err)
-		return false
-	}
-	if token := c.GetHeader("X-Security-Proof"); token != "" {
-		proof, err := model.GetSecurityProof(token, c.GetInt("id"), sessionHash)
-		if err == nil && SecurityMethodAllowed(methods, proof.Method) &&
-			(proof.Method != "passkey" || system_setting.PasskeySettingsSnapshot().Enabled) {
-			err = model.ConsumeSecurityProof(token, c.GetInt("id"), sessionHash, action, contextHash)
-			if err == nil {
-				c.Set("operation_proof_consumed", true)
-				c.Set("operation_proof_action", action)
-				c.Set("operation_proof_method", proof.Method)
-				return true
-			}
-		}
-	}
-	token, err := model.NewSecurityProof(c.GetInt("id"), sessionHash, action, contextHash)
-	if err != nil {
-		common.ApiError(c, err)
-		return false
-	}
-	c.Header("Cache-Control", "no-store")
-	c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"success": false, "code": "VERIFICATION_REQUIRED",
-		"message": "Security verification required", "verification": gin.H{"challenge": token,
-			"action": action, "methods": methods.Methods, "oauth_providers": methods.OAuthProviders}})
-	return false
-}
-
-func SecurityProofRequired(action string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if !RequireSecurityProof(c, strings.TrimSpace(action)) {
-			c.Abort()
-			return
-		}
-		c.Next()
-	}
 }

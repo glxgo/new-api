@@ -49,10 +49,11 @@ export const ModelPerfBadge = memo(function ModelPerfBadge(
 
   const { avg_latency_ms, avg_tps, success_rate } = props.perf
 
+  // Aligned with the model-status calibre: >=90% healthy, 80-90% warning.
   let statusColor = 'bg-success'
-  if (success_rate < 99) {
+  if (success_rate < 80) {
     statusColor = 'bg-destructive'
-  } else if (success_rate < 99.9) {
+  } else if (success_rate < 90) {
     statusColor = 'bg-warning'
   }
 

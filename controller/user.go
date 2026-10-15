@@ -833,9 +833,6 @@ func UpdateUser(c *gin.Context) {
 		updatedUser.Password = "" // rollback to what it should be
 	}
 	updatePassword := updatedUser.Password != ""
-	if (updatePassword || updatedUser.Role != originUser.Role || updatedUser.Status != originUser.Status) && !service.RequireSecurityProof(c, "admin.user.update") {
-		return
-	}
 	if err := updatedUser.Edit(updatePassword, model.UserCapacityLimitUpdate{
 		ConcurrencyLimit:         request.ConcurrencyLimit,
 		ConcurrencyLimitOverride: request.ConcurrencyLimitOverride,
@@ -988,9 +985,6 @@ func UpdateSelf(c *gin.Context) {
 		user.Password = "" // rollback to what it should be
 		cleanUser.Password = ""
 	}
-	if user.Password != "" && !service.RequireSecurityProof(c, "account.password") {
-		return
-	}
 	updatePassword, err := checkUpdatePassword(user.OriginalPassword, user.Password, cleanUser.Id)
 	if err != nil {
 		common.ApiError(c, err)
@@ -1135,9 +1129,6 @@ func CreateUser(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserCannotCreateHigherLevel)
 		return
 	}
-	if user.Role >= common.RoleAdminUser && !service.RequireSecurityProof(c, "admin.user.create") {
-		return
-	}
 	// Even for admin users, we cannot fully trust them!
 	cleanUser := model.User{
 		Username:    user.Username,
@@ -1193,12 +1184,6 @@ func ManageUser(c *gin.Context) {
 	if !canManageTargetRole(myRole, user.Role) {
 		common.ApiErrorI18n(c, i18n.MsgUserNoPermissionHigherLevel)
 		return
-	}
-	switch req.Action {
-	case "disable", "enable", "delete", "promote", "demote", "set_agent", "remove_agent", "reset_security", "enable_security_whitelist", "disable_security_whitelist":
-		if !service.RequireSecurityProof(c, "admin.user.manage") {
-			return
-		}
 	}
 	switch req.Action {
 	case "disable":

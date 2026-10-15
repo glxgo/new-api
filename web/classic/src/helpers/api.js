@@ -49,46 +49,6 @@ function redirectToOAuthUrl(url, options = {}) {
 }
 
 function patchAPIInstance(instance) {
-  instance.interceptors.response.use(
-    (response) => response,
-    async (error) => {
-      const info = error?.response?.data?.verification;
-      if (
-        error?.response?.status === 403 &&
-        info?.challenge &&
-        !error.config.securityProofRetried
-      ) {
-        const { requestSecurityProof, verifyChallenge } =
-          await import('../services/securityProofPrompt');
-        let code = '';
-        if (
-          /\/api\/user\/2fa\/(disable|backup_codes)$/.test(
-            error.config.url ?? '',
-          ) &&
-          info.methods.includes('2fa')
-        ) {
-          try {
-            const payload =
-              typeof error.config.data === 'string'
-                ? JSON.parse(error.config.data)
-                : error.config.data;
-            code = typeof payload?.code === 'string' ? payload.code : '';
-          } catch {
-            /* Request validation handles invalid JSON. */
-          }
-        }
-        const token = code
-          ? await verifyChallenge(info, '2fa', code)
-          : await requestSecurityProof(info);
-        return instance.request({
-          ...error.config,
-          securityProofRetried: true,
-          headers: { ...error.config.headers, 'X-Security-Proof': token },
-        });
-      }
-      return Promise.reject(error);
-    },
-  );
   const originalGet = instance.get.bind(instance);
   const inFlightGetRequests = new Map();
 

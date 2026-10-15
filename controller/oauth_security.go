@@ -50,8 +50,6 @@ func issueOAuthState(c *gin.Context) (string, error) {
 			if !service.SecurityMethodAllowed(methods, "oauth") || !slices.Contains(methods.OAuthProviders, flow.Provider) {
 				return "", model.ErrSecurityProof
 			}
-		} else if !service.RequireSecurityProof(c, "account.bind.oauth") {
-			return "", model.ErrSecurityProof
 		}
 	} else if flow.Challenge != "" {
 		return "", model.ErrSecurityProof

@@ -691,3 +691,20 @@
 - PR https://github.com/glxgo/new-api/pull/2 已创建并附加到当前任务；base 为 `glxgo/new-api:codex/iq-capability-v6`，head 为 `StingGrey/new-api-plus:codex/upstream-security-kiro-20261008`。已核对 OPEN、非 draft、MERGEABLE；目前尚未合并。
 - glxgo 目标分支仍为 `d1d207fc9d5a31bbe98708a4634181502428d325`；未强推、未改 main、未覆盖主工作树的未提交内容。PR 使用仓库模板并注明 AI 辅助贡献，人工确认项未冒充已获维护者确认。
 - 面板访问令牌限权仍排除，生产配置及版本不变。此前“未提交/未推送”记录保留为历史状态，当前源码已在 fork 并等待 PR 合并。
+
+### 2026-10-15 — 模型广场性能口径对齐 + 安全验证 5 分钟宽限（本地完成，未上线）
+
+- 用户报两个问题并要求修复；方向选择未获回复，按推荐方案执行。全部改动仅在本地工作树（main = `edd7b5490` 基础上），未提交、未推送、未部署。
+- ① 模型广场模型详情「性能」与「模型状态」口径不一致：广场按单模型、读 `perf_metrics`（含已禁用渠道历史）、各组成功率前端非加权平均、阈值 <99.9/<99、桶成功率 <100 即 incident；状态页按分组请求加权、读 `channel_perf_metrics_v2` 只统计启用渠道、阈值 90/80。本次仅改 Default 前端三文件对齐口径：`model-details-performance.tsx` 成功率与 uptime 桶改为按 `request_count`/`success_count` 加权（无计数时回退原均值）、incident 改为加权成功率 <90 才计、卡片 intent 阈值 90/80；`model-details-uptime-sparkline.tsx` 配色阈值 90/80（模型状态页复用此组件，颜色随之统一）；`model-perf-badge.tsx` 角标阈值 90/80（summary 接口后端本就请求加权）。后端与数据表未动；"禁用渠道历史残留"差异保留，如需完全对齐需后端换数据源。
+- ② 「安全验证」弹窗为 10/8 上线的 step-up proof 机制，每敏感操作单独验证、无宽限（旧 5 分钟 session 机制是未接线死代码）。本次实现 5 分钟宽限：`dashboard_sessions` 新增 `security_verified_at`/`security_verified_method` 列（master AutoMigrate 自动加列，旧版回滚忽略未知列）；在 `model.VerifySecurityProof` 收口记录——cookie 会话的 sessionHash 恰为 DashboardSession 主键，access-token 哈希匹配不到行、自动不适用；`service.RequireSecurityProof` 在新建挑战前检查宽限，验证方式必须仍被当前 action 接受（password 宽限不解锁 `channel.key.read` 等 2FA-only 操作），passkey 另要求 Passkey 设置开启；`middleware/audit.go` 与 `controller/audit.go` 对宽限放行补 `verification_grace: true` 审计标记。
+- 验证：`go test -vet=off ./model -run TestSecurity`（含新增 `TestSecurityVerificationMarksSessionGrace`）、`go test -vet=off ./service -run TestSecurityProofGraceUsable`、`go build ./model/... ./service/... ./controller/... ./middleware/...`、Default `tsc -b`、改动文件 ESLint、`git diff --check` 全部通过。共 9 文件 +172/−28。
+- 下一步（待用户确认）：审阅本地 diff 后决定是否构建发布；整批撤销 `git checkout -- .` 即可，无 DDL 遗留（列由 AutoMigrate 幂等添加）。
+
+### 2026-10-15 — 用户定性「安全验证」为错误嫁接，整套 step-up 已删除（本地完成，未上线）
+
+- 用户明确指示：安全验证被错误加入且体验差（未设置 2FA/Passkey 的用户也到处弹密码框），要求删除。上一条的「5 分钟宽限」方案已整体回退（相关 7 文件 checkout、grace 测试删除），①广场性能口径修复保留。
+- 后端删除：`router/api-router.go` 移除全部 15 处 `SecurityProofRequired(...)` 与 4 处 `CaptureSecurityRequest()`；`controller/user.go`（admin.user.update/account.password/admin.user.create/admin.user.manage）、`controller/passkey.go`（passkey.register/passkey.delete）、`controller/oauth_security.go`（account.bind.oauth）共 7 处条件验证移除；`service/security_proof.go` 删除 `RequireSecurityProof`/`SecurityProofRequired`/`CaptureSecurityRequest` 三个入口（`SecurityRequestHash` 等保留）；整个删除从未注册的死中间件 `middleware/secure_verification.go`；修正 `controller/channel.go` GetChannelKey 过时注释。`router/api-router.go` 的 service 导入随之移除。
+- 前端删除：Default `lib/api.ts` 移除 403+verification 拦截分支与 `securityProofRetried` 配置类型，删除 `features/auth/secure-verification/proof-prompt.tsx`（234 行）；Classic `helpers/api.js` 移除拦截分支（保留 GET 去重补丁），删除 `services/securityProofPrompt.jsx`（195 行）。两端的 legacy `SecureVerificationDialog/Modal` 死 UI 未动（本就不可达）。
+- 保留的惰性基建（不可达、不影响行为）：`/api/verify`、`/api/verify/oauth/*`、`/api/user/self/passkey/verify/*` 路由及 `UniversalVerify`/`BeginOAuthProof`/`PasskeyVerifyBegin/Finish` 处理器；`SecurityProof`/`SecurityCeremony` 表与每分钟清理协程；`DashboardSession` 登录会话校验（与 step-up 无关，注销/改密仍即时生效）；`controller/secure_verification.go` 内部死助手与 passkey.go 旧 session 链。
+- 行为变化（用户已接受）：改密/2FA 开关/绑定解绑/生成访问令牌/Passkey 管理/注销/管理员用户管理与看渠道密钥等恢复仅登录即可操作，不再二次验证；`channel.key.read` 原强制 2FA/Passkey 的门槛同时消失。
+- 验证：`go build ./router/... ./controller/... ./service/... ./model/... ./middleware/...`、`go test -vet=off ./model -run TestSecurity`、Default `tsc -b` + `lib/api.ts` ESLint、Classic `prettier --check helpers/api.js`、`git diff --check` 全部通过；全仓无 `RequireSecurityProof/SecurityProofRequired/CaptureSecurityRequest/X-Security-Proof/requestSecurityProof` 残留。连同广场修复共 15 文件 +91/−780。未提交、未推送、未部署。

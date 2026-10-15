@@ -37,10 +37,6 @@ func PasskeyRegisterBegin(c *gin.Context) {
 		return
 	}
 
-	if !service.RequireSecurityProof(c, "passkey.register") {
-		return
-	}
-
 	credential, err := model.GetPasskeyByUserID(user.Id)
 	if err != nil && !errors.Is(err, model.ErrPasskeyNotFound) {
 		common.ApiError(c, err)
@@ -159,10 +155,6 @@ func PasskeyDelete(c *gin.Context) {
 			"success": false,
 			"message": common.SanitizePublicError(err.Error()),
 		})
-		return
-	}
-
-	if !service.RequireSecurityProof(c, "passkey.delete") {
 		return
 	}
 

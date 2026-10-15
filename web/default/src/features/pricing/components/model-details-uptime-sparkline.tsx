@@ -52,11 +52,14 @@ type UptimeSparklineProps = {
   fill?: boolean
 }
 
+// Colour calibre mirrors the model-status page: >=90% healthy,
+// 80-90% fluctuating, <80% needs attention.
+const HEALTHY_UPTIME = 90
+const UNSTABLE_UPTIME = 80
+
 function colourFor(uptime: number): string {
-  if (uptime >= 99.9) return 'bg-success'
-  if (uptime >= 99.0) return 'bg-success'
-  if (uptime >= 95.0) return 'bg-warning'
-  if (uptime >= 90.0) return 'bg-warning'
+  if (uptime >= HEALTHY_UPTIME) return 'bg-success'
+  if (uptime >= UNSTABLE_UPTIME) return 'bg-warning'
   return 'bg-destructive'
 }
 
@@ -69,9 +72,8 @@ function heightFor(uptime: number): string {
 }
 
 function overallTextColour(pct: number): string {
-  if (pct >= 99.9) return 'text-success'
-  if (pct >= 99.0) return 'text-success'
-  if (pct >= 95.0) return 'text-warning'
+  if (pct >= HEALTHY_UPTIME) return 'text-success'
+  if (pct >= UNSTABLE_UPTIME) return 'text-warning'
   return 'text-destructive'
 }
 

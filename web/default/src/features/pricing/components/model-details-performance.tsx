@@ -38,6 +38,11 @@ import type { PricingModel } from '../types'
 import { LatencyTrendChart, UptimeTrendChart } from './model-details-charts'
 import { UptimeSparkline } from './model-details-uptime-sparkline'
 
+// Success-rate calibre mirrors the model-status page: >=90% healthy,
+// 80-90% fluctuating, <80% needs attention.
+const HEALTHY_SUCCESS_RATE = 90
+const UNSTABLE_SUCCESS_RATE = 80
+
 function StatCard(props: {
   icon: React.ComponentType<{ className?: string }>
   label: string
@@ -101,14 +106,35 @@ function toLatencySeries(groups: PerformanceGroup[]) {
     }))
 }
 
+type BucketRateAggregate = {
+  requests: number
+  successes: number
+  rates: number[]
+}
+
+function weightedSuccessRate(value: BucketRateAggregate): number {
+  if (value.requests > 0) {
+    return (value.successes / value.requests) * 100
+  }
+  if (value.rates.length > 0) {
+    return value.rates.reduce((sum, rate) => sum + rate, 0) / value.rates.length
+  }
+  return 0
+}
+
 function toUptimeSeries(groups: PerformanceGroup[]): UptimeDayPoint[] {
-  const byTs = new Map<number, { rates: number[]; incidents: number }>()
+  const byTs = new Map<number, BucketRateAggregate>()
   for (const group of groups) {
     for (const point of group.series) {
-      const current = byTs.get(point.ts) ?? { rates: [], incidents: 0 }
-      if (Number.isFinite(point.success_rate)) {
+      if (!Number.isFinite(point.success_rate)) continue
+      const current =
+        byTs.get(point.ts) ?? { requests: 0, successes: 0, rates: [] }
+      const requests = point.request_count ?? 0
+      if (requests > 0) {
+        current.requests += requests
+        current.successes += point.success_count ?? 0
+      } else {
         current.rates.push(point.success_rate)
-        if (point.success_rate < 100) current.incidents += 1
       }
       byTs.set(point.ts, current)
     }
@@ -116,15 +142,11 @@ function toUptimeSeries(groups: PerformanceGroup[]): UptimeDayPoint[] {
   return Array.from(byTs.entries())
     .sort(([a], [b]) => a - b)
     .map(([ts, value]) => {
-      const uptime =
-        value.rates.length > 0
-          ? value.rates.reduce((sum, rate) => sum + rate, 0) /
-            value.rates.length
-          : 0
+      const uptime = weightedSuccessRate(value)
       return {
         date: new Date(ts * 1000).toISOString(),
         uptime_pct: Math.round(uptime * 100) / 100,
-        incidents: value.incidents,
+        incidents: uptime < HEALTHY_SUCCESS_RATE ? 1 : 0,
         outage_minutes: 0,
       }
     })
@@ -134,7 +156,7 @@ function toGroupUptimeSeries(group: PerformanceGroup): UptimeDayPoint[] {
   return group.series.map((point) => ({
     date: new Date(point.ts * 1000).toISOString(),
     uptime_pct: Math.round(point.success_rate * 100) / 100,
-    incidents: point.success_rate < 100 ? 1 : 0,
+    incidents: point.success_rate < HEALTHY_SUCCESS_RATE ? 1 : 0,
     outage_minutes: 0,
   }))
 }
@@ -198,19 +220,31 @@ export function ModelDetailsPerformance(props: { model: PricingModel }) {
       ? tpsValues.reduce((sum, value) => sum + value, 0) / tpsValues.length
       : 0
   const avgLatency = average(performances, 'avg_latency_ms')
+  const totalRequests = groups.reduce(
+    (sum, group) =>
+      sum + group.series.reduce((s, p) => s + (p.request_count ?? 0), 0),
+    0
+  )
+  const totalSuccesses = groups.reduce(
+    (sum, group) =>
+      sum + group.series.reduce((s, p) => s + (p.success_count ?? 0), 0),
+    0
+  )
   const successRates = performances
     .map((perf) => perf.success_rate)
     .filter((value) => Number.isFinite(value))
   const successRate =
-    successRates.length > 0
-      ? successRates.reduce((sum, value) => sum + value, 0) /
-        successRates.length
-      : 0
+    totalRequests > 0
+      ? (totalSuccesses / totalRequests) * 100
+      : successRates.length > 0
+        ? successRates.reduce((sum, value) => sum + value, 0) /
+          successRates.length
+        : 0
   const incidentCount = uptimeSeries.reduce((s, p) => s + p.incidents, 0)
   let intent: 'default' | 'warning' | 'success' = 'warning'
-  if (successRate >= 99.9) {
+  if (successRate >= HEALTHY_SUCCESS_RATE) {
     intent = 'success'
-  } else if (successRate >= 99) {
+  } else if (successRate >= UNSTABLE_SUCCESS_RATE) {
     intent = 'default'
   }
 
