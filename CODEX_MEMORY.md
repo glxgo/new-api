@@ -727,3 +727,10 @@
 - 顺带修复：删除 `controller/security_flow_test.go`（84 行，整篇测已删除的 step-up 路由验证流，引用不存在的 `service.SecurityProofRequired`，上轮删除时漏删导致 `go test ./controller/` 自 `af7a3803e` 起编译失败——当时验证未跑全量 controller 测试，已记录为流程疏漏）。
 - 验证：gofmt 干净、`go build ./...`、`go vet ./controller/ ./pkg/perf_metrics/ ./model/`、`go test ./pkg/perf_metrics/...`、`go test ./controller/`（跳过存量失败 `TestListModelsTokenLimitIncludesTieredBillingModel`——HEAD 上同样 panic，测试环境 Redis 空指针，与本轮无关）、`go test ./model/`、Default `tsc -b` + 改动文件 ESLint 全过。新增 `pkg/perf_metrics/channel_model_query_test.go`（scopesForModel/buildScopedModelTotals 4 用例）。生产 v2 表 24h 仅 9.8k 行，新查询无压力（已实测）。
 - 状态：本地工作树未提交、未推送、未部署；线上仍为 `20261015-stepup-removal`。下一步待用户授权后：提交推送 → 本地构建双前端+Linux/amd64 产物 → 蓝绿上线。
+
+### 2026-10-17 — `20261017-perf-caliber` 已蓝绿上线（正式版本）
+
+- 用户授权推送+上线。提交 `089dc1a0d`（9 文件 +517/−118）已推送 `origin/main`（`44e0cfebe..089dc1a0d`，ls-remote 复核一致；Mimosa commit/push 扫描两次 scanner_enobufs，按兼容策略放行，不宣称已完整审计）。
+- 构建：Default/Classic rsbuild、`go build ./...`、pkg 测试通过；Linux/amd64 产物 SHA-256 `949ae14065d4927b9a48f082872c06a34702caceec0c00bd3b94d36f4045228a`（96M，`-trimpath -ldflags "-s -w"`），分块上传合并后服务器复核一致。
+- 部署与终态详见运营侧 CODEX_MEMORY 同日条目（备份/回滚镜像/切流/验收/踩坑）。验收要点：gpt-6-sol 旧口径 gpt会员分组 83.2% → 新口径 8 个分组全部 94~97.6%；正式 healthy、restarts=0、OOM=false、四入口均新版本、真实流量正常。
+- 服务器当天 Docker 重启过一次导致旧候选自启占 3010/3011，已停用并设 restart=no；canonical compose 顶层 networks（cpa-net external + new-api-final_default）与 dict 形式 environment 是候选生成时必须原样保留的两处，值中 `$` 需转义 `$$`。
