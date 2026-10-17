@@ -96,7 +96,17 @@ export function UptimeSparkline(props: UptimeSparklineProps) {
     )
   }
 
-  const overall = series.reduce((s, p) => s + p.uptime_pct, 0) / series.length
+  // Request-weighted overall whenever the series carries counts (perf-metrics
+  // buckets do); otherwise fall back to the bucket mean used by mock series.
+  const totalRequests = series.reduce((s, p) => s + (p.requests ?? 0), 0)
+  const totalSuccesses = series.reduce((s, p) => s + (p.successes ?? 0), 0)
+  const ratedPoints = series.filter((p) => Number.isFinite(p.uptime_pct))
+  const overall =
+    totalRequests > 0
+      ? (totalSuccesses / totalRequests) * 100
+      : ratedPoints.length > 0
+        ? ratedPoints.reduce((s, p) => s + p.uptime_pct, 0) / ratedPoints.length
+        : 0
 
   const containerHeight = size === 'sm' ? 'h-3.5' : 'h-5'
   const barWidth = fillBars

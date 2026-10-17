@@ -25,7 +25,15 @@ func GetPerfMetricsSummary(c *gin.Context) {
 	}
 
 	activeGroups := visibleStatusGroups()
-	result, err := perfmetrics.QuerySummaryAll(hours, activeGroups)
+	scopes, err := loadPerfMetricChannelScopes(activeGroups)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": common.SanitizePublicError(err.Error()),
+		})
+		return
+	}
+	result, err := perfmetrics.QuerySummaryAllByChannels(hours, scopes)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -212,11 +220,22 @@ func GetPerfMetrics(c *gin.Context) {
 		}
 	}
 
-	result, err := perfmetrics.Query(perfmetrics.QueryParams{
+	// The square detail must use the same channel-scoped caliber as the
+	// model-status cards: only enabled (and canary selected) channels count,
+	// so disabled-channel failure history cannot paint groups red.
+	scopes, err := loadPerfMetricChannelScopes(visibleStatusGroups())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": common.SanitizePublicError(err.Error()),
+		})
+		return
+	}
+	result, err := perfmetrics.QueryByChannelScopes(perfmetrics.QueryParams{
 		Model: modelName,
 		Group: c.Query("group"),
 		Hours: hours,
-	})
+	}, scopes)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,

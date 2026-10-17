@@ -60,6 +60,12 @@ export type UptimeDayPoint = {
   uptime_pct: number
   incidents: number
   outage_minutes: number
+  /**
+   * Optional request/success counts backing the point. When present they let
+   * consumers render a request-weighted overall instead of a bucket mean.
+   */
+  requests?: number
+  successes?: number
 }
 
 export type AppRanking = {

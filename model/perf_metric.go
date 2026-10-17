@@ -100,6 +100,20 @@ func GetChannelPerfMetrics(startTs int64, endTs int64, channelIds []int) ([]Chan
 	return metrics, err
 }
 
+// GetChannelPerfMetricsByModel reads channel metrics for a single model so the
+// channel-scoped model detail only pays for the rows it can actually use.
+func GetChannelPerfMetricsByModel(startTs int64, endTs int64, channelIds []int, modelName string) ([]ChannelPerfMetric, error) {
+	var metrics []ChannelPerfMetric
+	if len(channelIds) == 0 || modelName == "" {
+		return metrics, nil
+	}
+	err := DB.Model(&ChannelPerfMetric{}).
+		Where("model_name = ? AND channel_id IN ? AND bucket_ts >= ? AND bucket_ts <= ?", modelName, channelIds, startTs, endTs).
+		Order("bucket_ts ASC").
+		Find(&metrics).Error
+	return metrics, err
+}
+
 func DeleteChannelPerfMetricsBefore(cutoffTs int64) error {
 	if cutoffTs <= 0 {
 		return nil
@@ -257,6 +271,68 @@ func GetPerfMetricsGroupBuckets(startTs int64, endTs int64, groups []string) ([]
 		Group(commonGroupCol + ", bucket_ts").
 		Having("SUM(request_count) > 0").
 		Order("bucket_ts ASC").
+		Find(&buckets).Error
+	return buckets, err
+}
+
+// GetPerfMetricGroupBucketsByModel aggregates the legacy group table for one
+// model (per group × bucket). The channel-scoped model detail uses it for
+// history that predates the channel-scoped cutover.
+func GetPerfMetricGroupBucketsByModel(startTs int64, endTs int64, modelName string, groups []string) ([]PerfMetricGroupBucket, error) {
+	var buckets []PerfMetricGroupBucket
+	if modelName == "" {
+		return buckets, nil
+	}
+	query := DB.Model(&PerfMetric{}).
+		Select(commonGroupCol+", bucket_ts, SUM(request_count) as request_count, SUM(success_count) as success_count, SUM(total_latency_ms) as total_latency_ms, SUM(ttft_sum_ms) as ttft_sum_ms, SUM(ttft_count) as ttft_count, SUM(output_tokens) as output_tokens, SUM(generation_ms) as generation_ms, SUM(cache_tokens) as cache_tokens, SUM(prompt_tokens) as prompt_tokens").
+		Where("model_name = ? AND bucket_ts >= ? AND bucket_ts <= ?", modelName, startTs, endTs)
+	if groups != nil {
+		if len(groups) == 0 {
+			return buckets, nil
+		}
+		query = query.Where(commonGroupCol+" IN ?", groups)
+	}
+	err := query.
+		Group(commonGroupCol + ", bucket_ts").
+		Having("SUM(request_count) > 0").
+		Order("bucket_ts ASC").
+		Find(&buckets).Error
+	return buckets, err
+}
+
+// PerfMetricModelBucket is a per model × bucket aggregation of the legacy
+// group table across the requested groups.
+type PerfMetricModelBucket struct {
+	ModelName      string `json:"model_name" gorm:"column:model_name"`
+	BucketTs       int64  `json:"bucket_ts" gorm:"column:bucket_ts"`
+	RequestCount   int64  `json:"request_count"`
+	SuccessCount   int64  `json:"success_count"`
+	TotalLatencyMs int64  `json:"total_latency_ms"`
+	TtftSumMs      int64  `json:"ttft_sum_ms"`
+	TtftCount      int64  `json:"ttft_count"`
+	OutputTokens   int64  `json:"output_tokens"`
+	GenerationMs   int64  `json:"generation_ms"`
+	CacheTokens    int64  `json:"cache_tokens"`
+	PromptTokens   int64  `json:"prompt_tokens"`
+}
+
+// GetPerfMetricsModelBuckets aggregates the legacy group table per model ×
+// bucket, restricted to the requested groups. The channel-scoped summary uses
+// it for history that predates the channel-scoped cutover.
+func GetPerfMetricsModelBuckets(startTs int64, endTs int64, groups []string) ([]PerfMetricModelBucket, error) {
+	var buckets []PerfMetricModelBucket
+	query := DB.Model(&PerfMetric{}).
+		Select("model_name, bucket_ts, SUM(request_count) as request_count, SUM(success_count) as success_count, SUM(total_latency_ms) as total_latency_ms, SUM(ttft_sum_ms) as ttft_sum_ms, SUM(ttft_count) as ttft_count, SUM(output_tokens) as output_tokens, SUM(generation_ms) as generation_ms, SUM(cache_tokens) as cache_tokens, SUM(prompt_tokens) as prompt_tokens").
+		Where("bucket_ts >= ? AND bucket_ts <= ?", startTs, endTs)
+	if groups != nil {
+		if len(groups) == 0 {
+			return buckets, nil
+		}
+		query = query.Where(commonGroupCol+" IN ?", groups)
+	}
+	err := query.
+		Group("model_name, bucket_ts").
+		Having("SUM(request_count) > 0").
 		Find(&buckets).Error
 	return buckets, err
 }

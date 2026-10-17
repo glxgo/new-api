@@ -127,15 +127,12 @@ function toUptimeSeries(groups: PerformanceGroup[]): UptimeDayPoint[] {
   for (const group of groups) {
     for (const point of group.series) {
       if (!Number.isFinite(point.success_rate)) continue
-      const current =
-        byTs.get(point.ts) ?? { requests: 0, successes: 0, rates: [] }
       const requests = point.request_count ?? 0
-      if (requests > 0) {
-        current.requests += requests
-        current.successes += point.success_count ?? 0
-      } else {
-        current.rates.push(point.success_rate)
-      }
+      // Filler buckets without sampled requests are unknowns, not 0% uptime.
+      if (requests <= 0) continue
+      const current = byTs.get(point.ts) ?? { requests: 0, successes: 0, rates: [] }
+      current.requests += requests
+      current.successes += point.success_count ?? 0
       byTs.set(point.ts, current)
     }
   }
@@ -153,12 +150,23 @@ function toUptimeSeries(groups: PerformanceGroup[]): UptimeDayPoint[] {
 }
 
 function toGroupUptimeSeries(group: PerformanceGroup): UptimeDayPoint[] {
-  return group.series.map((point) => ({
-    date: new Date(point.ts * 1000).toISOString(),
-    uptime_pct: Math.round(point.success_rate * 100) / 100,
-    incidents: point.success_rate < HEALTHY_SUCCESS_RATE ? 1 : 0,
-    outage_minutes: 0,
-  }))
+  return group.series
+    .filter((point) => (point.request_count ?? 0) > 0)
+    .map((point) => {
+      const requests = point.request_count ?? 0
+      const successes = point.success_count ?? 0
+      // Request-weighted per bucket; empty buckets are skipped above instead
+      // of being painted as 0% red bars.
+      const uptime = (successes / requests) * 100
+      return {
+        date: new Date(point.ts * 1000).toISOString(),
+        uptime_pct: Math.round(uptime * 100) / 100,
+        incidents: uptime < HEALTHY_SUCCESS_RATE ? 1 : 0,
+        outage_minutes: 0,
+        requests,
+        successes,
+      }
+    })
 }
 
 function average(

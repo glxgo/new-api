@@ -409,28 +409,37 @@ func QueryGroupSummaryByChannels(hours int, scopes []GroupChannelScope) (GroupSu
 	}
 	if hours == 1 {
 		// Coarse historical buckets cannot be split into real five-minute samples.
-		fineRows := rows[:0]
-		for _, row := range rows {
-			if row.BucketSeconds > 0 && row.BucketSeconds <= 300 && row.BucketTs%300+row.BucketSeconds <= 300 {
-				fineRows = append(fineRows, row)
-			}
-		}
-		rows = fineRows
+		rows = filterFineChannelRows(rows)
 	}
-	groups := make([]string, 0, len(scopes))
-	for _, scope := range scopes {
-		if scope.Group != "" {
-			groups = append(groups, scope.Group)
-		}
-	}
+
 	var legacyRows []model.PerfMetricGroupBucket
 	if hours != 1 {
-		legacyRows, err = model.GetPerfMetricsGroupBuckets(startTs, endTs, groups)
+		legacyRows, err = model.GetPerfMetricsGroupBuckets(startTs, endTs, groupsFromScopes(scopes))
 		if err != nil {
 			return GroupSummaryAllResult{}, err
 		}
 	}
 
+	hot := snapshotChannelHotBuckets(queryStart, endTs, channelIds)
+	result := buildChannelScopedGroupSummary(scopes, rows, hot, legacyRows)
+	fillGroupSummarySeries(&result, startTs, endTs)
+	return result, nil
+}
+
+// filterFineChannelRows keeps only buckets fine enough for the one-hour view.
+func filterFineChannelRows(rows []model.ChannelPerfMetric) []model.ChannelPerfMetric {
+	fineRows := rows[:0]
+	for _, row := range rows {
+		if row.BucketSeconds > 0 && row.BucketSeconds <= 300 && row.BucketTs%300+row.BucketSeconds <= 300 {
+			fineRows = append(fineRows, row)
+		}
+	}
+	return fineRows
+}
+
+// snapshotChannelHotBuckets drains the in-memory channel buckets that are
+// still waiting for their DB flush. The caller must hold channelMetricsMu.
+func snapshotChannelHotBuckets(queryStart, endTs int64, channelIds []int) map[channelBucketKey]counters {
 	hot := make(map[channelBucketKey]counters)
 	allowedChannels := make(map[int]struct{}, len(channelIds))
 	for _, channelId := range channelIds {
@@ -450,9 +459,246 @@ func QueryGroupSummaryByChannels(hours int, scopes []GroupChannelScope) (GroupSu
 		}
 		return true
 	})
-	result := buildChannelScopedGroupSummary(scopes, rows, hot, legacyRows)
-	fillGroupSummarySeries(&result, startTs, endTs)
+	return hot
+}
+
+func groupsFromScopes(scopes []GroupChannelScope) []string {
+	groups := make([]string, 0, len(scopes))
+	for _, scope := range scopes {
+		if scope.Group != "" {
+			groups = append(groups, scope.Group)
+		}
+	}
+	return groups
+}
+
+// scopesForModel narrows group scopes down to the groups whose abilities can
+// currently serve the requested model through an eligible channel. Groups
+// without such a channel have no channel-scoped health and are dropped, which
+// is exactly what the model-status cards show.
+func scopesForModel(scopes []GroupChannelScope, modelName string, group string) []GroupChannelScope {
+	modelScopes := make([]GroupChannelScope, 0, len(scopes))
+	for _, scope := range scopes {
+		if scope.Group == "" {
+			continue
+		}
+		if group != "" && scope.Group != group {
+			continue
+		}
+		channelIds := scope.ModelChannels[modelName]
+		if len(channelIds) == 0 {
+			continue
+		}
+		modelScopes = append(modelScopes, GroupChannelScope{
+			Group:         scope.Group,
+			ModelChannels: map[string][]int{modelName: channelIds},
+		})
+	}
+	return modelScopes
+}
+
+// QueryByChannelScopes serves the square's model detail with the exact same
+// caliber as the model-status cards: only currently enabled (and canary
+// selected) channels, projected onto every group that can serve the model
+// through those channels, with legacy group history only before the
+// channel-scoped cutover.
+func QueryByChannelScopes(params QueryParams, scopes []GroupChannelScope) (QueryResult, error) {
+	channelMetricsMu.RLock()
+	defer channelMetricsMu.RUnlock()
+	if params.Hours <= 0 {
+		params.Hours = 24
+	}
+	if params.Hours > 24*30 {
+		params.Hours = 24 * 30
+	}
+	endTs := time.Now().Unix()
+	startTs := endTs - int64(params.Hours)*3600
+	queryStart := startTs
+	if params.Hours == 1 {
+		queryStart, _, _, _ = fixedStatusBucketWindow(startTs, endTs)
+	}
+
+	modelScopes := scopesForModel(scopes, params.Model, params.Group)
+	if len(modelScopes) == 0 {
+		return QueryResult{ModelName: params.Model, SeriesSchema: seriesSchema}, nil
+	}
+
+	channelIds := channelIdsFromScopes(modelScopes)
+	rows, err := model.GetChannelPerfMetricsByModel(queryStart, endTs, channelIds, params.Model)
+	if err != nil {
+		return QueryResult{}, err
+	}
+	if params.Hours == 1 {
+		rows = filterFineChannelRows(rows)
+	}
+
+	var legacyRows []model.PerfMetricGroupBucket
+	if params.Hours != 1 {
+		legacyRows, err = model.GetPerfMetricGroupBucketsByModel(startTs, endTs, params.Model, groupsFromScopes(modelScopes))
+		if err != nil {
+			return QueryResult{}, err
+		}
+	}
+
+	hot := snapshotChannelHotBuckets(queryStart, endTs, channelIds)
+	summary := buildChannelScopedGroupSummary(modelScopes, rows, hot, legacyRows)
+
+	result := QueryResult{
+		ModelName:    params.Model,
+		SeriesSchema: seriesSchema,
+		Groups:       make([]GroupResult, 0, len(summary.Groups)),
+	}
+	for _, group := range summary.Groups {
+		result.Groups = append(result.Groups, GroupResult{
+			Group:        group.Group,
+			AvgTtftMs:    group.AvgTtftMs,
+			AvgLatencyMs: group.AvgLatencyMs,
+			SuccessRate:  group.SuccessRate,
+			AvgTps:       group.AvgTps,
+			CacheRate:    group.CacheRate,
+			Series:       group.Series,
+		})
+	}
+	fillQueryResultSeries(&result, startTs, endTs)
 	return result, nil
+}
+
+// QuerySummaryAllByChannels feeds the square's model badges with the same
+// channel-scoped caliber as QueryByChannelScopes, so a card badge can never
+// contradict the detail table behind it.
+func QuerySummaryAllByChannels(hours int, scopes []GroupChannelScope) (SummaryAllResult, error) {
+	channelMetricsMu.RLock()
+	defer channelMetricsMu.RUnlock()
+	if hours <= 0 {
+		hours = 24
+	}
+	if hours > 24*30 {
+		hours = 24 * 30
+	}
+	endTs := time.Now().Unix()
+	startTs := endTs - int64(hours)*3600
+
+	modelChannels := make(map[string]map[int]struct{})
+	for _, scope := range scopes {
+		for modelName, scopeChannelIds := range scope.ModelChannels {
+			channelSet := modelChannels[modelName]
+			if channelSet == nil {
+				channelSet = make(map[int]struct{})
+				modelChannels[modelName] = channelSet
+			}
+			for _, channelId := range scopeChannelIds {
+				if channelId > 0 {
+					channelSet[channelId] = struct{}{}
+				}
+			}
+		}
+	}
+	if len(modelChannels) == 0 {
+		return SummaryAllResult{Models: []ModelSummary{}}, nil
+	}
+
+	channelIds := channelIdsFromScopes(scopes)
+	rows, err := model.GetChannelPerfMetrics(startTs, endTs, channelIds)
+	if err != nil {
+		return SummaryAllResult{}, err
+	}
+	hot := snapshotChannelHotBuckets(startTs, endTs, channelIds)
+
+	// Legacy group-table history only before the channel cutover, matching the
+	// group summary rule; with no channel data at all it covers the window.
+	legacyRows, err := model.GetPerfMetricsModelBuckets(startTs, endTs, groupsFromScopes(scopes))
+	if err != nil {
+		return SummaryAllResult{}, err
+	}
+
+	totals := buildScopedModelTotals(modelChannels, rows, hot, legacyRows)
+	models := make([]ModelSummary, 0, len(totals))
+	for name, total := range totals {
+		if total.requestCount == 0 {
+			continue
+		}
+		avgLatency := avg(total.totalLatencyMs, total.successCount)
+		successRate := float64(total.successCount) / float64(total.requestCount) * 100
+		models = append(models, ModelSummary{
+			ModelName:    name,
+			AvgLatencyMs: avgLatency,
+			SuccessRate:  math.Round(successRate*100) / 100,
+			AvgTps:       math.Round(avgTps(total)*100) / 100,
+			CacheRate:    math.Round(cacheRate(total)*100) / 100,
+			RequestCount: total.requestCount,
+		})
+	}
+	sort.Slice(models, func(i, j int) bool {
+		return models[i].RequestCount > models[j].RequestCount
+	})
+	return SummaryAllResult{Models: models}, nil
+}
+
+// buildScopedModelTotals accumulates per-model counters from channel rows,
+// unflushed hot buckets and pre-cutover legacy buckets. Only (model, channel)
+// pairs present in modelChannels count, which keeps disabled or unmonitored
+// channels out of the public badges.
+func buildScopedModelTotals(
+	modelChannels map[string]map[int]struct{},
+	rows []model.ChannelPerfMetric,
+	hot map[channelBucketKey]counters,
+	legacyRows []model.PerfMetricModelBucket,
+) map[string]counters {
+	totals := make(map[string]counters, len(modelChannels))
+	cutoverTs := int64(0)
+	accumulate := func(modelName string, channelId int, bucketTs int64, value counters) {
+		channelSet := modelChannels[modelName]
+		if channelSet == nil {
+			return
+		}
+		if _, ok := channelSet[channelId]; !ok {
+			return
+		}
+		if cutoverTs == 0 || bucketTs < cutoverTs {
+			cutoverTs = bucketTs
+		}
+		current := totals[modelName]
+		current.requestCount += value.requestCount
+		current.successCount += value.successCount
+		current.totalLatencyMs += value.totalLatencyMs
+		current.outputTokens += value.outputTokens
+		current.generationMs += value.generationMs
+		current.cacheTokens += value.cacheTokens
+		current.promptTokens += value.promptTokens
+		totals[modelName] = current
+	}
+	for _, row := range rows {
+		accumulate(row.ModelName, row.ChannelId, row.BucketTs, counters{
+			requestCount:   row.RequestCount,
+			successCount:   row.SuccessCount,
+			totalLatencyMs: row.TotalLatencyMs,
+			outputTokens:   row.OutputTokens,
+			generationMs:   row.GenerationMs,
+			cacheTokens:    row.CacheTokens,
+			promptTokens:   row.PromptTokens,
+		})
+	}
+	for key, value := range hot {
+		accumulate(key.model, key.channelId, key.bucketTs, value)
+	}
+	for _, row := range legacyRows {
+		if _, visible := modelChannels[row.ModelName]; !visible {
+			continue
+		}
+		if cutoverTs > 0 && row.BucketTs >= cutoverTs {
+			continue
+		}
+		current := totals[row.ModelName]
+		current.requestCount += row.RequestCount
+		current.successCount += row.SuccessCount
+		current.totalLatencyMs += row.TotalLatencyMs
+		current.outputTokens += row.OutputTokens
+		current.generationMs += row.GenerationMs
+		current.cacheTokens += row.CacheTokens
+		current.promptTokens += row.PromptTokens
+		totals[row.ModelName] = current
+	}
+	return totals
 }
 
 func fillGroupSummarySeries(result *GroupSummaryAllResult, startTs, endTs int64) {
