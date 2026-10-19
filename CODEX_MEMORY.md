@@ -734,3 +734,10 @@
 - 构建：Default/Classic rsbuild、`go build ./...`、pkg 测试通过；Linux/amd64 产物 SHA-256 `949ae14065d4927b9a48f082872c06a34702caceec0c00bd3b94d36f4045228a`（96M，`-trimpath -ldflags "-s -w"`），分块上传合并后服务器复核一致。
 - 部署与终态详见运营侧 CODEX_MEMORY 同日条目（备份/回滚镜像/切流/验收/踩坑）。验收要点：gpt-6-sol 旧口径 gpt会员分组 83.2% → 新口径 8 个分组全部 94~97.6%；正式 healthy、restarts=0、OOM=false、四入口均新版本、真实流量正常。
 - 服务器当天 Docker 重启过一次导致旧候选自启占 3010/3011，已停用并设 restart=no；canonical compose 顶层 networks（cpa-net external + new-api-final_default）与 dict 形式 environment 是候选生成时必须原样保留的两处，值中 `$` 需转义 `$$`。
+
+### 2026-10-19 — 公网502回源证书修复
+
+- 用户授权检查并发维护后修复并提交GitHub。两次服务器会话/进程/配置哈希检查及GitHub活动检查均未发现并发维护迹象；未把检查结论表述为能够观测所有离线编辑。
+- 回源证书过期，应用仍健康。重新签发单域证书、将既有证书入口连接到Certbot管理文件、给既有deploy hook补配置校验并平滑加载后，15:18:50（UTC+8）主站与回源域名恢复200、TLS校验通过；应用仍为`20261017-perf-caliber`，容器未重启，Compose和Nginx站点配置哈希未变化，无业务数据库改动。
+- 指定证书模拟续期（含deploy hook）通过，既有certbot.timer为active/enabled。新增可公开的运维说明`docs/operations/tls-recovery-2026-10-19.md`和已部署的通用hook`scripts/ops/certbot-nginx-deploy-hook.sh`，不包含凭据、私钥、源站IP或用户数据。
+- GitHub交付使用基于最新main的独立分支`codex/tls-recovery-20261019`，原开发树4项未提交修改未动。本次没有应用构建、蓝绿发布或收费模型测试；前置代理日志及其他历史虚拟主机证书未纳入已完成范围。
